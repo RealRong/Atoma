@@ -1,0 +1,81 @@
+{
+    "name": "atoma",
+    "version": "1.0.0",
+    "description": "Atomic state management with universal persistence - built on Jotai and Immer",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./adapters": {
+            "types": "./dist/adapters/index.d.ts",
+            "import": "./dist/adapters/index.js"
+        },
+        "./hooks": {
+            "types": "./dist/hooks/index.d.ts",
+            "import": "./dist/hooks/index.js"
+        },
+        "./registry": {
+            "types": "./dist/registry/index.d.ts",
+            "import": "./dist/registry/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "src",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "typecheck": "tsc --noEmit",
+        "test": "vitest",
+        "test:ui": "vitest --ui"
+    },
+    "keywords": [
+        "react",
+        "jotai",
+        "immer",
+        "state-management",
+        "atomic",
+        "persistence",
+        "indexeddb",
+        "offline-first",
+        "sync",
+        "hybrid-cache"
+    ],
+    "author": "Rendevoz Team",
+    "license": "MIT",
+    "peerDependencies": {
+        "jotai": "^2.0.0",
+        "immer": "^9.0.0 || ^10.0.0",
+        "react": "^18.0.0"
+    },
+    "dependencies": {
+        "lodash": "^4.17.21"
+    },
+    "devDependencies": {
+        "@types/lodash": "^4.14.0",
+        "@types/node": "^20.0.0",
+        "@types/react": "^18.0.0",
+        "tsup": "^8.0.0",
+        "typescript": "^5.0.0",
+        "vitest": "^1.0.0"
+    },
+    "optionalDependencies": {
+        "dexie": "^3.2.0 || ^4.0.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/rendevoz/rendevoz",
+        "directory": "packages/atoma"
+    },
+    "bugs": {
+        "url": "https://github.com/rendevoz/rendevoz/issues"
+    },
+    "homepage": "https://github.com/rendevoz/rendevoz/tree/main/packages/atoma#readme"
+}
