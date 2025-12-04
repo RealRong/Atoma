@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>技术简历 - 资深全栈工程师</title>
+    <style>
+        :root {
+            --primary-color: #1d4ed8;
+            /* 亮色主蓝 */
+            --text-color: #1f2937;
+            /* 深灰文本 */
+            --muted-color: #4b5563;
+            --light-bg: #f5f7fb;
+            /* 浅色背景 */
+            --border-color: #e5e7eb;
+            --tag-bg: #e8effe;
+            --tag-text: #1d4ed8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: #fdfdfd;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        /* 链接样式 */
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        /* 头部 */
+        header {
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: #1e293b;
+            margin-bottom: 10px;
+        }
+
+        .role {
+            font-size: 1.6rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .summary {
+            color: var(--muted-color);
+            font-size: 1.05rem;
+        }
+
+        /* 通用区块样式 */
+        section {
+            margin-bottom: 35px;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            color: #0f172a;
+            border-left: 5px solid var(--primary-color);
+            padding-left: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+        }
+
+        h3 {
+            font-size: 1.2rem;
+            color: #1e293b;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        h4 {
+            font-size: 1.1rem;
+            color: #334155;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        ul {
+            list-style-type: disc;
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+
+        li {
+            margin-bottom: 5px;
+        }
+
+        /* 亮点列表 */
+        .highlights {
+            margin-top: 12px;
+            color: var(--text-color);
+        }
+
+        .highlights li {
+            margin-bottom: 6px;
+        }
+
+        .highlights strong {
+            color: #0f172a;
+        }
+
+        /* 技术栈网格布局 */
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 40px 30px;
+        }
+
+        .skill-category {
+            border: none !important;
+        }
+
+        .skill-category h3 {
+            margin-top: 0;
+            color: var(--text-color);
+            padding-bottom: 8px;
+        }
+
+        .skill-item strong {
+            color: #0f172a;
+        }
+
+        /* 项目经验样式 */
+        .project-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .project-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .project-meta {
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        .project-role {
+            font-weight: 600;
+            color: #1e293b;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .tech-highlight {
+            background-color: var(--tag-bg);
+            color: var(--tag-text);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
+
+        /* 算法与挑战部分样式 */
+        .challenge-box {
+            background-color: var(--light-bg);
+            border-left: 3px solid var(--primary-color);
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .algorithm-box {
+            background-color: var(--light-bg);
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        /* 打印优化 */
+        @media print {
+            body {
+                padding: 0;
+                max-width: 100%;
+            }
+
+            a {
+                color: #000;
+                text-decoration: none;
+            }
+
+            .skill-category,
+            .algorithm-box,
+            .challenge-box {
+                break-inside: avoid;
+                border: 1px solid #ccc;
+                background: none !important;
+            }
+
+            h2 {
+                border-left-color: #000;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div class="role">资深全栈工程师</div>
+        <div class="summary">
+            现居中国苏州，可全职远程，英语可与海外团队开会。专注 AI 应用、Web3 与复杂系统架构；近期主导基于 Jotai 的 <a
+                href="https://github.com/RealRong/Atoma">Atoma 原子化持久化引擎</a>，聚合状态、查询、适配器与历史能力，擅长高性能可扩展 Web 应用。
+        </div>
+        <ul class="highlights">
+            <li><strong>个人项目</strong> Rendevoz 多模态知识管理OS：Electron + React + AI 供应商抽象 + 本地索引/布局持久化。</li>
+            <li><strong>个人项目</strong> Atoma 原子化持久化引擎：从架构、索引、适配器到历史/查询全栈交付。</li>
+            <li><strong>核心开发者</strong> MSUTOOL：涵盖前端、扩展、API、爬虫、调度、缓存与部署链路。</li>
+            <li><strong>LLM 应用</strong>：多供应商路由、Prompt 设计、RAG/检索集成与多模态接口，关注稳定性与成本。</li>
+            <li><strong>K12 场景</strong>：独立实现基于SlateJS的类Notion编辑器 + 类Miro白板，支持课堂笔记/作业/批注与 AI 伴读。</li>
+        </ul>
+        <p style="margin-top: 12px; color: var(--muted-color);">
+            <strong>姓名:</strong> 罗榕添 ｜ <strong>年龄:</strong> 25 ｜ <strong>电话:</strong> <a
+                href="tel:18068060252">18068060252</a> ｜ <strong>邮箱:</strong> <a
+                href="mailto:yywz.hero@gmail.com">yywz.hero@gmail.com</a> ｜ <strong>WeChat:</strong> Niv3ous ｜
+            <strong>GitHub:</strong> <a href="https://github.com/RealRong">github.com/RealRong</a>
+        </p>
+    </header>
+
+    <section id="education">
+        <h2>📚 教育背景</h2>
+        <div class="project-item">
+            <div class="project-header">
+                <span class="project-title">苏州大学 · 电子信息科学与技术</span>
+                <span class="project-meta">2019 - 2023</span>
+            </div>
+            <p>英语四六级 600+，能熟练使用英语进行工作与沟通。</p>
+        </div>
+    </section>
+
+    <section id="skills">
+        <h2>🛠️ 核心技术栈</h2>
+        <div class="skills-grid">
+            <div class="skill-category">
+                <h3>前端</h3>
+                <ul>
+                    <li>React 18/TypeScript、Jotai + Immer、SWR、React Router、Vite/Electron、Vite Coding。</li>
+                    <li>UI/动效：Radix UI、Tailwind、Framer Motion；多模态/可视化：pdfjs、Pixi.js、D3、Recharts。</li>
+                </ul>
+            </div>
+
+            <div class="skill-category">
+                <h3>后端/数据</h3>
+                <ul>
+                    <li>Node.js/Express、SSE、Redis、PostgreSQL (Supabase)、队列化调度。</li>
+                    <li>Serverless：Cloudflare Workers、Railway、Supabase（Auth/Functions）。</li>
+                    <li>认证与安全：JWT/Jose、Supabase Auth。</li>
+                </ul>
+            </div>
+
+            <div class="skill-category">
+                <h3>Web3 & 扩展</h3>
+                <ul>
+                    <li>RainbowKit/Wagmi/Viem/Ethers.js 钱包链路。</li>
+                    <li>Chrome MV3：Content Script、Background SW，Vite + @crxjs 开发流。</li>
+                </ul>
+            </div>
+
+            <div class="skill-category">
+                <h3>AI & 检索</h3>
+                <ul>
+                    <li>LLM 调用/路由、Prompt 设计、RAG/检索与多模态接口；成本与上下文控制。</li>
+                    <li>PDF/笔记/聊天 AI 能力；Worker 化全文检索与离线索引。</li>
+                    <li>熟练使用 Codex、Claude Code 进行协作编程与自动化交付。</li>
+                </ul>
+            </div>
+
+            <div class="skill-category">
+                <h3>DevOps</h3>
+                <ul>
+                    <li>Docker、Railway/云部署、Cloudflare Workers、Supabase、pnpm/changesets、CI/CD、lint/format/husky。</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <section id="experience">
+        <h2>💼 项目经验</h2>
+
+        <div class="project-item">
+            <div class="project-header">
+                <span class="project-title">Atoma - 原子化持久化引擎</span>
+                <span class="project-meta">2024 - 至今 · <a
+                        href="https://github.com/RealRong/Atoma">github.com/RealRong/Atoma</a></span>
+            </div>
+            <span class="project-role">架构设计 & 独立开发者（个人项目）</span>
+            <p>为 React 打造的状态管理库，结合原子化订阅与通用持久化能力，写一套状态逻辑即可落地 IndexedDB、HTTP API 或混合缓存。</p>
+            <ul>
+                <li><strong>职责：</strong>独立完成架构/索引/适配器/历史全链路，Jotai 原子容器 + QueueManager 批量写。</li>
+                <li><strong>技术：</strong>IndexManager 候选集 + Top-K 查询，HybridAdapter offline/remote-first，HTTP
+                    适配器含离线队列与冲突解决。</li>
+                <li><strong>成果：</strong>批量写 + 乐观模式让持久化 I/O 下降约 90%，精准订阅避免全局重渲染。</li>
+                <li><strong>体验：</strong><code>useFindMany</code> 双层缓存 + 版本快照，查询秒回并后台刷新。</li>
+            </ul>
+        </div>
+
+        <div class="project-item">
+            <div class="project-header">
+                <span class="project-title">MSUTOOL - 全栈区块链分析平台</span>
+                <span class="project-meta">2025/06 - 2025/11 · <a href="https://msutool.com">msutool.com</a></span>
+            </div>
+            <span class="project-role">全栈架构师 & 核心开发者（个人贡献 90%+ 代码）</span>
+            <p>为 MapleStory Universe (MSU) NFT 游戏构建的综合性数据分析与投资决策平台。</p>
+            <ul>
+                <li><strong>职责：</strong>全栈架构 & 90%+ 代码交付，覆盖前端、MV3 扩展、API、爬虫、调度、缓存与部署。</li>
+                <li><strong>链路：</strong>Vite + @crxjs 开发流，Marketplace API 拦截注入，RainbowKit/Wagmi 钱包登录，Supabase Auth，SSE
+                    实时推送。</li>
+                <li><strong>数据：</strong>node-cron 爬虫 + Redis 分级缓存，API 缓存命中响应 &lt; 500ms。</li>
+                <li><strong>效能：</strong>Playwright 单浏览器多 Context，内存占用下降约 70%；Redis 命中率 > 80%，支持并发分析 10+ 对象。</li>
+            </ul>
+        </div>
+
+        <div class="project-item">
+            <div class="project-header">
+                <span class="project-title">Rendevoz - 多模态知识操作系统</span>
+                <span class="project-meta">2023 - 2025 · <a
+                        href="https://github.com/RealRong/Rendevoz">github.com/RealRong/Rendevoz</a></span>
+            </div>
+            <span class="project-role">全栈架构师 & 产品技术负责人（独立开发）</span>
+            <p>桌面级知识操作系统，聚合笔记、PDF、音视频、代码、网页、白板、考试与聊天，提供 AI 伴读与关系可视化。</p>
+            <ul>
+                <li><strong>职责：</strong>全栈架构师 & 产品负责人，独立开发桌面级多模态知识 OS。</li>
+                <li><strong>框架：</strong>Electron + Vite + React，Jotai + Immer，Dock 布局/窗口序列化，布局与阅读进度持久化。</li>
+                <li><strong>核心：</strong>统一 Meta 模型覆盖笔记/PDF/媒体/白板/考试/聊天，AIService 路由多家模型，CommonAISidebar 提供摘要/问答/出题。</li>
+                <li><strong>体验：</strong>PDF/媒体深度阅读，SlateJS 打造 Notion 风编辑器（笔记/作业/题目），Miro 风白板用于课堂批注/演示 + 知识图谱导航，Worker
+                    化全文检索与离线索引，标签/摘要/版本追踪同源存储。</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="summary-skills">
+        <h2>🎓 技术能力总结</h2>
+        <ul class="highlights">
+            <li><strong>全链路：</strong>前端 + MV3 扩展 + Node/Express + 调度/缓存 + DevOps，可独立交付从 0→1。</li>
+            <li><strong>数据一致性：</strong>原子化状态 + Immer patches 队列化持久化，索引/候选集/Top-K 避免全表扫描。</li>
+            <li><strong>AI/检索：</strong>多供应商路由与成本控制，场景化 AI 输出与业务对象同源存储；Worker 化全文检索离线可用。</li>
+            <li><strong>性能韧性：</strong>批量写/乐观模式、离线队列、退避重试、缓存与监控提升稳定性与吞吐。</li>
+        </ul>
+    </section>
+
+    <section id="philosophy">
+        <h2>💡 技术理念</h2>
+        <p>
+            注重<strong>代码质量</strong>（类型安全、可维护性）与<strong>用户体验</strong>。
+            坚持<strong>持续改进</strong>，善于利用新技术优化架构，在追求极致<strong>性能</strong>的同时，重视团队协作与文档规范。
+        </p>
+    </section>
+
+</body>
+
+</html>

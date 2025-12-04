@@ -1,4 +1,4 @@
-import produce from 'immer'
+import { enableMapSet, enablePatches, produce } from 'immer'
 import { PrimitiveAtom, createStore } from 'jotai'
 import { orderBy } from 'lodash'
 import {
@@ -14,6 +14,11 @@ import { QueueManager } from './state/QueueManager'
 import { OperationApplier } from './ops/OperationApplier'
 import { AdapterSync } from './ops/AdapterSync'
 import { HistoryRecorder, HistoryCallback } from './history/HistoryRecorder'
+
+// Enable Map/Set drafting for Immer (required for Map-based atom state)
+enableMapSet()
+// Enable patch generation for history/adapter sync
+enablePatches()
 
 /**
  * Global Jotai store for managing atoms

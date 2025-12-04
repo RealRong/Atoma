@@ -49,9 +49,10 @@ export class IndexedDBAdapter<T> implements IAdapter<T> {
         })
     }
 
-    async getAll(filter?: (item: T) => boolean): Promise<T[]> {
+    async getAll(filter?: ((item: T) => boolean) | unknown): Promise<T[]> {
         const items = await this.table.toArray()
-        let result = filter ? items.filter(filter) : items
+        const shouldFilter = typeof filter === 'function'
+        let result = shouldFilter ? items.filter(filter as (item: T) => boolean) : items
 
         if (this.options?.transformData) {
             const mapped = result.map(item => this.options!.transformData!(item) as T | undefined)

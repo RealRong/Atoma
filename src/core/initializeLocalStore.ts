@@ -357,6 +357,19 @@ export function initializeLocalStore<T>(
         },
 
         findMany: async (options?: FindManyOptions<T>) => {
+            // If incoming item is shallow-equal to cached value, reuse cached reference to avoid unnecessary re-renders.
+            const preserveReference = (incoming: T): T => {
+                const existing = jotaiStore.get(atom).get((incoming as any).id)
+                if (!existing) return incoming
+                const keys = new Set([...Object.keys(existing as any), ...Object.keys(incoming as any)])
+                for (const key of keys) {
+                    if ((existing as any)[key] !== (incoming as any)[key]) {
+                        return incoming
+                    }
+                }
+                return existing
+            }
+
             const evaluateWithIndexes = (mapRef: Map<StoreKey, T>, opts?: FindManyOptions<T>) => {
                 const candidateIds = indexManager?.collectCandidates(opts?.where)
                 const singleOrder = opts?.orderBy && !Array.isArray(opts.orderBy) ? opts.orderBy : undefined
@@ -382,8 +395,10 @@ export function initializeLocalStore<T>(
             const localResult = evaluateWithIndexes(map, options)
 
             try {
-                let remote = await adapter.getAll(options?.where as any)
-                remote = remote.map(transform)
+                // Only pass adapter-level filter when a predicate is provided; structured where objects are handled locally
+                const adapterFilter = typeof options?.where === 'function' ? options.where : undefined
+                let remote = await adapter.getAll(adapterFilter as any)
+                remote = remote.map(item => preserveReference(transform(item)))
                 jotaiStore.set(atom, BaseStore.bulkAdd(remote as PartialWithId<T>[], jotaiStore.get(atom)))
                 indexManager?.rebuild(jotaiStore.get(atom).values())
                 bumpAtomVersion(atom)
