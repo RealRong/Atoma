@@ -35,4 +35,5 @@ coverage/
 *.md
 
 atoma-docs
-demo
+
+demo/
