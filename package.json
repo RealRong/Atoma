@@ -36,7 +36,8 @@
         "build:demo": "vite build --config demo/vite.config.ts",
         "typecheck": "tsc --noEmit",
         "test": "vitest",
-        "test:ui": "vitest --ui"
+        "test:ui": "vitest --ui",
+        "start:docs": "npm run dev --prefix atoma-docs"
     },
     "keywords": [
         "react",
@@ -53,23 +54,23 @@
     "author": "Rendevoz Team",
     "license": "MIT",
     "peerDependencies": {
-        "jotai": "^2.0.0",
         "immer": "^9.0.0 || ^10.0.0",
+        "jotai": "^2.0.0",
         "react": "^18.0.0"
     },
     "dependencies": {
-        "dexie": "^4.0.8",
-        "immer": "^10.0.0",
-        "jotai": "^2.8.3",
         "lodash": "^4.17.21",
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0"
+        "p-limit": "^7.2.0"
     },
     "devDependencies": {
         "@types/lodash": "^4.14.0",
         "@types/node": "^20.0.0",
         "@types/react": "^18.0.0",
         "@vitejs/plugin-react": "^4.2.1",
+        "immer": "^9.0.0 || ^10.0.0",
+        "jotai": "^2.0.0",
+        "react": "^18.0.0",
+        "react-dom": "^18.2.0",
         "tsup": "^8.0.0",
         "typescript": "^5.0.0",
         "vite": "^5.2.0",

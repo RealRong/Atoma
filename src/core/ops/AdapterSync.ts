@@ -1,13 +1,13 @@
 import { PrimitiveAtom } from 'jotai'
 import { applyPatches, Patch } from 'immer'
 import { ApplyResult } from './OperationApplier'
-import { IAdapter, PatchMetadata } from '../types'
+import { IAdapter, PatchMetadata, Entity } from '../types'
 import { AtomVersionTracker } from '../state/AtomVersionTracker'
 import { HistoryRecorder } from '../history/HistoryRecorder'
 
 type CallbackEntry = { onSuccess?: (...args: any[]) => void, onFail?: (error?: Error) => void }
 
-interface SyncParams<T> {
+interface SyncParams<T extends Entity> {
     adapter: IAdapter<T>
     applyResult: ApplyResult<T>
     atom: PrimitiveAtom<Map<any, any>>
@@ -18,7 +18,7 @@ interface SyncParams<T> {
     mode: 'optimistic' | 'strict'
 }
 
-const applyPatchesViaOperations = async <T>(adapter: IAdapter<T>, patches: Patch[]) => {
+const applyPatchesViaOperations = async <T extends Entity>(adapter: IAdapter<T>, patches: Patch[]) => {
     const putActions: T[] = []
     const deleteKeys: Array<string | number> = []
 
@@ -39,7 +39,7 @@ const applyPatchesViaOperations = async <T>(adapter: IAdapter<T>, patches: Patch
 }
 
 export class AdapterSync {
-    async syncAtom<T>(params: SyncParams<T>): Promise<void> {
+    async syncAtom<T extends Entity>(params: SyncParams<T>): Promise<void> {
         const { adapter, applyResult, atom, callbacks, store, versionTracker, historyRecorder, mode } = params
         const { newValue, patches, inversePatches, changedFields } = applyResult
         const originalValue = store.get(atom)
@@ -51,11 +51,10 @@ export class AdapterSync {
             baseVersion: Date.now()
         }
 
-        // Optimistic: apply immediately
+        // Optimistic: apply到本地，但不立即触发 onSuccess，待适配器确认后再回调
         if (mode === 'optimistic') {
             store.set(atom, newValue)
             versionTracker.bump(atom, changedFields)
-            callbacks.forEach(({ onSuccess }) => setTimeout(() => onSuccess?.(), 0))
         }
 
         try {
@@ -71,8 +70,10 @@ export class AdapterSync {
                 const latest = applyPatches(currentValue, patches)
                 store.set(atom, latest)
                 versionTracker.bump(atom, changedFields)
-                callbacks.forEach(({ onSuccess }) => setTimeout(() => onSuccess?.(), 0))
             }
+
+            // 成功确认后统一触发 onSuccess（无论乐观或严格）
+            callbacks.forEach(({ onSuccess }) => setTimeout(() => onSuccess?.(), 0))
 
             // Record history only on success
             historyRecorder.record({ patches, inversePatches, atom, adapter })
@@ -80,7 +81,7 @@ export class AdapterSync {
             adapter.onError?.(error as Error, 'applyPatches')
 
             if (mode === 'optimistic') {
-                // rollback
+                // rollback 乐观写入
                 store.set(atom, originalValue)
             }
             const err = error instanceof Error ? error : new Error(String(error))

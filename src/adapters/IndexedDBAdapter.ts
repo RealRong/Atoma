@@ -1,11 +1,12 @@
 import { Table } from 'dexie'
 import { Patch } from 'immer'
-import { IAdapter, PatchMetadata, StoreKey } from '../core/types'
+import { IAdapter, PatchMetadata, StoreKey, FindManyOptions, PageInfo, Entity } from '../core/types'
+import { applyQuery } from '../core/query'
 
 /**
  * IndexedDB Adapter using Dexie
  */
-export class IndexedDBAdapter<T> implements IAdapter<T> {
+export class IndexedDBAdapter<T extends Entity> implements IAdapter<T> {
     public readonly name: string
 
     constructor(
@@ -62,6 +63,99 @@ export class IndexedDBAdapter<T> implements IAdapter<T> {
         return result
     }
 
+    async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo }> {
+        // Fast path: 仅在满足「无复杂 where」且按 id 排序/默认排序时，使用 Dexie 游标分页提升性能
+        const canFastPath =
+            (!options?.where || Object.keys(options.where).length === 0) &&
+            (!options?.orderBy ||
+                (!Array.isArray(options.orderBy) && (options.orderBy as any).field === 'id'))
+
+        if (canFastPath) {
+            try {
+                const dir = options?.orderBy && !Array.isArray(options.orderBy)
+                    ? options.orderBy.direction
+                    : 'asc'
+                const limit = options?.limit
+                const offset = options?.offset ?? 0
+                const cursor = options?.cursor
+
+                // 基于主键 id 的游标分页
+                let coll = this.table.orderBy('id')
+                if (dir === 'desc') {
+                    coll = coll.reverse()
+                }
+
+                if (cursor !== undefined && cursor !== null) {
+                    if (dir === 'desc') {
+                        coll = this.table.where('id').below(cursor).reverse()
+                    } else {
+                        coll = this.table.where('id').above(cursor)
+                    }
+                }
+
+                if (offset) {
+                    coll = coll.offset(offset)
+                }
+                if (limit !== undefined) {
+                    coll = coll.limit(limit)
+                }
+
+                const raw = await coll.toArray()
+                const data = this.options?.transformData
+                    ? raw.map(i => this.options!.transformData!(i)).filter((i): i is T => i !== undefined)
+                    : raw
+
+                const last = data[data.length - 1]
+                const hasNext = limit !== undefined ? data.length === limit : false
+                return {
+                    data,
+                    pageInfo: {
+                        cursor: last ? String((last as any).id) : cursor ? String(cursor) : undefined,
+                        hasNext,
+                        total: undefined // fast path 不计算 total，避免全表扫描
+                    }
+                }
+            } catch {
+                // 如果索引不存在或查询失败，回退到通用路径
+            }
+        }
+
+        // 通用回退路径：取全量再应用本地过滤/排序
+        const items = await this.table.toArray()
+        const transformed = this.options?.transformData
+            ? items.map(i => this.options!.transformData!(i)).filter((i): i is T => i !== undefined)
+            : items
+
+        // applyQuery handles where/orderBy/limit/offset
+        const filtered = applyQuery(transformed as any, options) as T[]
+
+        // cursor 分页（通用路径）：按结果集位置切片
+        const sliceStart = options?.cursor
+            ? filtered.findIndex(item => String((item as any).id) === String(options.cursor)) + 1
+            : (options?.offset || 0)
+
+        const limit = options?.limit
+        const sliceEnd = limit ? sliceStart + limit : filtered.length
+
+        if (sliceStart === 0 && !limit) return { data: filtered }
+
+        const pageData = filtered.slice(sliceStart, sliceEnd)
+
+        // Generate next cursor
+        const lastItem = pageData[pageData.length - 1]
+        const nextCursor = lastItem ? (lastItem as any).id : undefined
+        const hasNext = sliceEnd < filtered.length
+
+        return {
+            data: pageData,
+            pageInfo: {
+                cursor: nextCursor ? String(nextCursor) : undefined,
+                hasNext,
+                total: filtered.length
+            }
+        }
+    }
+
     async applyPatches(patches: Patch[], metadata: PatchMetadata): Promise<void> {
         const putActions: T[] = []
         const deleteKeys: number[] = []
@@ -71,7 +165,7 @@ export class IndexedDBAdapter<T> implements IAdapter<T> {
                 const value = this.serializeValue(patch.value)
                 putActions.push(value)
             } else if (patch.op === 'remove') {
-                deleteKeys.push(patch.path[0] as StoreKey)
+                deleteKeys.push(patch.path[0] as number)
             }
         })
 

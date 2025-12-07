@@ -17,6 +17,34 @@ body {
     margin: 0;
 }
 
+.layout {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    min-height: 100vh;
+}
+
+.sidebar {
+    border-right: 1px solid rgba(148, 163, 184, 0.2);
+    padding: 20px 16px;
+    background: #0b1020;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sidebar a,
+.sidebar button {
+    display: block;
+    width: 100%;
+    text-align: left;
+}
+
+.logo {
+    font-weight: 700;
+    color: #22d3ee;
+    margin-bottom: 12px;
+}
+
 .page {
     max-width: 1200px;
     margin: 0 auto;
@@ -108,6 +136,17 @@ button:disabled {
     font-size: 13px;
 }
 
+.list.biglist {
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 12px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .main-grid {
     display: grid;
     grid-template-columns: 1.2fr 1fr;
@@ -133,6 +172,14 @@ button:disabled {
 .toolbar {
     display: flex;
     gap: 8px;
+}
+
+.toolbar select {
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: #0f172a;
+    color: #e2e8f0;
 }
 
 .muted {

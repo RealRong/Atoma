@@ -98,7 +98,7 @@ export class IndexManager<T> {
         switch (def.type) {
             case 'number':
             case 'date':
-                return new NumberDateIndex<T>(def)
+                return new NumberDateIndex<T>(def as any)
             case 'string':
                 return new StringIndex<T>(def)
             case 'text':

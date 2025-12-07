@@ -1,6 +1,6 @@
-import { createDraft, finishDraft, Patch } from 'immer'
+import { createDraft, finishDraft, Patch, WritableDraft } from 'immer'
 import { PrimitiveAtom } from 'jotai'
-import { StoreDispatchEvent, StoreKey } from '../types'
+import { StoreDispatchEvent, StoreKey, Entity } from '../types'
 
 export type ApplyResult<T> = {
     newValue: Map<StoreKey, T>
@@ -15,7 +15,7 @@ export type ApplyResult<T> = {
  * Applies operations to a Map (pure, aside from draft usage) and computes change metadata.
  */
 export class OperationApplier {
-    apply<T>(
+    apply<T extends Entity>(
         operations: StoreDispatchEvent<T>[],
         currentValue: Map<StoreKey, T>
     ): ApplyResult<T> {
@@ -27,8 +27,8 @@ export class OperationApplier {
             const { data } = event
             switch (event.type) {
                 case 'add':
-                    draft.set(data.id, data as unknown as T)
-                    appliedData.push(data as unknown as T)
+                    draft.set(data.id, data as any)
+                    appliedData.push(data as T)
                     break
                 case 'update': {
                     if (!draft.has(data.id)) {
@@ -36,27 +36,31 @@ export class OperationApplier {
                         return
                     }
                     const origin = draft.get(data.id)
+                    // Ensure origin exists
+                    if (!origin) return
+
                     let newObj = Object.assign({}, origin, data, { updatedAt: Date.now() })
                     if (event.transformData) {
-                        newObj = event.transformData(newObj)
+                        newObj = event.transformData(newObj as any) as any
                     }
                     if (!newObj) return
-                    draft.set(data.id, newObj as unknown as T)
-                    appliedData.push(newObj as unknown as T)
+                    draft.set(data.id, newObj as any)
+                    appliedData.push(newObj as T)
                     break
                 }
                 case 'forceRemove':
                     draft.delete(data.id)
-                    appliedData.push(data as unknown as T)
+                    appliedData.push(data as T)
                     break
                 case 'remove': {
                     if (event.clearCache) {
                         draft.delete(data.id)
                     } else {
                         const origin = draft.get(data.id) ?? currentValue.get(data.id)
+                        if (!origin) return
                         const newObj = Object.assign({}, origin, { deleted: true, deletedAt: Date.now() })
-                        draft.set(data.id, newObj as unknown as T)
-                        appliedData.push(newObj as unknown as T)
+                        draft.set(data.id, newObj as any)
+                        appliedData.push(newObj as T)
                     }
                     break
                 }
@@ -68,7 +72,7 @@ export class OperationApplier {
         const newValue = finishDraft(draft, (p, inverse) => {
             patches = p
             inversePatches = inverse
-        })
+        }) as Map<StoreKey, T>
 
         const changedFields = this.collectChangedFields(operations, currentValue)
 
@@ -82,7 +86,7 @@ export class OperationApplier {
         }
     }
 
-    private collectChangedFields<T>(
+    private collectChangedFields<T extends Entity>(
         events: StoreDispatchEvent<T>[],
         currentMap: Map<StoreKey, T>
     ): Set<string> {

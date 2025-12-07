@@ -16,11 +16,16 @@ export type {
     StoreOperationOptions,
     PatchMetadata,
     QueueConfig,
+    Entity,
     SchemaValidator,
     LifecycleHooks,
     StoreKey,
     FindManyOptions,
+    FindManyResult,
     UseFindManyResult,
+    FetchPolicy,
+
+    PageInfo,
     IndexDefinition,
     IndexType,
     // Core
@@ -38,6 +43,7 @@ export { setDefaultIdGenerator, defaultSnowflakeGenerator } from './core/idGener
 export { IndexedDBAdapter } from './adapters/IndexedDBAdapter'
 export { HTTPAdapter } from './adapters/HTTPAdapter'
 export { HybridAdapter } from './adapters/HybridAdapter'
+export { SQLiteHttpAdapter } from './adapters/SQLiteHttpAdapter'
 export type { HTTPAdapterConfig } from './adapters/HTTPAdapter'
 export type { HybridAdapterConfig } from './adapters/HybridAdapter'
 
@@ -57,7 +63,8 @@ export {
     clearStoreCache,
     preloadStores,
     getLoadedStores,
-    getStoreConfig
+    getStoreConfig,
+    type AdapterFactoryOptions
 } from './registry/StoreFactory'
 
 export type {

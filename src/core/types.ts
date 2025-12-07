@@ -1,5 +1,6 @@
 import { Atom, PrimitiveAtom } from 'jotai'
 import { Patch } from 'immer'
+import type { StoreContext } from './StoreContext'
 
 /**
  * Base key type for entities
@@ -7,10 +8,16 @@ import { Patch } from 'immer'
 export type StoreKey = string | number
 
 /**
+ * Minimal entity interface - all stored entities must have an id
+ */
+export interface Entity {
+    id: StoreKey
+}
+
+/**
  * Base interface for all entities stored in the sync engine
  */
-export interface IBase {
-    id: StoreKey
+export interface IBase extends Entity {
     createdAt: number
     updatedAt: number
     deleted?: boolean
@@ -27,7 +34,7 @@ export type PartialWithId<T> = Partial<T> & { id: StoreKey }
 /**
  * Adapter interface - abstracts the storage backend
  */
-export interface IAdapter<T> {
+export interface IAdapter<T extends Entity> {
     /** Adapter name for debugging */
     name: string
 
@@ -77,11 +84,12 @@ export interface PatchMetadata {
 /**
  * Dispatch event for queue processing
  */
-export type StoreDispatchEvent<T> = {
+export type StoreDispatchEvent<T extends Entity> = {
     atom: PrimitiveAtom<Map<StoreKey, T>>
     data: PartialWithId<T>
     adapter: IAdapter<T>
-    store?: any // Jotai store instance
+    store?: JotaiStore // Jotai store instance
+    context?: StoreContext // StoreContext for per-store dependencies (avoids circular import)
     onFail?: (error?: Error) => void  // Accept error object for rejection
 } & (
         | {
@@ -127,17 +135,26 @@ export type OrderBy<T> =
     | { field: keyof T & string, direction: 'asc' | 'desc' }
     | Array<{ field: keyof T & string, direction: 'asc' | 'desc' }>
 
+export type FetchPolicy = 'local' | 'remote' | 'local-then-remote'
+
+export type PageInfo = { cursor?: string; hasNext?: boolean; total?: number }
+
 export interface FindManyOptions<T> {
     where?: WhereOperator<T>
     orderBy?: OrderBy<T>
     limit?: number
     offset?: number
+    cursor?: string
     cache?: {
         key?: string
         tags?: string[]
         staleTime?: number
     }
+    /** If true, fetched data will NOT be stored in the central atom or indexed. Use for high-volume read-only data. */
+    skipStore?: boolean
 }
+
+export type FindManyResult<T> = T[] | { data: T[]; pageInfo?: PageInfo }
 
 /**
  * Schema validator support (works with Zod/Yup or custom functions)
@@ -173,7 +190,7 @@ export interface StoreConfig<T> {
     idGenerator?: () => StoreKey
 
     /** Custom Jotai store instance */
-    store?: any  // ReturnType<typeof createStore> from 'jotai'
+    store?: JotaiStore  // ReturnType<typeof createStore> from 'jotai'
 
     /** Optional schema validator (zod/yup/custom) */
     schema?: SchemaValidator<T>
@@ -183,6 +200,9 @@ export interface StoreConfig<T> {
 
     /** Optional index definitions (for findMany 优先命中) */
     indexes?: Array<IndexDefinition<T>>
+
+    /** Per-store context for dependency injection (avoids circular import) */
+    context?: StoreContext
 }
 
 export type IndexType = 'number' | 'date' | 'string' | 'text'
@@ -230,7 +250,7 @@ export interface IStore<T> {
     getMultipleByIds(ids: StoreKey[], cache?: boolean): Promise<T[]>
 
     /** Query with filtering/sorting/paging */
-    findMany?(options?: FindManyOptions<T>): Promise<T[]>
+    findMany?(options?: FindManyOptions<T>): Promise<FindManyResult<T>>
 }
 
 export type UseFindManyResult<T> = {
@@ -239,6 +259,9 @@ export type UseFindManyResult<T> = {
     error?: Error
     refetch: () => Promise<T[]>
     isStale: boolean
+    pageInfo?: PageInfo
+    /** Fetch more data (e.g. next page) and append/merge it. Used for infinite scroll. */
+    fetchMore: (options: FindManyOptions<T>) => Promise<T[]>
 }
 
 /**
@@ -283,3 +306,6 @@ export interface IEventEmitter {
     off(event: string, handler: EventHandler): void
     emit(event: string, data?: any): void
 }
+
+/** Helper type alias for Jotai store to reduce `any` usage */
+export type JotaiStore = ReturnType<typeof import('jotai').createStore>

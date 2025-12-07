@@ -13,11 +13,11 @@ export class NumberDateIndex<T> implements ISortableIndex<T>, IIndex<T> {
     private sortedEntries: Array<{ value: number; ids: StoreKey[] }> | null = null
     private dirty = false
 
-    constructor(config: IndexDefinition<T>) {
+    constructor(config: IndexDefinition<T> & { type: 'number' | 'date' }) {
         if (config.type !== 'number' && config.type !== 'date') {
-            throw new Error(`[Atoma Index] Invalid type "${config.type}" for NumberDateIndex.`)
+            throw new Error(`[Atoma Index] Invalid type "${(config as any).type}" for NumberDateIndex.`)
         }
-        this.type = config.type as IndexType
+        this.type = config.type
         this.config = config
     }
 

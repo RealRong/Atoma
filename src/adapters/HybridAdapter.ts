@@ -1,10 +1,10 @@
 import { Patch } from 'immer'
-import { IAdapter, PatchMetadata, StoreKey } from '../core/types'
+import { IAdapter, PatchMetadata, StoreKey, Entity } from '../core/types'
 
 /**
  * Hybrid adapter configuration
  */
-export interface HybridAdapterConfig<T> {
+export interface HybridAdapterConfig<T extends Entity> {
     /** Local adapter (fast cache) */
     local: IAdapter<T>
 
@@ -43,7 +43,7 @@ export interface HybridAdapterConfig<T> {
  * - Offline fallback (local-only when remote fails)
  * - Automatic cache synchronization
  */
-export class HybridAdapter<T> implements IAdapter<T> {
+export class HybridAdapter<T extends Entity> implements IAdapter<T> {
     public readonly name: string
     private config: Required<HybridAdapterConfig<T>>
     private lastSyncTime = new Map<StoreKey, number>()

@@ -1,5 +1,7 @@
 export { IndexedDBAdapter } from './IndexedDBAdapter'
 export { HTTPAdapter } from './HTTPAdapter'
 export { HybridAdapter } from './HybridAdapter'
+export { SQLiteHttpAdapter } from './SQLiteHttpAdapter'
 export type { HTTPAdapterConfig } from './HTTPAdapter'
 export type { HybridAdapterConfig } from './HybridAdapter'
+export { MemoryAdapter } from './MemoryAdapter'

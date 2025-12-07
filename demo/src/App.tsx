@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { NavLink, Routes, Route, Navigate } from 'react-router-dom'
 import type { StoreKey, FindManyOptions } from 'atoma'
 import {
     DemoStore,
@@ -13,6 +14,8 @@ import {
     subscribeHistory,
     HistoryEntry
 } from './demoStore'
+import { BigListSection } from './BigListSection'
+import { RegistrySection } from './RegistrySection'
 
 const defaultCode = `// 完整 React 风格示例：确保返回 options（FindManyOptions<DemoTask>）
 function useDemoQuery() {
@@ -76,7 +79,7 @@ const useRenderCount = () => {
     return ref.current
 }
 
-function App() {
+const PlaygroundPage = () => {
     const all = DemoStore.useAll()
     const [codeText, setCodeText] = useState(defaultCode)
     const [queryOptions, setQueryOptions] = useState<FindManyOptions<DemoTask>>({})
@@ -143,7 +146,7 @@ function App() {
     }
 
     return (
-        <div className="page">
+        <>
             <header className="hero">
                 <div className="eyebrow">Atoma • useFindMany Playground (IndexedDB)</div>
                 <h1>左侧列表，右侧查询代码。改代码，结果即刻用 useFindMany 渲染。</h1>
@@ -222,9 +225,7 @@ function App() {
                         {query.data.map(item => (
                             <TaskRow key={item.id as string} id={item.id} />
                         ))}
-                        {!query.data.length && (
-                            <div className="empty">当前查询无结果，修改右侧 JSON 试试。</div>
-                        )}
+                        {!query.data.length && <div className="empty">当前查询无结果，修改右侧 JSON 试试。</div>}
                     </div>
                 </div>
 
@@ -281,6 +282,34 @@ function App() {
                     <HistoryFeed entries={history} />
                 </div>
             </section>
+        </>
+    )
+}
+
+function App() {
+    return (
+        <div className="layout">
+            <aside className="sidebar">
+                <div className="logo">Atoma Demo</div>
+                <NavLink to="/" end className={({ isActive }) => (isActive ? 'cta' : '')}>
+                    IndexedDB Playground
+                </NavLink>
+                <NavLink to="/biglist" className={({ isActive }) => (isActive ? 'cta' : '')}>
+                    SQLite Big List
+                </NavLink>
+                <NavLink to="/registry" className={({ isActive }) => (isActive ? 'cta' : '')}>
+                    Registry Local Filters
+                </NavLink>
+            </aside>
+
+            <div className="page">
+                <Routes>
+                    <Route path="/" element={<PlaygroundPage />} />
+                    <Route path="/biglist" element={<BigListSection />} />
+                    <Route path="/registry" element={<RegistrySection />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+            </div>
         </div>
     )
 }

@@ -9,11 +9,8 @@ import {
     StoreKey
 } from './types'
 import { getIdGenerator } from './idGenerator'
-import { AtomVersionTracker } from './state/AtomVersionTracker'
-import { QueueManager } from './state/QueueManager'
-import { OperationApplier } from './ops/OperationApplier'
-import { AdapterSync } from './ops/AdapterSync'
-import { HistoryRecorder, HistoryCallback } from './history/HistoryRecorder'
+import { StoreContext, createStoreContext } from './StoreContext'
+import { HistoryCallback } from './history/HistoryRecorder'
 
 // Enable Map/Set drafting for Immer (required for Map-based atom state)
 enableMapSet()
@@ -25,40 +22,76 @@ enablePatches()
  */
 export const globalStore = createStore()
 
-// Singletons for core services
-const versionTracker = new AtomVersionTracker()
-const queueManager = new QueueManager()
-const historyRecorder = new HistoryRecorder()
-const operationApplier = new OperationApplier()
-const adapterSync = new AdapterSync()
+/**
+ * Default global context for backward compatibility
+ * @deprecated Use per-store context via createSyncStore instead
+ */
+const defaultGlobalContext = createStoreContext()
 
-export const getVersionSnapshot = (atom: PrimitiveAtom<Map<any, any>>, fields?: string[]): number => {
-    return versionTracker.getSnapshot(atom, fields)
+export const getVersionSnapshot = (
+    atom: PrimitiveAtom<Map<any, any>>,
+    fields?: string[],
+    context?: StoreContext
+): number => {
+    const ctx = context || defaultGlobalContext
+    return ctx.versionTracker.getSnapshot(atom, fields)
 }
 
 /** Bump version counters for an atom; use empty set to bump全局 */
-export const bumpAtomVersion = (atom: PrimitiveAtom<Map<any, any>>, fields?: Set<string>) => {
-    versionTracker.bump(atom, fields ?? new Set())
+export const bumpAtomVersion = (
+    atom: PrimitiveAtom<Map<any, any>>,
+    fields?: Set<string>,
+    context?: StoreContext
+) => {
+    const ctx = context || defaultGlobalContext
+    ctx.versionTracker.bump(atom, fields ?? new Set())
 }
 
 /**
  * Set the history callback for undo/redo support
+ * @deprecated Use per-store context instead
  */
 export function setHistoryCallback(callback: HistoryCallback) {
-    historyRecorder.setCallback(callback)
+    defaultGlobalContext.historyRecorder.setCallback(callback)
 }
 
 /**
  * Process queued operations (support external queue map for direct writes)
  */
-const handleQueue = (queueMap?: Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>) => {
-    const mode = queueConfig.mode || 'optimistic'
-    const atomQueues = queueMap ?? queueManager.flush()
+const handleQueue = (
+    contextOrQueueMap?: StoreContext | Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>,
+    queueMap?: Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>
+) => {
+    // Determine context and queue map from parameters
+    let context: StoreContext
+    let atomQueues: Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>
+
+    if (contextOrQueueMap instanceof Map) {
+        // Called with (queueMap)
+        context = defaultGlobalContext
+        atomQueues = contextOrQueueMap
+    } else if (contextOrQueueMap && queueMap) {
+        // Called with (context, queueMap)
+        context = contextOrQueueMap
+        atomQueues = queueMap
+    } else if (contextOrQueueMap) {
+        // Called with (context)
+        context = contextOrQueueMap
+        atomQueues = context.queueManager.flush()
+    } else {
+        // Called with ()
+        context = defaultGlobalContext
+        atomQueues = context.queueManager.flush()
+    }
+
+    const mode = context.queueConfig.mode || 'optimistic'
 
     Array.from(atomQueues.entries()).forEach(([atom, operations]) => {
+        // Use context from first operation if available, otherwise use passed context
+        const eventContext = operations[0]?.context || context
         const store = operations[0]?.store || globalStore
         const { adapter } = operations[0]
-        const applyResult = operationApplier.apply(operations, store.get(atom))
+        const applyResult = eventContext.operationApplier.apply(operations, store.get(atom))
 
         // Map callbacks to payloads (if any)
         const callbacks = operations.map((op, idx) => {
@@ -74,14 +107,14 @@ const handleQueue = (queueMap?: Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[
             }
         })
 
-        adapterSync.syncAtom({
+        eventContext.adapterSync.syncAtom({
             adapter,
             applyResult,
             atom,
             callbacks,
             store,
-            versionTracker,
-            historyRecorder,
+            versionTracker: eventContext.versionTracker,
+            historyRecorder: eventContext.historyRecorder,
             mode
         })
     })
@@ -139,16 +172,18 @@ export const BaseStore = {
     /**
      * Dispatch an operation to the queue for batched processing
      */
-    dispatch<T>(event: StoreDispatchEvent<T>) {
-        if (!queueConfig.enabled) {
+    dispatch<T extends import('./types').Entity>(event: StoreDispatchEvent<T>) {
+        const context = event.context || defaultGlobalContext
+
+        if (!context.queueConfig.enabled) {
             const directQueue = new Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>()
             directQueue.set(event.atom, [event])
-            handleQueue(directQueue)
+            handleQueue(context, directQueue)
             return
         }
 
-        queueManager.enqueue(event)
-        Promise.resolve().then(() => handleQueue())
+        context.queueManager.enqueue(event)
+        Promise.resolve().then(() => handleQueue(context))
     },
 
     /**
@@ -199,28 +234,10 @@ export const BaseStore = {
 
 
 
-/**
- * Queue configuration
- * 
- * @property enabled - Enable batch processing (default: true)
- *   - When `true`: Operations are batched and processed together in microtask
- *   - When `false`: Operations are processed immediately via queue mechanism (synchronous)
- *     Note: This is NOT a direct write bypass. It still uses the queue logic (drafts, callbacks)
- *     but executes synchronously without waiting for microtask.
- * 
- * @property mode - Success/failure mode (default: 'optimistic')
- *   - `'optimistic'`: UI updates immediately, adapter syncs in background
- *     - Pro: Fast UI response
- *     - Con: Need to handle rollback on adapter failure
- *   - `'strict'`: UI updates ONLY after adapter confirms success
- *     - Pro: Guaranteed consistency
- *     - Con: Slower UI response (waits for network/DB)
- * 
- * @property debug - Log queue operations (default: false)
- */
-export const queueConfig: QueueConfig = {
-    enabled: true,
-    debug: false
-}
-
 export default BaseStore
+
+/**
+ * Export createStoreContext for use in createSyncStore
+ */
+export { createStoreContext } from './StoreContext'
+export type { StoreContext } from './StoreContext'

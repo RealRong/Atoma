@@ -1,15 +1,17 @@
 import { atom } from 'jotai'
-import { FindManyOptions, IAdapter, IStore, IndexDefinition, LifecycleHooks, SchemaValidator, StoreKey, UseFindManyResult } from './types'
+import { FindManyOptions, IAdapter, IStore, IndexDefinition, LifecycleHooks, SchemaValidator, StoreKey, UseFindManyResult, Entity } from './types'
 import { initializeLocalStore } from './initializeLocalStore'
 import { createUseValue } from '../hooks/useValue'
 import { createUseAll } from '../hooks/useAll'
 import { createUseFindMany } from '../hooks/useFindMany'
 import { globalStore } from './BaseStore'
+import { createStoreContext } from './StoreContext'
+import type { JotaiStore } from './types'
 
 /**
  * Configuration for creating a sync store
  */
-export interface SyncStoreConfig<T> {
+export interface SyncStoreConfig<T extends Entity> {
     /** Store name */
     name: string
 
@@ -24,7 +26,7 @@ export interface SyncStoreConfig<T> {
 
     /** Custom Jotai store (optional, defaults to globalStore) */
     /** Use this for SSR to create per-request isolated stores */
-    store?: ReturnType<typeof import('jotai').createStore>
+    store?: JotaiStore
 
     /** Optional schema validator (zod/yup/custom) */
     schema?: SchemaValidator<T>
@@ -34,6 +36,9 @@ export interface SyncStoreConfig<T> {
 
     /** Index definitions */
     indexes?: Array<IndexDefinition<T>>
+
+    /** Queue configuration (per-store override) */
+    queue?: Partial<import('./types').QueueConfig>
 }
 
 /**
@@ -59,23 +64,27 @@ export interface SyncStore<T> extends IStore<T> {
 /**
  * Create a new sync store
  */
-export function createSyncStore<T>(config: SyncStoreConfig<T>): SyncStore<T> {
+export function createSyncStore<T extends Entity>(config: SyncStoreConfig<T>): SyncStore<T> {
     const { name, adapter, transformData } = config
 
     // Use custom store or fallback to globalStore
     const jotaiStore = config.store || globalStore
 
+    // Create per-store context with queue configuration (avoid runtime require to reduce cycles)
+    const context = createStoreContext(config.queue)
+
     // Create atom to hold the Map of items
     const objectMapAtom = atom(new Map<StoreKey, T>())
 
-    // Initialize local store with adapter and Jotai store
+    // Initialize local store with adapter, Jotai store, and context
     const localStore = initializeLocalStore(objectMapAtom, adapter, {
         transformData: transformData ? (item: T) => transformData(item) ?? item : undefined,
         idGenerator: config.idGenerator,
         store: jotaiStore,
         schema: config.schema,
         hooks: config.hooks,
-        indexes: config.indexes
+        indexes: config.indexes,
+        context  // Pass context to initializeLocalStore
     })
 
     // Create React hooks with custom store

@@ -3,15 +3,7 @@ import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { applyQuery, extractQueryFields, stableStringify } from '../core/query'
 import { getVersionSnapshot, globalStore } from '../core/BaseStore'
-import { FindManyOptions, IStore, StoreKey } from '../core/types'
-
-type UseFindManyResult<T> = {
-    data: T[]
-    loading: boolean
-    error?: Error
-    refetch: () => Promise<T[]>
-    isStale: boolean
-}
+import { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, UseFindManyResult } from '../core/types'
 
 export function createUseFindMany<T>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
@@ -20,73 +12,191 @@ export function createUseFindMany<T>(
 ) {
     const actualStore = jotaiStore || globalStore
 
-    return function useFindMany(options?: FindManyOptions<T>): UseFindManyResult<T> {
+    return function useFindMany(options?: FindManyOptions<T> & { fetchPolicy?: FetchPolicy }): UseFindManyResult<T> {
         const map = useAtomValue(objectMapAtom, { store: actualStore })
+        const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'local-then-remote'
+        const shouldUseLocal = fetchPolicy !== 'remote'
 
-        const queryKey = useMemo(() => stableStringify(options || {}), [options])
-        const fields = useMemo(() => extractQueryFields(options), [queryKey])
-        const fieldsKey = useMemo(() => versionKey(fields), [fields])
+        const queryKey = useMemo(() => stableStringify({ ...(options || {}), fetchPolicy }), [options, fetchPolicy])
+        const fields = useMemo(() => shouldUseLocal ? extractQueryFields(options) : [], [shouldUseLocal, queryKey])
+        const fieldsKey = useMemo(() => shouldUseLocal ? versionKey(fields) : '', [fields, shouldUseLocal])
 
-        // 🔥 Only track version for fields used in query (not global version)
-        const relevantVersion = useMemo(() => getVersionSnapshot(objectMapAtom, fields), [objectMapAtom, fieldsKey])
+        // Only track version when本地过滤
+        const relevantVersion = useMemo(
+            () => shouldUseLocal ? getVersionSnapshot(objectMapAtom, fields) : 0,
+            [objectMapAtom, fieldsKey, shouldUseLocal]
+        )
 
-        const [loading, setLoading] = useState(true)
+        const [remoteData, setRemoteData] = useState<T[]>([])
+        const [pageInfo, setPageInfo] = useState<PageInfo | undefined>(undefined)
+        const [loading, setLoading] = useState(fetchPolicy !== 'local')
         const [error, setError] = useState<Error | undefined>(undefined)
         const [isStale, setIsStale] = useState(false)
 
-        // 🔥 First layer: Cache filtered ID list (only recompute when query conditions change)
+        // 本地过滤（仅在 local / local-then-remote 使用）
         const filteredIds = useMemo(() => {
+            if (!shouldUseLocal) return []
             const arr = Array.from(map.values()) as T[]
             const result = applyQuery(arr as any, options) as T[]
             return result.map(item => (item as any).id as StoreKey)
-        }, [relevantVersion, queryKey])
+        }, [shouldUseLocal, relevantVersion, queryKey, map])
 
-        // 🔥 Second layer: Map IDs to latest objects (re-map when data changes, but don't re-filter)
-        const data = useMemo(() => {
+        const localData = useMemo(() => {
+            if (!shouldUseLocal) return [] as T[]
             return filteredIds
                 .map(id => map.get(id))
                 .filter(Boolean) as T[]
-        }, [filteredIds, map])
+        }, [filteredIds, map, shouldUseLocal])
+
+        const upsertIntoMap = (items: T[]) => {
+            if (!items.length) return
+            actualStore.set(objectMapAtom, prev => {
+                const next = new Map(prev)
+                items.forEach(item => {
+                    const id = (item as any)?.id
+                    if (id !== undefined) {
+                        next.set(id, item)
+                    }
+                })
+                return next
+            })
+        }
+
+        const normalizeResult = (res: any): { data: T[]; pageInfo?: PageInfo } => {
+            if (Array.isArray(res)) return { data: res }
+            if (res && Array.isArray(res.data)) return { data: res.data, pageInfo: res.pageInfo }
+            return { data: [] }
+        }
 
         useEffect(() => {
-            let cancelled = false
-            if (!store.findMany) {
+            if (fetchPolicy === 'local') {
                 setLoading(false)
+                setRemoteData([])
+                setPageInfo(undefined)
+                setError(undefined)
+                setIsStale(false)
                 return
             }
-            setError(undefined)
+
+            let cancelled = false
             setLoading(true)
+            setError(undefined)
             setIsStale(false)
-            store.findMany(options).then(() => {
-                if (cancelled) return
-                setLoading(false)
-            }).catch(err => {
-                if (cancelled) return
-                setError(err instanceof Error ? err : new Error(String(err)))
-                setLoading(false)
-                setIsStale(true)
-            })
+            setRemoteData([])
+            setPageInfo(undefined)
+
+            const run = async () => {
+                if (!store.findMany) {
+                    const err = new Error('findMany not implemented')
+                    setError(err)
+                    setLoading(false)
+                    setIsStale(fetchPolicy === 'local-then-remote' && localData.length > 0)
+                    return
+                }
+                try {
+                    const res = await store.findMany(options)
+                    if (cancelled) return
+                    const { data, pageInfo } = normalizeResult(res)
+                    if (!options?.skipStore) {
+                        upsertIntoMap(data)
+                    }
+                    setRemoteData(data)
+                    setPageInfo(pageInfo)
+                    setLoading(false)
+                } catch (err: any) {
+                    if (cancelled) return
+                    const e = err instanceof Error ? err : new Error(String(err))
+                    setError(e)
+                    setLoading(false)
+                    setIsStale(fetchPolicy === 'local-then-remote' && localData.length > 0)
+                }
+            }
+
+            run()
             return () => { cancelled = true }
-        }, [queryKey, store])
+        // 说明：不依赖 localData，避免 local-then-remote 因本地缓存更新反复触发远程请求
+        }, [queryKey, fetchPolicy, store])
 
         const refetch = () => {
-            if (!store.findMany) return Promise.resolve(data)
+            if (fetchPolicy === 'local') return Promise.resolve(localData)
+            if (!store.findMany) {
+                const err = new Error('findMany not implemented')
+                setError(err)
+                setIsStale(fetchPolicy === 'local-then-remote' && localData.length > 0)
+                setLoading(false)
+                return Promise.resolve(fetchPolicy === 'remote' ? remoteData : localData)
+            }
             setIsStale(false)
             setLoading(true)
             return store.findMany(options)
                 .then(res => {
+                    const { data, pageInfo } = normalizeResult(res)
+                    if (!options?.skipStore) {
+                        upsertIntoMap(data)
+                    }
+                    setRemoteData(data)
+                    setPageInfo(pageInfo)
                     setLoading(false)
-                    return res
+                    return data
                 })
                 .catch(err => {
+                    const e = err instanceof Error ? err : new Error(String(err))
                     setLoading(false)
-                    setError(err instanceof Error ? err : new Error(String(err)))
-                    setIsStale(true)
-                    return data
+                    setError(e)
+                    setIsStale(fetchPolicy === 'local-then-remote' && localData.length > 0)
+                    return fetchPolicy === 'remote' ? remoteData : localData
                 })
         }
 
-        return { data, loading, error, refetch, isStale }
+        const fetchMore = async (moreOptions: FindManyOptions<T>): Promise<T[]> => {
+            // For transient queries, we must merge locally
+            // For store queries, the store handles merging, but we should make sure we return the merged result or just the new chunks.
+            // Usually fetchMore returns the *new* data.
+            setLoading(true)
+            if (!store.findMany) {
+                const err = new Error('findMany not implemented on store')
+                setError(err)
+                setLoading(false)
+                throw err
+            }
+            try {
+                // Use skipStore setting from original options if not overridden (or force it to match?)
+                // Generally we want consistency.
+                const effectiveOptions = { ...moreOptions, skipStore: options?.skipStore }
+
+                const res = await store.findMany(effectiveOptions)
+                const { data, pageInfo: newPageInfo } = normalizeResult(res)
+
+                if (options?.skipStore) {
+                    setRemoteData(prev => [...prev, ...data])
+                } else {
+                    upsertIntoMap(data)
+                    // In store mode, we don't manually append to remoteData usually because useFindMany recalculates `data` based on options.
+                    // BUT, `localData` is derived from `options.limit`.
+                    // If the user calls `fetchMore` but hasn't updated `limit` prop yet, they won't see it in `localData`.
+                    // This is expected behavior for "explicit control".
+                    // However, we might want to return the new data so they can check it.
+                }
+
+                setPageInfo(newPageInfo)
+                setLoading(false)
+                return data
+            } catch (err) {
+                const e = err instanceof Error ? err : new Error(String(err))
+                setLoading(false)
+                setError(e)
+                throw e
+            }
+        }
+
+        const data =
+            fetchPolicy === 'local'
+                ? localData
+                : fetchPolicy === 'remote'
+                    ? remoteData
+                    : (remoteData.length ? remoteData : localData)
+
+        return { data, loading, error, refetch, isStale, pageInfo, fetchMore }
     }
 }
 

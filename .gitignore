@@ -30,3 +30,9 @@ yarn-error.log*
 
 # Testing
 coverage/
+
+# docs
+*.md
+
+atoma-docs
+demo
