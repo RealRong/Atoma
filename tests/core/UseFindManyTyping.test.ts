@@ -58,11 +58,29 @@ const _okArgs: Parameters<typeof PostsStore.useFindMany>[0] = {
     include: { author: true, comments: true }
 }
 
+// include 值类型推导应为 boolean | FindManyOptions<TTarget>
+type AuthorInclude = NonNullable<Parameters<typeof PostsStore.useFindMany>[0]>['include'] extends { author?: infer V } ? V : never
+type _ExpectAuthorInclude = Expect<Equal<AuthorInclude, boolean | FindManyOptions<User>>>
+type CommentsInclude = NonNullable<Parameters<typeof PostsStore.useFindMany>[0]>['include'] extends { comments?: infer V } ? V : never
+type _ExpectCommentsInclude = Expect<Equal<CommentsInclude, boolean | FindManyOptions<Comment>>>
+
 // 负例：不存在的关系键应报错
 // @ts-expect-error
 const _badArgs: Parameters<typeof PostsStore.useFindMany>[0] = {
     include: { unknown: true }
 }
+
+// 链式 withRelations：显式泛型 + 事后配置 relations 也应推导键名
+type PostNoRel = { id: StoreKey; authorId: StoreKey }
+const PostsStoreBare = createSyncStore<PostNoRel>({
+    name: 'posts-bare',
+    adapter: createMockAdapter<PostNoRel>()
+})
+const PostsStoreLinked = PostsStoreBare.withRelations(() => ({
+    author: belongsTo(UsersStore, { foreignKey: 'authorId' })
+}))
+type IncludeKeysLinked = keyof NonNullable<Parameters<typeof PostsStoreLinked.useFindMany>[0]>['include']
+type _ExpectIncludeKeysLinked = Expect<Equal<IncludeKeysLinked, 'author'>>
 
 describe('useFindMany include typing', () => {
     it('runs without runtime assertions (type coverage only)', () => {

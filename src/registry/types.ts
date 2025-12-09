@@ -14,7 +14,7 @@ export interface StoreRegistry {
  * Note: indexes are intentionally omitted until createSyncStore supports them.
  */
 export interface RegistryStoreConfig<T extends Entity> {
-    adapter: IAdapter<T>
+    adapter?: IAdapter<T>
     transformData?: (data: T) => T
     idGenerator?: () => StoreKey
     store?: ReturnType<typeof import('jotai').createStore>

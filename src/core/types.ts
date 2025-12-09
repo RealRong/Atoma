@@ -279,6 +279,13 @@ export type RelationConfig<TSource, TTarget extends Entity = any> =
 
 export type RelationMap<T> = Record<string, RelationConfig<T, any>>
 
+// 根据关系类型推导 include 的取值类型
+export type InferIncludeType<R> =
+    R extends BelongsToConfig<any, infer TTarget> ? boolean | FindManyOptions<TTarget>
+    : R extends HasManyConfig<any, infer TTarget> ? boolean | FindManyOptions<TTarget>
+    : R extends HasOneConfig<any, infer TTarget> ? boolean | FindManyOptions<TTarget>
+    : never
+
 /**
  * Store interface - main API for CRUD operations
  */
@@ -318,8 +325,12 @@ export interface IStore<T, Relations extends RelationMap<T> = {}> {
     _relations?: Relations
 
     /** React hook for queries（可选，由 createSyncStore 注入） */
-    useFindMany?: <Include extends Partial<Record<keyof Relations, any>> = {}>(
-        options?: FindManyOptions<T, Include> & { fetchPolicy?: FetchPolicy }
+    useFindMany?: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
+        options?: FindManyOptions<T, Include> & {
+            fetchPolicy?: FetchPolicy
+            // 额外再声明 include，保持键提示（即使 Include 被窄化）
+            include?: { [K in keyof Relations]?: InferIncludeType<Relations[K]> }
+        }
     ) => UseFindManyResult<T, Relations, Include>
 }
 

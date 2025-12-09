@@ -1,4 +1,4 @@
-import { createSyncStore, HTTPAdapter, belongsTo, hasMany } from 'atoma'
+import { createSyncStore, HTTPAdapter, belongsTo, hasMany, setDefaultAdapterFactory } from 'atoma'
 
 export type User = {
     id: number
@@ -26,38 +26,34 @@ export type Post = {
 
 const API_BASE = 'http://localhost:3000/api'
 
-export const UsersStore = createSyncStore<User>({
-    name: 'users',
-    adapter: new HTTPAdapter<User>({
+// 全局默认 HTTP 适配器工厂（针对 demo 资源）
+setDefaultAdapterFactory((resourceName: string) =>
+    new HTTPAdapter({
         baseURL: API_BASE,
-        resourceName: 'users',
-        batch: { enabled: true, endpoint: '/batch' }
+        resourceName,
+        batch: {
+            enabled: true,
+            endpoint: '/batch',
+            // posts 维持更频繁的 flush，用于展示批处理
+            flushIntervalMs: resourceName === 'posts' ? 5 : undefined
+        }
     })
+)
+
+export const UsersStore = createSyncStore<User>({
+    name: 'users'
 })
 
-export const CommentsStore = createSyncStore({
+export const CommentsStore = createSyncStore<Comment>({
     name: 'comments',
-    adapter: new HTTPAdapter<Comment>({
-        baseURL: API_BASE,
-        resourceName: 'comments',
-        batch: { enabled: true, endpoint: '/batch' }
-    }),
     relations: () => ({
         author: belongsTo(UsersStore, { foreignKey: 'authorId' })
     })
 })
 
 export const PostsStore = createSyncStore<Post>({
-    name: 'posts',
-    adapter: new HTTPAdapter<Post>({
-        baseURL: API_BASE,
-        resourceName: 'posts',
-        batch: { enabled: true, endpoint: '/batch', flushIntervalMs: 5 }
-    }),
-    relations: () => ({
-        author: belongsTo(UsersStore, { foreignKey: 'authorId' }),
-        comments: hasMany(CommentsStore, { foreignKey: 'postId' })
-    })
-})
-
-PostsStore.useFindMany({ include: {} })
+    name: 'posts'
+}).withRelations(() => ({
+    author: belongsTo(UsersStore, { foreignKey: 'authorId' }),
+    comments: hasMany(CommentsStore, { foreignKey: 'postId' })
+}))

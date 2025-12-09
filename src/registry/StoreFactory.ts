@@ -2,12 +2,12 @@ import { createSyncStore, type SyncStore } from '../core/createSyncStore'
 import type { AdapterFactory, RegistryStoreConfig, StoreRegistry } from './types'
 import type { HTTPAdapterConfig } from '../adapters/HTTPAdapter'
 import { HTTPAdapter } from '../adapters/HTTPAdapter'
+import { setDefaultAdapterFactory as setGlobalAdapterFactory, getDefaultAdapterFactory } from '../core/defaultAdapterFactory'
 
 const storeCache = new Map<keyof StoreRegistry, SyncStore<any>>()
 const customConfigs = new Map<keyof StoreRegistry, RegistryStoreConfig<any>>()
 const customResourceConfigs: Record<string, Partial<HTTPAdapterConfig<any>>> = {}
 
-let defaultAdapterFactory: AdapterFactory | null = null
 let isInitialized = false
 
 const lockInitialization = () => {
@@ -40,7 +40,7 @@ export function setDefaultAdapterFactory(
         )
     }
 
-    defaultAdapterFactory = factory
+    setGlobalAdapterFactory(factory)
 
     // Store custom resource configurations
     if (options?.custom) {
@@ -73,7 +73,9 @@ export function Store<K extends keyof StoreRegistry>(
 
     const customConfig = customConfigs.get(name)
 
-    if (!customConfig && !defaultAdapterFactory) {
+    const factory = getDefaultAdapterFactory()
+
+    if (!customConfig?.adapter && !factory) {
         throw new Error(
             `[Atoma] No adapter configured for store "${String(name)}"\n\n` +
             `Please call setDefaultAdapterFactory((name) => new IndexedDBAdapter(db.table(name)))`
@@ -84,7 +86,7 @@ export function Store<K extends keyof StoreRegistry>(
 
     if (!adapter) {
         // Create adapter from factory
-        adapter = defaultAdapterFactory!<StoreRegistry[K]>(name as string)
+        adapter = factory!<StoreRegistry[K]>(name as string)
 
         // Apply custom resource configuration if available and adapter is HTTPAdapter
         const resourceName = String(name)

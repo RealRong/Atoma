@@ -1,5 +1,5 @@
 import { atom } from 'jotai'
-import { FindManyOptions, IAdapter, IStore, IndexDefinition, LifecycleHooks, SchemaValidator, StoreKey, UseFindManyResult, Entity, RelationMap } from './types'
+import { FindManyOptions, IAdapter, IStore, IndexDefinition, LifecycleHooks, SchemaValidator, StoreKey, UseFindManyResult, Entity, RelationMap, InferIncludeType, RelationConfig } from './types'
 import type { DevtoolsBridge, StoreSnapshot } from '../devtools/types'
 import { registerGlobalStore } from '../devtools/global'
 import { initializeLocalStore } from './initializeLocalStore'
@@ -9,6 +9,7 @@ import { createUseFindMany } from '../hooks/useFindMany'
 import { globalStore } from './BaseStore'
 import { createStoreContext } from './StoreContext'
 import type { JotaiStore } from './types'
+import { getDefaultAdapterFactory } from './defaultAdapterFactory'
 
 /**
  * Configuration for creating a sync store
@@ -18,7 +19,7 @@ export interface SyncStoreConfig<T extends Entity> {
     name: string
 
     /** Storage adapter */
-    adapter: IAdapter<T>
+    adapter?: IAdapter<T>
 
     /** Transform data on read from adapter */
     transformData?: (data: T) => T | undefined
@@ -57,13 +58,21 @@ export interface SyncStore<T, Relations extends RelationMap<T> = {}> extends ISt
     useAll: () => T[]
 
     /** React hook to run reactive queries */
-    useFindMany: <Include extends Partial<Record<keyof Relations, any>> = {}>(options?: FindManyOptions<T, Include>) => UseFindManyResult<T, Relations, Include>
+    useFindMany: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
+        options?: FindManyOptions<T, Include> & {
+            fetchPolicy?: import('./types').FetchPolicy
+            include?: { [K in keyof Relations]?: InferIncludeType<Relations[K]> }
+        }
+    ) => UseFindManyResult<T, Relations, Include>
 
     /** Get cached item without triggering fetch */
     getCachedOneById: (id: StoreKey) => T | undefined
 
     /** Get all cached items */
     getCachedAll: () => T[]
+
+    /** 链式配置 relations，返回带新 Relations 类型的同一实例 */
+    withRelations: <const NewRelations extends Record<string, RelationConfig<any, any>>>(factory: () => NewRelations) => SyncStore<T, NewRelations>
 }
 
 /**
@@ -82,7 +91,18 @@ export function createSyncStore<T extends Entity, const Relations extends Relati
 export function createSyncStore<T extends Entity, Relations extends RelationMap<T> = {}>(
     config: SyncStoreConfig<T> & { relations?: () => Relations }
 ): SyncStore<T, Relations> {
-    const { name, adapter, transformData } = config
+    const { name, transformData } = config
+
+    const resolvedAdapter = (() => {
+        if (config.adapter) return config.adapter
+        const factory = getDefaultAdapterFactory()
+        if (factory) return factory<T>(name)
+        return undefined
+    })()
+
+    if (!resolvedAdapter) {
+        throw new Error(`[Atoma] createSyncStore("${name}") 需要提供 adapter，或先调用 setDefaultAdapterFactory`)
+    }
 
     // Use custom store or fallback to globalStore
     const jotaiStore = config.store || globalStore
@@ -94,7 +114,7 @@ export function createSyncStore<T extends Entity, Relations extends RelationMap<
     const objectMapAtom = atom(new Map<StoreKey, T>())
 
     // Initialize local store with adapter, Jotai store, and context
-    const localStore = initializeLocalStore(objectMapAtom, adapter, {
+    const localStore = initializeLocalStore(objectMapAtom, resolvedAdapter, {
         transformData: transformData ? (item: T) => transformData(item) ?? item : undefined,
         idGenerator: config.idGenerator,
         store: jotaiStore,
@@ -110,6 +130,24 @@ export function createSyncStore<T extends Entity, Relations extends RelationMap<
     const useValue = createUseValue(objectMapAtom, localStore, jotaiStore)
     const useAll = createUseAll(objectMapAtom, jotaiStore)
     const useFindMany = createUseFindMany<T, Relations>(objectMapAtom, localStore as IStore<T, Relations>, jotaiStore)
+
+    // 统一封装 relations 安装逻辑（懒加载，避免循环依赖）
+    const applyRelations = (factory?: () => RelationMap<T>) => {
+        if (!factory) return
+        let cache: RelationMap<T> | undefined
+        const getter = () => {
+            if (!cache) cache = factory()
+            return cache
+        }
+        Object.defineProperty(syncStore as any, '_relations', {
+            get: getter,
+            configurable: true
+        })
+        Object.defineProperty(localStore as any, '_relations', {
+            get: getter,
+            configurable: true
+        })
+    }
 
     // Devtools snapshot注册
     const snapshot = (): StoreSnapshot => {
@@ -164,20 +202,16 @@ export function createSyncStore<T extends Entity, Relations extends RelationMap<
 
         getCachedAll: () => {
             return Array.from(jotaiStore.get(objectMapAtom).values())
+        },
+
+        withRelations: <NewRelations extends Record<string, import('./types').RelationConfig<any, any>>>(factory: () => NewRelations) => {
+            applyRelations(factory)
+            return syncStore as unknown as SyncStore<T, NewRelations>
         }
     }
 
     // Apply lazy relations getter if provided
-    if (getRelations) {
-        Object.defineProperty(syncStore, '_relations', {
-            get: getRelations,
-            configurable: true
-        })
-        Object.defineProperty(localStore as any, '_relations', {
-            get: getRelations,
-            configurable: true
-        })
-    }
+    applyRelations(getRelations)
 
     return syncStore
 }
