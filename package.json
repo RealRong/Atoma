@@ -2,25 +2,33 @@
     "name": "atoma",
     "version": "1.0.0",
     "description": "Atomic state management with universal persistence - built on Jotai and Immer",
-    "main": "dist/index.js",
-    "module": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "dist/index.mjs",
+    "module": "dist/index.mjs",
+    "types": "dist/index.d.mts",
     "exports": {
         ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js"
+            "types": "./dist/index.d.mts",
+            "import": "./dist/index.mjs"
         },
         "./adapters": {
-            "types": "./dist/adapters/index.d.ts",
-            "import": "./dist/adapters/index.js"
+            "types": "./dist/adapters/index.d.mts",
+            "import": "./dist/adapters/index.mjs"
         },
         "./hooks": {
-            "types": "./dist/hooks/index.d.ts",
-            "import": "./dist/hooks/index.js"
+            "types": "./dist/hooks/index.d.mts",
+            "import": "./dist/hooks/index.mjs"
         },
         "./registry": {
-            "types": "./dist/registry/index.d.ts",
-            "import": "./dist/registry/index.js"
+            "types": "./dist/registry/index.d.mts",
+            "import": "./dist/registry/index.mjs"
+        },
+        "./server": {
+            "types": "./dist/server/index.d.mts",
+            "import": "./dist/server/index.mjs"
+        },
+        "./server/typeorm": {
+            "types": "./dist/server/typeorm.d.mts",
+            "import": "./dist/server/typeorm.mjs"
         }
     },
     "files": [
@@ -56,7 +64,13 @@
     "peerDependencies": {
         "immer": "^9.0.0 || ^10.0.0",
         "jotai": "^2.0.0",
-        "react": "^18.0.0"
+        "react": "^18.0.0",
+        "typeorm": "^0.3.20"
+    },
+    "peerDependenciesMeta": {
+        "typeorm": {
+            "optional": true
+        }
     },
     "dependencies": {
         "lodash": "^4.17.21",
@@ -71,6 +85,8 @@
         "jotai": "^2.0.0",
         "react": "^18.0.0",
         "react-dom": "^18.2.0",
+        "reflect-metadata": "^0.1.13",
+        "typeorm": "^0.3.20",
         "tsup": "^8.0.0",
         "typescript": "^5.0.0",
         "vite": "^5.2.0",

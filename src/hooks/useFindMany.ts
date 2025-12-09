@@ -3,16 +3,17 @@ import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { applyQuery, extractQueryFields, stableStringify } from '../core/query'
 import { getVersionSnapshot, globalStore } from '../core/BaseStore'
-import { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, UseFindManyResult } from '../core/types'
+import { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, UseFindManyResult, RelationMap, Entity } from '../core/types'
+import { RelationResolver } from '../core/relations/RelationResolver'
 
-export function createUseFindMany<T>(
+export function createUseFindMany<T extends Entity, Relations extends RelationMap<T> = {}>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
-    store: IStore<T>,
+    store: IStore<T, Relations>,
     jotaiStore?: ReturnType<typeof createStore>
 ) {
     const actualStore = jotaiStore || globalStore
 
-    return function useFindMany(options?: FindManyOptions<T> & { fetchPolicy?: FetchPolicy }): UseFindManyResult<T> {
+    return function useFindMany<Include extends Partial<Record<keyof Relations, any>> = {}>(options?: FindManyOptions<T, Include> & { fetchPolicy?: FetchPolicy }): UseFindManyResult<T, Relations, Include> {
         const map = useAtomValue(objectMapAtom, { store: actualStore })
         const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'local-then-remote'
         const shouldUseLocal = fetchPolicy !== 'remote'
@@ -32,6 +33,8 @@ export function createUseFindMany<T>(
         const [loading, setLoading] = useState(fetchPolicy !== 'local')
         const [error, setError] = useState<Error | undefined>(undefined)
         const [isStale, setIsStale] = useState(false)
+        const [finalData, setFinalData] = useState<T[]>([])
+        const [relationLoading, setRelationLoading] = useState(false)
 
         // 本地过滤（仅在 local / local-then-remote 使用）
         const filteredIds = useMemo(() => {
@@ -196,7 +199,62 @@ export function createUseFindMany<T>(
                     ? remoteData
                     : (remoteData.length ? remoteData : localData)
 
-        return { data, loading, error, refetch, isStale, pageInfo, fetchMore }
+        useEffect(() => {
+            // 无 include 或无关系定义时直接返回数据
+            if (!options?.include || !store._relations || data.length === 0) {
+                setFinalData(data)
+                setRelationLoading(false)
+                return
+            }
+
+            let cancelled = false
+            setRelationLoading(true)
+
+            // 默认 skipStore: true 避免污染缓存
+            const includeWithSkipStore = Object.fromEntries(
+                Object.entries(options.include).map(([key, opts]) => {
+                    if (opts === false || opts === undefined) return [key, opts]
+                    if (opts && typeof opts === 'object') {
+                        const o = opts as any
+                        return [key, { ...o, skipStore: o.skipStore ?? true }]
+                    }
+                    return [key, { skipStore: true }]
+                })
+            ) as Record<string, boolean | FindManyOptions<any>>
+
+            RelationResolver.resolveBatch(
+                data,
+                includeWithSkipStore,
+                store._relations as any,
+                { onError: 'partial', timeout: 5000, maxConcurrency: 10 }
+            )
+                .then(resolved => {
+                    if (cancelled) return
+                    setFinalData(resolved)
+                })
+                .catch(err => {
+                    console.error('[Atoma Relations] Resolution failed:', err)
+                    if (!cancelled) {
+                        setFinalData(data)
+                    }
+                })
+                .finally(() => {
+                    if (!cancelled) setRelationLoading(false)
+                })
+
+            return () => { cancelled = true }
+        // stableStringify 用于 include 依赖
+        }, [data, stableStringify(options?.include), store._relations])
+
+        return {
+            data: finalData as any,
+            loading: loading || relationLoading,
+            error,
+            refetch,
+            isStale,
+            pageInfo,
+            fetchMore
+        }
     }
 }
 

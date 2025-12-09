@@ -2,6 +2,8 @@ import { Patch, applyPatches } from 'immer'
 import { PrimitiveAtom } from 'jotai'
 import { globalStore } from '../core/BaseStore'
 import { IAdapter, PatchMetadata } from '../core/types'
+import type { DevtoolsBridge } from '../devtools/types'
+import { registerGlobalHistory } from '../devtools/global'
 
 /**
  * History record for undo/redo
@@ -37,6 +39,12 @@ export interface HistoryManagerConfig {
 
     /** Callback when persistence fails */
     onPersistenceFailure?: (error: Error, patches: Patch[]) => void
+
+    /** Devtools bridge（可选） */
+    devtools?: DevtoolsBridge
+
+    /** 名称（devtools 标识用） */
+    name?: string
 }
 
 /**
@@ -60,8 +68,14 @@ export interface HistoryManagerConfig {
 export class HistoryManager {
     private undoStack: HistoryRecord[] = []
     private redoStack: HistoryRecord[] = []
-    private config: Required<Omit<HistoryManagerConfig, 'store'>> & { store: any }
+    private config: Required<Omit<HistoryManagerConfig, 'store' | 'devtools' | 'name'>> & {
+        store: any
+        devtools?: DevtoolsBridge
+        name: string
+    }
     private isApplying = false
+    private devtools?: DevtoolsBridge
+    private name: string
 
     constructor(config: HistoryManagerConfig = {}) {
         this.config = {
@@ -70,7 +84,16 @@ export class HistoryManager {
             persist: config.persist ?? true,  // Default to persist
             store: config.store || globalStore,
             rollbackOnFailure: config.rollbackOnFailure ?? false,
-            onPersistenceFailure: config.onPersistenceFailure || (() => { })
+            onPersistenceFailure: config.onPersistenceFailure || (() => { }),
+            devtools: config.devtools,
+            name: config.name || 'history'
+        }
+        this.name = config.name || 'history'
+        if (config.devtools) {
+            this.devtools = config.devtools
+        } else {
+            // 注册到全局（延迟获取 bridge）
+            registerGlobalHistory({ name: this.name, snapshot: () => this.buildSnapshot() })
         }
     }
 
@@ -112,6 +135,8 @@ export class HistoryManager {
                 stackSize: this.undoStack.length
             })
         }
+
+        this.emitSnapshot()
     }
 
     /**
@@ -146,6 +171,7 @@ export class HistoryManager {
             return { success: true }
         } finally {
             this.isApplying = false
+            this.emitSnapshot()
         }
     }
 
@@ -181,6 +207,7 @@ export class HistoryManager {
             return { success: true }
         } finally {
             this.isApplying = false
+            this.emitSnapshot()
         }
     }
 
@@ -196,6 +223,41 @@ export class HistoryManager {
      */
     canRedo(): boolean {
         return this.redoStack.length > 0
+    }
+
+    private buildSnapshot() {
+        const entries = this.undoStack.slice(-20).map((rec, idx) => ({
+            index: Math.max(0, this.undoStack.length - 20) + idx,
+            action: 'update' as const,
+            patchCount: rec.patches.length,
+            id: undefined
+        }))
+        return {
+            pointer: this.undoStack.length,
+            length: this.undoStack.length + this.redoStack.length,
+            entries
+        }
+    }
+
+    private emitSnapshot() {
+        if (!this.devtools) return
+        if (this.devtools) {
+            const entries = this.undoStack.slice(-20).map((rec, idx) => ({
+                index: Math.max(0, this.undoStack.length - 20) + idx,
+                action: 'update' as const,
+                patchCount: rec.patches.length,
+                id: undefined
+            }))
+            this.devtools.emit({
+                type: 'history-snapshot',
+                payload: {
+                    name: this.name,
+                    pointer: this.undoStack.length,
+                    length: this.undoStack.length + this.redoStack.length,
+                    entries
+                }
+            })
+        }
     }
 
     /**

@@ -1,5 +1,7 @@
 import { atom } from 'jotai'
-import { FindManyOptions, IAdapter, IStore, IndexDefinition, LifecycleHooks, SchemaValidator, StoreKey, UseFindManyResult, Entity } from './types'
+import { FindManyOptions, IAdapter, IStore, IndexDefinition, LifecycleHooks, SchemaValidator, StoreKey, UseFindManyResult, Entity, RelationMap } from './types'
+import type { DevtoolsBridge, StoreSnapshot } from '../devtools/types'
+import { registerGlobalStore } from '../devtools/global'
 import { initializeLocalStore } from './initializeLocalStore'
 import { createUseValue } from '../hooks/useValue'
 import { createUseAll } from '../hooks/useAll'
@@ -39,12 +41,15 @@ export interface SyncStoreConfig<T extends Entity> {
 
     /** Queue configuration (per-store override) */
     queue?: Partial<import('./types').QueueConfig>
+
+    /** Devtools bridge（可选） */
+    devtools?: DevtoolsBridge
 }
 
 /**
  * Sync store instance
  */
-export interface SyncStore<T> extends IStore<T> {
+export interface SyncStore<T, Relations extends RelationMap<T> = {}> extends IStore<T, Relations> {
     /** React hook to subscribe to single item */
     useValue: (id?: StoreKey) => T | undefined
 
@@ -52,7 +57,7 @@ export interface SyncStore<T> extends IStore<T> {
     useAll: () => T[]
 
     /** React hook to run reactive queries */
-    useFindMany: (options?: FindManyOptions<T>) => UseFindManyResult<T>
+    useFindMany: <Include extends Partial<Record<keyof Relations, any>> = {}>(options?: FindManyOptions<T, Include>) => UseFindManyResult<T, Relations, Include>
 
     /** Get cached item without triggering fetch */
     getCachedOneById: (id: StoreKey) => T | undefined
@@ -64,7 +69,19 @@ export interface SyncStore<T> extends IStore<T> {
 /**
  * Create a new sync store
  */
-export function createSyncStore<T extends Entity>(config: SyncStoreConfig<T>): SyncStore<T> {
+// 重载：传入 relations 时捕获精确键
+export function createSyncStore<T extends Entity, const Relations extends RelationMap<T>>(
+    config: SyncStoreConfig<T> & { relations: () => Relations }
+): SyncStore<T, Relations>
+
+// 重载：relations 可选（无则 Relations 默认为 {}）
+export function createSyncStore<T extends Entity, const Relations extends RelationMap<T> = {}>(
+    config: SyncStoreConfig<T> & { relations?: () => Relations }
+): SyncStore<T, Relations>
+
+export function createSyncStore<T extends Entity, Relations extends RelationMap<T> = {}>(
+    config: SyncStoreConfig<T> & { relations?: () => Relations }
+): SyncStore<T, Relations> {
     const { name, adapter, transformData } = config
 
     // Use custom store or fallback to globalStore
@@ -84,20 +101,62 @@ export function createSyncStore<T extends Entity>(config: SyncStoreConfig<T>): S
         schema: config.schema,
         hooks: config.hooks,
         indexes: config.indexes,
-        context  // Pass context to initializeLocalStore
-    })
+        context,  // Pass context to initializeLocalStore
+        devtools: config.devtools,
+        storeName: name
+    }) as IStore<T>
 
     // Create React hooks with custom store
     const useValue = createUseValue(objectMapAtom, localStore, jotaiStore)
     const useAll = createUseAll(objectMapAtom, jotaiStore)
-    const useFindMany = createUseFindMany(objectMapAtom, localStore, jotaiStore)
+    const useFindMany = createUseFindMany<T, Relations>(objectMapAtom, localStore as IStore<T, Relations>, jotaiStore)
+
+    // Devtools snapshot注册
+    const snapshot = (): StoreSnapshot => {
+        const map = jotaiStore.get(objectMapAtom)
+        const sample: T[] = Array.from(map.values()).slice(0, 5)
+        const approxSize = (() => {
+            try {
+                const str = JSON.stringify(sample)
+                return str ? str.length * 2 : 0
+            } catch {
+                return 0
+            }
+        })()
+        return {
+            name,
+            count: map.size,
+            approxSize,
+            sample,
+            timestamp: Date.now()
+        }
+    }
+    const stopDevtools = config.devtools?.registerStore?.({ name, snapshot })
+        ?? registerGlobalStore({ name, snapshot })
+
+    // Lazy resolver for relations（延迟求值避免循环依赖）
+    const getRelations = (() => {
+        const relationsFactory = config.relations
+        if (!relationsFactory) return undefined
+        if (typeof relationsFactory !== 'function') {
+            throw new Error('[Atoma] config.relations 必须是返回 RelationMap 的函数')
+        }
+        let cache: Relations | undefined
+        return () => {
+            if (!cache) {
+                cache = relationsFactory() as Relations
+            }
+            return cache
+        }
+    })()
 
     // Create sync store with all methods
-    const syncStore: SyncStore<T> = {
+    const syncStore: SyncStore<T, Relations> = {
         ...localStore,
         useValue,
         useAll,
         useFindMany,
+        _relations: undefined,
 
         getCachedOneById: (id: StoreKey) => {
             return jotaiStore.get(objectMapAtom).get(id)
@@ -106,6 +165,18 @@ export function createSyncStore<T extends Entity>(config: SyncStoreConfig<T>): S
         getCachedAll: () => {
             return Array.from(jotaiStore.get(objectMapAtom).values())
         }
+    }
+
+    // Apply lazy relations getter if provided
+    if (getRelations) {
+        Object.defineProperty(syncStore, '_relations', {
+            get: getRelations,
+            configurable: true
+        })
+        Object.defineProperty(localStore as any, '_relations', {
+            get: getRelations,
+            configurable: true
+        })
     }
 
     return syncStore

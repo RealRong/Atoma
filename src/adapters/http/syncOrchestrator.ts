@@ -4,6 +4,8 @@ import { QueueSynchronizer } from './queueSync'
 import { NetworkStateManager } from './networkState'
 import type { HTTPClient } from './client'
 import type { HTTPAdapterConfig, RetryConfig } from '../HTTPAdapter'
+import type { DevtoolsBridge } from '../../devtools/types'
+import { registerGlobalQueue } from '../../devtools/global'
 import type { StoreKey, Entity } from '../../core/types'
 
 type OpKind = 'put' | 'delete'
@@ -24,6 +26,7 @@ export class SyncOrchestrator<T extends Entity> {
             eventEmitter: HTTPEventEmitter
             client: HTTPClient<T>
             retry?: RetryConfig
+            devtools?: DevtoolsBridge
         }
     ) {
         this.maxRetries = deps.retry?.maxAttempts ?? 3
@@ -45,6 +48,17 @@ export class SyncOrchestrator<T extends Entity> {
             },
             config.offline?.maxQueueSize
         )
+        const queueSnapshot = () => ({
+            pending: this.offlineQueue.snapshot().map(op => ({ ...op, retries: op.retryCount ?? 0 })),
+            failed: []
+        })
+        deps.devtools?.registerQueue?.({
+            name: config.resourceName || deps.queueStorageKey,
+            snapshot: queueSnapshot
+        }) || registerGlobalQueue({
+            name: config.resourceName || deps.queueStorageKey,
+            snapshot: queueSnapshot
+        })
 
         this.queueSync = new QueueSynchronizer(
             this.offlineQueue,

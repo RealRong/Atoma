@@ -52,8 +52,12 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
         if (config.responseParser) {
             envelope = await config.responseParser(response, json)
         } else {
-            // Default: assumes JSON is the data
-            envelope = { data: json }
+            // 默认：若形如 { data, pageInfo } 则直接视为标准信封，否则把 json 当作 data
+            if (json && typeof json === 'object' && 'data' in json) {
+                envelope = json as StandardEnvelope<T>
+            } else {
+                envelope = { data: json }
+            }
         }
 
         // Trigger global response interceptor
@@ -259,7 +263,7 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
 
         const strategy = config.query?.strategy || 'REST'
         if (strategy === 'REST' || strategy === 'Django') {
-            const params = buildQueryParams(options)
+            const params = buildQueryParams(options, config.querySerializer)
             const url = `${config.baseURL}${resolveEndpoint(endpoints.getAll!)}?${params.toString()}`
             const headers = await getHeaders()
 

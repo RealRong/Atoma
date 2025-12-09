@@ -31,9 +31,10 @@ yarn-error.log*
 # Testing
 coverage/
 
-# docs
-*.md
+# Root markdown notes (keep primary docs tracked)
+/*.md
+!/README.md
+!/ARCHITECTURE.md
 
+# Unfinished Atoma docs
 atoma-docs
-
-demo/

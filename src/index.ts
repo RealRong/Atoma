@@ -28,6 +28,14 @@ export type {
     PageInfo,
     IndexDefinition,
     IndexType,
+    RelationMap,
+    RelationConfig,
+    BelongsToConfig,
+    HasManyConfig,
+    HasOneConfig,
+    VariantsConfig,
+    VariantBranch,
+    KeySelector,
     // Core
     HistoryChange,
     IEventEmitter
@@ -44,8 +52,20 @@ export { IndexedDBAdapter } from './adapters/IndexedDBAdapter'
 export { HTTPAdapter } from './adapters/HTTPAdapter'
 export { HybridAdapter } from './adapters/HybridAdapter'
 export { SQLiteHttpAdapter } from './adapters/SQLiteHttpAdapter'
-export type { HTTPAdapterConfig } from './adapters/HTTPAdapter'
+export { BatchDispatcher } from './batch'
+export type { HTTPAdapterConfig, BatchQueryConfig } from './adapters/HTTPAdapter'
+export type { QuerySerializerConfig, ArrayFormat } from './adapters/http/query'
 export type { HybridAdapterConfig } from './adapters/HybridAdapter'
+
+// Relations
+export { RelationResolver } from './core/relations/RelationResolver'
+export { belongsTo, hasMany, hasOne, variants } from './core/relations/builders'
+
+// Devtools
+export { createDevtoolsBridge } from './devtools/bridge'
+export { AtomaDevTools } from './devtools/AtomaDevTools'
+export type { DevtoolsBridge, DevtoolsEvent, StoreSnapshot } from './devtools/types'
+export { enableGlobalDevtools, getGlobalDevtools, disableGlobalDevtools } from './devtools/global'
 
 // Hooks
 export { createUseValue, createUseAll } from './hooks'
@@ -72,3 +92,21 @@ export type {
     RegistryStoreConfig,
     AdapterFactory
 } from './registry/types'
+
+// Server middleware
+export { AtomaRequestHandler } from './server'
+export type {
+    BatchQuery,
+    BatchRequest,
+    BatchResponse,
+    BatchResult,
+    HandlerConfig,
+    IOrmAdapter,
+    OrderByField,
+    QueryParams,
+    QueryResult
+} from './server'
+export { AtomaTypeormAdapter } from './server/typeorm'
+export type { TypeormAdapterOptions } from './server/typeorm'
+export { createAtomaMiddleware, createTypeormMiddleware, atoma } from './server'
+

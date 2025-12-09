@@ -1,0 +1,34 @@
+{
+    "name": "atoma-zero-config-demo",
+    "private": true,
+    "type": "module",
+    "version": "0.0.1",
+    "scripts": {
+        "dev": "concurrently -n server,client -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
+        "dev:server": "NODE_OPTIONS=--preserve-symlinks tsx src/server/index.ts",
+        "dev:client": "NODE_OPTIONS=--preserve-symlinks vite",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "atoma": "file:../..",
+        "express": "^4.19.2",
+        "reflect-metadata": "^0.1.13",
+        "sqlite3": "^5.1.7",
+        "typeorm": "^0.3.20",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1"
+    },
+    "devDependencies": {
+        "@types/express": "^4.17.21",
+        "@types/react": "^18.3.9",
+        "@types/react-dom": "^18.3.0",
+        "@vitejs/plugin-react": "^4.4.0",
+        "concurrently": "^9.1.0",
+        "tsx": "^4.7.0",
+        "ts-node": "^10.9.2",
+        "tsconfig-paths": "^4.2.0",
+        "typescript": "^5.6.3",
+        "vite": "^5.4.8"
+    }
+}

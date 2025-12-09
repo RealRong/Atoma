@@ -14,6 +14,7 @@ import {
     StoreOperationOptions,
     Entity
 } from './types'
+import { registerGlobalIndex } from '../devtools/global'
 
 type GetOneTask = {
     id: StoreKey
@@ -38,6 +39,33 @@ export function initializeLocalStore<T extends Entity>(
     let batchGetOneTaskQueue: GetOneTask[] = []
     let batchFetchOneTaskQueue: GetOneTask[] = []
     const indexManager = config?.indexes && config.indexes.length ? new IndexManager<T>(config.indexes) : null
+
+    const indexSnapshotRegister = () => {
+        if (!indexManager) return undefined
+        const name = config?.storeName || 'store'
+        const snapshot = () => {
+            const statsMap = indexManager.getAllStats()
+            const list: any[] = []
+            statsMap.forEach((stats, field) => {
+                list.push({
+                    field,
+                    type: config?.indexes?.find(i => i.field === field)?.type,
+                    size: stats?.totalDocs,
+                    distinctValues: stats?.distinctValues,
+                    avgSetSize: stats?.avgSetSize,
+                    maxSetSize: stats?.maxSetSize,
+                    minSetSize: stats?.minSetSize
+                })
+            })
+            return list
+        }
+        return (
+            config?.devtools?.registerIndexManager?.({ name, snapshot }) ||
+            registerGlobalIndex({ name, snapshot })
+        )
+    }
+
+    const stopIndexDevtools = indexSnapshotRegister()
 
     // Helper to transform data if configured
     const transform = (item: T): T => {

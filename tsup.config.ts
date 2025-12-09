@@ -5,7 +5,9 @@ export default defineConfig({
         index: 'src/index.ts',
         'adapters/index': 'src/adapters/index.ts',
         'hooks/index': 'src/hooks/index.ts',
-        'registry/index': 'src/registry/index.ts'
+        'registry/index': 'src/registry/index.ts',
+        'server/index': 'src/server/index.ts',
+        'server/typeorm': 'src/server/typeorm/index.ts'
     },
     format: ['esm'],
     dts: true,
@@ -13,5 +15,5 @@ export default defineConfig({
     sourcemap: true,
     clean: true,
     treeshake: true,
-    external: ['react', 'jotai', 'immer', 'dexie', 'lodash']
+    external: ['react', 'jotai', 'immer', 'dexie', 'lodash', 'typeorm']
 })

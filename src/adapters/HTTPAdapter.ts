@@ -1,5 +1,7 @@
 import { Patch } from 'immer'
 import { FindManyOptions, IAdapter, PatchMetadata, StoreKey, PageInfo, Entity } from '../core/types'
+import type { DevtoolsBridge } from '../devtools/types'
+import { getGlobalDevtools } from '../devtools/global'
 import { calculateBackoff } from './http/retry'
 import { applyPatchesWithFallback } from './http/patch'
 import { resolveConflict } from './http/conflict'
@@ -11,6 +13,8 @@ import { HTTPClient, ConflictHandler, ClientConfig } from './http/client'
 import { SyncOrchestrator } from './http/syncOrchestrator'
 import { createOperationExecutors, OperationExecutors } from './http/operationExecutors'
 import type { QueuedOperation } from './http/offlineQueue'
+import type { QuerySerializerConfig } from './http/query'
+import { BatchDispatcher } from '../batch'
 
 // ===== Config Interfaces =====
 
@@ -121,6 +125,9 @@ export interface HTTPAdapterConfig<T> {
     /** Query/findMany configuration */
     query?: QueryConfig<T>
 
+    /** Query param serialization */
+    querySerializer?: QuerySerializerConfig
+
     /** Concurrency limits */
     concurrency?: ConcurrencyConfig
 
@@ -129,6 +136,17 @@ export interface HTTPAdapterConfig<T> {
 
     /** Event callbacks */
     events?: EventCallbacks
+
+    /** Devtools bridge（可选） */
+    devtools?: DevtoolsBridge
+
+    /**
+     * 批量查询（Batch Query）开关
+     * - true: 启用批量，默认 /batch 端点
+     * - object: 自定义端点/批量大小/flush 延迟
+     * - undefined/false: 关闭（默认）
+     */
+    batch?: boolean | BatchQueryConfig
 
     /** 
      * Response Parser (Anti-Corruption Layer) 
@@ -189,6 +207,22 @@ export interface StandardEnvelope<T> {
  */
 export type ResponseParser<T, Raw = any> = (response: Response, data: Raw) => Promise<StandardEnvelope<T>> | StandardEnvelope<T>
 
+export interface BatchQueryConfig {
+    enabled?: boolean
+    endpoint?: string
+    maxBatchSize?: number
+    flushIntervalMs?: number
+    devWarnings?: boolean
+}
+
+type ParsedBatchConfig = {
+    enabled: boolean
+    endpoint?: string
+    maxBatchSize?: number
+    flushIntervalMs?: number
+    devWarnings: boolean
+}
+
 /**
  * Queued operation for offline support
  */
@@ -205,6 +239,9 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     private client: HTTPClient<T>
     private orchestrator: SyncOrchestrator<T>
     private executors: OperationExecutors<T>
+    private serializerConfig?: QuerySerializerConfig
+    private batchDispatcher?: BatchDispatcher
+    private resourceNameForBatch: string
 
     constructor(private config: HTTPAdapterConfig<T>) {
         // Auto-generate endpoints from resourceName if not explicitly provided
@@ -242,6 +279,8 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
 
         // At this point, endpoints is guaranteed to be defined
         const endpoints = config.endpoints!
+        const batchConfig = this.parseBatchConfig(config.batch)
+        this.resourceNameForBatch = this.normalizeResourceName(config.resourceName)
 
         this.name = config.baseURL
         this.queueStorageKey = `atoma:httpQueue:${this.name}`
@@ -307,11 +346,13 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
 
         this.eventEmitter = new HTTPEventEmitter(config.events)
         this.maxRetryElapsedMs = config.retry?.maxElapsedMs ?? 30000
+        this.serializerConfig = config.querySerializer
         this.orchestrator = new SyncOrchestrator(config, {
             queueStorageKey: this.queueStorageKey,
             eventEmitter: this.eventEmitter,
             client: this.client,
-            retry: config.retry
+            retry: config.retry,
+            devtools: config.devtools ?? getGlobalDevtools()
         })
 
         this.executors = createOperationExecutors({
@@ -324,6 +365,31 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             orchestrator: this.orchestrator,
             onError: this.onError.bind(this)
         })
+
+        if (batchConfig.enabled) {
+            const endpointPath = batchConfig.endpoint ?? '/batch'
+            const batchEndpoint = makeUrl(this.config.baseURL, endpointPath)
+            this.batchDispatcher = new BatchDispatcher({
+                endpoint: batchEndpoint,
+                maxBatchSize: batchConfig.maxBatchSize,
+                flushIntervalMs: batchConfig.flushIntervalMs,
+                headers: this.getHeaders.bind(this),
+                fetchFn: this.fetchWithRetry.bind(this),
+                onError: (error, payload) => {
+                    this.onError(error, 'batch')
+                    if (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
+                        console.debug?.('[HTTPAdapter:batch] payload failed', payload)
+                    }
+                }
+            })
+
+            if (batchConfig.devWarnings && typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
+                console.info(
+                    `[Atoma] BatchQuery enabled for "${this.resourceNameForBatch}" → ${batchEndpoint}\n` +
+                    'Ensure backend exposes the batch endpoint. Set `batch:false` to disable.'
+                )
+            }
+        }
     }
 
     dispose(): void {
@@ -361,6 +427,13 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo } | T[]> {
+        if (this.batchDispatcher) {
+            return this.batchDispatcher.enqueue(
+                this.resourceNameForBatch,
+                options,
+                () => this.executors.findMany(options)
+            )
+        }
         return this.executors.findMany(options)
     }
 
@@ -390,7 +463,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
      * Fetch with retry logic
      */
     private async fetchWithRetry(
-        input: RequestInfo,
+        input: RequestInfo | URL,
         init?: RequestInit,
         attemptNumber = 1,
         startedAt = Date.now()
@@ -446,8 +519,31 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         return headers instanceof Promise ? await headers : headers
     }
 
+    private parseBatchConfig(batch?: boolean | BatchQueryConfig): ParsedBatchConfig {
+        if (batch === true) {
+            return { enabled: true, devWarnings: true }
+        }
+        if (!batch) {
+            return { enabled: false, devWarnings: true }
+        }
+        return {
+            enabled: batch.enabled !== false,
+            endpoint: batch.endpoint,
+            maxBatchSize: batch.maxBatchSize,
+            flushIntervalMs: batch.flushIntervalMs,
+            devWarnings: batch.devWarnings !== false
+        }
+    }
+
+    private normalizeResourceName(name?: string): string {
+        if (!name) return 'unknown'
+        const normalized = name.replace(/^\//, '')
+        const parts = normalized.split('/')
+        return parts[parts.length - 1] || 'unknown'
+    }
+
     /**
      * Lightweight sender wrapper to satisfy RequestSender signature
      */
-    private readonly sender = (url: string, init?: RequestInit) => this.fetchWithRetry(url, init ?? {})
+    private readonly sender = (url: RequestInfo | URL, init?: RequestInit) => this.fetchWithRetry(url, init ?? {})
 }

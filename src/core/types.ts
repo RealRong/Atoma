@@ -1,6 +1,7 @@
 import { Atom, PrimitiveAtom } from 'jotai'
 import { Patch } from 'immer'
 import type { StoreContext } from './StoreContext'
+import type { DevtoolsBridge } from '../devtools/types'
 
 /**
  * Base key type for entities
@@ -13,6 +14,14 @@ export type StoreKey = string | number
 export interface Entity {
     id: StoreKey
 }
+
+/**
+ * 键选择器：字段名、点路径或函数
+ */
+export type KeySelector<T> =
+    | (keyof T & string)
+    | string
+    | ((item: T) => StoreKey | StoreKey[] | undefined | null)
 
 /**
  * Base interface for all entities stored in the sync engine
@@ -139,7 +148,7 @@ export type FetchPolicy = 'local' | 'remote' | 'local-then-remote'
 
 export type PageInfo = { cursor?: string; hasNext?: boolean; total?: number }
 
-export interface FindManyOptions<T> {
+export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
     where?: WhereOperator<T>
     orderBy?: OrderBy<T>
     limit?: number
@@ -152,6 +161,8 @@ export interface FindManyOptions<T> {
     }
     /** If true, fetched data will NOT be stored in the central atom or indexed. Use for high-volume read-only data. */
     skipStore?: boolean
+    /** Relations include 配置 */
+    include?: Include
 }
 
 export type FindManyResult<T> = T[] | { data: T[]; pageInfo?: PageInfo }
@@ -203,6 +214,12 @@ export interface StoreConfig<T> {
 
     /** Per-store context for dependency injection (avoids circular import) */
     context?: StoreContext
+
+    /** Devtools bridge（可选） */
+    devtools?: DevtoolsBridge
+
+    /** Store name（用于 devtools 标识） */
+    storeName?: string
 }
 
 export type IndexType = 'number' | 'date' | 'string' | 'text'
@@ -217,10 +234,55 @@ export interface IndexDefinition<T> {
     }
 }
 
+// ============ Relations ============
+export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
+
+export interface BelongsToConfig<TSource, TTarget extends Entity> {
+    type: 'belongsTo'
+    store: IStore<TTarget, any>
+    foreignKey: KeySelector<TSource>
+    primaryKey?: keyof TTarget & string
+    options?: FindManyOptions<TTarget>
+}
+
+export interface HasManyConfig<TSource, TTarget extends Entity> {
+    type: 'hasMany'
+    store: IStore<TTarget, any>
+    primaryKey?: KeySelector<TSource>
+    foreignKey: keyof TTarget & string
+    options?: FindManyOptions<TTarget>
+}
+
+export interface HasOneConfig<TSource, TTarget extends Entity> {
+    type: 'hasOne'
+    store: IStore<TTarget, any>
+    primaryKey?: KeySelector<TSource>
+    foreignKey: keyof TTarget & string
+    options?: FindManyOptions<TTarget>
+}
+
+export interface VariantsConfig<TSource> {
+    type: 'variants'
+    branches: Array<VariantBranch<TSource, any>>
+}
+
+export interface VariantBranch<TSource, TTarget extends Entity> {
+    when: (item: TSource) => boolean
+    relation: BelongsToConfig<TSource, TTarget> | HasManyConfig<TSource, TTarget> | HasOneConfig<TSource, TTarget>
+}
+
+export type RelationConfig<TSource, TTarget extends Entity = any> =
+    | BelongsToConfig<TSource, TTarget>
+    | HasManyConfig<TSource, TTarget>
+    | HasOneConfig<TSource, TTarget>
+    | VariantsConfig<TSource>
+
+export type RelationMap<T> = Record<string, RelationConfig<T, any>>
+
 /**
  * Store interface - main API for CRUD operations
  */
-export interface IStore<T> {
+export interface IStore<T, Relations extends RelationMap<T> = {}> {
     /** Add a new item */
     addOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
 
@@ -251,10 +313,49 @@ export interface IStore<T> {
 
     /** Query with filtering/sorting/paging */
     findMany?(options?: FindManyOptions<T>): Promise<FindManyResult<T>>
+
+    /** 内部缓存的关系映射 */
+    _relations?: Relations
+
+    /** React hook for queries（可选，由 createSyncStore 注入） */
+    useFindMany?: <Include extends Partial<Record<keyof Relations, any>> = {}>(
+        options?: FindManyOptions<T, Include> & { fetchPolicy?: FetchPolicy }
+    ) => UseFindManyResult<T, Relations, Include>
 }
 
-export type UseFindManyResult<T> = {
-    data: T[]
+type InferTargetType<R> =
+    R extends BelongsToConfig<any, infer U> ? U
+    : R extends HasManyConfig<any, infer U> ? U
+    : R extends HasOneConfig<any, infer U> ? U
+    : R extends VariantsConfig<any> ? any
+    : never
+
+type InferRelationResultType<R> =
+    R extends { type: 'hasMany' } ? InferTargetType<R>[]
+    : R extends { type: 'belongsTo' | 'hasOne' } ? InferTargetType<R> | null
+    : R extends { type: 'variants' } ? any | null
+    : never
+
+export type WithRelations<
+    T,
+    Relations extends RelationMap<T>,
+    Include extends Partial<Record<keyof Relations, boolean | FindManyOptions<any>>>
+> = T & {
+    [K in keyof Include as Include[K] extends false | undefined ? never : K]: K extends keyof Relations
+        ? Include[K] extends true | object
+            ? InferRelationResultType<Relations[K]>
+            : never
+        : never
+}
+
+export type UseFindManyResult<
+    T,
+    Relations extends RelationMap<T> = {},
+    Include extends Partial<Record<keyof Relations, any>> = {}
+> = {
+    data: keyof Include extends never
+        ? T[]
+        : WithRelations<T, Relations, Include>[]
     loading: boolean
     error?: Error
     refetch: () => Promise<T[]>
