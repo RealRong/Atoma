@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { vi } from 'vitest'
 import type { DataSource, SelectQueryBuilder } from 'typeorm'
 import { AtomaTypeormAdapter } from '../../src/server/typeorm'
 
@@ -88,5 +89,75 @@ describe('AtomaTypeormAdapter', () => {
         await adapter.findMany('comment', { cursor: 100 })
 
         expect(qb.conditions.some(c => c.sql.includes('.id > :cursor'))).toBe(true)
+    })
+
+    it('bulkCreate 非事务模式下返回 partialFailures', async () => {
+        const repo = {
+            save: vi.fn(async (item: any) => {
+                if (item.fail) throw new Error('boom')
+                return item
+            })
+        }
+        const ds = {
+            getRepository: () => repo,
+            getMetadata: () => ({})
+        } as unknown as DataSource
+
+        const adapter = new AtomaTypeormAdapter(ds)
+        const res = await adapter.bulkCreate('post', [{ id: 1 }, { id: 2, fail: true }, { id: 3 }])
+
+        expect(repo.save).toHaveBeenCalledTimes(3)
+        expect(res.data).toHaveLength(2)
+        expect(res.partialFailures?.[0]).toMatchObject({ index: 1 })
+    })
+
+    it('patch 会应用 immer patches 并保存', async () => {
+        class Post {
+            constructor(public id: number, public title: string, public body: string) {}
+        }
+        const repo: any = {
+            findOne: vi.fn(async ({ where }: any) => new Post(where.id, 'old', 'b')),
+            save: vi.fn(async (entity: any) => entity),
+            metadata: { columns: [{ propertyName: 'id' }, { propertyName: 'title' }, { propertyName: 'body' }] }
+        }
+        const ds = {
+            getRepository: () => repo,
+            getMetadata: () => ({})
+        } as unknown as DataSource
+
+        const adapter = new AtomaTypeormAdapter(ds)
+        const res = await adapter.patch('post', {
+            id: 1,
+            patches: [
+                { op: 'replace', path: [1, 'title'], value: 'new' },
+                { op: 'replace', path: [1, 'body'], value: 'bb' }
+            ]
+        })
+
+        expect(repo.findOne).toHaveBeenCalled()
+        expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ title: 'new' }))
+        expect(res.data).toMatchObject({ id: 1, title: 'new', body: 'bb' })
+    })
+
+    it('bulkPatch 记录 partialFailures', async () => {
+        const repo: any = {
+            findOne: vi.fn(async ({ where }: any) => where.id === 1 ? { id: 1, title: 't1' } : undefined),
+            save: vi.fn(async (entity: any) => entity),
+            metadata: { columns: [{ propertyName: 'id' }, { propertyName: 'title' }] }
+        }
+        const ds = {
+            getRepository: () => repo,
+            getMetadata: () => ({})
+        } as unknown as DataSource
+
+        const adapter = new AtomaTypeormAdapter(ds)
+        const res = await adapter.bulkPatch('post', [
+            { id: 1, patches: [{ op: 'replace', path: [1, 'title'], value: 'new' }] },
+            { id: 2, patches: [{ op: 'replace', path: [2, 'title'], value: 'x' }] }
+        ])
+
+        expect(repo.save).toHaveBeenCalledTimes(1)
+        expect(res.data).toHaveLength(1)
+        expect(res.partialFailures?.[0]?.index).toBe(1)
     })
 })

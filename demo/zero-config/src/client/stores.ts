@@ -1,4 +1,4 @@
-import { createSyncStore, HTTPAdapter, belongsTo, hasMany, setDefaultAdapterFactory } from 'atoma'
+import { createSyncStore, HTTPAdapter, belongsTo, hasMany, setDefaultAdapterFactory, BaseEntity } from 'atoma'
 
 export type User = {
     id: number
@@ -14,12 +14,10 @@ export type Comment = {
     author?: User
 }
 
-export type Post = {
-    id: number
+export type Post = BaseEntity & {
     title: string
     body: string
     authorId: number
-    createdAt: number
     author?: User
     comments?: Comment[]
 }
@@ -31,12 +29,8 @@ setDefaultAdapterFactory((resourceName: string) =>
     new HTTPAdapter({
         baseURL: API_BASE,
         resourceName,
-        batch: {
-            enabled: true,
-            endpoint: '/batch',
-            // posts 维持更频繁的 flush，用于展示批处理
-            flushIntervalMs: resourceName === 'posts' ? 5 : undefined
-        }
+        batch: true,
+        usePatchForUpdate: true
     })
 )
 

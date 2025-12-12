@@ -36,6 +36,11 @@ export interface IBase extends Entity {
 }
 
 /**
+ * 通用实体基类别名，包含 id / createdAt / updatedAt / deleted*
+ */
+export type BaseEntity = IBase
+
+/**
  * Partial type with required id field
  */
 export type PartialWithId<T> = Partial<T> & { id: StoreKey }
@@ -52,6 +57,8 @@ export interface IAdapter<T extends Entity> {
      */
     put(key: StoreKey, value: T): Promise<void>
     bulkPut(items: T[]): Promise<void>
+    /** 可选：批量创建（区别于更新），未实现则回退到 bulkPut */
+    bulkCreate?(items: T[]): Promise<T[] | void>
     delete(key: StoreKey): Promise<void>
     bulkDelete(keys: StoreKey[]): Promise<void>
 
@@ -65,7 +72,7 @@ export interface IAdapter<T extends Entity> {
     /**
      * Patch-based update (optional, falls back to put) 
      */
-    applyPatches?(patches: Patch[], metadata: PatchMetadata): Promise<void>
+    applyPatches?(patches: Patch[], metadata: PatchMetadata): Promise<void | { created?: any[] }>
 
     /**
      * Lifecycle hooks
@@ -112,7 +119,6 @@ export type StoreDispatchEvent<T extends Entity> = {
         }
         | {
             type: 'remove'
-            clearCache?: boolean
             onSuccess?: () => void
         }
         | {
@@ -126,7 +132,6 @@ export type StoreDispatchEvent<T extends Entity> = {
  */
 export interface StoreOperationOptions {
     force?: boolean
-    clearCache?: boolean
 }
 
 export type WhereOperator<T> = Partial<Record<keyof T & string, any | {
@@ -166,6 +171,9 @@ export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
 }
 
 export type FindManyResult<T> = T[] | { data: T[]; pageInfo?: PageInfo }
+
+// Relations include 专用（仅支持 Top-N 预览，不含分页）
+export type RelationIncludeOptions<T> = Pick<FindManyOptions<T>, 'limit' | 'orderBy' | 'include' | 'skipStore'>
 
 /**
  * Schema validator support (works with Zod/Yup or custom functions)
@@ -242,7 +250,7 @@ export interface BelongsToConfig<TSource, TTarget extends Entity> {
     store: IStore<TTarget, any>
     foreignKey: KeySelector<TSource>
     primaryKey?: keyof TTarget & string
-    options?: FindManyOptions<TTarget>
+    options?: RelationIncludeOptions<TTarget>
 }
 
 export interface HasManyConfig<TSource, TTarget extends Entity> {
@@ -250,7 +258,7 @@ export interface HasManyConfig<TSource, TTarget extends Entity> {
     store: IStore<TTarget, any>
     primaryKey?: KeySelector<TSource>
     foreignKey: keyof TTarget & string
-    options?: FindManyOptions<TTarget>
+    options?: RelationIncludeOptions<TTarget>
 }
 
 export interface HasOneConfig<TSource, TTarget extends Entity> {
@@ -258,7 +266,7 @@ export interface HasOneConfig<TSource, TTarget extends Entity> {
     store: IStore<TTarget, any>
     primaryKey?: KeySelector<TSource>
     foreignKey: keyof TTarget & string
-    options?: FindManyOptions<TTarget>
+    options?: RelationIncludeOptions<TTarget>
 }
 
 export interface VariantsConfig<TSource> {
@@ -281,9 +289,9 @@ export type RelationMap<T> = Record<string, RelationConfig<T, any>>
 
 // 根据关系类型推导 include 的取值类型
 export type InferIncludeType<R> =
-    R extends BelongsToConfig<any, infer TTarget> ? boolean | FindManyOptions<TTarget>
-    : R extends HasManyConfig<any, infer TTarget> ? boolean | FindManyOptions<TTarget>
-    : R extends HasOneConfig<any, infer TTarget> ? boolean | FindManyOptions<TTarget>
+    R extends BelongsToConfig<any, infer TTarget> ? boolean | RelationIncludeOptions<TTarget>
+    : R extends HasManyConfig<any, infer TTarget> ? boolean | RelationIncludeOptions<TTarget>
+    : R extends HasOneConfig<any, infer TTarget> ? boolean | RelationIncludeOptions<TTarget>
     : never
 
 /**
@@ -350,7 +358,7 @@ type InferRelationResultType<R> =
 export type WithRelations<
     T,
     Relations extends RelationMap<T>,
-    Include extends Partial<Record<keyof Relations, boolean | FindManyOptions<any>>>
+    Include extends Partial<Record<keyof Relations, boolean | RelationIncludeOptions<any>>>
 > = T & {
     [K in keyof Include as Include[K] extends false | undefined ? never : K]: K extends keyof Relations
         ? Include[K] extends true | object

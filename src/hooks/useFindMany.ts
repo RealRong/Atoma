@@ -192,12 +192,14 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
             }
         }
 
+        // local-then-remote 场景下，优先返回最新的本地缓存（可被 add/update 等立即更新）
+        // remoteData 只在本地为空时兜底，避免远程快照阻塞本地实时更新
         const data =
             fetchPolicy === 'local'
                 ? localData
                 : fetchPolicy === 'remote'
                     ? remoteData
-                    : (remoteData.length ? remoteData : localData)
+                    : (localData.length ? localData : remoteData)
 
         useEffect(() => {
             // 无 include 或无关系定义时直接返回数据

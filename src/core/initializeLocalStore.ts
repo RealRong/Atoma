@@ -250,7 +250,6 @@ export function initializeLocalStore<T extends Entity>(
                     atom,
                     store: jotaiStore,
                     context: config?.context,
-                    clearCache: options?.clearCache,
                     onSuccess: () => {
                         if (indexManager && !isOptimisticMode) {
                             indexManager.remove(oldItem as any)
@@ -305,26 +304,36 @@ export function initializeLocalStore<T extends Entity>(
 
         getMultipleByIds: async (ids, cache = true) => {
             const map = jotaiStore.get(atom)
-            const allInCache = ids.every(id => map.has(id))
 
-            if (allInCache) {
-                return ids.map(id => map.get(id)!)
-            }
+            const hitMap = new Map<StoreKey, T>()
+            const missing: StoreKey[] = []
 
-            let arr = (await adapter.bulkGet(ids)).filter((i): i is T => i !== undefined)
+            ids.forEach(id => {
+                if (map.has(id)) {
+                    hitMap.set(id, map.get(id) as T)
+                } else {
+                    missing.push(id)
+                }
+            })
 
-            // Apply transformation
-            arr = arr.map(transform)
+            let fetched: T[] = []
 
-            if (cache) {
-                if (arr.some(i => !map.has((i as any).id))) {
-                    jotaiStore.set(atom, BaseStore.bulkAdd(arr as PartialWithId<T>[], jotaiStore.get(atom)))
-                    arr.forEach(item => indexManager?.add(item))
+            if (missing.length > 0) {
+                fetched = (await adapter.bulkGet(missing)).filter((i): i is T => i !== undefined)
+                fetched = fetched.map(transform)
+
+                if (cache && fetched.some(i => !map.has((i as any).id))) {
+                    jotaiStore.set(atom, BaseStore.bulkAdd(fetched as PartialWithId<T>[], jotaiStore.get(atom)))
+                    fetched.forEach(item => indexManager?.add(item))
                     bumpAtomVersion(atom, undefined, config?.context)
                 }
             }
 
-            return arr
+            const fetchedMap = new Map<StoreKey, T>(fetched.map(item => [(item as any).id, item]))
+
+            return ids
+                .map(id => hitMap.get(id) ?? fetchedMap.get(id))
+                .filter((i): i is T => i !== undefined)
         },
 
         getOneById: (id) => {

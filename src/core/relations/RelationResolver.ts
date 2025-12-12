@@ -1,4 +1,3 @@
-import pLimit from 'p-limit'
 import {
     Entity,
     FindManyOptions,
@@ -38,7 +37,6 @@ export class RelationResolver {
                             relName,
                             relOpts,
                             relations,
-                            maxConcurrency,
                             controller.signal
                         ),
                         new Promise((_, reject) => {
@@ -70,7 +68,6 @@ export class RelationResolver {
         relName: string,
         relOpts: boolean | FindManyOptions<any>,
         relations: RelationMap<T>,
-        maxConcurrency: number,
         signal: AbortSignal
     ): Promise<void> {
         if (signal.aborted) return
@@ -79,13 +76,15 @@ export class RelationResolver {
         if (!config || relOpts === false) return
 
         const userOptions = typeof relOpts === 'object' ? relOpts : {}
+        this.validateIncludeOptions(relName, userOptions)
+        this.validateIncludeOptions(relName, config.options)
 
         if (config.type === 'variants') {
             await this.resolveVariants(results, relName, config, userOptions, maxConcurrency, signal)
             return
         }
 
-        await this.resolveStandardRelation(results, relName, config, userOptions, maxConcurrency, signal)
+        await this.resolveStandardRelation(results, relName, config, userOptions, signal)
     }
 
     private static async resolveStandardRelation<T extends Entity>(
@@ -93,7 +92,6 @@ export class RelationResolver {
         relName: string,
         config: Exclude<RelationConfig<T, any>, VariantsConfig<T>>,
         userOptions: FindManyOptions<any>,
-        maxConcurrency: number,
         signal: AbortSignal
     ): Promise<void> {
         if (signal.aborted) return
@@ -109,29 +107,43 @@ export class RelationResolver {
         }
 
         const mergedOptions = this.mergeQueryOptions(config.options, userOptions)
-        const hasPagination = mergedOptions.limit !== undefined || mergedOptions.offset !== undefined
-
+        const targetKeyField = this.getTargetKeyField(config)
         const bucket = new Map<string, any[]>()
+        const normalizedHitKeys = new Set<string>()
 
         try {
-            if (hasPagination) {
-                await this.resolveWithParallelQueries(
-                    uniqueKeys,
-                    config,
-                    mergedOptions,
-                    bucket,
-                    maxConcurrency,
-                    signal
-                )
-            } else {
-                await this.resolveWithBatchQuery(
-                    uniqueKeys,
-                    config,
-                    mergedOptions,
-                    bucket,
-                    signal
-                )
+            // 1) 先尝试通过 getMultipleByIds 命中 Store Map（仅适用于按 id 查询的 belongsTo/hasOne）
+            let missingKeys = uniqueKeys
+            const canUseIdLookup = config.type === 'belongsTo' && !!config.store.getMultipleByIds
+
+            if (canUseIdLookup) {
+                const hitItems = await config.store.getMultipleByIds!(uniqueKeys, true)
+                hitItems.forEach(item => {
+                    const keyVal = normalizeKey((item as any)[targetKeyField] ?? (item as any).id)
+                    if (!bucket.has(keyVal)) bucket.set(keyVal, [])
+                    bucket.get(keyVal)!.push(item)
+                    normalizedHitKeys.add(keyVal)
+                })
+                missingKeys = uniqueKeys.filter(k => !normalizedHitKeys.has(normalizeKey(k)))
             }
+
+            // 2) 对缺失键发单次 where-in 查询
+            if (missingKeys.length > 0) {
+                const batchQuery: FindManyOptions<any> = {
+                    ...mergedOptions,
+                    skipStore: false,
+                    where: deepMergeWhere(mergedOptions.where, { [targetKeyField]: { in: missingKeys } })
+                }
+
+                const fetched = await this.executeFindMany(config.store, batchQuery, signal)
+
+                fetched.forEach(item => {
+                    const keyVal = normalizeKey((item as any)[targetKeyField])
+                    if (!bucket.has(keyVal)) bucket.set(keyVal, [])
+                    bucket.get(keyVal)!.push(item)
+                })
+            }
+
             this.hydrateResults(results, relName, config, itemToKeyMap, bucket)
         } catch (error) {
             if (signal.aborted) return
@@ -162,7 +174,7 @@ export class RelationResolver {
         await Promise.all(
             Array.from(branchGroups.entries()).map(async ([idx, items]) => {
                 const branch = config.branches[idx]
-                await this.resolveStandardRelation(items, relName, branch.relation, userOptions, maxConcurrency, signal)
+                await this.resolveStandardRelation(items, relName, branch.relation, userOptions, signal)
             })
         )
     }
@@ -202,55 +214,6 @@ export class RelationResolver {
             return getValueByPath(item, selector)
         }
         return undefined
-    }
-
-    private static async resolveWithParallelQueries(
-        keys: StoreKey[],
-        config: Exclude<RelationConfig<any, any>, VariantsConfig<any>>,
-        options: FindManyOptions<any>,
-        bucket: Map<string, any[]>,
-        maxConcurrency: number,
-        signal: AbortSignal
-    ): Promise<void> {
-        const limit = pLimit(maxConcurrency)
-        const targetKeyField = this.getTargetKeyField(config)
-
-        await Promise.all(
-            keys.map(key =>
-                limit(async () => {
-                    if (signal.aborted) return
-                    const singleQuery: FindManyOptions<any> = {
-                        ...options,
-                        where: deepMergeWhere(options.where, { [targetKeyField]: key })
-                    }
-                    const data = await this.executeFindMany(config.store, singleQuery, signal)
-                    bucket.set(normalizeKey(key), data)
-                })
-            )
-        )
-    }
-
-    private static async resolveWithBatchQuery(
-        keys: StoreKey[],
-        config: Exclude<RelationConfig<any, any>, VariantsConfig<any>>,
-        options: FindManyOptions<any>,
-        bucket: Map<string, any[]>,
-        signal: AbortSignal
-    ): Promise<void> {
-        if (signal.aborted) return
-        const targetKeyField = this.getTargetKeyField(config)
-
-        const batchQuery: FindManyOptions<any> = {
-            ...options,
-            where: deepMergeWhere(options.where, { [targetKeyField]: { in: keys } })
-        }
-
-        const allData = await this.executeFindMany(config.store, batchQuery, signal)
-        allData.forEach(child => {
-            const keyVal = normalizeKey((child as any)[targetKeyField])
-            if (!bucket.has(keyVal)) bucket.set(keyVal, [])
-            bucket.get(keyVal)!.push(child)
-        })
     }
 
     private static async executeFindMany<T extends Entity>(
@@ -293,7 +256,7 @@ export class RelationResolver {
     }
 
     private static applyQueryLocal<T>(items: T[], options: FindManyOptions<T>): T[] {
-        if (!options.where && !options.orderBy && options.limit === undefined && options.offset === undefined) {
+        if (!options.where && !options.orderBy && options.limit === undefined) {
             return items
         }
 
@@ -320,10 +283,9 @@ export class RelationResolver {
             })
         }
 
-        // offset + limit
-        const start = options.offset || 0
-        const end = options.limit ? start + options.limit : result.length
-        return result.slice(start, end)
+        // limit
+        const end = options.limit ? options.limit : result.length
+        return result.slice(0, end)
     }
 
     private static matchesWhere(item: any, where: Record<string, any>): boolean {
@@ -384,17 +346,15 @@ export class RelationResolver {
         base?: FindManyOptions<any>,
         override?: FindManyOptions<any>
     ): FindManyOptions<any> {
-        if (!base) return override || {}
-        if (!override) return base
+        if (!base && !override) return {}
+        if (!base) return { ...override, offset: undefined, cursor: undefined }
+        if (!override) return { ...base, offset: undefined, cursor: undefined }
 
         return {
-            ...base,
-            ...override,
             where: deepMergeWhere(base.where, override.where),
             orderBy: override.orderBy !== undefined ? override.orderBy : base.orderBy,
             limit: override.limit !== undefined ? override.limit : base.limit,
-            offset: override.offset !== undefined ? override.offset : base.offset,
-            cursor: override.cursor !== undefined ? override.cursor : base.cursor,
+            include: override.include !== undefined ? override.include : base.include,
             skipStore: override.skipStore !== undefined ? override.skipStore : base.skipStore
         }
     }
@@ -405,6 +365,13 @@ export class RelationResolver {
         return config.type === 'belongsTo'
             ? (config.primaryKey as string) || 'id'
             : config.foreignKey
+    }
+
+    private static validateIncludeOptions(relName: string, options?: FindManyOptions<any>) {
+        if (!options) return
+        if ((options as any).offset !== undefined || (options as any).cursor !== undefined) {
+            throw new Error(`include.${relName} 不支持 offset/cursor；请使用子 store 的 useFindMany 进行分页`)
+        }
     }
 
     private static getDefaultValue(config?: RelationConfig<any, any>): any {

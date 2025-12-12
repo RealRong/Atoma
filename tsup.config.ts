@@ -7,7 +7,8 @@ export default defineConfig({
         'hooks/index': 'src/hooks/index.ts',
         'registry/index': 'src/registry/index.ts',
         'server/index': 'src/server/index.ts',
-        'server/typeorm': 'src/server/typeorm/index.ts'
+        'server/typeorm': 'src/server/typeorm/index.ts',
+        'server/prisma': 'src/server/prisma/index.ts'
     },
     format: ['esm'],
     dts: true,
@@ -15,5 +16,5 @@ export default defineConfig({
     sourcemap: true,
     clean: true,
     treeshake: true,
-    external: ['react', 'jotai', 'immer', 'dexie', 'lodash', 'typeorm']
+    external: ['react', 'jotai', 'immer', 'dexie', 'lodash', 'typeorm', '@prisma/client']
 })

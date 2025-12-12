@@ -12,6 +12,7 @@ export type {
     IAdapter,
     IStore,
     IBase,
+    BaseEntity,
     PartialWithId,
     StoreOperationOptions,
     PatchMetadata,
@@ -93,20 +94,31 @@ export type {
     AdapterFactory
 } from './registry/types'
 
-// Server middleware
-export { AtomaRequestHandler } from './server'
+// Server（Fetch 风格管道）
+export {
+    parseHttp,
+    restMapping,
+    guardRequest,
+    executeRequest,
+    validateAndNormalizeRequest,
+    createHandler
+} from './server'
 export type {
     BatchQuery,
     BatchRequest,
     BatchResponse,
     BatchResult,
-    HandlerConfig,
+    Action,
     IOrmAdapter,
     OrderByField,
     QueryParams,
-    QueryResult
+    QueryResult,
+    QueryResultOne,
+    QueryResultMany,
+    WriteOptions,
+    StandardError
 } from './server'
 export { AtomaTypeormAdapter } from './server/typeorm'
 export type { TypeormAdapterOptions } from './server/typeorm'
-export { createAtomaMiddleware, createTypeormMiddleware, atoma } from './server'
-
+export { AtomaPrismaAdapter } from './server/prisma'
+export type { PrismaAdapterOptions } from './server/prisma'

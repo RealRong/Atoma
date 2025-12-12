@@ -8,6 +8,7 @@ export type ApplyResult<T> = {
     inversePatches: Patch[]
     changedFields: Set<string>
     appliedData: T[]
+    operationTypes: StoreDispatchEvent<T>['type'][]
     atom: PrimitiveAtom<Map<StoreKey, T>>
 }
 
@@ -22,6 +23,7 @@ export class OperationApplier {
         const atom = operations[0]?.atom as PrimitiveAtom<Map<StoreKey, T>>
         const draft = createDraft(currentValue)
         const appliedData: T[] = []
+        const operationTypes: StoreDispatchEvent<T>['type'][] = []
 
         operations.forEach(event => {
             const { data } = event
@@ -29,6 +31,7 @@ export class OperationApplier {
                 case 'add':
                     draft.set(data.id, data as any)
                     appliedData.push(data as T)
+                    operationTypes.push('add')
                     break
                 case 'update': {
                     if (!draft.has(data.id)) {
@@ -46,22 +49,21 @@ export class OperationApplier {
                     if (!newObj) return
                     draft.set(data.id, newObj as any)
                     appliedData.push(newObj as T)
+                    operationTypes.push('update')
                     break
                 }
                 case 'forceRemove':
                     draft.delete(data.id)
                     appliedData.push(data as T)
+                    operationTypes.push('forceRemove')
                     break
                 case 'remove': {
-                    if (event.clearCache) {
-                        draft.delete(data.id)
-                    } else {
-                        const origin = draft.get(data.id) ?? currentValue.get(data.id)
-                        if (!origin) return
-                        const newObj = Object.assign({}, origin, { deleted: true, deletedAt: Date.now() })
-                        draft.set(data.id, newObj as any)
-                        appliedData.push(newObj as T)
-                    }
+                    const origin = draft.get(data.id) ?? currentValue.get(data.id)
+                    if (!origin) return
+                    const newObj = Object.assign({}, origin, { deleted: true, deletedAt: Date.now() })
+                    draft.set(data.id, newObj as any)
+                    appliedData.push(newObj as T)
+                    operationTypes.push('remove')
                     break
                 }
             }
@@ -82,6 +84,7 @@ export class OperationApplier {
             inversePatches,
             changedFields,
             appliedData,
+            operationTypes,
             atom
         }
     }

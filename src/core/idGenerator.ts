@@ -13,23 +13,27 @@ let sequence = 0
 let customGenerator: (() => number | string) | undefined
 
 const defaultSnowflakeGenerator = (): number => {
-    const now = Date.now()
-    if (now === lastTimestamp) {
+    const now = BigInt(Date.now())
+
+    if (Number(now) === lastTimestamp) {
         sequence = (sequence + 1) & MAX_SEQUENCE
         if (sequence === 0) {
-            // Sequence overflow within the same ms, wait for next tick
-            while (Date.now() === lastTimestamp) {
-                // busy-wait very briefly; acceptable given rare overflow (4k ids/ms)
-            }
+            // 序列溢出，等下一毫秒
+            while (BigInt(Date.now()) === now) { /* spin very briefly */ }
             return defaultSnowflakeGenerator()
         }
     } else {
         sequence = 0
-        lastTimestamp = now
+        lastTimestamp = Number(now)
     }
 
-    const timestampPart = (now - CUSTOM_EPOCH) << 12
-    return timestampPart + sequence
+    // 41bit 时间戳 + 12bit 序列
+    const id = ((now - BigInt(CUSTOM_EPOCH)) << 12n) | BigInt(sequence)
+    const asNumber = Number(id)
+    if (!Number.isSafeInteger(asNumber)) {
+        throw new Error('Generated id exceeds Number safe integer range')
+    }
+    return asNumber
 }
 
 /**

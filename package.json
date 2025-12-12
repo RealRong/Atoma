@@ -29,6 +29,10 @@
         "./server/typeorm": {
             "types": "./dist/server/typeorm.d.mts",
             "import": "./dist/server/typeorm.mjs"
+        },
+        "./server/prisma": {
+            "types": "./dist/server/prisma.d.mts",
+            "import": "./dist/server/prisma.mjs"
         }
     },
     "files": [
@@ -65,10 +69,14 @@
         "immer": "^9.0.0 || ^10.0.0",
         "jotai": "^2.0.0",
         "react": "^18.0.0",
-        "typeorm": "^0.3.20"
+        "typeorm": "^0.3.20",
+        "@prisma/client": "^5.0.0"
     },
     "peerDependenciesMeta": {
         "typeorm": {
+            "optional": true
+        },
+        "@prisma/client": {
             "optional": true
         }
     },

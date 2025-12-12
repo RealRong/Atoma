@@ -15,9 +15,9 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            atoma: path.resolve(__dirname, '../..', 'dist'),
-            'atoma/server': path.resolve(__dirname, '../..', 'dist/server'),
-            'atoma/adapters': path.resolve(__dirname, '../..', 'dist/adapters')
+            atoma: path.resolve(__dirname, '../..', 'src'),
+            'atoma/server': path.resolve(__dirname, '../..', 'src/server'),
+            'atoma/adapters': path.resolve(__dirname, '../..', 'src/adapters')
         }
     }
 })

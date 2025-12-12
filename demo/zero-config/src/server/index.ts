@@ -1,5 +1,8 @@
 import express from 'express'
-import * as atomaServer from 'atoma/server'
+import {
+    AtomaTypeormAdapter,
+    createHandler
+} from 'atoma/server'
 import { AppDataSource } from './datasource.js'
 import { ensureSeedData } from './seed.js'
 
@@ -24,18 +27,33 @@ export async function startServer(port = 3000) {
     app.use(express.json())
     app.use(allowCors)
 
-    const createTypeormMiddleware =
-        (atomaServer as any).createTypeormMiddleware
-        ?? (atomaServer as any).atoma?.typeorm
-        ?? (atomaServer as any).default?.createTypeormMiddleware
+    const allowList = ['users', 'posts', 'comments']
+    const handler = createHandler({
+        adapter: new AtomaTypeormAdapter(AppDataSource),
+        guardOptions: { allowList },
+        parserOptions: { enableRest: true, batchPath: '/batch' }
+    })
 
-    if (!createTypeormMiddleware) {
-        throw new Error('atoma/server 未导出 createTypeormMiddleware，请检查依赖安装与构建')
-    }
-
-    app.use('/api', createTypeormMiddleware(AppDataSource, {
-        allowList: ['users', 'posts', 'comments']
-    }))
+    // 统一入口（批量 + REST 映射），基于 Fetch 风格 handler 做薄封装
+    app.use('/api', async (req, res, next) => {
+        try {
+            const url = req.originalUrl?.replace(/^\/api/, '') || '/'
+            const incoming = {
+                method: req.method,
+                url,
+                headers: req.headers as Record<string, string>,
+                body: req.body,
+                json: async () => req.body
+            }
+            const { status, body } = await handler(incoming)
+            if (body === undefined || status === 204) {
+                return res.status(status).end()
+            }
+            return res.status(status).json(body)
+        } catch (err) {
+            return next(err)
+        }
+    })
 
     app.get('/health', (_req, res) => res.json({ ok: true }))
 

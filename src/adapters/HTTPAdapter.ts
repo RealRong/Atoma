@@ -3,7 +3,7 @@ import { FindManyOptions, IAdapter, PatchMetadata, StoreKey, PageInfo, Entity } 
 import type { DevtoolsBridge } from '../devtools/types'
 import { getGlobalDevtools } from '../devtools/global'
 import { calculateBackoff } from './http/retry'
-import { applyPatchesWithFallback } from './http/patch'
+import { applyPatches } from 'immer'
 import { resolveConflict } from './http/conflict'
 import { makeUrl, RequestSender, resolveEndpoint } from './http/request'
 import { ETagManager } from './http/etagManager'
@@ -155,6 +155,11 @@ export interface HTTPAdapterConfig<T> {
     responseParser?: ResponseParser<T>
 
     /**
+     * 更新时（含批量）优先使用 patches（patch/bulkPatch），否则走全量 update/bulkUpdate
+     */
+    usePatchForUpdate?: boolean
+
+    /**
      * Global request interceptor.
      * Return a new Request to modify, or void to continue with original.
      * Throw error to cancel request.
@@ -242,6 +247,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     private serializerConfig?: QuerySerializerConfig
     private batchDispatcher?: BatchDispatcher
     private resourceNameForBatch: string
+    private usePatchForUpdate: boolean
 
     constructor(private config: HTTPAdapterConfig<T>) {
         // Auto-generate endpoints from resourceName if not explicitly provided
@@ -281,6 +287,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const endpoints = config.endpoints!
         const batchConfig = this.parseBatchConfig(config.batch)
         this.resourceNameForBatch = this.normalizeResourceName(config.resourceName)
+        this.usePatchForUpdate = config.usePatchForUpdate ?? false
 
         this.name = config.baseURL
         this.queueStorageKey = `atoma:httpQueue:${this.name}`
@@ -396,9 +403,18 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         this.orchestrator.dispose()
         // Clear ETag cache to free memory
         this.etagManager.clear()
+        this.batchDispatcher?.dispose()
     }
 
     async put(key: StoreKey, value: T): Promise<void> {
+        if (this.batchDispatcher) {
+            const clientVersion = this.resolveClientVersion(key, value)
+            return this.batchDispatcher.enqueueUpdate(
+                this.resourceNameForBatch,
+                { id: key, data: value, clientVersion },
+                () => this.executors.put(key, value)
+            )
+        }
         return this.executors.put(key, value)
     }
 
@@ -406,7 +422,33 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         return this.executors.bulkPut(items)
     }
 
+    async bulkCreate(items: T[]): Promise<T[] | void> {
+        if (this.batchDispatcher) {
+            const created = await Promise.all(items.map(item => {
+                return this.batchDispatcher!.enqueueCreate(
+                    this.resourceNameForBatch,
+                    item,
+                    () => this.client.create(item.id, item)
+                )
+            }))
+            return created
+        }
+
+        if (this.config.endpoints!.bulkCreate) {
+            return await this.client.bulkCreate(items)
+        }
+
+        await this.executors.bulkPut(items)
+    }
+
     async delete(key: StoreKey): Promise<void> {
+        if (this.batchDispatcher) {
+            return this.batchDispatcher.enqueueDelete(
+                this.resourceNameForBatch,
+                key,
+                () => this.executors.delete(key)
+            )
+        }
         return this.executors.delete(key)
     }
 
@@ -419,6 +461,40 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     async bulkGet(keys: StoreKey[]): Promise<(T | undefined)[]> {
+        if (!keys.length) return []
+
+        // 若启用 batch，则将 bulkGet 转为一次批量 query（where in），否则回退并发 GET
+        if (this.batchDispatcher) {
+            const uniqueKeys = Array.from(new Set(keys))
+            const params: FindManyOptions<T> = { where: { id: { in: uniqueKeys } }, skipStore: false }
+
+            try {
+                const result = await this.batchDispatcher.enqueueQuery(
+                    this.resourceNameForBatch,
+                    params,
+                    () => this.executors.bulkGet(uniqueKeys)
+                )
+
+                const data: T[] = Array.isArray(result)
+                    ? result as T[]
+                    : Array.isArray((result as any)?.data)
+                        ? (result as any).data as T[]
+                        : []
+
+                const map = new Map<StoreKey, T>()
+                data.forEach(item => {
+                    const id = (item as any)?.id
+                    if (id !== undefined) map.set(id, item)
+                })
+
+                // 保持与输入 keys 相同的顺序与重复
+                return keys.map(key => map.get(key))
+            } catch (error) {
+                // 失败时回退到原有并发 GET
+                this.onError(error as Error, 'bulkGet(batch-fallback)')
+            }
+        }
+
         return this.executors.bulkGet(keys)
     }
 
@@ -428,7 +504,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
 
     async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo } | T[]> {
         if (this.batchDispatcher) {
-            return this.batchDispatcher.enqueue(
+            return this.batchDispatcher.enqueueQuery(
                 this.resourceNameForBatch,
                 options,
                 () => this.executors.findMany(options)
@@ -437,14 +513,127 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         return this.executors.findMany(options)
     }
 
-    async applyPatches(patches: Patch[], metadata: PatchMetadata): Promise<void> {
+    async applyPatches(patches: Patch[], metadata: PatchMetadata): Promise<{ created?: T[] } | void> {
         const supportsPatch = !!this.config.endpoints!.patch
-        return applyPatchesWithFallback<T>(patches, metadata, {
-            sendDeleteRequest: this.client.delete.bind(this.client),
-            sendCreateRequest: this.client.create.bind(this.client),
-            sendPatchRequest: this.client.patch.bind(this.client),
-            sendPutRequest: this.client.put.bind(this.client)
-        }, supportsPatch)
+        const usePatchForUpdates = this.usePatchForUpdate && supportsPatch
+
+        const patchesByItemId = new Map<StoreKey, Patch[]>()
+        patches.forEach(patch => {
+            const itemId = patch.path[0] as StoreKey
+            if (!patchesByItemId.has(itemId)) patchesByItemId.set(itemId, [])
+            patchesByItemId.get(itemId)!.push(patch)
+        })
+
+        const tasks: Promise<any>[] = []
+        const createdResults: T[] = []
+
+        const handleCreate = (id: StoreKey, value: T) => {
+            if (this.batchDispatcher) {
+                tasks.push(
+                    this.batchDispatcher.enqueueCreate(
+                        this.resourceNameForBatch,
+                        value,
+                        () => this.client.create(id, value)
+                    )
+                )
+                return
+            }
+            tasks.push(this.client.create(id, value))
+        }
+
+        const handleDelete = (id: StoreKey) => {
+            if (this.batchDispatcher) {
+                tasks.push(
+                    this.batchDispatcher.enqueueDelete(
+                        this.resourceNameForBatch,
+                        id,
+                        () => this.executors.delete(id)
+                    )
+                )
+                return
+            }
+            tasks.push(this.executors.delete(id))
+        }
+
+        const handlePatch = (id: StoreKey, itemPatches: Patch[]) => {
+            if (this.batchDispatcher) {
+                tasks.push(
+                    this.batchDispatcher.enqueuePatch(
+                        this.resourceNameForBatch,
+                        {
+                            id,
+                            patches: itemPatches,
+                            baseVersion: metadata.baseVersion,
+                            timestamp: metadata.timestamp
+                        },
+                        () => this.client.patch(id, itemPatches, metadata)
+                    )
+                )
+                return
+            }
+            tasks.push(this.client.patch(id, itemPatches, metadata))
+        }
+
+        const handlePut = async (id: StoreKey, itemPatches: Patch[]) => {
+            // 如果 patch 在根路径提供了完整值，直接用；否则需要当前值套 patch
+            const rootReplace = itemPatches.find(p => (p.op === 'add' || p.op === 'replace') && p.path.length === 1)
+            let next: any
+            if (rootReplace) {
+                next = rootReplace.value
+            } else {
+                const current = await this.executors.get(id)
+                if (current === undefined) throw new Error(`Item ${id} not found for put`)
+                next = applyPatches(current as any, itemPatches)
+            }
+
+            if (this.batchDispatcher) {
+                const clientVersion = this.resolveClientVersion(id, next)
+                tasks.push(
+                    this.batchDispatcher.enqueueUpdate(
+                        this.resourceNameForBatch,
+                        { id, data: next, clientVersion },
+                        () => this.executors.put(id, next)
+                    )
+                )
+                return
+            }
+
+            tasks.push(this.executors.put(id, next))
+        }
+
+        for (const [id, itemPatches] of patchesByItemId.entries()) {
+            const isDelete = itemPatches.some(p => p.op === 'remove' && p.path.length === 1)
+            if (isDelete) {
+                handleDelete(id)
+                continue
+            }
+
+            const rootAdd = itemPatches.find(p => p.op === 'add' && p.path.length === 1)
+            const isCreate = Boolean(rootAdd)
+
+            if (isCreate) {
+                handleCreate(id, rootAdd!.value as T)
+                continue
+            }
+
+            if (usePatchForUpdates) {
+                handlePatch(id, itemPatches)
+            } else {
+                await handlePut(id, itemPatches)
+            }
+        }
+
+        const results = await Promise.all(tasks)
+
+        results.forEach(res => {
+            if (res && typeof res === 'object' && (res as any).id !== undefined) {
+                createdResults.push(res as T)
+            }
+        })
+
+        if (createdResults.length) {
+            return { created: createdResults }
+        }
     }
 
     async onConnect(): Promise<void> {
@@ -523,15 +712,16 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         if (batch === true) {
             return { enabled: true, devWarnings: true }
         }
-        if (!batch) {
+        if (batch === false) {
             return { enabled: false, devWarnings: true }
         }
+        const cfg = batch || {}
         return {
-            enabled: batch.enabled !== false,
-            endpoint: batch.endpoint,
-            maxBatchSize: batch.maxBatchSize,
-            flushIntervalMs: batch.flushIntervalMs,
-            devWarnings: batch.devWarnings !== false
+            enabled: cfg.enabled !== false,
+            endpoint: cfg.endpoint,
+            maxBatchSize: cfg.maxBatchSize,
+            flushIntervalMs: cfg.flushIntervalMs,
+            devWarnings: cfg.devWarnings !== false
         }
     }
 
@@ -540,6 +730,14 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const normalized = name.replace(/^\//, '')
         const parts = normalized.split('/')
         return parts[parts.length - 1] || 'unknown'
+    }
+
+    private resolveClientVersion(key: StoreKey, value: T): any {
+        const versionField = this.config.version?.field
+        if (versionField && value && typeof value === 'object' && (value as any)[versionField] !== undefined) {
+            return (value as any)[versionField]
+        }
+        return this.etagManager.get(key)
     }
 
     /**

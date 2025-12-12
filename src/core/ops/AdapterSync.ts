@@ -1,7 +1,7 @@
 import { PrimitiveAtom } from 'jotai'
 import { applyPatches, Patch } from 'immer'
 import { ApplyResult } from './OperationApplier'
-import { IAdapter, PatchMetadata, Entity } from '../types'
+import { IAdapter, PatchMetadata, Entity, StoreDispatchEvent } from '../types'
 import { AtomVersionTracker } from '../state/AtomVersionTracker'
 import { HistoryRecorder } from '../history/HistoryRecorder'
 
@@ -18,23 +18,52 @@ interface SyncParams<T extends Entity> {
     mode: 'optimistic' | 'strict'
 }
 
-const applyPatchesViaOperations = async <T extends Entity>(adapter: IAdapter<T>, patches: Patch[]) => {
+type ApplySideEffects<T> = {
+    createdResults?: T[]
+}
+
+const applyPatchesViaOperations = async <T extends Entity>(
+    adapter: IAdapter<T>,
+    patches: Patch[],
+    _appliedData: T[],
+    _operationTypes: StoreDispatchEvent<T>['type'][]
+): Promise<ApplySideEffects<T>> => {
+    const createActions: T[] = []
     const putActions: T[] = []
     const deleteKeys: Array<string | number> = []
 
     patches.forEach(patch => {
         if (patch.op === 'add' || patch.op === 'replace') {
-            putActions.push(patch.value as T)
+            // Immer on Map: op 'add' => new key, 'replace' => existing key update
+            const value = patch.value as T
+            if (patch.op === 'add') {
+                createActions.push(value)
+            } else {
+                putActions.push(value)
+            }
         } else if (patch.op === 'remove') {
             deleteKeys.push(patch.path[0] as any)
         }
     })
+
+    let createdResults: T[] | void
+
+    if (createActions.length) {
+        if (adapter.bulkCreate) {
+            createdResults = await adapter.bulkCreate(createActions)
+        } else {
+            await adapter.bulkPut(createActions)
+        }
+    }
 
     if (putActions.length) {
         await adapter.bulkPut(putActions)
     }
     if (deleteKeys.length) {
         await adapter.bulkDelete(deleteKeys)
+    }
+    return {
+        createdResults: Array.isArray(createdResults) ? createdResults : undefined
     }
 }
 
@@ -57,23 +86,72 @@ export class AdapterSync {
             versionTracker.bump(atom, changedFields)
         }
 
+        let sideEffects: ApplySideEffects<T> | undefined
+
         try {
             if (adapter.applyPatches) {
-                await adapter.applyPatches(patches, metadata)
+                const res = await adapter.applyPatches(patches, metadata)
+                if (res && typeof res === 'object' && Array.isArray((res as any).created)) {
+                    sideEffects = { createdResults: (res as any).created as T[] }
+                }
             } else {
-                await applyPatchesViaOperations(adapter, patches)
+                sideEffects = await applyPatchesViaOperations(adapter, patches, applyResult.appliedData, applyResult.operationTypes)
+            }
+
+            // Apply patches & reconcile server返回ID（尤其 create）
+            const rewriteCreated = (created?: T[]) => {
+                if (!created || !created.length) return
+                const current = store.get(atom)
+                const next = new Map(current)
+                let addCursor = 0
+
+                applyResult.operationTypes.forEach((type, idx) => {
+                    if (type !== 'add') return
+                    const temp = applyResult.appliedData[idx]
+                    const serverItem = created[addCursor++] ?? temp
+                    const tempId = (temp as any)?.id
+                    if (tempId !== undefined) {
+                        next.delete(tempId)
+                    }
+                    const serverId = (serverItem as any)?.id
+                    if (serverId !== undefined) {
+                        next.set(serverId, serverItem as any)
+                    }
+                    applyResult.appliedData[idx] = serverItem
+                })
+
+                store.set(atom, next)
+                versionTracker.bump(atom, new Set(['id']))
             }
 
             if (mode === 'strict') {
-                // apply after adapter success
                 const currentValue = store.get(atom)
-                const latest = applyPatches(currentValue, patches)
+                let latest = applyPatches(currentValue, patches)
+                // 在严格模式下，如果服务端返回了真实 ID，优先替换
+                if (sideEffects?.createdResults?.length) {
+                    const map = new Map(latest)
+                    let addCursor = 0
+                    applyResult.operationTypes.forEach((type, idx) => {
+                        if (type !== 'add') return
+                        const temp = applyResult.appliedData[idx]
+                        const serverItem = sideEffects!.createdResults![addCursor++] ?? temp
+                        const tempId = (temp as any)?.id
+                        if (tempId !== undefined) map.delete(tempId)
+                        const serverId = (serverItem as any)?.id
+                        if (serverId !== undefined) map.set(serverId, serverItem as any)
+                        applyResult.appliedData[idx] = serverItem
+                    })
+                    latest = map as any
+                }
                 store.set(atom, latest)
                 versionTracker.bump(atom, changedFields)
+            } else {
+                // 乐观模式已写入 temp，若有 server 返回则替换为最终 ID
+                rewriteCreated(sideEffects?.createdResults)
             }
 
-            // 成功确认后统一触发 onSuccess（无论乐观或严格）
-            callbacks.forEach(({ onSuccess }) => setTimeout(() => onSuccess?.(), 0))
+            // 成功确认后统一触发 onSuccess（无论乐观或严格），优先携带服务端实体
+            callbacks.forEach(({ onSuccess }, idx) => setTimeout(() => onSuccess?.(applyResult.appliedData[idx]), 0))
 
             // Record history only on success
             historyRecorder.record({ patches, inversePatches, atom, adapter })

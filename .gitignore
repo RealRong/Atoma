@@ -35,6 +35,6 @@ coverage/
 /*.md
 !/README.md
 !/ARCHITECTURE.md
-
+!/ATOMA_SERVER_RFC.md
 # Unfinished Atoma docs
 atoma-docs

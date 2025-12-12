@@ -1,5 +1,15 @@
 import type { DataSource, SelectQueryBuilder } from 'typeorm'
-import type { IOrmAdapter, QueryParams, QueryResult } from '../types'
+import { applyPatches, enablePatches } from 'immer'
+
+enablePatches()
+import type {
+    IOrmAdapter,
+    QueryParams,
+    QueryResult,
+    QueryResultMany,
+    QueryResultOne,
+    WriteOptions
+} from '../types'
 
 type OperatorValue = {
     in?: any[]
@@ -59,6 +69,277 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     async batchFindMany(requests: Array<{ resource: string; params: QueryParams }>): Promise<QueryResult[]> {
         return Promise.all(requests.map(r => this.findMany(r.resource, r.params)))
+    }
+
+    async create(resource: string, data: any, options: WriteOptions = {}): Promise<QueryResultOne> {
+        const runner = options.transaction ? this.dataSource.createQueryRunner() : undefined
+        try {
+            if (runner) await runner.startTransaction()
+            const repo = (runner?.manager ?? this.dataSource).getRepository(resource as any)
+            const saved = await repo.save(data)
+            if (runner) await runner.commitTransaction()
+            return { data: options.returning === false ? undefined : saved, transactionApplied: Boolean(runner) }
+        } catch (err) {
+            if (runner) await runner.rollbackTransaction()
+            throw err
+        } finally {
+            if (runner) await runner.release()
+        }
+    }
+
+    async update(resource: string, data: any, options: WriteOptions & { where?: Record<string, any> } = {}): Promise<QueryResultOne> {
+        const runner = options.transaction ? this.dataSource.createQueryRunner() : undefined
+        try {
+            if (runner) await runner.startTransaction()
+            const repo = (runner?.manager ?? this.dataSource).getRepository(resource as any)
+            const target = options.where ?? (data?.id !== undefined ? { id: data.id } : undefined)
+            if (!target) throw new Error('update requires where or id in data')
+            await repo.update(target as any, data)
+            const returning = options.returning !== false
+            const fetched = returning ? await repo.findOne({ where: target as any, select: this.buildSelect(options.select, repo.metadata?.columns) }) : undefined
+            if (runner) await runner.commitTransaction()
+            return { data: fetched ?? undefined, transactionApplied: Boolean(runner) }
+        } catch (err) {
+            if (runner) await runner.rollbackTransaction()
+            throw err
+        } finally {
+            if (runner) await runner.release()
+        }
+    }
+
+    async delete(resource: string, whereOrId: any, options: WriteOptions = {}): Promise<QueryResultOne> {
+        const runner = options.transaction ? this.dataSource.createQueryRunner() : undefined
+        try {
+            if (runner) await runner.startTransaction()
+            const repo = (runner?.manager ?? this.dataSource).getRepository(resource as any)
+            const where = this.normalizeWhereOrId(whereOrId)
+            const returning = options.returning === true
+            let deletedData: any | undefined
+            if (returning) {
+                deletedData = await repo.find({ where, select: this.buildSelect(options.select, repo.metadata?.columns) })
+            }
+            await repo.delete(where as any)
+            if (runner) await runner.commitTransaction()
+            return { data: returning ? deletedData : undefined, transactionApplied: Boolean(runner) }
+        } catch (err) {
+            if (runner) await runner.rollbackTransaction()
+            throw err
+        } finally {
+            if (runner) await runner.release()
+        }
+    }
+
+    async patch(
+        resource: string,
+        item: { id: any; patches: any[]; baseVersion?: number; timestamp?: number },
+        options: WriteOptions = {}
+    ): Promise<QueryResultOne> {
+        const runner = options.transaction ? this.dataSource.createQueryRunner() : undefined
+        try {
+            if (runner) await runner.startTransaction()
+            const repo = (runner?.manager ?? this.dataSource).getRepository(resource as any)
+            if (item?.id === undefined || !Array.isArray(item?.patches)) {
+                throw new Error('patch requires id and patches[]')
+            }
+            const current = await repo.findOne({ where: { id: item.id } as any })
+            if (!current) {
+                throw new Error('Not found')
+            }
+            // TypeORM 返回的是实体实例，Immer 需要可 draft 的 plain object
+            const base = this.toPlain(current)
+            const normalized = this.stripIdPrefix(item.patches, item.id)
+            const next = applyPatches(base, normalized)
+            const saved = await repo.save(next as any)
+            const returning = options.returning !== false
+            const data = returning
+                ? (options.select ? await repo.findOne({
+                    where: { id: item.id } as any,
+                    select: this.buildSelect(options.select, repo.metadata?.columns)
+                }) : saved)
+                : undefined
+            if (runner) await runner.commitTransaction()
+            return { data: returning ? data : undefined, transactionApplied: Boolean(runner) }
+        } catch (err) {
+            if (runner) await runner.rollbackTransaction()
+            throw err
+        } finally {
+            if (runner) await runner.release()
+        }
+    }
+
+    async bulkCreate(resource: string, items: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
+        if (options.transaction) {
+            return this.runBulk(resource, items, options, async (repo, payload) => {
+                const saved = await repo.save(payload)
+                return options.returning === false ? [] : saved
+            })
+        }
+
+        const repo = this.dataSource.getRepository(resource as any)
+        const data: any[] = []
+        const partialFailures: Array<{ index: number; error: any }> = []
+
+        for (let i = 0; i < items.length; i++) {
+            try {
+                const saved = await repo.save(items[i])
+                if (options.returning !== false) data.push(saved)
+            } catch (err) {
+                partialFailures.push({ index: i, error: this.toError(err) })
+            }
+        }
+
+        return {
+            data: options.returning === false ? [] : data,
+            partialFailures: partialFailures.length ? partialFailures : undefined,
+            transactionApplied: false
+        }
+    }
+
+    async bulkUpdate(resource: string, items: Array<{ id: any; data: any }>, options: WriteOptions = {}): Promise<QueryResultMany> {
+        if (options.transaction) {
+            return this.runBulk(resource, items, options, async (repo, payload) => {
+                for (const item of payload) {
+                    if (item.id === undefined) throw new Error('bulkUpdate item missing id')
+                    await repo.update({ id: item.id } as any, item.data)
+                }
+                if (options.returning === false) return []
+                const ids = payload.map(p => p.id)
+                return repo.findBy({ id: ids as any } as any)
+            })
+        }
+
+        const repo = this.dataSource.getRepository(resource as any)
+        const data: any[] = []
+        const partialFailures: Array<{ index: number; error: any }> = []
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i]
+            try {
+                if (item.id === undefined) throw new Error('bulkUpdate item missing id')
+                await repo.update({ id: item.id } as any, item.data)
+                if (options.returning !== false) {
+                    const fetched = await repo.findOneBy({ id: item.id } as any)
+                    if (fetched) data.push(fetched)
+                }
+            } catch (err) {
+                partialFailures.push({ index: i, error: this.toError(err) })
+            }
+        }
+
+        return {
+            data: options.returning === false ? [] : data,
+            partialFailures: partialFailures.length ? partialFailures : undefined,
+            transactionApplied: false
+        }
+    }
+
+    async bulkDelete(resource: string, ids: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
+        if (options.transaction) {
+            return this.runBulk(resource, ids, options, async (repo, payload) => {
+                const where = Array.isArray(payload) ? { id: payload as any } : payload
+                const returning = options.returning === true
+                let deleted: any[] | undefined
+                if (returning) {
+                    deleted = await repo.findBy({ id: payload as any } as any)
+                }
+                await repo.delete(where as any)
+                return returning ? deleted : []
+            })
+        }
+
+        const repo = this.dataSource.getRepository(resource as any)
+        const data: any[] = []
+        const partialFailures: Array<{ index: number; error: any }> = []
+
+        for (let i = 0; i < ids.length; i++) {
+            const id = ids[i]
+            try {
+                const returning = options.returning === true
+                if (returning) {
+                    const fetched = await repo.findOneBy({ id } as any)
+                    if (fetched) data.push(fetched)
+                }
+                await repo.delete({ id } as any)
+            } catch (err) {
+                partialFailures.push({ index: i, error: this.toError(err) })
+            }
+        }
+
+        return {
+            data: options.returning === true ? data : [],
+            partialFailures: partialFailures.length ? partialFailures : undefined,
+            transactionApplied: false
+        }
+    }
+
+    async bulkPatch(
+        resource: string,
+        items: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number }>,
+        options: WriteOptions = {}
+    ): Promise<QueryResultMany> {
+        if (options.transaction) {
+            return this.runBulk(resource, items, options, async (repo, payload) => {
+                const updated: any[] = []
+                for (const item of payload) {
+                    if (item.id === undefined || !Array.isArray(item.patches)) {
+                        throw new Error('bulkPatch item missing id or patches')
+                    }
+                    const current = await repo.findOne({ where: { id: item.id } as any })
+                    if (!current) {
+                        throw new Error('Not found')
+                    }
+                    const base = this.toPlain(current)
+                    const normalized = this.stripIdPrefix(item.patches, item.id)
+                    const next = applyPatches(base, normalized)
+                    const saved = await repo.save(next as any)
+                    if (options.returning !== false) {
+                        updated.push(saved)
+                    }
+                }
+                if (options.returning === false) return []
+                return options.select
+                    ? repo.find({
+                        where: { id: payload.map(p => p.id) } as any,
+                        select: this.buildSelect(options.select, repo.metadata?.columns)
+                    })
+                    : updated
+            })
+        }
+
+        const repo = this.dataSource.getRepository(resource as any)
+        const data: any[] = []
+        const partialFailures: Array<{ index: number; error: any }> = []
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i]
+            try {
+                if (item.id === undefined || !Array.isArray(item.patches)) {
+                    throw new Error('bulkPatch item missing id or patches')
+                }
+                const current = await repo.findOne({ where: { id: item.id } as any })
+                if (!current) throw new Error('Not found')
+                const base = this.toPlain(current)
+                const normalized = this.stripIdPrefix(item.patches, item.id)
+                const next = applyPatches(base, normalized)
+                const saved = await repo.save(next as any)
+                if (options.returning !== false) {
+                    data.push(options.select
+                        ? await repo.findOne({
+                            where: { id: item.id } as any,
+                            select: this.buildSelect(options.select, repo.metadata?.columns)
+                        })
+                        : saved)
+                }
+            } catch (err) {
+                partialFailures.push({ index: i, error: this.toError(err) })
+            }
+        }
+
+        return {
+            data: options.returning === false ? [] : data,
+            partialFailures: partialFailures.length ? partialFailures : undefined,
+            transactionApplied: false
+        }
     }
 
     private applyWhere(qb: SelectQueryBuilder<any>, where: QueryParams['where'], alias: string) {
@@ -145,6 +426,15 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         return fields.length ? fields : undefined
     }
 
+    private buildSelect(select: Record<string, boolean> | undefined, columns?: Array<{ propertyName: string }>) {
+        if (!select || !columns) return undefined
+        const keys = Object.entries(select).filter(([, v]) => v).map(([k]) => k)
+        if (!keys.length) return undefined
+        return columns
+            .filter(col => keys.includes(col.propertyName))
+            .map(col => col.propertyName) as any
+    }
+
     private nextParam(field: string) {
         return `${field}_${this.paramIndex++}`
     }
@@ -165,5 +455,56 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     private getAlias(resource: string) {
         return this.options.aliasPrefix ? `${this.options.aliasPrefix}_${resource}` : resource
+    }
+
+    private normalizeWhereOrId(whereOrId: any) {
+        if (whereOrId && typeof whereOrId === 'object' && !Array.isArray(whereOrId)) return whereOrId
+        return { id: whereOrId }
+    }
+
+    private toError(err: any) {
+        if (err?.code && err?.message) return err
+        return { code: 'INTERNAL', message: err?.message || String(err), details: err }
+    }
+
+    private toPlain(obj: any) {
+        // 简单且安全地去掉原型，确保 Immer 可 draft
+        return obj ? JSON.parse(JSON.stringify(obj)) : obj
+    }
+
+    private stripIdPrefix(patches: any[], id: any) {
+        return (patches || []).map(patch => {
+            if (!Array.isArray(patch.path) || !patch.path.length) return patch
+            const [head, ...rest] = patch.path
+            // 宽松比较以兼容字符串/数字 id
+            if (head == id) {
+                return { ...patch, path: rest }
+            }
+            return patch
+        })
+    }
+
+    private async runBulk(
+        resource: string,
+        payload: any[],
+        options: WriteOptions,
+        executor: (repo: any, payload: any[]) => Promise<any>
+    ): Promise<QueryResultMany> {
+        const runner = options.transaction ? this.dataSource.createQueryRunner() : undefined
+        try {
+            if (runner) await runner.startTransaction()
+            const repo = (runner?.manager ?? this.dataSource).getRepository(resource as any)
+            const data = await executor(repo, payload)
+            if (runner) await runner.commitTransaction()
+            return {
+                data: Array.isArray(data) ? data : [],
+                transactionApplied: Boolean(runner)
+            }
+        } catch (err) {
+            if (runner) await runner.rollbackTransaction()
+            throw err
+        } finally {
+            if (runner) await runner.release()
+        }
     }
 }

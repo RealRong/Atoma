@@ -11,6 +11,7 @@ export interface ClientConfig {
         update: string | ((id: StoreKey) => string)
         delete: string | ((id: StoreKey) => string)
         patch?: string | ((id: StoreKey) => string)
+        bulkCreate?: string | (() => string)
         bulkUpdate?: string | (() => string)
         bulkDelete?: string | (() => string)
     }
@@ -55,25 +56,36 @@ export class HTTPClient<T> {
         }
     }
 
-    async create(key: StoreKey, value: T): Promise<void> {
+    async create(_key: StoreKey, value: T): Promise<T | undefined> {
         const url = makeUrl(this.config.baseURL, resolveEndpoint(this.config.endpoints.create))
         const headers = await this.getHeaders()
 
-        this.etagManager.attachVersion(headers, this.config.version, value, key)
+        this.etagManager.attachVersion(headers, this.config.version, value, undefined as any)
 
-        const body = (() => {
-            if (value && typeof value === 'object') {
-                return { ...value, id: key }
-            }
-            return { id: key, value }
-        })()
-
-        const response = await sendJson(this.sender, url, body, headers)
+        const response = await sendJson(this.sender, url, value, headers)
 
         const etag = this.etagManager.extractFromResponse(response)
         if (etag) {
-            this.etagManager.set(key, etag)
+            const parsed = await this.safeParse(response)
+            if (parsed?.id !== undefined) {
+                this.etagManager.set(parsed.id, etag)
+            }
         }
+
+        return this.safeParse(response)
+    }
+
+    private async safeParse(response: Response): Promise<T | undefined> {
+        try {
+            const json = await response.clone().json()
+            if (json && typeof json === 'object') {
+                if ('data' in json) return (json as any).data as T
+                return json as T
+            }
+        } catch {
+            // ignore
+        }
+        return undefined
     }
 
     async delete(key: StoreKey): Promise<void> {
@@ -126,6 +138,28 @@ export class HTTPClient<T> {
         if (!response.ok) {
             throw new Error(`Bulk update failed: ${response.status}`)
         }
+    }
+
+    async bulkCreate(items: T[]): Promise<T[] | undefined> {
+        if (!this.config.endpoints.bulkCreate) return
+        const url = makeUrl(this.config.baseURL, resolveEndpoint(this.config.endpoints.bulkCreate))
+        const headers = await this.getHeaders()
+        const response = await sendJson(this.sender, url, { items }, headers)
+        if (!response.ok) {
+            throw new Error(`Bulk create failed: ${response.status}`)
+        }
+        return this.safeParseArray(response)
+    }
+
+    private async safeParseArray(response: Response): Promise<T[] | undefined> {
+        try {
+            const json = await response.clone().json()
+            if (Array.isArray(json)) return json as T[]
+            if (json && Array.isArray((json as any).data)) return (json as any).data as T[]
+        } catch {
+            // ignore
+        }
+        return undefined
     }
 
     async bulkDelete(keys: StoreKey[]): Promise<void> {
