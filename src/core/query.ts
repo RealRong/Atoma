@@ -1,48 +1,5 @@
 import { FindManyOptions } from './types'
-
-type WhereValue =
-    | any
-    | {
-        in?: any[]
-        gt?: number
-        gte?: number
-        lt?: number
-        lte?: number
-        startsWith?: string
-        endsWith?: string
-        contains?: string
-    }
-
-const normalizeString = (value: any) => {
-    if (value === undefined || value === null) return ''
-    return String(value).toLowerCase()
-}
-
-const matchesCondition = (value: any, condition: WhereValue): boolean => {
-    if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
-        const { in: inArr, gt, gte, lt, lte, contains, startsWith, endsWith } = condition as any
-        if (inArr && Array.isArray(inArr)) {
-            if (!inArr.some(v => v === value)) return false
-        }
-        if (gt !== undefined && !(value > gt)) return false
-        if (gte !== undefined && !(value >= gte)) return false
-        if (lt !== undefined && !(value < lt)) return false
-        if (lte !== undefined && !(value <= lte)) return false
-        const haystack = normalizeString(value)
-        if (startsWith !== undefined) {
-            if (!haystack.startsWith(normalizeString(startsWith))) return false
-        }
-        if (endsWith !== undefined) {
-            if (!haystack.endsWith(normalizeString(endsWith))) return false
-        }
-        if (contains !== undefined) {
-            const needle = normalizeString(contains)
-            if (!haystack.includes(needle)) return false
-        }
-        return true
-    }
-    return value === condition
-}
+import { QueryMatcher, QueryMatcherOptions } from './query/QueryMatcher'
 
 /**
  * Create a comparison function from OrderBy rules
@@ -110,7 +67,11 @@ function quickSelect<T>(arr: T[], compareFn: (a: T, b: T) => number, k: number):
     return arr.slice(0, k).sort(compareFn)
 }
 
-export function applyQuery<T extends Record<string, any>>(data: T[], options?: FindManyOptions<T>, opts?: { preSorted?: boolean }): T[] {
+export function applyQuery<T extends Record<string, any>>(
+    data: T[],
+    options?: FindManyOptions<T>,
+    opts?: { preSorted?: boolean; matcher?: QueryMatcherOptions }
+): T[] {
     if (!options) return data
     const { where, orderBy, limit, offset } = options
 
@@ -118,11 +79,7 @@ export function applyQuery<T extends Record<string, any>>(data: T[], options?: F
 
     // 1. Apply where filter
     if (where && Object.keys(where).length > 0) {
-        result = result.filter(item => {
-            return Object.entries(where).every(([field, cond]) => {
-                return matchesCondition((item as any)[field], cond as WhereValue)
-            })
-        })
+        result = result.filter(item => QueryMatcher.matchesWhere(item, where as any, opts?.matcher))
     }
 
     // 2. Apply sorting with Top-K optimization

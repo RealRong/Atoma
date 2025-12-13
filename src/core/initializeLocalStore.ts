@@ -4,6 +4,7 @@ import { applyQuery } from './query'
 import { IndexManager } from './indexes/IndexManager'
 import { IndexSynchronizer } from './indexes/IndexSynchronizer'
 import { createStoreContext } from './StoreContext'
+import type { QueryMatcherOptions } from './query/QueryMatcher'
 import {
     IAdapter,
     FindManyOptions,
@@ -26,9 +27,6 @@ type GetOneTask = {
 /**
  * Initialize a local store with an adapter
  */
-/**
- * Initialize a local store with an adapter
- */
 export function initializeLocalStore<T extends Entity>(
     atom: PrimitiveAtom<Map<StoreKey, T>>,
     adapter: IAdapter<T>,
@@ -44,25 +42,43 @@ export function initializeLocalStore<T extends Entity>(
     if (indexManager) {
         context.indexRegistry.register(atom, indexManager)
     }
+    const matcher: QueryMatcherOptions | undefined = (() => {
+        const defs = config?.indexes || []
+        if (!defs.length) return undefined
+        const fields: QueryMatcherOptions['fields'] = {}
+        defs.forEach(def => {
+            if (def.type !== 'text') return
+            fields[def.field] = {
+                match: {
+                    minTokenLength: def.options?.minTokenLength,
+                    tokenizer: def.options?.tokenizer
+                },
+                fuzzy: {
+                    distance: def.options?.fuzzyDistance,
+                    minTokenLength: def.options?.minTokenLength,
+                    tokenizer: def.options?.tokenizer
+                }
+            }
+        })
+        return Object.keys(fields).length ? { fields } : undefined
+    })()
 
     const indexSnapshotRegister = () => {
         if (!indexManager) return undefined
         const name = config?.storeName || 'store'
         const snapshot = () => {
-            const statsMap = indexManager.getAllStats()
-            const list: any[] = []
-            statsMap.forEach((stats, field) => {
-                list.push({
-                    field,
-                    type: config?.indexes?.find(i => i.field === field)?.type,
-                    size: stats?.totalDocs,
-                    distinctValues: stats?.distinctValues,
-                    avgSetSize: stats?.avgSetSize,
-                    maxSetSize: stats?.maxSetSize,
-                    minSetSize: stats?.minSetSize
-                })
-            })
-            return list
+            const indexes = indexManager.getIndexSnapshots().map(s => ({
+                field: s.field,
+                type: s.type,
+                dirty: s.dirty,
+                size: s.totalDocs,
+                distinctValues: s.distinctValues,
+                avgSetSize: s.avgSetSize,
+                maxSetSize: s.maxSetSize,
+                minSetSize: s.minSetSize
+            }))
+
+            return { name, indexes, lastQuery: indexManager.getLastQueryPlan() }
         }
         return (
             config?.devtools?.registerIndexManager?.({ name, snapshot }) ||
@@ -432,7 +448,7 @@ export function initializeLocalStore<T extends Entity>(
                     candidateRes.kind === 'candidates'
                         ? Array.from(candidateRes.ids).map(id => mapRef.get(id) as T).filter(Boolean)
                         : Array.from(mapRef.values()) as T[]
-                return applyQuery(source as any, opts, { preSorted: false }) as T[]
+                return applyQuery(source as any, opts, { preSorted: false, matcher }) as T[]
             }
 
             // Compute from current cache for即时 UI
@@ -494,7 +510,7 @@ export function initializeLocalStore<T extends Entity>(
                         // Let's assume adapter.getAll returned everything and we need to filter if it wasn't a smart adapter.
                         // But typically getAll implies "smart" filter wasn't used. 
                         // Let's apply applyQuery just in case.
-                        return applyQuery(remote as any, options) as T[]
+                        return applyQuery(remote as any, options, { matcher }) as T[]
                     }
                     return remote
                 }
@@ -521,6 +537,8 @@ export function initializeLocalStore<T extends Entity>(
             }
         }
     }
+
+    ;(store as any)._matcher = matcher
 
     return store
 }

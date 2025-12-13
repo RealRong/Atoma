@@ -1,4 +1,4 @@
-import { IndexDefinition, OrderBy, StoreKey, WhereOperator } from '../types'
+import { IndexDefinition, StoreKey, WhereOperator } from '../types'
 import { CandidateExactness, CandidateResult, IndexStats } from './types'
 import { intersectAll } from './utils'
 import { NumberDateIndex } from './implementations/NumberDateIndex'
@@ -6,10 +6,22 @@ import { StringIndex } from './implementations/StringIndex'
 import { SubstringIndex } from './implementations/SubstringIndex'
 import { TextIndex } from './implementations/TextIndex'
 import { IIndex } from './base/IIndex'
-import { ISortableIndex } from './base/ISortableIndex'
 
 export class IndexManager<T> {
     private indexes = new Map<string, IIndex<T>>()
+    private lastQueryPlan:
+        | undefined
+        | {
+            timestamp: number
+            whereFields: string[]
+            perField: Array<{
+                field: string
+                status: 'no_index' | 'unsupported' | 'empty' | 'candidates'
+                exactness?: CandidateExactness
+                candidates?: number
+            }>
+            result: { kind: CandidateResult['kind']; exactness?: CandidateExactness; candidates?: number }
+        }
 
     constructor(defs: Array<IndexDefinition<T>>) {
         const seen = new Set<string>()
@@ -50,68 +62,101 @@ export class IndexManager<T> {
     }
 
     collectCandidates(where?: WhereOperator<T>): CandidateResult {
-        if (!where || typeof where === 'function') return { kind: 'unsupported' }
+        if (!where || typeof where === 'function') {
+            this.lastQueryPlan = {
+                timestamp: Date.now(),
+                whereFields: [],
+                perField: [],
+                result: { kind: 'unsupported' }
+            }
+            return { kind: 'unsupported' }
+        }
 
         const candidateSets: Set<StoreKey>[] = []
         let hasUnsupportedCondition = false
         let exactness: CandidateExactness = 'exact'
+        const planPerField: Array<{
+            field: string
+            status: 'no_index' | 'unsupported' | 'empty' | 'candidates'
+            exactness?: CandidateExactness
+            candidates?: number
+        }> = []
 
         Object.entries(where as any).forEach(([field, cond]) => {
             const idx = this.indexes.get(field)
             if (!idx) {
                 hasUnsupportedCondition = true
+                planPerField.push({ field, status: 'no_index' })
                 return
             }
             const res = idx.queryCandidates(cond)
             if (res.kind === 'unsupported') {
                 hasUnsupportedCondition = true
+                planPerField.push({ field, status: 'unsupported' })
                 return
             }
             if (res.kind === 'empty') {
                 exactness = 'superset'
                 candidateSets.length = 0
                 candidateSets.push(new Set())
+                planPerField.push({ field, status: 'empty' })
                 return
             }
             if (res.exactness === 'superset') exactness = 'superset'
             candidateSets.push(res.ids)
+            planPerField.push({ field, status: 'candidates', exactness: res.exactness, candidates: res.ids.size })
         })
 
-        if (!candidateSets.length) return { kind: 'unsupported' }
+        if (!candidateSets.length) {
+            this.lastQueryPlan = {
+                timestamp: Date.now(),
+                whereFields: Object.keys(where as any),
+                perField: planPerField,
+                result: { kind: 'unsupported' }
+            }
+            return { kind: 'unsupported' }
+        }
         if (hasUnsupportedCondition) exactness = 'superset'
 
         const ids = intersectAll(candidateSets)
-        if (ids.size === 0) return { kind: 'empty' }
-        return { kind: 'candidates', ids, exactness }
-    }
+        const result: CandidateResult =
+            ids.size === 0
+                ? { kind: 'empty' }
+                : { kind: 'candidates', ids, exactness }
 
-    getOrderedCandidates(
-        orderBy?: OrderBy<T>,
-        candidates?: Set<StoreKey>,
-        opts?: { limit?: number; offset?: number; applyLimit?: boolean }
-    ): StoreKey[] | undefined {
-        if (!orderBy || Array.isArray(orderBy)) return undefined
-        const idx = this.indexes.get(orderBy.field)
-        if (!idx || !this.isSortableIndex(idx)) return undefined
-        const limitOpts = opts?.applyLimit ? { limit: opts?.limit, offset: opts?.offset } : undefined
-        return idx.getOrderedKeys(orderBy.direction, candidates, limitOpts)
+        this.lastQueryPlan = {
+            timestamp: Date.now(),
+            whereFields: Object.keys(where as any),
+            perField: planPerField,
+            result:
+                result.kind === 'candidates'
+                    ? { kind: 'candidates', exactness: result.exactness, candidates: result.ids.size }
+                    : { kind: result.kind }
+        }
+
+        return result
     }
 
     getStats(field: string): IndexStats | undefined {
         return this.indexes.get(field)?.getStats()
     }
 
-    getAllStats(): Map<string, IndexStats> {
-        const stats = new Map<string, IndexStats>()
+    getIndexSnapshots(): Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> {
+        const list: Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> = []
         this.indexes.forEach((idx, field) => {
-            stats.set(field, idx.getStats())
+            const stats = idx.getStats()
+            list.push({
+                field,
+                type: (idx.config as any).type,
+                dirty: idx.isDirty(),
+                ...stats
+            })
         })
-        return stats
+        return list
     }
 
-    coversWhere(where?: WhereOperator<T>): boolean {
-        if (!where) return true
-        return Object.keys(where as any).every(field => this.indexes.has(field))
+    getLastQueryPlan() {
+        return this.lastQueryPlan
     }
 
     private createIndex(def: IndexDefinition<T>): IIndex<T> {
@@ -128,9 +173,5 @@ export class IndexManager<T> {
             default:
                 throw new Error(`[Atoma Index] Unsupported index type "${(def as any).type}" for field "${def.field}".`)
         }
-    }
-
-    private isSortableIndex(idx: IIndex<T>): idx is ISortableIndex<T> {
-        return typeof (idx as any).getOrderedKeys === 'function'
     }
 }

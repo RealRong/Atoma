@@ -39,13 +39,21 @@ export class StringIndex<T> implements IIndex<T> {
     }
 
     queryCandidates(condition: any): CandidateResult {
+        if (condition && typeof condition === 'object' && !Array.isArray(condition) && (condition as any).eq !== undefined) {
+            if (typeof (condition as any).eq !== 'string') return { kind: 'empty' }
+            const set = this.valueMap.get((condition as any).eq)
+            if (!set || set.size === 0) return { kind: 'empty' }
+            return { kind: 'candidates', ids: set, exactness: 'exact' }
+        }
+
         if (condition && typeof condition === 'object' && !Array.isArray(condition) && (condition as any).in) {
             const values = (condition as any).in as any[]
             if (!Array.isArray(values)) return { kind: 'unsupported' }
-            if (values.length === 0) return { kind: 'empty' }
+            const strs = values.filter((v: any) => typeof v === 'string') as string[]
+            if (strs.length === 0) return { kind: 'empty' }
             const result = new Set<StoreKey>()
-            values.forEach(v => {
-                const set = this.valueMap.get(String(v))
+            strs.forEach(v => {
+                const set = this.valueMap.get(v)
                 if (set) set.forEach(id => result.add(id))
             })
             if (result.size === 0) return { kind: 'empty' }
@@ -53,8 +61,8 @@ export class StringIndex<T> implements IIndex<T> {
         }
 
         // Primitive equality
-        if (condition !== undefined && condition !== null && (typeof condition !== 'object' || Array.isArray(condition))) {
-            const set = this.valueMap.get(String(condition))
+        if (typeof condition === 'string') {
+            const set = this.valueMap.get(condition)
             if (!set || set.size === 0) return { kind: 'empty' }
             return { kind: 'candidates', ids: set, exactness: 'exact' }
         }

@@ -2,6 +2,8 @@ import { Patch, applyPatches } from 'immer'
 import { PrimitiveAtom } from 'jotai'
 import { globalStore } from '../core/BaseStore'
 import { IAdapter, PatchMetadata } from '../core/types'
+import { globalIndexRegistry } from '../core/indexes/IndexRegistry'
+import { IndexSynchronizer } from '../core/indexes/IndexSynchronizer'
 import type { DevtoolsBridge } from '../devtools/types'
 import { registerGlobalHistory } from '../devtools/global'
 
@@ -297,6 +299,10 @@ export class HistoryManager {
         if (currentValue) {
             const newValue = applyPatches(currentValue, patches)
             this.config.store.set(atom, newValue)
+            const indexManager = globalIndexRegistry.get(atom as any)
+            if (indexManager) {
+                IndexSynchronizer.applyPatches(indexManager, currentValue, newValue, patches)
+            }
 
             // Persist to adapter if enabled
             if (this.config.persist) {
@@ -338,6 +344,9 @@ export class HistoryManager {
                         // We should probably pass the inverse patches to this function or handle rollback differently.
                         // Actually, to rollback, we just need to set the atom back to currentValue (the value before update).
                         this.config.store.set(atom, currentValue)
+                        if (indexManager) {
+                            IndexSynchronizer.applyMapDiff(indexManager, newValue, currentValue)
+                        }
 
                         if (this.config.debug) {
                             console.log('[HistoryManager] Rolled back local change due to persistence failure')
@@ -398,6 +407,11 @@ export function applyPatchesOnAtom(
 ): void {
     const currentValue = store.get(atom)
     if (currentValue) {
-        store.set(atom, applyPatches(currentValue, patches))
+        const next = applyPatches(currentValue, patches)
+        store.set(atom, next)
+        const indexManager = globalIndexRegistry.get(atom as any)
+        if (indexManager) {
+            IndexSynchronizer.applyPatches(indexManager, currentValue, next, patches)
+        }
     }
 }

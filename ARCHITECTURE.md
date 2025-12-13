@@ -65,7 +65,7 @@
 - `AtomVersionTracker` 为每个 atom 维护全局版本与字段版本；`getVersionSnapshot(atom, fields)` 用于 `useFindMany` 依赖，避免粗暴全量订阅。
 
 ## 6. 索引与查询
-- `IndexManager` 按字段持有不同索引类型，`collectCandidates(where)` 返回候选 id 交集，`getOrderedCandidates` 可在索引层做排序/分页。
+- `IndexManager` 按字段持有不同索引类型，`collectCandidates(where)` 返回候选 id 交集（允许为超集候选），最终过滤/排序/分页统一由 `applyQuery` 完成。
 - `applyQuery` 提供 where/orderBy/limit/offset；当 limit 占比 <10% 采用 quick-select Top-K，减少全排序成本。
 - 乐观模式下索引与 Map 同步更新：写入前先更新索引，失败回滚；严格模式在持久化成功后更新索引。
 - `skipStore` 用于大数据/瞬时查询：即便在 strict 模式也不会把结果写入 Map，避免内存膨胀；若需要缓存，请取消 `skipStore`。
@@ -90,7 +90,7 @@
 
 ## 9. 扩展点
 - 自定义适配器：实现 `IAdapter<T>`（put/bulkPut/delete/bulkDelete/get/bulkGet/getAll，选实现 applyPatches）。
-- 自定义索引：实现 `IIndex<T>`（add/remove/query/clear/getStats），可选 `ISortableIndex`。
+- 自定义索引：实现 `IIndex<T>`（add/remove/queryCandidates/clear/getStats）。
 - 自定义 id 生成：`setDefaultIdGenerator` 或在 `createSyncStore` 传入 `idGenerator`。
 - Schema：接受 Zod/Yup 或函数，支持 sync/async。
 - 生命周期钩子：beforeSave / afterSave。

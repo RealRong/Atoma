@@ -59,10 +59,15 @@ export function createDevtoolsBridge(options: BridgeOptions = {}): DevtoolsBridg
             }
         })
 
-    const registerIndexManager = ({ name, snapshot }: { name: string; snapshot: () => any[] }) =>
+    const registerIndexManager = ({ name, snapshot }: { name: string; snapshot: () => any }) =>
         intervalRegister(() => {
             try {
-                return { type: 'index-snapshot', payload: { name, indexes: snapshot() } }
+                const snap = snapshot()
+                // 支持旧签名：snapshot() => IndexSnapshot[]
+                if (Array.isArray(snap)) {
+                    return { type: 'index-snapshot', payload: { name, indexes: snap } }
+                }
+                return { type: 'index-snapshot', payload: snap }
             } catch (err) {
                 console.warn('[Atoma Devtools] index snapshot failed', err)
                 return undefined

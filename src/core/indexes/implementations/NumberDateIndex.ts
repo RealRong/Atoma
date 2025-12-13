@@ -3,9 +3,8 @@ import { binarySearchLeft, binarySearchRight } from '../utils'
 import { normalizeNumber } from '../validators'
 import { CandidateResult, IndexStats } from '../types'
 import { IIndex } from '../base/IIndex'
-import { ISortableIndex } from '../base/ISortableIndex'
 
-export class NumberDateIndex<T> implements ISortableIndex<T>, IIndex<T> {
+export class NumberDateIndex<T> implements IIndex<T> {
     readonly type: 'number' | 'date'
     readonly config: IndexDefinition<T>
 
@@ -51,6 +50,16 @@ export class NumberDateIndex<T> implements ISortableIndex<T>, IIndex<T> {
 
     queryCandidates(condition: any): CandidateResult {
         if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
+            if (condition.eq !== undefined) {
+                try {
+                    const num = normalizeNumber(condition.eq, this.config.field, this.type as IndexType, 'eq')
+                    const set = this.valueMap.get(num)
+                    if (!set || set.size === 0) return { kind: 'empty' }
+                    return { kind: 'candidates', ids: set, exactness: 'exact' }
+                } catch {
+                    return { kind: 'empty' }
+                }
+            }
             if (condition.in && Array.isArray(condition.in)) {
                 const result = new Set<StoreKey>()
                 condition.in.forEach((v: any) => {
@@ -82,47 +91,6 @@ export class NumberDateIndex<T> implements ISortableIndex<T>, IIndex<T> {
             }
         }
         return { kind: 'unsupported' }
-    }
-
-    getOrderedKeys(
-        direction: 'asc' | 'desc',
-        candidates?: Set<StoreKey>,
-        opts?: { limit?: number; offset?: number }
-    ): StoreKey[] {
-        const entries = this.buildSortedEntries()
-        const asc = direction === 'asc'
-        const ordered: StoreKey[] = []
-        const limit = opts?.limit
-        const offset = opts?.offset ?? 0
-        let skipped = 0
-
-        const processIds = (ids: StoreKey[]): boolean => {
-            const list = asc ? ids : [...ids].reverse()
-            for (const id of list) {
-                if (candidates && !candidates.has(id)) continue
-                if (skipped < offset) {
-                    skipped++
-                    continue
-                }
-                ordered.push(id)
-                if (limit !== undefined && ordered.length >= limit) {
-                    return true
-                }
-            }
-            return false
-        }
-
-        if (asc) {
-            for (let i = 0; i < entries.length; i++) {
-                if (processIds(entries[i].ids)) break
-            }
-        } else {
-            for (let i = entries.length - 1; i >= 0; i--) {
-                if (processIds(entries[i].ids)) break
-            }
-        }
-
-        return ordered
     }
 
     getStats(): IndexStats {

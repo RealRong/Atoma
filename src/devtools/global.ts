@@ -1,10 +1,10 @@
 import { createDevtoolsBridge } from './bridge'
-import type { DevtoolsBridge, StoreSnapshot, IndexSnapshot, QueueItem, HistoryEntrySummary } from './types'
+import type { DevtoolsBridge, StoreSnapshot, IndexSnapshotPayload, QueueItem, HistoryEntrySummary } from './types'
 
 let globalBridge: DevtoolsBridge | undefined
 
 type PendingStore = { name: string; snapshot: () => StoreSnapshot }
-type PendingIndex = { name: string; snapshot: () => IndexSnapshot[] }
+type PendingIndex = { name: string; snapshot: () => IndexSnapshotPayload }
 type PendingQueue = { name: string; snapshot: () => { pending: QueueItem[]; failed?: QueueItem[] } }
 type PendingHistory = { name: string; snapshot: () => { pointer: number; length: number; entries: HistoryEntrySummary[] } }
 

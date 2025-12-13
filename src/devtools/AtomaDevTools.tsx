@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { DevtoolsEvent, StoreSnapshot, IndexSnapshot, QueueItem } from './types'
+import type { DevtoolsEvent, StoreSnapshot, IndexSnapshot, QueueItem, IndexQueryPlan } from './types'
 import { enableGlobalDevtools, getGlobalDevtools } from './global'
 
 type StoreState = Record<string, StoreSnapshot>
-type IndexState = Record<string, IndexSnapshot[]>
+type IndexState = Record<string, { indexes: IndexSnapshot[]; lastQuery?: IndexQueryPlan }>
 type QueueState = Record<string, { pending: QueueItem[]; failed: QueueItem[] }>
 type HistoryState = Record<string, { pointer: number; length: number; entries: any[] }>
 
@@ -22,7 +22,7 @@ export function AtomaDevTools() {
             if (e.type === 'store-snapshot') {
                 setStores(prev => ({ ...prev, [e.payload.name]: e.payload }))
             } else if (e.type === 'index-snapshot') {
-                setIndexes(prev => ({ ...prev, [e.payload.name]: e.payload.indexes }))
+                setIndexes(prev => ({ ...prev, [e.payload.name]: { indexes: e.payload.indexes, lastQuery: e.payload.lastQuery } }))
             } else if (e.type === 'queue-snapshot') {
                 setQueues(prev => ({ ...prev, [e.payload.name]: { pending: e.payload.pending, failed: e.payload.failed } }))
             } else if (e.type === 'history-snapshot') {
@@ -85,16 +85,21 @@ export function AtomaDevTools() {
                     {tab === 'index' && (
                         <>
                             {Object.keys(indexes).length === 0 && <div style={mutedStyle}>暂无索引快照</div>}
-                            {Object.entries(indexes).map(([name, list]) => (
+                            {Object.entries(indexes).map(([name, payload]) => (
                                 <div key={name} style={cardStyle}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <strong>{name}</strong>
-                                        <span style={pillStyle}>{list.length} indexes</span>
+                                        <span style={pillStyle}>{payload.indexes.length} indexes</span>
                                     </div>
+                                    {payload.lastQuery && (
+                                        <pre style={preStyle}>{JSON.stringify(payload.lastQuery, null, 2)}</pre>
+                                    )}
                                     <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-                                        {list.map(idx => (
+                                        {payload.indexes.map(idx => (
                                             <div key={idx.field} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                <span>{idx.field} ({idx.type})</span>
+                                                <span>
+                                                    {idx.field} ({idx.type}){idx.dirty ? ' *dirty*' : ''}
+                                                </span>
                                                 <span style={mutedStyle}>docs: {idx.size ?? '-'} · distinct: {idx.distinctValues ?? '-'}</span>
                                             </div>
                                         ))}

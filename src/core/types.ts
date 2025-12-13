@@ -135,6 +135,7 @@ export interface StoreOperationOptions {
 }
 
 export type WhereOperator<T> = Partial<Record<keyof T & string, any | {
+    eq?: any
     in?: any[]
     gt?: number
     gte?: number
@@ -143,6 +144,8 @@ export type WhereOperator<T> = Partial<Record<keyof T & string, any | {
     startsWith?: string
     endsWith?: string
     contains?: string
+    match?: string | { q: string; op?: 'and' | 'or'; minTokenLength?: number; tokenizer?: (text: string) => string[] }
+    fuzzy?: string | { q: string; op?: 'and' | 'or'; distance?: 0 | 1 | 2; minTokenLength?: number; tokenizer?: (text: string) => string[] }
 }>>
 
 export type OrderBy<T> =

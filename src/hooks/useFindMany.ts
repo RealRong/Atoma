@@ -39,7 +39,8 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
         const filteredIds = useMemo(() => {
             if (!shouldUseLocal) return []
             const arr = Array.from(map.values()) as T[]
-            const result = applyQuery(arr as any, options) as T[]
+            const matcher = (store as any)._matcher
+            const result = applyQuery(arr as any, options, matcher ? { matcher } : undefined) as T[]
             return result.map(item => (item as any).id as StoreKey)
         }, [shouldUseLocal, relevantVersion, queryKey, map])
 

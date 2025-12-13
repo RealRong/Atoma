@@ -18,3 +18,4 @@ export class IndexRegistry {
     }
 }
 
+export const globalIndexRegistry = new IndexRegistry()

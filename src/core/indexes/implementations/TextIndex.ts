@@ -69,9 +69,66 @@ export class TextIndex<T> implements IIndex<T> {
     }
 
     queryCandidates(_condition: any): CandidateResult {
-        // 当前 where 语义（applyQuery）对 contains/startsWith/endsWith 是“整段字符串子串”匹配；
-        // token 倒排索引无法保证无假阴性，因此在引入专用 search 操作符之前，TextIndex 不参与候选集过滤。
-        return { kind: 'unsupported' }
+        const condition = _condition
+        if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
+            return { kind: 'unsupported' }
+        }
+
+        const matchSpec = (condition as any).match
+        const fuzzySpec = (condition as any).fuzzy
+        if (matchSpec === undefined && fuzzySpec === undefined) return { kind: 'unsupported' }
+
+        const spec = matchSpec !== undefined ? matchSpec : fuzzySpec
+        const isFuzzy = fuzzySpec !== undefined
+        const resolved = typeof spec === 'string' ? { q: spec } : spec
+        const query = String((resolved as any).q ?? '')
+        const op = ((resolved as any).op as 'and' | 'or' | undefined) || 'and'
+        const distance: 0 | 1 | 2 = isFuzzy ? (((resolved as any).distance ?? this.fuzzyDistance) as any) : 0
+        const minTokenLength = (resolved as any).minTokenLength ?? this.minTokenLength
+        const tokenizer: (text: string) => string[] = (resolved as any).tokenizer || this.tokenizer || defaultTokenizer
+
+        const tokens = tokenizer(query)
+            .filter((t: string) => t.length >= minTokenLength)
+            .map((t: string) => t.toLowerCase())
+        if (!tokens.length) return { kind: 'empty' }
+
+        const tokenSets: Set<StoreKey>[] = []
+        const tokenUnions: Set<StoreKey>[] = []
+
+        const lookupToken = (token: string): Set<StoreKey> => {
+            const exact = this.invertedIndex.get(token)
+            if (exact) return new Set(exact)
+            if (!distance) return new Set()
+            const fuzzyMatches = new Set<StoreKey>()
+            this.invertedIndex.forEach((set, t) => {
+                if (Math.abs(t.length - token.length) > distance) return
+                if (levenshteinDistance(token, t) <= distance) {
+                    set.forEach(id => fuzzyMatches.add(id))
+                }
+            })
+            return fuzzyMatches
+        }
+
+        tokens.forEach((token: string) => {
+            const ids = lookupToken(token)
+            if (op === 'and') {
+                tokenSets.push(ids)
+            } else {
+                tokenUnions.push(ids)
+            }
+        })
+
+        if (op === 'and') {
+            if (tokenSets.some(s => s.size === 0)) return { kind: 'empty' }
+            const ids = intersectAll(tokenSets)
+            if (ids.size === 0) return { kind: 'empty' }
+            return { kind: 'candidates', ids, exactness: distance ? 'superset' : 'exact' }
+        }
+
+        const union = new Set<StoreKey>()
+        tokenUnions.forEach(s => s.forEach(id => union.add(id)))
+        if (union.size === 0) return { kind: 'empty' }
+        return { kind: 'candidates', ids: union, exactness: distance ? 'superset' : 'exact' }
     }
 
     getStats(): IndexStats {
@@ -106,7 +163,7 @@ export class TextIndex<T> implements IIndex<T> {
     }
 
     private tokenize(input: string): string[] {
-        return this.tokenizer(input).filter(t => t.length >= this.minTokenLength)
+        return this.tokenizer(input.toLowerCase()).filter(t => t.length >= this.minTokenLength)
     }
 
     private buildSortedTokens(): string[] {
