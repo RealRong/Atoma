@@ -108,6 +108,8 @@ export type BatchOp =
 
 export interface BatchRequest {
     ops: BatchOp[]
+    traceId?: string
+    requestId?: string
 }
 
 export interface BatchResult<T = any> {

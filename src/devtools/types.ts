@@ -1,4 +1,5 @@
 import type { IndexDefinition } from '../core/types'
+import type { DebugEvent } from '../observability/types'
 
 export type StoreSnapshot = {
     name: string
@@ -61,6 +62,7 @@ export type DevtoolsEvent =
     | { type: 'index-snapshot'; payload: IndexSnapshotPayload }
     | { type: 'queue-snapshot'; payload: { name: string; pending: QueueItem[]; failed: QueueItem[] } }
     | { type: 'history-snapshot'; payload: { name: string; pointer: number; length: number; entries: HistoryEntrySummary[] } }
+    | { type: 'debug-event'; payload: DebugEvent }
 
 export interface DevtoolsBridge {
     emit(event: DevtoolsEvent): void

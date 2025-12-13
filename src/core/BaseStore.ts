@@ -1,5 +1,5 @@
 import { enableMapSet, enablePatches, produce } from 'immer'
-import { PrimitiveAtom, createStore } from 'jotai'
+import { PrimitiveAtom, createStore } from 'jotai/vanilla'
 import { orderBy } from 'lodash'
 import {
     IBase,
@@ -24,7 +24,7 @@ export const globalStore = createStore()
 
 /**
  * Default global context for backward compatibility
- * @deprecated Use per-store context via createSyncStore instead
+ * @deprecated Use per-store context via createCoreStore/createReactStore instead
  */
 const defaultGlobalContext = createStoreContext()
 
@@ -92,6 +92,14 @@ const handleQueue = (
         const store = operations[0]?.store || globalStore
         const { adapter } = operations[0]
         const applyResult = eventContext.operationApplier.apply(operations, store.get(atom))
+        const sharedTraceId = (() => {
+            const ids = operations
+                .map(op => op.traceId)
+                .filter((v): v is string => typeof v === 'string' && Boolean(v))
+            if (!ids.length) return undefined
+            const uniq = new Set(ids)
+            return uniq.size === 1 ? ids[0] : undefined
+        })()
 
         // Map callbacks to payloads (if any)
         const callbacks = operations.map((op, idx) => {
@@ -116,7 +124,10 @@ const handleQueue = (
             versionTracker: eventContext.versionTracker,
             historyRecorder: eventContext.historyRecorder,
             indexRegistry: eventContext.indexRegistry,
-            mode
+            mode,
+            traceId: sharedTraceId,
+            debug: eventContext.debug,
+            storeName: eventContext.storeName
         })
     })
 }
@@ -238,7 +249,7 @@ export const BaseStore = {
 export default BaseStore
 
 /**
- * Export createStoreContext for use in createSyncStore
+ * Export createStoreContext for use in createCoreStore/createReactStore
  */
 export { createStoreContext } from './StoreContext'
 export type { StoreContext } from './StoreContext'

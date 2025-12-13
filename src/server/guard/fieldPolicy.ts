@@ -44,7 +44,7 @@ export function enforceQueryFieldPolicy(
     resource: string,
     params: QueryParams,
     policy: FieldPolicy | undefined,
-    meta?: { queryIndex?: number; requestId?: string }
+    meta?: { queryIndex?: number; traceId?: string; requestId?: string; opId?: string }
 ) {
     if (!policy) return
 
@@ -81,7 +81,9 @@ function ensureAllowed(
         resource: string
         part: 'where' | 'orderBy' | 'select'
         queryIndex?: number
+        traceId?: string
         requestId?: string
+        opId?: string
     }
 ) {
     // 未配置该 part 的策略 → 放行

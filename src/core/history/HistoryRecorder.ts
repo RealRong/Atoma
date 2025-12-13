@@ -1,4 +1,4 @@
-import { Atom } from 'jotai'
+import { Atom } from 'jotai/vanilla'
 import { Patch } from 'immer'
 import { IAdapter } from '../types'
 

@@ -39,8 +39,8 @@ describe('RelationResolver 缓存命中只查询缺失键', () => {
 
     it('已缓存键不再参与 in 查询，返回值保持合并', async () => {
         ;(commentsStore.findMany as any)
-            .mockResolvedValueOnce([{ id: 'c1', postId: 1 }])
-            .mockResolvedValueOnce([{ id: 'c2', postId: 2 }])
+            .mockResolvedValueOnce({ data: [{ id: 'c1', postId: 1 }] })
+            .mockResolvedValueOnce({ data: [{ id: 'c2', postId: 2 }] })
 
         const first = await RelationResolver.resolveBatch<Post>(
             [{ id: 1, title: 'P1' }],

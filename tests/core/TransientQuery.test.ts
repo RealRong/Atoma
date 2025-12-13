@@ -54,8 +54,8 @@ describe('Transient Queries (skipStore)', () => {
         // Let's test the IStore.findMany path which is what useFindMany uses.
 
         // 3. Verify we got data
-        expect(results).toHaveLength(2)
-        expect((results as any)[0].name).toBe('Remote Item 1')
+        expect(results.data).toHaveLength(2)
+        expect(results.data[0].name).toBe('Remote Item 1')
 
         // 4. Verify store is STILL empty
         expect(store.get(mapAtom).size).toBe(0)

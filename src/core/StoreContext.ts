@@ -5,6 +5,7 @@ import { OperationApplier } from './ops/OperationApplier'
 import { AdapterSync } from './ops/AdapterSync'
 import { QueueConfig } from './types'
 import { IndexRegistry, globalIndexRegistry } from './indexes/IndexRegistry'
+import type { DebugOptions } from '../observability/types'
 
 /**
  * Per-store context holding dependencies
@@ -18,12 +19,14 @@ export interface StoreContext {
     adapterSync: AdapterSync
     indexRegistry: IndexRegistry
     queueConfig: QueueConfig
+    debug?: DebugOptions
+    storeName?: string
 }
 
-/**
- * Create a new store context with optional queue configuration
- */
-export function createStoreContext(queueConfigOverride?: Partial<QueueConfig>): StoreContext {
+export function createStoreContext(
+    queueConfigOverride?: Partial<QueueConfig>,
+    options?: { debug?: DebugOptions; storeName?: string }
+): StoreContext {
     const queueConfig: QueueConfig = {
         enabled: true,
         debug: false,
@@ -37,6 +40,8 @@ export function createStoreContext(queueConfigOverride?: Partial<QueueConfig>): 
         operationApplier: new OperationApplier(),
         adapterSync: new AdapterSync(),
         indexRegistry: globalIndexRegistry,
-        queueConfig
+        queueConfig,
+        debug: options?.debug,
+        storeName: options?.storeName
     }
 }

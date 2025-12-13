@@ -1,9 +1,10 @@
 import { PrimitiveAtom, createStore } from 'jotai'
 import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { applyQuery, extractQueryFields, stableStringify } from '../core/query'
-import { getVersionSnapshot, globalStore } from '../core/BaseStore'
-import { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, UseFindManyResult, RelationMap, Entity } from '../core/types'
+import { applyQuery, extractQueryFields, stableStringify } from '../../core/query'
+import { getVersionSnapshot, globalStore } from '../../core/BaseStore'
+import { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, RelationMap, Entity } from '../../core/types'
+import type { UseFindManyResult } from '../types'
 import { useRelations } from './useRelations'
 
 export function createUseFindMany<T extends Entity, Relations extends RelationMap<T> = {}>(
@@ -66,7 +67,6 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
         }
 
         const normalizeResult = (res: any): { data: T[]; pageInfo?: PageInfo } => {
-            if (Array.isArray(res)) return { data: res }
             if (res && Array.isArray(res.data)) return { data: res.data, pageInfo: res.pageInfo }
             return { data: [] }
         }

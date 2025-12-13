@@ -1,11 +1,11 @@
 /**
- * React Sync Engine
- * Universal state synchronization for React applications
+ * Atoma Core
+ * Universal state synchronization engine (framework-agnostic core)
  */
 
-// Main factory function
-export { createSyncStore } from './core/createSyncStore'
-export type { SyncStore, SyncStoreConfig } from './core/createSyncStore'
+// Core factory function
+export { createCoreStore } from './core/createCoreStore'
+export type { CoreStore, CoreStoreConfig } from './core/createCoreStore'
 
 // Core types
 export type {
@@ -23,7 +23,6 @@ export type {
     StoreKey,
     FindManyOptions,
     FindManyResult,
-    UseFindManyResult,
     FetchPolicy,
 
     PageInfo,
@@ -41,7 +40,10 @@ export type {
     HistoryChange,
     IEventEmitter
 } from './core/types'
-export { createStore } from './core/createSyncStore'
+export { createStore } from './core/createCoreStore'
+
+// Observability
+export type { TraceContext, Explain, DebugOptions, DebugEvent } from './observability'
 
 // Core utilities
 export { BaseStore, globalStore, setHistoryCallback } from './core/BaseStore'
@@ -64,36 +66,12 @@ export { belongsTo, hasMany, hasOne, variants } from './core/relations/builders'
 
 // Devtools
 export { createDevtoolsBridge } from './devtools/bridge'
-export { AtomaDevTools } from './devtools/AtomaDevTools'
 export type { DevtoolsBridge, DevtoolsEvent, StoreSnapshot } from './devtools/types'
 export { enableGlobalDevtools, getGlobalDevtools, disableGlobalDevtools } from './devtools/global'
-
-// Hooks
-export { createUseValue, createUseAll } from './hooks'
-export { createUseFindMany } from './hooks'
-export { createUseMultiple } from './hooks'
 
 // History
 export { HistoryManager, applyPatchesOnAtom } from './history'
 export type { HistoryRecord, HistoryManagerConfig } from './history'
-
-// StoreRegistry
-export {
-    Store,
-    setDefaultAdapterFactory,
-    registerStore,
-    clearStoreCache,
-    preloadStores,
-    getLoadedStores,
-    getStoreConfig,
-    type AdapterFactoryOptions
-} from './registry/StoreFactory'
-
-export type {
-    StoreRegistry,
-    RegistryStoreConfig,
-    AdapterFactory
-} from './registry/types'
 
 // Server（Fetch 风格管道）
 export {

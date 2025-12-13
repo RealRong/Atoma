@@ -1,4 +1,4 @@
-import type { PrimitiveAtom } from 'jotai'
+import type { PrimitiveAtom } from 'jotai/vanilla'
 import type { StoreKey } from '../types'
 import type { IndexManager } from './IndexManager'
 

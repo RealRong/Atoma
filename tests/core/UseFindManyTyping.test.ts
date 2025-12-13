@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { createSyncStore } from '../../src/core/createSyncStore'
+import { createSyncStore } from '../../src/react/createReactStore'
 import { belongsTo, hasMany } from '../../src/core/relations/builders'
-import type { Entity, IAdapter, StoreKey } from '../../src/core/types'
+import type { Entity, FindManyOptions, IAdapter, StoreKey } from '../../src/core/types'
 
 type Equal<A, B> =
     (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)

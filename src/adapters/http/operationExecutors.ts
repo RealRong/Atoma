@@ -7,6 +7,10 @@ import { ETagManager } from './etagManager'
 import type { HTTPClient } from './client'
 import type { SyncOrchestrator } from './syncOrchestrator'
 import type { StoreKey, FindManyOptions, PageInfo, Entity } from '../../core/types'
+import type { RequestIdSequencer } from '../../observability/trace'
+import { deriveRequestId } from '../../observability/trace'
+import { getDebugCarrier } from '../../observability/internal'
+import { utf8ByteLength } from '../../observability/utf8'
 
 export interface OperationExecutors<T extends Entity> {
     put: (key: StoreKey, value: T) => Promise<void>
@@ -16,7 +20,7 @@ export interface OperationExecutors<T extends Entity> {
     get: (key: StoreKey) => Promise<T | undefined>
     bulkGet: (keys: StoreKey[]) => Promise<(T | undefined)[]>
     getAll: (filter?: (item: T) => boolean) => Promise<T[]>
-    findMany: (options?: FindManyOptions<T>) => Promise<{ data: T[]; pageInfo?: PageInfo } | T[]>
+    findMany: (options?: FindManyOptions<T>) => Promise<{ data: T[]; pageInfo?: PageInfo }>
 }
 
 type Deps<T extends Entity> = {
@@ -26,6 +30,7 @@ type Deps<T extends Entity> = {
     etagManager: ETagManager
     fetchWithRetry: (input: RequestInfo, init?: RequestInit) => Promise<Response>
     getHeaders: () => Promise<Record<string, string>>
+    requestIdSequencer?: RequestIdSequencer
     orchestrator: SyncOrchestrator<T>
     onError: (error: Error, operation: string) => void
 }
@@ -42,6 +47,28 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
         onError
     } = deps
     const endpoints = config.endpoints!
+    const requestSeqByTraceId = deps.requestIdSequencer ? undefined : new Map<string, number>()
+
+    const traceHeadersFor = (options?: FindManyOptions<T>) => {
+        const traceId = typeof (options as any)?.debug?.traceId === 'string' ? (options as any).debug.traceId as string : undefined
+        if (!traceId) return undefined
+        const requestId = deps.requestIdSequencer
+            ? deps.requestIdSequencer.next(traceId)
+            : (() => {
+                const cur = requestSeqByTraceId!.get(traceId) ?? 0
+                const next = cur + 1
+                requestSeqByTraceId!.set(traceId, next)
+                return deriveRequestId(traceId, next)
+            })()
+        return {
+            traceId,
+            requestId,
+            headers: {
+                'x-atoma-trace-id': traceId,
+                'x-atoma-request-id': requestId
+            }
+        }
+    }
 
     /**
      * Helper to parse response using the user-provided parser or default identity behavior
@@ -266,9 +293,73 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
             const params = buildQueryParams(options, config.querySerializer)
             const url = `${config.baseURL}${resolveEndpoint(endpoints.getAll!)}?${params.toString()}`
             const headers = await getHeaders()
+            const trace = traceHeadersFor(options)
+            const emitter = getDebugCarrier(options)?.emitter
 
-            const request = new Request(url, { method: 'GET', headers })
-            const { envelope } = await executeRequest(request)
+            const request = new Request(url, { method: 'GET', headers: { ...headers, ...(trace?.headers || {}) } })
+            const startedAt = Date.now()
+            try {
+                emitter?.emit('adapter:request', {
+                    method: 'GET',
+                    endpoint: resolveEndpoint(endpoints.getAll!),
+                    attempt: 1,
+                    payloadBytes: 0
+                }, { requestId: trace?.requestId })
+
+                const { envelope, response } = await executeRequest(request)
+                emitter?.emit('adapter:response', {
+                    ok: response.ok,
+                    status: response.status,
+                    durationMs: Date.now() - startedAt,
+                    itemCount: Array.isArray(envelope.data) ? envelope.data.length : (envelope.data ? 1 : 0)
+                }, { requestId: trace?.requestId })
+
+                if (Array.isArray(envelope.data)) {
+                    return {
+                        data: envelope.data,
+                        pageInfo: envelope.pageInfo as PageInfo
+                    }
+                }
+                return {
+                    data: [envelope.data as T],
+                    pageInfo: envelope.pageInfo as PageInfo
+                }
+            } catch (error: any) {
+                emitter?.emit('adapter:response', {
+                    ok: false,
+                    status: typeof error?.status === 'number' ? error.status : undefined,
+                    durationMs: undefined
+                }, { requestId: trace?.requestId })
+                throw error
+            }
+        }
+
+        const url = `${config.baseURL}${resolveEndpoint(endpoints.getAll!)}`
+        const headers = await getHeaders()
+        const trace = traceHeadersFor(options)
+        const emitter = getDebugCarrier(options)?.emitter
+
+        const request = new Request(url, {
+            method: 'POST',
+            headers: { ...headers, ...(trace?.headers || {}), 'Content-Type': 'application/json' },
+            body: JSON.stringify(options || {})
+        })
+        const startedAt = Date.now()
+        try {
+            emitter?.emit('adapter:request', {
+                method: 'POST',
+                endpoint: resolveEndpoint(endpoints.getAll!),
+                attempt: 1,
+                payloadBytes: utf8ByteLength(JSON.stringify(options || {}))
+            }, { requestId: trace?.requestId })
+
+            const { envelope, response } = await executeRequest(request)
+            emitter?.emit('adapter:response', {
+                ok: response.ok,
+                status: response.status,
+                durationMs: Date.now() - startedAt,
+                itemCount: Array.isArray(envelope.data) ? envelope.data.length : (envelope.data ? 1 : 0)
+            }, { requestId: trace?.requestId })
 
             if (Array.isArray(envelope.data)) {
                 return {
@@ -280,27 +371,13 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
                 data: [envelope.data as T],
                 pageInfo: envelope.pageInfo as PageInfo
             }
-        }
-
-        const url = `${config.baseURL}${resolveEndpoint(endpoints.getAll!)}`
-        const headers = await getHeaders()
-
-        const request = new Request(url, {
-            method: 'POST',
-            headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify(options || {})
-        })
-        const { envelope } = await executeRequest(request)
-
-        if (Array.isArray(envelope.data)) {
-            return {
-                data: envelope.data,
-                pageInfo: envelope.pageInfo as PageInfo
-            }
-        }
-        return {
-            data: [envelope.data as T],
-            pageInfo: envelope.pageInfo as PageInfo
+        } catch (error: any) {
+            emitter?.emit('adapter:response', {
+                ok: false,
+                status: typeof error?.status === 'number' ? error.status : undefined,
+                durationMs: undefined
+            }, { requestId: trace?.requestId })
+            throw error
         }
     }
 

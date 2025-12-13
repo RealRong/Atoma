@@ -1,10 +1,13 @@
-import { PrimitiveAtom } from 'jotai'
+import { PrimitiveAtom } from 'jotai/vanilla'
 import { BaseStore, bumpAtomVersion, globalStore } from './BaseStore'
 import { applyQuery } from './query'
 import { IndexManager } from './indexes/IndexManager'
 import { IndexSynchronizer } from './indexes/IndexSynchronizer'
 import { createStoreContext } from './StoreContext'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
+import { createTraceId } from '../observability/trace'
+import { createDebugEmitter } from '../observability/debug'
+import { attachDebugCarrier } from '../observability/internal'
 import {
     IAdapter,
     FindManyOptions,
@@ -35,6 +38,22 @@ export function initializeLocalStore<T extends Entity>(
     // Use custom store or global store
     const jotaiStore = config?.store || globalStore
     const context = config?.context || createStoreContext()
+    if (config?.storeName && !context.storeName) {
+        context.storeName = config.storeName
+    }
+    if (config?.debug && !context.debug) {
+        context.debug = config.debug as any
+    }
+
+    const resolveOperationTraceId = (options?: StoreOperationOptions) => {
+        const explicit = options?.debug?.traceId
+        if (typeof explicit === 'string' && explicit) return explicit
+        const debug = context.debug as any
+        const enabled = Boolean(debug?.enabled && debug?.sink)
+        const sampleRate = typeof debug?.sampleRate === 'number' ? debug.sampleRate : 0
+        if (!enabled || sampleRate <= 0) return undefined
+        return createTraceId()
+    }
 
     let batchGetOneTaskQueue: GetOneTask[] = []
     let batchFetchOneTaskQueue: GetOneTask[] = []
@@ -234,6 +253,7 @@ export function initializeLocalStore<T extends Entity>(
                         atom,
                         store: jotaiStore,
                         context,
+                        traceId: resolveOperationTraceId(options),
                         onSuccess: async o => {
                             await runAfterSave(validObj, 'add')
                             resolve(o)
@@ -256,6 +276,7 @@ export function initializeLocalStore<T extends Entity>(
                     atom,
                     store: jotaiStore,
                     context,
+                    traceId: resolveOperationTraceId(options),
                     onSuccess: () => {
                         resolve(true)
                     },
@@ -365,6 +386,7 @@ export function initializeLocalStore<T extends Entity>(
                             data: validObj,
                             store: jotaiStore,
                             context,
+                            traceId: resolveOperationTraceId(options),
                             onSuccess: async updated => {
                                 await runAfterSave(validObj, 'update')
                                 resolve(updated)
@@ -406,6 +428,7 @@ export function initializeLocalStore<T extends Entity>(
                                             adapter,
                                             store: jotaiStore,
                                             context,
+                                            traceId: resolveOperationTraceId(options),
                                             onSuccess: async updated => {
                                                 await runAfterSave(validObj, 'update')
                                                 resolve(updated)
@@ -441,33 +464,148 @@ export function initializeLocalStore<T extends Entity>(
                 return existing
             }
 
+            const debugOptions = context.debug as any
+            const explainEnabled = options?.debug?.explain === true
+            const storeName = context.storeName || config?.storeName || 'store'
+            const effectiveSkipStore = Boolean(options?.skipStore || (options as any)?.fields?.length)
+
+            const shouldAllocateTrace = explainEnabled || (
+                Boolean(debugOptions?.enabled && debugOptions?.sink) && (debugOptions?.sampleRate ?? 0) > 0
+            )
+            const traceId = options?.debug?.traceId || (shouldAllocateTrace ? createTraceId() : undefined)
+            const optionsWithTrace = traceId
+                ? ({
+                    ...(options || {}),
+                    debug: {
+                        ...((options as any)?.debug || {}),
+                        traceId
+                    }
+                } as FindManyOptions<T>)
+                : options
+            const explain = explainEnabled
+                ? { schemaVersion: 1, traceId: traceId || createTraceId() }
+                : undefined
+
+            const emitter = createDebugEmitter({ debug: debugOptions, traceId, store: storeName })
+            if (emitter && optionsWithTrace && typeof optionsWithTrace === 'object') {
+                attachDebugCarrier(optionsWithTrace as any, { emitter })
+            }
+            const emit = (type: string, payload: any) => emitter?.emit(type, payload)
+
+            const summarizeParams = (opts?: FindManyOptions<T>) => {
+                if (!opts) return {}
+                const where = opts.where
+                const whereFields = (where && typeof where === 'object' && !Array.isArray(where))
+                    ? Object.keys(where as any)
+                    : undefined
+                const orderBy = opts.orderBy
+                const orderByFields = orderBy
+                    ? (Array.isArray(orderBy) ? orderBy : [orderBy]).map(r => String((r as any).field))
+                    : undefined
+                return {
+                    whereFields,
+                    orderByFields,
+                    limit: typeof opts.limit === 'number' ? opts.limit : undefined,
+                    offset: typeof opts.offset === 'number' ? opts.offset : undefined,
+                    before: typeof (opts as any).before === 'string' ? (opts as any).before : undefined,
+                    after: typeof (opts as any).after === 'string' ? (opts as any).after : undefined,
+                    cursor: typeof (opts as any).cursor === 'string' ? (opts as any).cursor : undefined,
+                    includeTotal: typeof (opts as any).includeTotal === 'boolean' ? (opts as any).includeTotal : undefined,
+                    fields: Array.isArray((opts as any).fields) ? (opts as any).fields : undefined,
+                    skipStore: Boolean((opts as any).skipStore)
+                }
+            }
+
+            const withExplain = (out: any, extra?: any) => {
+                if (!explainEnabled) return out
+                return { ...out, explain: { ...explain, ...(extra || {}) } }
+            }
+
             const evaluateWithIndexes = (mapRef: Map<StoreKey, T>, opts?: FindManyOptions<T>) => {
                 const candidateRes = indexManager ? indexManager.collectCandidates(opts?.where) : { kind: 'unsupported' as const }
-                if (candidateRes.kind === 'empty') return [] as T[]
+                const plan = indexManager?.getLastQueryPlan()
+
+                emit('query:index', {
+                    params: { whereFields: summarizeParams(opts).whereFields },
+                    result: candidateRes.kind === 'candidates'
+                        ? { kind: 'candidates', exactness: candidateRes.exactness, count: candidateRes.ids.size }
+                        : { kind: candidateRes.kind },
+                    plan
+                })
+
+                if (explain) {
+                    ;(explain as any).index = {
+                        kind: candidateRes.kind,
+                        ...(candidateRes.kind === 'candidates' ? { exactness: candidateRes.exactness, candidates: candidateRes.ids.size } : {}),
+                        ...(plan ? { lastQueryPlan: plan } : {})
+                    }
+                }
+
+                if (candidateRes.kind === 'empty') {
+                    emit('query:finalize', { inputCount: 0, outputCount: 0, params: summarizeParams(opts) })
+                    if (explain) {
+                        ;(explain as any).finalize = { inputCount: 0, outputCount: 0, paramsSummary: summarizeParams(opts) }
+                    }
+                    return [] as T[]
+                }
+
                 const source =
                     candidateRes.kind === 'candidates'
                         ? Array.from(candidateRes.ids).map(id => mapRef.get(id) as T).filter(Boolean)
                         : Array.from(mapRef.values()) as T[]
-                return applyQuery(source as any, opts, { preSorted: false, matcher }) as T[]
+                const out = applyQuery(source as any, opts, { preSorted: false, matcher }) as T[]
+
+                emit('query:finalize', { inputCount: source.length, outputCount: out.length, params: summarizeParams(opts) })
+                if (explain) {
+                    ;(explain as any).finalize = { inputCount: source.length, outputCount: out.length, paramsSummary: summarizeParams(opts) }
+                }
+                return out
             }
 
             // Compute from current cache for即时 UI
             const map = jotaiStore.get(atom)
-            const localResult = evaluateWithIndexes(map, options)
-            const effectiveSkipStore = Boolean(options?.skipStore || (options as any)?.fields?.length)
+            emit('query:start', { params: summarizeParams(options) })
+            const localResult = withExplain(
+                { data: evaluateWithIndexes(map, options) },
+                { cacheWrite: { writeToCache: !effectiveSkipStore, reason: effectiveSkipStore ? (options?.skipStore ? 'skipStore' : 'sparseFields') : undefined } }
+            )
+
+            const normalizeResult = (res: any): { data: T[]; pageInfo?: any; explain?: any } => {
+                if (res && typeof res === 'object' && !Array.isArray(res)) {
+                    if (Array.isArray((res as any).data)) {
+                        return { data: (res as any).data, pageInfo: (res as any).pageInfo, explain: (res as any).explain }
+                    }
+                }
+                if (Array.isArray(res)) return { data: res }
+                return { data: [] }
+            }
 
             // Prefer adapter-level findMany when可用（支持远程过滤/分页）
             if (typeof (adapter as any).findMany === 'function') {
                 try {
-                    const raw = await (adapter as any).findMany(options)
-                    const { data, pageInfo } = Array.isArray(raw)
-                        ? { data: raw }
-                        : { data: raw?.data ?? [], pageInfo: raw?.pageInfo }
+                    const startedAt = Date.now()
+                    const raw = await (adapter as any).findMany(optionsWithTrace)
+                    const durationMs = Date.now() - startedAt
+                    const normalized = normalizeResult(raw)
+                    const { data, pageInfo, explain: adapterExplain } = normalized
 
                     const transformed = (data || []).map((item: T) => transform(item))
 
                     if (effectiveSkipStore) {
-                        return Array.isArray(raw) ? transformed : { data: transformed, pageInfo }
+                        emit('query:cacheWrite', {
+                            writeToCache: false,
+                            reason: options?.skipStore ? 'skipStore' : 'sparseFields',
+                            params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields }
+                        })
+                        return withExplain({
+                            data: transformed,
+                            pageInfo,
+                            ...(adapterExplain !== undefined ? { explain: adapterExplain } : {})
+                        }, {
+                            cacheWrite: { writeToCache: false, reason: options?.skipStore ? 'skipStore' : 'sparseFields' },
+                            adapter: { ok: true, durationMs },
+                            ...(adapterExplain !== undefined ? { adapterRemoteExplain: adapterExplain } : {})
+                        })
                     }
 
                     const existingMap = jotaiStore.get(atom)
@@ -484,10 +622,23 @@ export function initializeLocalStore<T extends Entity>(
                     if (indexManager) IndexSynchronizer.applyMapDiff(indexManager, existingMap, next)
                     bumpAtomVersion(atom, undefined, context)
 
-                    return Array.isArray(raw) ? transformed : { data: transformed, pageInfo }
+                    emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
+                    return withExplain({
+                        data: transformed,
+                        pageInfo,
+                        ...(adapterExplain !== undefined ? { explain: adapterExplain } : {})
+                    }, {
+                        cacheWrite: { writeToCache: true },
+                        adapter: { ok: true, durationMs },
+                        ...(adapterExplain !== undefined ? { adapterRemoteExplain: adapterExplain } : {})
+                    })
                 } catch (error) {
                     adapter.onError?.(error as Error, 'findMany')
-                    return localResult
+                    const err = error instanceof Error ? error : new Error(String(error))
+                    return withExplain(
+                        { data: (localResult as any).data },
+                        { errors: [{ kind: 'adapter', code: 'FIND_MANY_FAILED', message: err.message, traceId }] }
+                    )
                 }
             }
 
@@ -510,9 +661,25 @@ export function initializeLocalStore<T extends Entity>(
                         // Let's assume adapter.getAll returned everything and we need to filter if it wasn't a smart adapter.
                         // But typically getAll implies "smart" filter wasn't used. 
                         // Let's apply applyQuery just in case.
-                        return applyQuery(remote as any, options, { matcher }) as T[]
+                        emit('query:cacheWrite', {
+                            writeToCache: false,
+                            reason: options?.skipStore ? 'skipStore' : 'sparseFields',
+                            params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields }
+                        })
+                        return withExplain(
+                            { data: applyQuery(remote as any, options, { matcher }) as T[] },
+                            { cacheWrite: { writeToCache: false, reason: options?.skipStore ? 'skipStore' : 'sparseFields' } }
+                        )
                     }
-                    return remote
+                    emit('query:cacheWrite', {
+                        writeToCache: false,
+                        reason: options?.skipStore ? 'skipStore' : 'sparseFields',
+                        params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields }
+                    })
+                    return withExplain(
+                        { data: remote },
+                        { cacheWrite: { writeToCache: false, reason: options?.skipStore ? 'skipStore' : 'sparseFields' } }
+                    )
                 }
 
                 // If storing, maintain references
@@ -530,7 +697,11 @@ export function initializeLocalStore<T extends Entity>(
                 jotaiStore.set(atom, next)
                 if (indexManager) IndexSynchronizer.applyMapDiff(indexManager, existingMap, next)
                 bumpAtomVersion(atom, undefined, context)
-                return evaluateWithIndexes(jotaiStore.get(atom), options)
+                emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
+                return withExplain(
+                    { data: evaluateWithIndexes(jotaiStore.get(atom), options) },
+                    { cacheWrite: { writeToCache: true } }
+                )
             } catch (error) {
                 adapter.onError?.(error as Error, 'findMany')
                 return localResult

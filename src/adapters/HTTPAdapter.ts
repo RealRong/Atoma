@@ -15,6 +15,7 @@ import { createOperationExecutors, OperationExecutors } from './http/operationEx
 import type { QueuedOperation } from './http/offlineQueue'
 import type { QuerySerializerConfig } from './http/query'
 import { BatchEngine } from '../batch'
+import { createRequestIdSequencer } from '../observability/trace'
 
 // ===== Config Interfaces =====
 
@@ -51,7 +52,7 @@ export interface OfflineConfig {
 export interface QueryConfig<T> {
     strategy?: 'REST' | 'Django' | 'GraphQL' | 'passthrough'
     serializer?: (options: FindManyOptions<T>) => URLSearchParams | object
-    customFn?: (options: FindManyOptions<T>) => Promise<{ data: T[]; pageInfo?: PageInfo } | T[]>
+    customFn?: (options: FindManyOptions<T>) => Promise<{ data: T[]; pageInfo?: PageInfo }>
 }
 
 export interface ConcurrencyConfig {
@@ -248,6 +249,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     private batchEngine?: BatchEngine
     private resourceNameForBatch: string
     private usePatchForUpdate: boolean
+    private readonly requestIdSequencer = createRequestIdSequencer()
 
     constructor(private config: HTTPAdapterConfig<T>) {
         // Auto-generate endpoints from resourceName if not explicitly provided
@@ -369,6 +371,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             etagManager: this.etagManager,
             fetchWithRetry: this.fetchWithRetry.bind(this),
             getHeaders: this.getHeaders.bind(this),
+            requestIdSequencer: this.requestIdSequencer,
             orchestrator: this.orchestrator,
             onError: this.onError.bind(this)
         })
@@ -382,6 +385,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 flushIntervalMs: batchConfig.flushIntervalMs,
                 headers: this.getHeaders.bind(this),
                 fetchFn: this.fetchWithRetry.bind(this),
+                requestIdSequencer: this.requestIdSequencer,
                 onError: (error, payload) => {
                     this.onError(error, 'batch')
                     if (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
@@ -475,13 +479,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                     () => this.executors.findMany(params)
                 )
 
-                const data: T[] = Array.isArray(result)
-                    ? result as T[]
-                    : Array.isArray((result as any)?.data)
-                        ? (result as any).data as T[]
-                        : []
-
-                return data[0]
+                return result.data[0]
             } catch (error) {
                 this.onError(error as Error, 'get(batch-fallback)')
             }
@@ -505,11 +503,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                     () => this.executors.bulkGet(uniqueKeys).then(list => list.filter((i): i is T => i !== undefined))
                 )
 
-                const data: T[] = Array.isArray(result)
-                    ? result as T[]
-                    : Array.isArray((result as any)?.data)
-                        ? (result as any).data as T[]
-                        : []
+                const data = result.data
 
                 const map = new Map<StoreKey, T>()
                 data.forEach(item => {
@@ -531,19 +525,13 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     async getAll(filter?: (item: T) => boolean): Promise<T[]> {
         if (this.batchEngine) {
             try {
-                const result = await this.batchEngine.enqueueQuery(
+                const result = await this.batchEngine.enqueueQuery<T>(
                     this.resourceNameForBatch,
                     undefined,
                     () => this.executors.getAll(filter)
                 )
 
-                const data: T[] = Array.isArray(result)
-                    ? result as T[]
-                    : Array.isArray((result as any)?.data)
-                        ? (result as any).data as T[]
-                        : []
-
-                return filter ? data.filter(filter) : data
+                return filter ? result.data.filter(filter) : result.data
             } catch (error) {
                 this.onError(error as Error, 'getAll(batch-fallback)')
             }
@@ -552,7 +540,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         return this.executors.getAll(filter)
     }
 
-    async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo } | T[]> {
+    async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo }> {
         if (this.batchEngine) {
             return this.batchEngine.enqueueQuery(
                 this.resourceNameForBatch,
@@ -566,6 +554,19 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     async applyPatches(patches: Patch[], metadata: PatchMetadata): Promise<{ created?: T[] } | void> {
         const supportsPatch = !!this.config.endpoints!.patch
         const usePatchForUpdates = this.usePatchForUpdate && supportsPatch
+        const nextTraceHeaders = () => {
+            const traceId = metadata.traceId
+            if (typeof traceId !== 'string' || !traceId) return undefined
+            const requestId = this.requestIdSequencer.next(traceId)
+            return {
+                traceId,
+                requestId,
+                headers: {
+                    'x-atoma-trace-id': traceId,
+                    'x-atoma-request-id': requestId
+                }
+            }
+        }
 
         const patchesByItemId = new Map<StoreKey, Patch[]>()
         patches.forEach(patch => {
@@ -582,12 +583,19 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 tasks.push(
                     this.batchEngine.enqueueCreate(
                         this.resourceNameForBatch,
-                        value
+                        value,
+                        { traceId: metadata.traceId, debugEmitter: metadata.debugEmitter }
                     )
                 )
                 return
             }
-            tasks.push(this.client.create(id, value))
+            const trace = nextTraceHeaders()
+            tasks.push(this.client.create(
+                id,
+                value,
+                trace?.headers,
+                trace && metadata.debugEmitter ? { emitter: metadata.debugEmitter, requestId: trace.requestId } : undefined
+            ))
         }
 
         const handleDelete = (id: StoreKey) => {
@@ -595,12 +603,21 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 tasks.push(
                     this.batchEngine.enqueueDelete(
                         this.resourceNameForBatch,
-                        id
+                        id,
+                        { traceId: metadata.traceId, debugEmitter: metadata.debugEmitter }
                     )
                 )
                 return
             }
-            tasks.push(this.executors.delete(id))
+            const trace = nextTraceHeaders()
+            tasks.push(this.orchestrator.handleWithOfflineFallback(
+                { type: 'delete', key: id },
+                () => this.client.delete(
+                    id,
+                    trace?.headers,
+                    trace && metadata.debugEmitter ? { emitter: metadata.debugEmitter, requestId: trace.requestId } : undefined
+                )
+            ))
         }
 
         const handlePatch = (id: StoreKey, itemPatches: Patch[]) => {
@@ -613,12 +630,20 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                             patches: itemPatches,
                             baseVersion: metadata.baseVersion,
                             timestamp: metadata.timestamp
-                        }
+                        },
+                        { traceId: metadata.traceId, debugEmitter: metadata.debugEmitter }
                     )
                 )
                 return
             }
-            tasks.push(this.client.patch(id, itemPatches, metadata))
+            const trace = nextTraceHeaders()
+            tasks.push(this.client.patch(
+                id,
+                itemPatches,
+                metadata,
+                trace?.headers,
+                trace && metadata.debugEmitter ? { emitter: metadata.debugEmitter, requestId: trace.requestId } : undefined
+            ))
         }
 
         const handlePut = async (id: StoreKey, itemPatches: Patch[]) => {
@@ -638,13 +663,23 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 tasks.push(
                     this.batchEngine.enqueueUpdate(
                         this.resourceNameForBatch,
-                        { id, data: next, clientVersion }
+                        { id, data: next, clientVersion },
+                        { traceId: metadata.traceId, debugEmitter: metadata.debugEmitter }
                     )
                 )
                 return
             }
 
-            tasks.push(this.executors.put(id, next))
+            const trace = nextTraceHeaders()
+            tasks.push(this.orchestrator.handleWithOfflineFallback(
+                { type: 'put', key: id, value: next },
+                () => this.client.put(
+                    id,
+                    next,
+                    trace?.headers,
+                    trace && metadata.debugEmitter ? { emitter: metadata.debugEmitter, requestId: trace.requestId } : undefined
+                )
+            ))
         }
 
         for (const [id, itemPatches] of patchesByItemId.entries()) {

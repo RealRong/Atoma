@@ -15,7 +15,7 @@ const makeRestIncoming = (args: { method: string; url: string; body?: any }) => 
 })
 
 describe('StandardError.details（最终规范）', () => {
-    it('field_policy：包含 kind/resource/part/field/queryIndex/requestId', async () => {
+    it('field_policy：包含 kind/resource/part/field/queryIndex/opId', async () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult)),
             isResourceAllowed: vi.fn(() => true)
@@ -49,7 +49,7 @@ describe('StandardError.details（最终规范）', () => {
             part: 'where',
             field: 'passwordHash',
             queryIndex: 0,
-            requestId: 'r1'
+            opId: 'r1'
         })
     })
 

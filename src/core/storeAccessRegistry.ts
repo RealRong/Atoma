@@ -1,4 +1,4 @@
-import { PrimitiveAtom } from 'jotai'
+import { PrimitiveAtom } from 'jotai/vanilla'
 import { StoreKey, IStore } from './types'
 
 type StoreAccess = {

@@ -11,13 +11,13 @@ export interface StoreRegistry {
 
 /**
  * Configuration for registry-registered stores.
- * Note: indexes are intentionally omitted until createSyncStore supports them.
+ * Note: 该配置面向框架无关的 core store（createCoreStore）。
  */
 export interface RegistryStoreConfig<T extends Entity> {
     adapter?: IAdapter<T>
     transformData?: (data: T) => T
     idGenerator?: () => StoreKey
-    store?: ReturnType<typeof import('jotai').createStore>
+    store?: ReturnType<typeof import('jotai/vanilla').createStore>
     schema?: SchemaValidator<T>
     hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>

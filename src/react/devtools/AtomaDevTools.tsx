@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { DevtoolsEvent, StoreSnapshot, IndexSnapshot, QueueItem, IndexQueryPlan } from './types'
-import { enableGlobalDevtools, getGlobalDevtools } from './global'
+import type { DevtoolsEvent, StoreSnapshot, IndexSnapshot, QueueItem, IndexQueryPlan } from '../../devtools/types'
+import { enableGlobalDevtools, getGlobalDevtools } from '../../devtools/global'
+import type { DebugEvent } from '../../observability/types'
 
 type StoreState = Record<string, StoreSnapshot>
 type IndexState = Record<string, { indexes: IndexSnapshot[]; lastQuery?: IndexQueryPlan }>
 type QueueState = Record<string, { pending: QueueItem[]; failed: QueueItem[] }>
 type HistoryState = Record<string, { pointer: number; length: number; entries: any[] }>
+type TraceState = Record<string, { traceId: string; events: DebugEvent[]; lastUpdatedAt: number }>
 
 export function AtomaDevTools() {
     const [resolvedBridge] = useState(() => getGlobalDevtools() ?? enableGlobalDevtools())
@@ -14,7 +16,9 @@ export function AtomaDevTools() {
     const [indexes, setIndexes] = useState<IndexState>({})
     const [queues, setQueues] = useState<QueueState>({})
     const [histories, setHistories] = useState<HistoryState>({})
-    const [tab, setTab] = useState<'store' | 'index' | 'queue' | 'history'>('store')
+    const [traces, setTraces] = useState<TraceState>({})
+    const [selectedTraceId, setSelectedTraceId] = useState<string | undefined>(undefined)
+    const [tab, setTab] = useState<'store' | 'index' | 'queue' | 'history' | 'trace'>('store')
 
     useEffect(() => {
         if (!resolvedBridge) return
@@ -27,6 +31,37 @@ export function AtomaDevTools() {
                 setQueues(prev => ({ ...prev, [e.payload.name]: { pending: e.payload.pending, failed: e.payload.failed } }))
             } else if (e.type === 'history-snapshot') {
                 setHistories(prev => ({ ...prev, [e.payload.name]: { pointer: e.payload.pointer, length: e.payload.length, entries: e.payload.entries } }))
+            } else if (e.type === 'debug-event') {
+                const evt = e.payload
+                const traceId = evt.traceId
+                if (!traceId) return
+
+                setTraces(prev => {
+                    const maxTraces = 50
+                    const maxEventsPerTrace = 200
+                    const now = Date.now()
+
+                    const existing = prev[traceId]
+                    const nextEvents = existing
+                        ? [...existing.events, evt].slice(-maxEventsPerTrace)
+                        : [evt]
+
+                    let next: TraceState = {
+                        ...prev,
+                        [traceId]: { traceId, events: nextEvents, lastUpdatedAt: now }
+                    }
+
+                    const ids = Object.keys(next)
+                    if (ids.length > maxTraces) {
+                        const sorted = ids
+                            .map(id => ({ id, t: next[id]?.lastUpdatedAt ?? 0 }))
+                            .sort((a, b) => b.t - a.t)
+                        const keep = new Set(sorted.slice(0, maxTraces).map(x => x.id))
+                        next = Object.fromEntries(Object.entries(next).filter(([id]) => keep.has(id))) as TraceState
+                    }
+
+                    return next
+                })
             }
         })
         return () => unsub && unsub()
@@ -51,7 +86,7 @@ export function AtomaDevTools() {
             {open && (
                 <div style={panelStyle}>
                     <div style={tabRowStyle}>
-                        {['store', 'index', 'queue', 'history'].map(key => (
+                        {['store', 'index', 'queue', 'history', 'trace'].map(key => (
                             <button
                                 key={key}
                                 style={tab === key ? tabBtnActive : tabBtn}
@@ -138,10 +173,66 @@ export function AtomaDevTools() {
                             ))}
                         </>
                     )}
+
+                    {tab === 'trace' && (
+                        <>
+                            {Object.keys(traces).length === 0 && <div style={mutedStyle}>暂无 trace 事件（需要在 store 配置 debug.enabled + sampleRate）</div>}
+                            <div style={{ display: 'flex', gap: 10 }}>
+                                <div style={{ flex: 1 }}>
+                                    {Object.values(traces)
+                                        .slice()
+                                        .sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt)
+                                        .map(t => {
+                                            const last = t.events[t.events.length - 1]
+                                            const active = selectedTraceId === t.traceId
+                                            return (
+                                                <div
+                                                    key={t.traceId}
+                                                    style={{
+                                                        ...cardStyle,
+                                                        cursor: 'pointer',
+                                                        border: active ? '1px solid rgba(59,130,246,0.9)' : (cardStyle.border as string)
+                                                    }}
+                                                    onClick={() => setSelectedTraceId(t.traceId)}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                                                        <strong style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.traceId}</strong>
+                                                        <span style={pillStyle}>{t.events.length}</span>
+                                                    </div>
+                                                    <div style={{ fontSize: 12, opacity: 0.8 }}>
+                                                        {last?.type || '-'} · {formatIsoTime(last?.timestamp)}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    {selectedTraceId && traces[selectedTraceId]
+                                        ? (
+                                            <div style={cardStyle}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                    <strong style={{ fontSize: 12 }}>{selectedTraceId}</strong>
+                                                    <span style={pillStyle}>{traces[selectedTraceId].events.length} events</span>
+                                                </div>
+                                                <pre style={preStyle}>{JSON.stringify(traces[selectedTraceId].events, null, 2)}</pre>
+                                            </div>
+                                        )
+                                        : <div style={mutedStyle}>选择一个 trace 查看详情</div>}
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
         </div>
     )
+}
+
+const formatIsoTime = (iso?: string) => {
+    if (!iso) return '-'
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return iso
+    return d.toLocaleTimeString()
 }
 
 const floatingStyle: React.CSSProperties = {

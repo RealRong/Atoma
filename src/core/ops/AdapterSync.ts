@@ -1,4 +1,4 @@
-import { PrimitiveAtom } from 'jotai'
+import { PrimitiveAtom } from 'jotai/vanilla'
 import { applyPatches, Patch } from 'immer'
 import isEqual from 'lodash/isEqual'
 import { ApplyResult } from './OperationApplier'
@@ -7,6 +7,8 @@ import { AtomVersionTracker } from '../state/AtomVersionTracker'
 import { HistoryRecorder } from '../history/HistoryRecorder'
 import type { IndexRegistry } from '../indexes/IndexRegistry'
 import { IndexSynchronizer } from '../indexes/IndexSynchronizer'
+import type { DebugOptions } from '../../observability/types'
+import { createDebugEmitter } from '../../observability/debug'
 
 type CallbackEntry = { onSuccess?: (...args: any[]) => void, onFail?: (error?: Error) => void }
 
@@ -20,6 +22,9 @@ interface SyncParams<T extends Entity> {
     historyRecorder: HistoryRecorder
     indexRegistry?: IndexRegistry
     mode: 'optimistic' | 'strict'
+    traceId?: string
+    debug?: DebugOptions
+    storeName?: string
 }
 
 type ApplySideEffects<T> = {
@@ -92,12 +97,27 @@ export class AdapterSync {
         const originalValue = store.get(atom)
         const indexManager = indexRegistry?.get(atom as any)
 
+        const emitter = createDebugEmitter({
+            debug: params.debug,
+            traceId: params.traceId,
+            store: params.storeName ?? adapter.name
+        })
+        const emit = (type: string, payload: any) => emitter?.emit(type, payload)
+
         const metadata: PatchMetadata = {
             atom,
             databaseName: adapter.name,
             timestamp: Date.now(),
-            baseVersion: Date.now()
+            baseVersion: Date.now(),
+            traceId: params.traceId,
+            debugEmitter: emitter
         }
+
+        emit('mutation:patches', {
+            patchCount: patches.length,
+            inversePatchCount: inversePatches.length,
+            changedFields: changedFields instanceof Set ? Array.from(changedFields) : undefined
+        })
 
         // Optimistic: apply到本地，但不立即触发 onSuccess，待适配器确认后再回调
         if (mode === 'optimistic') {
@@ -198,6 +218,7 @@ export class AdapterSync {
                     IndexSynchronizer.applyPatches(indexManager, newValue, originalValue, inversePatches)
                 }
             }
+            emit('mutation:rollback', { reason: 'adapter_error' })
             const err = error instanceof Error ? error : new Error(String(error))
             callbacks.forEach(({ onFail }) => setTimeout(() => onFail?.(err), 0))
         }

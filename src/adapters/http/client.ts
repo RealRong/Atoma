@@ -3,6 +3,8 @@ import { Patch } from 'immer'
 import { ETagManager } from './etagManager'
 import { makeUrl, sendJson, sendDelete, sendPutJson, RequestSender, resolveEndpoint } from './request'
 import type { VersionConfig } from '../HTTPAdapter'
+import type { DebugEmitter } from '../../observability/debug'
+import { utf8ByteLength } from '../../observability/utf8'
 
 export interface ClientConfig {
     baseURL: string
@@ -37,13 +39,34 @@ export class HTTPClient<T> {
         private conflictHandler: ConflictHandler<T>
     ) { }
 
-    async put(key: StoreKey, value: T): Promise<void> {
-        const url = makeUrl(this.config.baseURL, resolveEndpoint(this.config.endpoints.update, key))
-        const headers = await this.getHeaders()
+    async put(
+        key: StoreKey,
+        value: T,
+        extraHeaders?: Record<string, string>,
+        debug?: { emitter: DebugEmitter; requestId?: string }
+    ): Promise<void> {
+        const endpoint = resolveEndpoint(this.config.endpoints.update, key)
+        const url = makeUrl(this.config.baseURL, endpoint)
+        const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
 
         this.etagManager.attachVersion(headers, this.config.version, value, key)
 
+        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(value)) : undefined
+        const startedAt = debug ? Date.now() : 0
+        debug?.emitter.emit('adapter:request', {
+            method: 'PUT',
+            endpoint,
+            attempt: 1,
+            payloadBytes
+        }, { requestId: debug.requestId })
+
         const response = await sendPutJson(this.sender, url, value, headers)
+
+        debug?.emitter.emit('adapter:response', {
+            ok: response.ok,
+            status: response.status,
+            durationMs: Date.now() - startedAt
+        }, { requestId: debug.requestId })
 
         if (response.status === 409) {
             await this.conflictHandler.handle(response, key, value)
@@ -56,13 +79,34 @@ export class HTTPClient<T> {
         }
     }
 
-    async create(_key: StoreKey, value: T): Promise<T | undefined> {
-        const url = makeUrl(this.config.baseURL, resolveEndpoint(this.config.endpoints.create))
-        const headers = await this.getHeaders()
+    async create(
+        _key: StoreKey,
+        value: T,
+        extraHeaders?: Record<string, string>,
+        debug?: { emitter: DebugEmitter; requestId?: string }
+    ): Promise<T | undefined> {
+        const endpoint = resolveEndpoint(this.config.endpoints.create)
+        const url = makeUrl(this.config.baseURL, endpoint)
+        const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
 
         this.etagManager.attachVersion(headers, this.config.version, value, undefined as any)
 
+        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(value)) : undefined
+        const startedAt = debug ? Date.now() : 0
+        debug?.emitter.emit('adapter:request', {
+            method: 'POST',
+            endpoint,
+            attempt: 1,
+            payloadBytes
+        }, { requestId: debug.requestId })
+
         const response = await sendJson(this.sender, url, value, headers)
+
+        debug?.emitter.emit('adapter:response', {
+            ok: response.ok,
+            status: response.status,
+            durationMs: Date.now() - startedAt
+        }, { requestId: debug.requestId })
 
         const etag = this.etagManager.extractFromResponse(response)
         if (etag) {
@@ -87,36 +131,78 @@ export class HTTPClient<T> {
         return undefined
     }
 
-    async delete(key: StoreKey): Promise<void> {
-        const url = makeUrl(this.config.baseURL, resolveEndpoint(this.config.endpoints.delete, key))
-        const headers = await this.getHeaders()
+    async delete(
+        key: StoreKey,
+        extraHeaders?: Record<string, string>,
+        debug?: { emitter: DebugEmitter; requestId?: string }
+    ): Promise<void> {
+        const endpoint = resolveEndpoint(this.config.endpoints.delete, key)
+        const url = makeUrl(this.config.baseURL, endpoint)
+        const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
 
         this.etagManager.attachVersion(headers, this.config.version, undefined, key)
 
+        const startedAt = debug ? Date.now() : 0
+        debug?.emitter.emit('adapter:request', {
+            method: 'DELETE',
+            endpoint,
+            attempt: 1,
+            payloadBytes: 0
+        }, { requestId: debug.requestId })
+
         const response = await sendDelete(this.sender, url, headers)
+
+        debug?.emitter.emit('adapter:response', {
+            ok: response.ok,
+            status: response.status,
+            durationMs: Date.now() - startedAt
+        }, { requestId: debug.requestId })
 
         if (response.ok) {
             this.etagManager.delete(key)
         }
     }
 
-    async patch(id: StoreKey, patches: Patch[], metadata: PatchMetadata): Promise<void> {
+    async patch(
+        id: StoreKey,
+        patches: Patch[],
+        metadata: PatchMetadata,
+        extraHeaders?: Record<string, string>,
+        debug?: { emitter: DebugEmitter; requestId?: string }
+    ): Promise<void> {
         const patchEndpoint = this.config.endpoints.patch || this.config.endpoints.update
-        const url = makeUrl(this.config.baseURL, resolveEndpoint(patchEndpoint, id))
-        const headers = await this.getHeaders()
+        const endpoint = resolveEndpoint(patchEndpoint, id)
+        const url = makeUrl(this.config.baseURL, endpoint)
+        const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
 
         this.etagManager.attachVersion(headers, this.config.version, metadata)
+
+        const body = {
+            patches,
+            baseVersion: metadata.baseVersion,
+            timestamp: metadata.timestamp
+        }
+        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const startedAt = debug ? Date.now() : 0
+        debug?.emitter.emit('adapter:request', {
+            method: 'POST',
+            endpoint,
+            attempt: 1,
+            payloadBytes
+        }, { requestId: debug.requestId })
 
         const response = await sendJson(
             this.sender,
             url,
-            {
-                patches,
-                baseVersion: metadata.baseVersion,
-                timestamp: metadata.timestamp
-            },
+            body,
             headers
         )
+
+        debug?.emitter.emit('adapter:response', {
+            ok: response.ok,
+            status: response.status,
+            durationMs: Date.now() - startedAt
+        }, { requestId: debug.requestId })
 
         if (response.status === 409) {
             const conflict = await response.json()
@@ -129,21 +215,59 @@ export class HTTPClient<T> {
         }
     }
 
-    async bulkUpdate(items: T[]): Promise<void> {
+    async bulkUpdate(
+        items: T[],
+        extraHeaders?: Record<string, string>,
+        debug?: { emitter: DebugEmitter; requestId?: string }
+    ): Promise<void> {
         if (!this.config.endpoints.bulkUpdate) return
-        const url = makeUrl(this.config.baseURL, resolveEndpoint(this.config.endpoints.bulkUpdate))
-        const headers = await this.getHeaders()
-        const response = await sendJson(this.sender, url, { items }, headers)
+        const endpoint = resolveEndpoint(this.config.endpoints.bulkUpdate)
+        const url = makeUrl(this.config.baseURL, endpoint)
+        const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
+        const body = { items }
+        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const startedAt = debug ? Date.now() : 0
+        debug?.emitter.emit('adapter:request', {
+            method: 'POST',
+            endpoint,
+            attempt: 1,
+            payloadBytes
+        }, { requestId: debug.requestId })
+        const response = await sendJson(this.sender, url, body, headers)
+        debug?.emitter.emit('adapter:response', {
+            ok: response.ok,
+            status: response.status,
+            durationMs: Date.now() - startedAt
+        }, { requestId: debug.requestId })
         if (!response.ok) {
             throw new Error(`Bulk update failed: ${response.status}`)
         }
     }
 
-    async bulkCreate(items: T[]): Promise<T[] | undefined> {
+    async bulkCreate(
+        items: T[],
+        extraHeaders?: Record<string, string>,
+        debug?: { emitter: DebugEmitter; requestId?: string }
+    ): Promise<T[] | undefined> {
         if (!this.config.endpoints.bulkCreate) return
-        const url = makeUrl(this.config.baseURL, resolveEndpoint(this.config.endpoints.bulkCreate))
-        const headers = await this.getHeaders()
-        const response = await sendJson(this.sender, url, { items }, headers)
+        const endpoint = resolveEndpoint(this.config.endpoints.bulkCreate)
+        const url = makeUrl(this.config.baseURL, endpoint)
+        const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
+        const body = { items }
+        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const startedAt = debug ? Date.now() : 0
+        debug?.emitter.emit('adapter:request', {
+            method: 'POST',
+            endpoint,
+            attempt: 1,
+            payloadBytes
+        }, { requestId: debug.requestId })
+        const response = await sendJson(this.sender, url, body, headers)
+        debug?.emitter.emit('adapter:response', {
+            ok: response.ok,
+            status: response.status,
+            durationMs: Date.now() - startedAt
+        }, { requestId: debug.requestId })
         if (!response.ok) {
             throw new Error(`Bulk create failed: ${response.status}`)
         }
@@ -161,11 +285,30 @@ export class HTTPClient<T> {
         return undefined
     }
 
-    async bulkDelete(keys: StoreKey[]): Promise<void> {
+    async bulkDelete(
+        keys: StoreKey[],
+        extraHeaders?: Record<string, string>,
+        debug?: { emitter: DebugEmitter; requestId?: string }
+    ): Promise<void> {
         if (!this.config.endpoints.bulkDelete) return
-        const url = makeUrl(this.config.baseURL, resolveEndpoint(this.config.endpoints.bulkDelete))
-        const headers = await this.getHeaders()
-        const response = await sendJson(this.sender, url, { ids: keys }, headers)
+        const endpoint = resolveEndpoint(this.config.endpoints.bulkDelete)
+        const url = makeUrl(this.config.baseURL, endpoint)
+        const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
+        const body = { ids: keys }
+        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const startedAt = debug ? Date.now() : 0
+        debug?.emitter.emit('adapter:request', {
+            method: 'POST',
+            endpoint,
+            attempt: 1,
+            payloadBytes
+        }, { requestId: debug.requestId })
+        const response = await sendJson(this.sender, url, body, headers)
+        debug?.emitter.emit('adapter:response', {
+            ok: response.ok,
+            status: response.status,
+            durationMs: Date.now() - startedAt
+        }, { requestId: debug.requestId })
         if (!response.ok) {
             throw new Error(`Bulk delete failed: ${response.status}`)
         }

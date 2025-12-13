@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { RelationResolver } from '../core/relations/RelationResolver'
-import { stableStringify } from '../core/query'
-import { normalizeKey } from '../core/relations/utils'
-import type { Entity, FindManyOptions, RelationMap, StoreKey } from '../core/types'
-import { resolveStoreAccess } from '../core/storeAccessRegistry'
+import { RelationResolver } from '../../core/relations/RelationResolver'
+import { stableStringify } from '../../core/query'
+import { normalizeKey } from '../../core/relations/utils'
+import type { Entity, FindManyOptions, RelationMap, StoreKey } from '../../core/types'
+import { resolveStoreAccess } from '../../core/storeAccessRegistry'
 
 type IncludeOption = Record<string, boolean | (FindManyOptions<any> & { live?: boolean })>
 

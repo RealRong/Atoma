@@ -15,18 +15,21 @@ export interface GuardOptions {
 }
 
 export function guardRequest(request: BatchRequest, options: GuardOptions, meta?: { ctx?: any }) {
-    enforceAccess(request, options)
+    enforceAccess(request, options, meta)
     enforceFieldPolicy(request, options, meta)
-    enforceLimits(request, options)
+    enforceLimits(request, options, meta)
 }
 
-function enforceAccess(request: BatchRequest, options: GuardOptions) {
+function enforceAccess(request: BatchRequest, options: GuardOptions, meta?: { ctx?: any }) {
     for (const op of request.ops) {
         const resource = op.action === 'query'
             ? op.query.resource
             : (op as any).resource
         if (typeof resource === 'string' && resource) {
-            ensureResourceAllowed(resource, options)
+            ensureResourceAllowed(resource, options, {
+                traceId: (request as any).traceId,
+                requestId: (request as any).requestId
+            })
         }
     }
 }
@@ -46,28 +49,34 @@ function enforceFieldPolicy(request: BatchRequest, options: GuardOptions, meta?:
             queryIndex: i
         })
         if (!policy) continue
-        // 复用现有错误结构字段名 requestId；此处填 opId。
-        enforceQueryFieldPolicy(op.query.resource, op.query.params, policy, { queryIndex: i, requestId: op.opId })
+        enforceQueryFieldPolicy(op.query.resource, op.query.params, policy, {
+            queryIndex: i,
+            traceId: (request as any).traceId,
+            requestId: (request as any).requestId,
+            opId: op.opId
+        })
     }
 }
 
-function ensureResourceAllowed(resource: string, options: GuardOptions) {
+function ensureResourceAllowed(resource: string, options: GuardOptions, meta?: { traceId?: string; requestId?: string }) {
     if (options.allowList && !options.allowList.includes(resource)) {
-        throwError('ACCESS_DENIED', `Resource access denied: ${resource}`, { kind: 'access', resource })
+        throwError('ACCESS_DENIED', `Resource access denied: ${resource}`, { kind: 'access', resource, ...meta })
     }
     if (!options.adapter.isResourceAllowed(resource)) {
-        throwError('RESOURCE_NOT_ALLOWED', `Resource not allowed: ${resource}`, { kind: 'access', resource })
+        throwError('RESOURCE_NOT_ALLOWED', `Resource not allowed: ${resource}`, { kind: 'access', resource, ...meta })
     }
 }
 
-function enforceLimits(request: BatchRequest, options: GuardOptions) {
+function enforceLimits(request: BatchRequest, options: GuardOptions, _meta?: { ctx?: any }) {
     const queryOps = request.ops.filter(op => op.action === 'query')
+    const traceMeta = { traceId: (request as any).traceId, requestId: (request as any).requestId }
 
     if (options.maxQueries && queryOps.length > options.maxQueries) {
         throwError('TOO_MANY_QUERIES', `Too many queries: max ${options.maxQueries}`, {
             kind: 'limits',
             max: options.maxQueries,
-            actual: queryOps.length
+            actual: queryOps.length,
+            ...traceMeta
         })
     }
 
@@ -91,7 +100,8 @@ function enforceLimits(request: BatchRequest, options: GuardOptions) {
             throwError('TOO_MANY_ITEMS', `Too many items: max ${options.maxBatchSize}`, {
                 kind: 'limits',
                 max: options.maxBatchSize,
-                actual: payloadArr.length
+                actual: payloadArr.length,
+                ...traceMeta
             })
         }
 
@@ -101,7 +111,8 @@ function enforceLimits(request: BatchRequest, options: GuardOptions) {
                 throwError('PAYLOAD_TOO_LARGE', `Payload too large: max ${options.maxPayloadBytes} bytes`, {
                     kind: 'limits',
                     max: options.maxPayloadBytes,
-                    actual: size
+                    actual: size,
+                    ...traceMeta
                 })
             }
         }

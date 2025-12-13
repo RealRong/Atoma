@@ -5,6 +5,7 @@ import { toStandardError } from '../error'
 export async function executeRequest(request: BatchRequest, adapter: IOrmAdapter): Promise<BatchResponse> {
     const ops = Array.isArray(request.ops) ? request.ops : []
     const results: BatchResult[] = new Array(ops.length)
+    const traceMeta = { traceId: request.traceId, requestId: request.requestId }
 
     const queryEntries: Array<{ index: number; op: Extract<BatchOp, { action: 'query' }> }> = []
     const writeEntries: Array<{ index: number; op: Exclude<BatchOp, { action: 'query' }> }> = []
@@ -16,8 +17,8 @@ export async function executeRequest(request: BatchRequest, adapter: IOrmAdapter
     }
 
     await Promise.all([
-        executeQueries(queryEntries, adapter, results),
-        executeWrites(writeEntries, adapter, results)
+        executeQueries(queryEntries, adapter, results, traceMeta),
+        executeWrites(writeEntries, adapter, results, traceMeta)
     ])
 
     return { results }
@@ -26,7 +27,8 @@ export async function executeRequest(request: BatchRequest, adapter: IOrmAdapter
 async function executeQueries(
     entries: Array<{ index: number; op: Extract<BatchOp, { action: 'query' }> }>,
     adapter: IOrmAdapter,
-    out: BatchResult[]
+    out: BatchResult[],
+    meta: { traceId?: string; requestId?: string }
 ) {
     if (!entries.length) return
 
@@ -60,14 +62,19 @@ async function executeQueries(
             out[e.index] = { opId: e.op.opId, ok: true, data: res.value.data, pageInfo: res.value.pageInfo }
             continue
         }
-        out[e.index] = { opId: e.op.opId, ok: false, error: toStandardError(res.reason, 'QUERY_FAILED') }
+        out[e.index] = {
+            opId: e.op.opId,
+            ok: false,
+            error: withTrace(toStandardError(res.reason, 'QUERY_FAILED'), { ...meta, opId: e.op.opId })
+        }
     }
 }
 
 async function executeWrites(
     entries: Array<{ index: number; op: Exclude<BatchOp, { action: 'query' }> }>,
     adapter: IOrmAdapter,
-    out: BatchResult[]
+    out: BatchResult[],
+    meta: { traceId?: string; requestId?: string }
 ) {
     if (!entries.length) return
 
@@ -83,7 +90,7 @@ async function executeWrites(
                         return
                     }
                     const res = await adapter.bulkCreate(op.resource, op.payload, op.options)
-                    out[e.index] = wrapMany(op.opId, res)
+                    out[e.index] = wrapMany(op.opId, res, meta)
                     return
                 }
                 case 'bulkUpdate': {
@@ -92,7 +99,7 @@ async function executeWrites(
                         return
                     }
                     const res = await adapter.bulkUpdate(op.resource, op.payload as any, op.options)
-                    out[e.index] = wrapMany(op.opId, res)
+                    out[e.index] = wrapMany(op.opId, res, meta)
                     return
                 }
                 case 'bulkPatch': {
@@ -101,7 +108,7 @@ async function executeWrites(
                         return
                     }
                     const res = await adapter.bulkPatch(op.resource, op.payload as any, op.options)
-                    out[e.index] = wrapMany(op.opId, res)
+                    out[e.index] = wrapMany(op.opId, res, meta)
                     return
                 }
                 case 'bulkDelete': {
@@ -110,12 +117,16 @@ async function executeWrites(
                         return
                     }
                     const res = await adapter.bulkDelete(op.resource, op.payload, op.options)
-                    out[e.index] = wrapMany(op.opId, res)
+                    out[e.index] = wrapMany(op.opId, res, meta)
                     return
                 }
             }
         } catch (err) {
-            out[e.index] = { opId: op.opId, ok: false, error: toStandardError(err, 'WRITE_FAILED') }
+            out[e.index] = {
+                opId: op.opId,
+                ok: false,
+                error: withTrace(toStandardError(err, 'WRITE_FAILED'), { ...meta, opId: op.opId })
+            }
         }
     })))
 
@@ -123,7 +134,11 @@ async function executeWrites(
     settled.forEach((r, i) => {
         if (r.status === 'rejected') {
             const e = entries[i]
-            out[e.index] = { opId: e.op.opId, ok: false, error: toStandardError(r.reason, 'WRITE_FAILED') }
+            out[e.index] = {
+                opId: e.op.opId,
+                ok: false,
+                error: withTrace(toStandardError(r.reason, 'WRITE_FAILED'), { ...meta, opId: e.op.opId })
+            }
         }
     })
 }
@@ -140,11 +155,11 @@ function adapterNotImplemented(opId: string, action: string): BatchResult {
     }
 }
 
-function wrapMany(opId: string, result: any): BatchResult {
+function wrapMany(opId: string, result: any, meta?: { traceId?: string; requestId?: string }): BatchResult {
     const partialFailures = Array.isArray(result?.partialFailures)
         ? result.partialFailures.map((pf: any) => ({
             index: pf.index,
-            error: toStandardError(pf.error, pf.error?.code)
+            error: withTrace(toStandardError(pf.error, pf.error?.code), { ...meta, opId })
         }))
         : undefined
 
@@ -155,4 +170,13 @@ function wrapMany(opId: string, result: any): BatchResult {
         partialFailures: partialFailures && partialFailures.length ? partialFailures : undefined,
         transactionApplied: result?.transactionApplied
     }
+}
+
+function withTrace(error: any, meta: { traceId?: string; requestId?: string; opId?: string }) {
+    if (!error || typeof error !== 'object') return error
+    const details = (error as any).details
+    const nextDetails = (details && typeof details === 'object' && !Array.isArray(details))
+        ? { ...details, ...meta }
+        : { kind: 'internal', ...meta }
+    return { ...error, details: nextDetails }
 }

@@ -1,8 +1,8 @@
 import { PrimitiveAtom, createStore } from 'jotai'
 import { useMemo } from 'react'
 import { useAtomValue } from 'jotai'
-import { globalStore } from '../core/BaseStore'
-import { Entity, RelationMap, StoreKey } from '../core/types'
+import { globalStore } from '../../core/BaseStore'
+import { Entity, RelationMap, StoreKey } from '../../core/types'
 import { useRelations } from './useRelations'
 
 /**

@@ -1,5 +1,5 @@
 import { createDraft, finishDraft, Patch, WritableDraft } from 'immer'
-import { PrimitiveAtom } from 'jotai'
+import { PrimitiveAtom } from 'jotai/vanilla'
 import { StoreDispatchEvent, StoreKey, Entity } from '../types'
 
 export type ApplyResult<T extends Entity> = {

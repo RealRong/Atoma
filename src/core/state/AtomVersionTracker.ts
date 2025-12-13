@@ -1,4 +1,4 @@
-import { PrimitiveAtom } from 'jotai'
+import { PrimitiveAtom } from 'jotai/vanilla'
 import { StoreKey } from '../types'
 
 export type VersionMeta = {

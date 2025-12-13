@@ -114,7 +114,7 @@ export class SQLiteHttpAdapter<T extends Entity> implements IAdapter<T> {
         return filter ? arr.filter(filter) : arr
     }
 
-    async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo } | T[]> {
+    async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo }> {
         const params = new URLSearchParams()
         if (options?.limit !== undefined) params.set(this.qp.limit, String(options.limit))
         if (options?.offset !== undefined) params.set(this.qp.offset, String(options.offset))

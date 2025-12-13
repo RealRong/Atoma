@@ -11,12 +11,14 @@ export type ErrorKind =
 
 export type StandardErrorDetails = {
     kind: ErrorKind
+    traceId?: string
+    requestId?: string
+    opId?: string
     resource?: string
     part?: 'where' | 'orderBy' | 'select' | string
     field?: string
     path?: string
     queryIndex?: number
-    requestId?: string
     max?: number
     actual?: number
     [k: string]: any
@@ -169,4 +171,3 @@ export function errorStatus(error: Pick<StandardError, 'code'>) {
             return 500
     }
 }
-

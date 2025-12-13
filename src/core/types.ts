@@ -1,7 +1,8 @@
-import { Atom, PrimitiveAtom } from 'jotai'
+import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import { Patch } from 'immer'
 import type { StoreContext } from './StoreContext'
 import type { DevtoolsBridge } from '../devtools/types'
+import type { Explain } from '../observability/types'
 
 /**
  * Base key type for entities
@@ -95,6 +96,8 @@ export interface PatchMetadata {
     timestamp: number
     baseVersion?: number
     etag?: string         // Optional: ETag for HTTP conflict detection
+    traceId?: string
+    debugEmitter?: import('../observability/debug').DebugEmitter
 }
 
 /**
@@ -106,6 +109,7 @@ export type StoreDispatchEvent<T extends Entity> = {
     adapter: IAdapter<T>
     store?: JotaiStore // Jotai store instance
     context?: StoreContext // StoreContext for per-store dependencies (avoids circular import)
+    traceId?: string
     onFail?: (error?: Error) => void  // Accept error object for rejection
 } & (
         | {
@@ -132,6 +136,9 @@ export type StoreDispatchEvent<T extends Entity> = {
  */
 export interface StoreOperationOptions {
     force?: boolean
+    debug?: {
+        traceId?: string
+    }
 }
 
 export type WhereOperator<T> = Partial<Record<keyof T & string, any | {
@@ -186,9 +193,14 @@ export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
     skipStore?: boolean
     /** Relations include 配置 */
     include?: Include
+    /** 可观测性/诊断（默认不启用） */
+    debug?: {
+        traceId?: string
+        explain?: boolean
+    }
 }
 
-export type FindManyResult<T> = T[] | { data: T[]; pageInfo?: PageInfo }
+export type FindManyResult<T> = { data: T[]; pageInfo?: PageInfo; explain?: Explain }
 
 // Relations include 专用（仅支持 Top-N 预览，不含分页）
 export type RelationIncludeOptions<T> = Pick<FindManyOptions<T>, 'limit' | 'orderBy' | 'include' | 'skipStore'> & {
@@ -230,7 +242,7 @@ export interface StoreConfig<T> {
     idGenerator?: () => StoreKey
 
     /** Custom Jotai store instance */
-    store?: JotaiStore  // ReturnType<typeof createStore> from 'jotai'
+    store?: JotaiStore  // ReturnType<typeof createStore> from 'jotai/vanilla'
 
     /** Optional schema validator (zod/yup/custom) */
     schema?: SchemaValidator<T>
@@ -249,6 +261,9 @@ export interface StoreConfig<T> {
 
     /** Store name（用于 devtools 标识） */
     storeName?: string
+
+    /** 可观测性/诊断（默认关闭） */
+    debug?: import('../observability/types').DebugOptions
 }
 
 export type IndexType = 'number' | 'date' | 'string' | 'substring' | 'text'
@@ -353,15 +368,6 @@ export interface IStore<T, Relations extends RelationMap<T> = {}> {
 
     /** 内部缓存的关系映射 */
     _relations?: Relations
-
-    /** React hook for queries（可选，由 createSyncStore 注入） */
-    useFindMany?: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
-        options?: FindManyOptions<T, Include> & {
-            fetchPolicy?: FetchPolicy
-            // 额外再声明 include，保持键提示（即使 Include 被窄化）
-            include?: { [K in keyof Relations]?: InferIncludeType<Relations[K]> }
-        }
-    ) => UseFindManyResult<T, Relations, Include>
 }
 
 type InferTargetType<R> =
@@ -387,23 +393,6 @@ export type WithRelations<
             ? InferRelationResultType<Relations[K]>
             : never
         : never
-}
-
-export type UseFindManyResult<
-    T,
-    Relations extends RelationMap<T> = {},
-    Include extends Partial<Record<keyof Relations, any>> = {}
-> = {
-    data: keyof Include extends never
-        ? T[]
-        : WithRelations<T, Relations, Include>[]
-    loading: boolean
-    error?: Error
-    refetch: () => Promise<T[]>
-    isStale: boolean
-    pageInfo?: PageInfo
-    /** Fetch more data (e.g. next page) and append/merge it. Used for infinite scroll. */
-    fetchMore: (options: FindManyOptions<T>) => Promise<T[]>
 }
 
 /**
@@ -450,4 +439,4 @@ export interface IEventEmitter {
 }
 
 /** Helper type alias for Jotai store to reduce `any` usage */
-export type JotaiStore = ReturnType<typeof import('jotai').createStore>
+export type JotaiStore = ReturnType<typeof import('jotai/vanilla').createStore>

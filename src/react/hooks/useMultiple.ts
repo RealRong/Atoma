@@ -1,8 +1,8 @@
 import { PrimitiveAtom, createStore } from 'jotai'
 import { useAtomValue } from 'jotai'
 import { useMemo } from 'react'
-import { globalStore } from '../core/BaseStore'
-import { Entity, InferIncludeType, OrderBy, RelationMap, StoreKey } from '../core/types'
+import { globalStore } from '../../core/BaseStore'
+import { Entity, InferIncludeType, OrderBy, RelationMap, StoreKey } from '../../core/types'
 import { useRelations } from './useRelations'
 
 type SortDirection = 'asc' | 'desc'

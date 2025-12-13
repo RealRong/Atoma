@@ -12,4 +12,5 @@ export type {
     StoreRegistry,
     RegistryStoreConfig,
     AdapterFactory
-} from './types'
+} from '../../registry/types'
+

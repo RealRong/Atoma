@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { initializeLocalStore } from '../../src/core/initializeLocalStore'
 import { atom, createStore } from 'jotai'
 import { IAdapter, StoreKey, Entity } from '../../src/core/types'
-import { createUseFindMany } from '../../src/hooks/useFindMany'
+import { createUseFindMany } from '../../src/react/hooks/useFindMany'
 import { renderHook, act, waitFor } from '@testing-library/react'
 
 interface TestItem extends Entity {
@@ -33,8 +33,8 @@ const createMockAdapter = () => {
         bulkGet: vi.fn(),
         getAll: vi.fn().mockResolvedValue([]),
         findMany: vi.fn().mockImplementation(async (opts) => {
-            if (opts.offset === 2) return mockDataPage2
-            return mockDataPage1
+            if (opts.offset === 2) return { data: mockDataPage2 }
+            return { data: mockDataPage1 }
         })
     } as unknown as IAdapter<TestItem>
 }

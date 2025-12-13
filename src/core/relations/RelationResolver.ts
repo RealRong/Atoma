@@ -258,7 +258,7 @@ export class RelationResolver {
         if (store.findMany) {
             try {
                 const res = await store.findMany(options)
-                return Array.isArray(res) ? res : res.data
+                return res.data
             } catch (error) {
                 if (signal.aborted) return []
                 console.warn('[Atoma Relations] findMany failed, fallback to getAll')

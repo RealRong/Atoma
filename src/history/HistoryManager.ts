@@ -1,5 +1,5 @@
 import { Patch, applyPatches } from 'immer'
-import { PrimitiveAtom } from 'jotai'
+import { PrimitiveAtom } from 'jotai/vanilla'
 import { globalStore } from '../core/BaseStore'
 import { IAdapter, PatchMetadata } from '../core/types'
 import { globalIndexRegistry } from '../core/indexes/IndexRegistry'
@@ -18,7 +18,7 @@ export interface HistoryRecord {
     timestamp: number
 }
 
-import { createStore } from 'jotai'
+import { createStore } from 'jotai/vanilla'
 
 /**
  * History manager configuration
