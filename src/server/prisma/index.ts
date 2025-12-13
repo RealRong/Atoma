@@ -1,2 +1,2 @@
 export { AtomaPrismaAdapter } from './PrismaAdapter'
-export type { PrismaAdapterOptions } from './PrismaAdapter'
+export type { OrmAdapterOptions as PrismaAdapterOptions } from '../types'

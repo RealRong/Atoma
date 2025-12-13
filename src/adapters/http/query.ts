@@ -1,10 +1,6 @@
 import { FindManyOptions, PageInfo } from '../../core/types'
 
-export type ArrayFormat = 'repeat' | 'comma' | 'json'
-
 export interface QuerySerializerConfig {
-    arrayFormat?: ArrayFormat
-    legacyMode?: boolean
 }
 
 export function normalizeFindManyResponse<T>(data: any): { data: T[]; pageInfo?: PageInfo } {
@@ -15,59 +11,66 @@ export function normalizeFindManyResponse<T>(data: any): { data: T[]; pageInfo?:
 }
 
 export function buildQueryParams<T>(options?: FindManyOptions<T>, config: QuerySerializerConfig = {}): URLSearchParams {
-    const { arrayFormat = 'repeat', legacyMode = false } = config
     const params = new URLSearchParams()
     if (!options) return params
 
+    // sparse fieldset：fields=a,b,c
+    if (Array.isArray((options as any).fields) && (options as any).fields.length) {
+        params.set('fields', (options as any).fields.join(','))
+    }
+
     if (options.where) {
         Object.entries(options.where as any).forEach(([field, cond]) => {
+            if (cond === undefined || cond === null) return
+
+            // Atoma server REST 协议（bracket 风格）：
+            // - where[field]=x
+            // - where[field][op]=x
+            // - where[field][in][]=1&where[field][in][]=2
             if (cond && typeof cond === 'object' && !Array.isArray(cond)) {
-                // operators
                 if ('in' in cond && Array.isArray((cond as any).in)) {
-                    serializeArray(params, field, (cond as any).in, arrayFormat)
-                } else {
-                    Object.entries(cond as any).forEach(([op, val]) => {
-                        if (val === undefined) return
-                        params.append(`${field}_${op}`, String(val))
+                    ;((cond as any).in as any[]).forEach(v => {
+                        params.append(`where[${field}][in][]`, String(v))
                     })
+                    return
                 }
-            } else if (cond !== undefined && cond !== null) {
-                params.append(field, String(cond))
+
+                Object.entries(cond as any).forEach(([op, val]) => {
+                    if (val === undefined || val === null) return
+                    params.append(`where[${field}][${op}]`, String(val))
+                })
+                return
             }
+
+            params.append(`where[${field}]`, String(cond))
         })
     }
 
     if (options.limit !== undefined) params.set('limit', String(options.limit))
     if (options.offset !== undefined) params.set('offset', String(options.offset))
-    if (options.cursor) params.set('cursor', options.cursor)
+
+    const anyOptions = options as any
+    const includeTotal = anyOptions.includeTotal
+    if (includeTotal !== undefined) params.set('includeTotal', String(Boolean(includeTotal)))
+
+    const before = typeof anyOptions.before === 'string' ? anyOptions.before : undefined
+    const after = typeof anyOptions.after === 'string' ? anyOptions.after : undefined
+
+    if (before) {
+        params.set('before', before)
+    } else if (after) {
+        params.set('after', after)
+    } else if (options.cursor) {
+        // FindManyOptions.cursor 作为“续页 token”，在 Atoma server REST 层对应 after
+        params.set('after', options.cursor)
+    }
 
     if (options.orderBy) {
         const orderByArray = Array.isArray(options.orderBy) ? options.orderBy : [options.orderBy]
-        if (legacyMode) {
-            orderByArray.forEach(({ field, direction }) => {
-                params.set('sortBy', String(field))
-                params.set('sortOrder', direction)
-            })
-        } else {
-            orderByArray.forEach(({ field, direction }) => {
-                params.append('orderBy', `${String(field)}:${direction}`)
-            })
-        }
+        orderByArray.forEach(({ field, direction }) => {
+            params.append('orderBy', `${String(field)}:${direction}`)
+        })
     }
 
     return params
-}
-
-function serializeArray(params: URLSearchParams, key: string, values: any[], format: ArrayFormat): void {
-    switch (format) {
-        case 'repeat':
-            values.forEach(v => params.append(key, String(v)))
-            break
-        case 'comma':
-            params.set(key, values.map(v => String(v)).join(','))
-            break
-        case 'json':
-            params.set(key, JSON.stringify(values))
-            break
-    }
 }

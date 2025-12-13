@@ -1,1 +1,1 @@
-export { BatchDispatcher } from './BatchDispatcher'
+export { BatchEngine } from './BatchEngine'

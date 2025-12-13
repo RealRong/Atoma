@@ -6,6 +6,8 @@ import { initializeLocalStore } from './initializeLocalStore'
 import { createUseValue } from '../hooks/useValue'
 import { createUseAll } from '../hooks/useAll'
 import { createUseFindMany } from '../hooks/useFindMany'
+import { createUseMultiple, UseMultipleOptions } from '../hooks/useMultiple'
+import { registerStoreAccess } from './storeAccessRegistry'
 import { globalStore } from './BaseStore'
 import { createStoreContext } from './StoreContext'
 import type { JotaiStore } from './types'
@@ -52,10 +54,15 @@ export interface SyncStoreConfig<T extends Entity> {
  */
 export interface SyncStore<T, Relations extends RelationMap<T> = {}> extends IStore<T, Relations> {
     /** React hook to subscribe to single item */
-    useValue: (id?: StoreKey) => T | undefined
+    useValue: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
+        id?: StoreKey,
+        options?: { include?: Include }
+    ) => (keyof Include extends never ? T | undefined : any)
 
     /** React hook to subscribe to all items */
-    useAll: () => T[]
+    useAll: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
+        options?: { include?: Include }
+    ) => (keyof Include extends never ? T[] : any)
 
     /** React hook to run reactive queries */
     useFindMany: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
@@ -64,6 +71,12 @@ export interface SyncStore<T, Relations extends RelationMap<T> = {}> extends ISt
             include?: { [K in keyof Relations]?: InferIncludeType<Relations[K]> }
         }
     ) => UseFindManyResult<T, Relations, Include>
+
+    /** React hook to subscribe to a list of IDs (顺序/排序可控) */
+    useMultiple: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
+        ids: StoreKey[],
+        options?: UseMultipleOptions<T, Relations> & { include?: Include }
+    ) => (keyof Include extends never ? T[] : any)
 
     /** Get cached item without triggering fetch */
     getCachedOneById: (id: StoreKey) => T | undefined
@@ -127,9 +140,10 @@ export function createSyncStore<T extends Entity, Relations extends RelationMap<
     }) as IStore<T>
 
     // Create React hooks with custom store
-    const useValue = createUseValue(objectMapAtom, localStore, jotaiStore)
-    const useAll = createUseAll(objectMapAtom, jotaiStore)
+    const useValue = createUseValue<T, Relations>(objectMapAtom, localStore as IStore<T, Relations>, jotaiStore)
+    const useAll = createUseAll<T, Relations>(objectMapAtom, localStore as IStore<T, Relations>, jotaiStore)
     const useFindMany = createUseFindMany<T, Relations>(objectMapAtom, localStore as IStore<T, Relations>, jotaiStore)
+    const useMultiple = createUseMultiple<T, Relations>(objectMapAtom, localStore as IStore<T, Relations>, jotaiStore)
 
     // 统一封装 relations 安装逻辑（懒加载，避免循环依赖）
     const applyRelations = (factory?: () => RelationMap<T>) => {
@@ -194,6 +208,7 @@ export function createSyncStore<T extends Entity, Relations extends RelationMap<
         useValue,
         useAll,
         useFindMany,
+        useMultiple,
         _relations: undefined,
 
         getCachedOneById: (id: StoreKey) => {
@@ -212,6 +227,10 @@ export function createSyncStore<T extends Entity, Relations extends RelationMap<
 
     // Apply lazy relations getter if provided
     applyRelations(getRelations)
+
+    // 内部注册 atom / jotaiStore，供 useRelations 订阅（不暴露到公共 API）
+    registerStoreAccess(localStore as any, objectMapAtom, jotaiStore)
+    registerStoreAccess(syncStore as any, objectMapAtom, jotaiStore)
 
     return syncStore
 }

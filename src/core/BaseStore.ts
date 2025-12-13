@@ -115,6 +115,7 @@ const handleQueue = (
             store,
             versionTracker: eventContext.versionTracker,
             historyRecorder: eventContext.historyRecorder,
+            indexRegistry: eventContext.indexRegistry,
             mode
         })
     })

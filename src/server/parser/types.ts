@@ -13,6 +13,19 @@ export type ParsedOk = {
     ok: true
     request: BatchRequest
     context: any
+    route:
+        | {
+            kind: 'batch'
+            method: string
+            pathname: string
+        }
+        | {
+            kind: 'rest'
+            method: string
+            pathname: string
+            resource?: string
+            id?: string
+        }
 }
 
 export type ParsedError = {

@@ -2,6 +2,8 @@ import { PrimitiveAtom } from 'jotai'
 import { BaseStore, bumpAtomVersion, globalStore } from './BaseStore'
 import { applyQuery } from './query'
 import { IndexManager } from './indexes/IndexManager'
+import { IndexSynchronizer } from './indexes/IndexSynchronizer'
+import { createStoreContext } from './StoreContext'
 import {
     IAdapter,
     FindManyOptions,
@@ -34,11 +36,14 @@ export function initializeLocalStore<T extends Entity>(
 ): IStore<T> {
     // Use custom store or global store
     const jotaiStore = config?.store || globalStore
-    const isOptimisticMode = (config?.context?.queueConfig.mode ?? 'optimistic') === 'optimistic'
+    const context = config?.context || createStoreContext()
 
     let batchGetOneTaskQueue: GetOneTask[] = []
     let batchFetchOneTaskQueue: GetOneTask[] = []
     const indexManager = config?.indexes && config.indexes.length ? new IndexManager<T>(config.indexes) : null
+    if (indexManager) {
+        context.indexRegistry.register(atom, indexManager)
+    }
 
     const indexSnapshotRegister = () => {
         if (!indexManager) return undefined
@@ -141,9 +146,11 @@ export function initializeLocalStore<T extends Entity>(
             })
 
             // Update atom cache (incremental add avoids full index rebuild)
-            jotaiStore.set(atom, BaseStore.bulkAdd(items as PartialWithId<T>[], jotaiStore.get(atom)))
-            items.forEach(item => indexManager?.add(item))
-            bumpAtomVersion(atom, undefined, config?.context)
+            const before = jotaiStore.get(atom)
+            const after = BaseStore.bulkAdd(items as PartialWithId<T>[], before)
+            jotaiStore.set(atom, after)
+            if (indexManager) IndexSynchronizer.applyMapDiff(indexManager, before, after)
+            bumpAtomVersion(atom, undefined, context)
         }
     }
 
@@ -204,30 +211,18 @@ export function initializeLocalStore<T extends Entity>(
                 }
 
                 prepare().then(validObj => {
-                    // 乐观模式下先同步索引，失败再回滚
-                    if (indexManager && isOptimisticMode) {
-                        indexManager.add(validObj as any)
-                    }
-
                     BaseStore.dispatch<T>({
                         type: 'add',
                         data: validObj as PartialWithId<T>,
                         adapter,
                         atom,
                         store: jotaiStore,
-                        context: config?.context,
+                        context,
                         onSuccess: async o => {
                             await runAfterSave(validObj, 'add')
-                            if (indexManager && !isOptimisticMode) {
-                                indexManager.add(validObj as any)
-                            }
                             resolve(o)
                         },
                         onFail: (error) => {
-                            // Rollback index add if已乐观添加
-                            if (indexManager && isOptimisticMode) {
-                                indexManager.remove(validObj as any)
-                            }
                             reject(error || new Error(`Failed to add item with id ${(validObj as any).id}`))
                         }
                     })
@@ -238,29 +233,17 @@ export function initializeLocalStore<T extends Entity>(
         deleteOneById: (id, options) => {
             return new Promise((resolve, reject) => {
                 const oldItem = jotaiStore.get(atom).get(id)
-                // 乐观模式下先把索引移除，失败再恢复
-                if (indexManager && isOptimisticMode && oldItem) {
-                    indexManager.remove(oldItem as any)
-                }
-
                 BaseStore.dispatch({
                     type: options?.force ? 'forceRemove' : 'remove',
                     data: { id } as PartialWithId<T>,
                     adapter,
                     atom,
                     store: jotaiStore,
-                    context: config?.context,
+                    context,
                     onSuccess: () => {
-                        if (indexManager && !isOptimisticMode) {
-                            indexManager.remove(oldItem as any)
-                        }
                         resolve(true)
                     },
                     onFail: (error) => {
-                        // Rollback index removal (仅当之前乐观删过)
-                        if (indexManager && isOptimisticMode && oldItem) {
-                            indexManager.add(oldItem as any)
-                        }
                         reject(error || new Error(`Failed to delete item with id ${id}`))
                     }
                 })
@@ -287,17 +270,8 @@ export function initializeLocalStore<T extends Entity>(
             const withRemovals = BaseStore.bulkRemove(toRemove, existingMap)
             const next = BaseStore.bulkAdd(itemsToCache as PartialWithId<T>[], withRemovals)
             jotaiStore.set(atom, next)
-
-            // Maintain indexes incrementally
-            if (indexManager) {
-                toRemove.forEach(id => {
-                    const old = existingMap.get(id)
-                    if (old) indexManager.remove(old as any)
-                })
-                itemsToCache.forEach(item => indexManager.add(item as any))
-            }
-
-            bumpAtomVersion(atom, undefined, config?.context)
+            if (indexManager) IndexSynchronizer.applyMapDiff(indexManager, existingMap, next)
+            bumpAtomVersion(atom, undefined, context)
 
             return arr
         },
@@ -323,9 +297,11 @@ export function initializeLocalStore<T extends Entity>(
                 fetched = fetched.map(transform)
 
                 if (cache && fetched.some(i => !map.has((i as any).id))) {
-                    jotaiStore.set(atom, BaseStore.bulkAdd(fetched as PartialWithId<T>[], jotaiStore.get(atom)))
-                    fetched.forEach(item => indexManager?.add(item))
-                    bumpAtomVersion(atom, undefined, config?.context)
+                    const before = jotaiStore.get(atom)
+                    const after = BaseStore.bulkAdd(fetched as PartialWithId<T>[], before)
+                    jotaiStore.set(atom, after)
+                    if (indexManager) IndexSynchronizer.applyMapDiff(indexManager, before, after)
+                    bumpAtomVersion(atom, undefined, context)
                 }
             }
 
@@ -366,33 +342,18 @@ export function initializeLocalStore<T extends Entity>(
                     }
 
                     prepare().then(validObj => {
-                        // 乐观模式：先替换索引，失败回滚
-                        if (indexManager && isOptimisticMode) {
-                            indexManager.remove(base as any)
-                            indexManager.add(validObj as any)
-                        }
-
                         BaseStore.dispatch({
                             type: 'update',
                             atom,
                             adapter,
                             data: validObj,
                             store: jotaiStore,
-                            context: config?.context,
+                            context,
                             onSuccess: async updated => {
                                 await runAfterSave(validObj, 'update')
-                                if (indexManager && !isOptimisticMode) {
-                                    indexManager.remove(base as any)
-                                    indexManager.add(validObj as any)
-                                }
                                 resolve(updated)
                             },
                             onFail: (error) => {
-                                // Rollback index changes (仅当乐观已修改)
-                                if (indexManager && isOptimisticMode) {
-                                    indexManager.remove(validObj as any)
-                                    indexManager.add(base as any)
-                                }
                                 reject(error || new Error(`Failed to update item with id ${obj.id}`))
                             }
                         })
@@ -406,9 +367,11 @@ export function initializeLocalStore<T extends Entity>(
 
                             validateWithSchema(transformed, config?.schema)
                                 .then(validFetched => {
-                                    jotaiStore.set(atom, BaseStore.add(validFetched as PartialWithId<T>, jotaiStore.get(atom)))
-                                    indexManager?.add(validFetched as any)
-                                    bumpAtomVersion(atom, undefined, config?.context)
+                                    const before = jotaiStore.get(atom)
+                                    const after = BaseStore.add(validFetched as PartialWithId<T>, before)
+                                    jotaiStore.set(atom, after)
+                                    if (indexManager) IndexSynchronizer.applyMapDiff(indexManager, before, after)
+                                    bumpAtomVersion(atom, undefined, context)
 
                                     const prepare = async () => {
                                         const base = validFetched as unknown as PartialWithId<T>
@@ -420,31 +383,18 @@ export function initializeLocalStore<T extends Entity>(
                                     }
 
                                     prepare().then(({ merged: validObj, base }) => {
-                                        if (indexManager && isOptimisticMode) {
-                                            indexManager.remove(base as any)
-                                            indexManager.add(validObj as any)
-                                        }
-
                                         BaseStore.dispatch({
                                             type: 'update',
                                             data: validObj,
                                             atom,
                                             adapter,
                                             store: jotaiStore,
-                                            context: config?.context,
+                                            context,
                                             onSuccess: async updated => {
                                                 await runAfterSave(validObj, 'update')
-                                                if (indexManager && !isOptimisticMode) {
-                                                    indexManager.remove(base as any)
-                                                    indexManager.add(validObj as any)
-                                                }
                                                 resolve(updated)
                                             },
                                             onFail: (error) => {
-                                                if (indexManager && isOptimisticMode) {
-                                                    indexManager.remove(validObj as any)
-                                                    indexManager.add(base as any)
-                                                }
                                                 reject(error || new Error(`Failed to update item with id ${obj.id}`))
                                             }
                                         })
@@ -476,28 +426,19 @@ export function initializeLocalStore<T extends Entity>(
             }
 
             const evaluateWithIndexes = (mapRef: Map<StoreKey, T>, opts?: FindManyOptions<T>) => {
-                const candidateIds = indexManager?.collectCandidates(opts?.where)
-                const singleOrder = opts?.orderBy && !Array.isArray(opts.orderBy) ? opts.orderBy : undefined
-                const hasFullCoverage = !!(indexManager && indexManager.coversWhere(opts?.where))
-                const orderedIds = indexManager?.getOrderedCandidates(singleOrder, candidateIds, {
-                    limit: opts?.limit,
-                    offset: opts?.offset,
-                    applyLimit: hasFullCoverage
-                })
-                const appliedLimitInIndex = Boolean(orderedIds && hasFullCoverage && opts?.limit !== undefined)
-                const queryOptions = appliedLimitInIndex ? { ...opts, limit: undefined, offset: undefined } : opts
-                const preSorted = Boolean(orderedIds)
-                const source = orderedIds
-                    ? orderedIds.map(id => mapRef.get(id) as T).filter(Boolean)
-                    : candidateIds
-                        ? Array.from(candidateIds).map(id => mapRef.get(id) as T).filter(Boolean)
+                const candidateRes = indexManager ? indexManager.collectCandidates(opts?.where) : { kind: 'unsupported' as const }
+                if (candidateRes.kind === 'empty') return [] as T[]
+                const source =
+                    candidateRes.kind === 'candidates'
+                        ? Array.from(candidateRes.ids).map(id => mapRef.get(id) as T).filter(Boolean)
                         : Array.from(mapRef.values()) as T[]
-                return applyQuery(source as any, queryOptions, { preSorted }) as T[]
+                return applyQuery(source as any, opts, { preSorted: false }) as T[]
             }
 
             // Compute from current cache for即时 UI
             const map = jotaiStore.get(atom)
             const localResult = evaluateWithIndexes(map, options)
+            const effectiveSkipStore = Boolean(options?.skipStore || (options as any)?.fields?.length)
 
             // Prefer adapter-level findMany when可用（支持远程过滤/分页）
             if (typeof (adapter as any).findMany === 'function') {
@@ -509,7 +450,7 @@ export function initializeLocalStore<T extends Entity>(
 
                     const transformed = (data || []).map((item: T) => transform(item))
 
-                    if (options?.skipStore) {
+                    if (effectiveSkipStore) {
                         return Array.isArray(raw) ? transformed : { data: transformed, pageInfo }
                     }
 
@@ -520,14 +461,12 @@ export function initializeLocalStore<T extends Entity>(
 
                     processed.forEach((item: T) => {
                         const id = (item as any).id as StoreKey
-                        const prev = existingMap.get(id)
-                        if (indexManager && prev) indexManager.remove(prev as any)
                         next.set(id, item)
-                        if (indexManager) indexManager.add(item as any)
                     })
 
                     jotaiStore.set(atom, next)
-                    bumpAtomVersion(atom, undefined, config?.context)
+                    if (indexManager) IndexSynchronizer.applyMapDiff(indexManager, existingMap, next)
+                    bumpAtomVersion(atom, undefined, context)
 
                     return Array.isArray(raw) ? transformed : { data: transformed, pageInfo }
                 } catch (error) {
@@ -543,7 +482,7 @@ export function initializeLocalStore<T extends Entity>(
                 let remote = await adapter.getAll(adapterFilter as any)
                 remote = remote.map(item => transform(item))
 
-                if (options?.skipStore) {
+                if (effectiveSkipStore) {
                     // Check if there is local filter logic to apply since we bypassed memory cache
                     if (options?.where && typeof options.where !== 'function') {
                         // Apply purely local query logic on the transient data
@@ -573,16 +512,8 @@ export function initializeLocalStore<T extends Entity>(
                 const withRemovals = BaseStore.bulkRemove(toRemove, existingMap)
                 const next = BaseStore.bulkAdd(remote as PartialWithId<T>[], withRemovals)
                 jotaiStore.set(atom, next)
-
-                if (indexManager) {
-                    toRemove.forEach(id => {
-                        const old = existingMap.get(id)
-                        if (old) indexManager.remove(old as any)
-                    })
-                    remote.forEach(item => indexManager.add(item as any))
-                }
-
-                bumpAtomVersion(atom, undefined, config?.context)
+                if (indexManager) IndexSynchronizer.applyMapDiff(indexManager, existingMap, next)
+                bumpAtomVersion(atom, undefined, context)
                 return evaluateWithIndexes(jotaiStore.get(atom), options)
             } catch (error) {
                 adapter.onError?.(error as Error, 'findMany')

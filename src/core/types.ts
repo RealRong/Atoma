@@ -156,9 +156,24 @@ export type PageInfo = { cursor?: string; hasNext?: boolean; total?: number }
 export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
     where?: WhereOperator<T>
     orderBy?: OrderBy<T>
+    /**
+     * 请求后端仅返回指定字段（sparse fieldset）。
+     * 注意：当指定 fields 时，查询结果默认视为 transient（不会写入 store），避免半字段对象污染缓存。
+     */
+    fields?: Array<keyof T & string>
     limit?: number
     offset?: number
+    /**
+     * Atoma server/adapter 的 keyset cursor token：
+     * - after: 下一页（向后翻页）
+     * - before: 上一页（向前翻页）
+     * - cursor: 旧别名（等同 after）
+     */
+    after?: string
+    before?: string
     cursor?: string
+    /** offset 分页时是否返回 total（Atoma server REST/batch 支持；默认 true） */
+    includeTotal?: boolean
     cache?: {
         key?: string
         tags?: string[]
@@ -173,7 +188,10 @@ export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
 export type FindManyResult<T> = T[] | { data: T[]; pageInfo?: PageInfo }
 
 // Relations include 专用（仅支持 Top-N 预览，不含分页）
-export type RelationIncludeOptions<T> = Pick<FindManyOptions<T>, 'limit' | 'orderBy' | 'include' | 'skipStore'>
+export type RelationIncludeOptions<T> = Pick<FindManyOptions<T>, 'limit' | 'orderBy' | 'include' | 'skipStore'> & {
+    /** live=true 订阅子 store 实时变化；false 则使用快照（默认 true） */
+    live?: boolean
+}
 
 /**
  * Schema validator support (works with Zod/Yup or custom functions)
@@ -230,7 +248,7 @@ export interface StoreConfig<T> {
     storeName?: string
 }
 
-export type IndexType = 'number' | 'date' | 'string' | 'text'
+export type IndexType = 'number' | 'date' | 'string' | 'substring' | 'text'
 
 export interface IndexDefinition<T> {
     field: keyof T & string
@@ -239,6 +257,7 @@ export interface IndexDefinition<T> {
         minTokenLength?: number
         fuzzyDistance?: 0 | 1 | 2
         tokenizer?: (text: string) => string[]
+        ngramSize?: number
     }
 }
 

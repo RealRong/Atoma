@@ -1,13 +1,29 @@
 import type { PageInfo } from '../core/types'
+import type { AtomaError } from './error'
 
-export type OrderByField = { field: string; direction: 'asc' | 'desc' }
+export type OrderByRule = { field: string; direction: 'asc' | 'desc' }
+
+export type CursorToken = string
+
+export type Page =
+    | {
+        mode: 'offset'
+        limit: number
+        offset?: number
+        /** 是否返回 total；默认 true（offset 分页通常需要 total） */
+        includeTotal?: boolean
+    }
+    | {
+        mode: 'cursor'
+        limit: number
+        after?: CursorToken
+        before?: CursorToken
+    }
 
 export interface QueryParams {
     where?: Record<string, any>
-    orderBy?: OrderByField | OrderByField[]
-    limit?: number
-    offset?: number
-    cursor?: string
+    orderBy?: OrderByRule[]
+    page?: Page
     select?: Record<string, boolean>
 }
 
@@ -18,28 +34,25 @@ export interface QueryResult<T = any> {
 
 export interface QueryResultOne<T = any> {
     data?: T
-    error?: StandardError
+    /**
+     * Adapter 错误必须使用 AtomaError（带 brand），以保证对外错误结构可控且不泄露内部异常。
+     * 不再接受裸 StandardError 对象。
+     */
+    error?: AtomaError
     transactionApplied?: boolean
 }
 
 export interface QueryResultMany<T = any> {
     data: T[]
-    partialFailures?: Array<{ index: number; error: StandardError }>
+    /**
+     * partialFailures.error 同样要求 AtomaError。
+     */
+    partialFailures?: Array<{ index: number; error: AtomaError }>
     transactionApplied?: boolean
-}
-
-export interface BatchQuery {
-    resource: string
-    requestId?: string
-    params: QueryParams
 }
 
 export type Action =
     | 'query'
-    | 'create'
-    | 'update'
-    | 'patch'
-    | 'delete'
     | 'bulkCreate'
     | 'bulkUpdate'
     | 'bulkPatch'
@@ -55,52 +68,60 @@ export interface WriteOptions {
     conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
 }
 
+export type BatchOp =
+    | {
+        opId: string
+        action: 'query'
+        query: {
+            resource: string
+            params: QueryParams
+        }
+    }
+    | {
+        opId: string
+        action: 'bulkCreate'
+        resource: string
+        payload: any[]
+        options?: WriteOptions
+    }
+    | {
+        opId: string
+        action: 'bulkUpdate'
+        resource: string
+        payload: Array<{ id: any; data: any; clientVersion?: number }>
+        options?: WriteOptions
+    }
+    | {
+        opId: string
+        action: 'bulkPatch'
+        resource: string
+        payload: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number }>
+        options?: WriteOptions
+    }
+    | {
+        opId: string
+        action: 'bulkDelete'
+        resource: string
+        payload: any[]
+        options?: WriteOptions
+    }
+
 export interface BatchRequest {
-    action: Action
-    /** query 专用 */
-    queries?: BatchQuery[]
-    /** 写操作资源 */
-    resource?: string
-    /** create/update/delete 单条或 bulk* 的数据 */
-    payload?: any
-    /** update/delete 的条件 */
-    where?: Record<string, any>
-    options?: WriteOptions
-    requestId?: string
+    ops: BatchOp[]
 }
 
 export interface BatchResult<T = any> {
-    requestId?: string
-    data: T[]
+    opId: string
+    ok: boolean
+    data?: T[]
     pageInfo?: PageInfo
     transactionApplied?: boolean
     partialFailures?: Array<{ index: number; error: StandardError }>
-    error?: {
-        code: string
-        message: string
-        details?: any
-    }
+    error?: StandardError
 }
 
 export interface BatchResponse<T = any> {
     results: BatchResult<T>[]
-}
-
-export interface HandlerConfig {
-    adapter: IOrmAdapter
-    allowList?: string[]
-    onRequest?: (req: BatchRequest, context: any) => Promise<void> | void
-    onAuthorize?: (req: BatchRequest, context: any) => Promise<void> | void
-    onSuccess?: (res: BatchResponse, req: BatchRequest, context: any) => Promise<void> | void
-    onError?: (err: any, req: BatchRequest, context: any) => Promise<void> | void
-    /** 限制单次批量查询数量，防止 DoS，默认不限制 */
-    maxQueries?: number
-    /** 限制单条查询的最大 limit，默认不限制 */
-    maxLimit?: number
-    /** 限制批量写的最大条数（bulk*） */
-    maxBatchSize?: number
-    /** 限制 payload 体积（粗略基于 JSON 长度） */
-    maxPayloadBytes?: number
 }
 
 export interface IOrmAdapter {
@@ -123,6 +144,13 @@ export interface IOrmAdapter {
     ): Promise<QueryResultMany>
     bulkDelete?(resource: string, ids: any[], options?: WriteOptions): Promise<QueryResultMany>
     isResourceAllowed(resource: string): boolean
+}
+
+export interface OrmAdapterOptions {
+    /** 主键/唯一 tie-breaker 字段名，默认 'id' */
+    idField?: string
+    /** 默认排序（若请求未提供 orderBy）；若未提供则默认按 idField asc */
+    defaultOrderBy?: OrderByRule[]
 }
 
 export type StandardError = {

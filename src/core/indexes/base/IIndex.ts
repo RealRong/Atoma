@@ -1,5 +1,5 @@
 import { IndexDefinition, StoreKey } from '../../types'
-import { IndexStats } from '../types'
+import { CandidateResult, IndexStats } from '../types'
 
 export interface IIndex<T> {
     readonly type: string
@@ -7,7 +7,7 @@ export interface IIndex<T> {
     add(id: StoreKey, value: any): void
     remove(id: StoreKey, value: any): void
     clear(): void
-    query(condition: any): Set<StoreKey> | undefined
+    queryCandidates(condition: any): CandidateResult
     getStats(): IndexStats
     isDirty(): boolean
 }

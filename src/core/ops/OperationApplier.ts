@@ -2,7 +2,7 @@ import { createDraft, finishDraft, Patch, WritableDraft } from 'immer'
 import { PrimitiveAtom } from 'jotai'
 import { StoreDispatchEvent, StoreKey, Entity } from '../types'
 
-export type ApplyResult<T> = {
+export type ApplyResult<T extends Entity> = {
     newValue: Map<StoreKey, T>
     patches: Patch[]
     inversePatches: Patch[]

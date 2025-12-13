@@ -1,236 +1,158 @@
-import lodash from 'lodash'
-import type {
-    Action,
-    BatchRequest,
-    BatchResponse,
-    BatchResult,
-    IOrmAdapter,
-    QueryParams,
-    QueryResult,
-    QueryResultMany,
-    QueryResultOne,
-    StandardError
-} from '../types'
+import pLimit from 'p-limit'
+import type { BatchOp, BatchRequest, BatchResponse, BatchResult, IOrmAdapter } from '../types'
+import { toStandardError } from '../error'
 
 export async function executeRequest(request: BatchRequest, adapter: IOrmAdapter): Promise<BatchResponse> {
-    if (request.action === 'query') {
-        return handleQuery(request, adapter)
-    }
-    return handleWrite(request, adapter)
-}
+    const ops = Array.isArray(request.ops) ? request.ops : []
+    const results: BatchResult[] = new Array(ops.length)
 
-async function handleQuery(request: BatchRequest, adapter: IOrmAdapter): Promise<BatchResponse> {
-    if (!request.queries) {
-        throw withCode('INVALID_QUERY', 'Invalid query payload')
-    }
+    const queryEntries: Array<{ index: number; op: Extract<BatchOp, { action: 'query' }> }> = []
+    const writeEntries: Array<{ index: number; op: Exclude<BatchOp, { action: 'query' }> }> = []
 
-    if (adapter.batchFindMany) {
-        const results = await adapter.batchFindMany(
-            request.queries.map(q => ({ resource: q.resource, params: q.params }))
-        )
-        return { results: mergeIds(request, results) }
+    for (let i = 0; i < ops.length; i++) {
+        const op = ops[i]
+        if (op.action === 'query') queryEntries.push({ index: i, op })
+        else writeEntries.push({ index: i, op })
     }
 
-    const settled = await Promise.allSettled(
-        request.queries.map(q => adapter.findMany(q.resource, q.params))
-    )
-
-    const results: BatchResult[] = settled.map((res, idx) => {
-        const requestId = request.queries?.[idx]?.requestId
-        if (res.status === 'fulfilled') {
-            return { requestId, data: res.value.data, pageInfo: res.value.pageInfo }
-        }
-        return toErrorResult(requestId, res.reason, 'QUERY_FAILED')
-    })
+    await Promise.all([
+        executeQueries(queryEntries, adapter, results),
+        executeWrites(writeEntries, adapter, results)
+    ])
 
     return { results }
 }
 
-async function handleWrite(request: BatchRequest, adapter: IOrmAdapter): Promise<BatchResponse> {
-    const resource = request.resource as string
-    const payload = request.payload
-    const options = request.options
-    const action = request.action
+async function executeQueries(
+    entries: Array<{ index: number; op: Extract<BatchOp, { action: 'query' }> }>,
+    adapter: IOrmAdapter,
+    out: BatchResult[]
+) {
+    if (!entries.length) return
 
-    let result: BatchResult
-    switch (action) {
-        case 'create': {
-            ensureAdapter(adapter.create, action)
-            const res = await adapter.create!(resource, payload, options)
-            result = wrapOne(res, request.requestId)
-            break
-        }
-        case 'update': {
-            ensureAdapter(adapter.update, action)
-            const res = await adapter.update!(resource, payload, { ...options, where: request.where })
-            result = wrapOne(res, request.requestId)
-            break
-        }
-        case 'patch': {
-            ensureAdapter(adapter.patch, action)
-            const res = await adapter.patch!(resource, payload, options)
-            result = wrapOne(res, request.requestId)
-            break
-        }
-        case 'delete': {
-            ensureAdapter(adapter.delete, action)
-            const res = await adapter.delete!(resource, payload ?? request.where, options)
-            result = wrapOne(res, request.requestId)
-            break
-        }
-        case 'bulkCreate': {
-            ensureAdapter(adapter.bulkCreate, action)
-            const res = await adapter.bulkCreate!(resource, ensureArray(payload, action), options)
-            result = wrapMany(res, request.requestId)
-            break
-        }
-        case 'bulkUpdate': {
-            ensureAdapter(adapter.bulkUpdate, action)
-            const res = await adapter.bulkUpdate!(resource, ensureArray(payload, action), options)
-            result = wrapMany(res, request.requestId)
-            break
-        }
-        case 'bulkPatch': {
-            ensureAdapter(adapter.bulkPatch, action)
-            const res = await adapter.bulkPatch!(resource, ensureArray(payload, action), options)
-            result = wrapMany(res, request.requestId)
-            break
-        }
-        case 'bulkDelete': {
-            ensureAdapter(adapter.bulkDelete, action)
-            const res = await adapter.bulkDelete!(resource, ensureArray(payload, action), options)
-            result = wrapMany(res, request.requestId)
-            break
-        }
-        default:
-            throw withCode('UNSUPPORTED_ACTION', `Unsupported action: ${action}`)
-    }
-
-    return { results: [result] }
-}
-
-function mergeIds(request: BatchRequest, results: QueryResult[]): BatchResult[] {
-    return results.map((result, idx) => ({
-        requestId: request.queries?.[idx]?.requestId,
-        data: result.data,
-        pageInfo: result.pageInfo
-    }))
-}
-
-function ensureAdapter(fn: unknown, action: Action) {
-    if (typeof fn !== 'function') {
-        throw withCode('ADAPTER_NOT_IMPLEMENTED', `Adapter does not implement ${action}`)
-    }
-}
-
-function wrapOne(result: QueryResultOne, requestId?: string): BatchResult {
-    if (result.error) {
-        return toErrorResult(requestId, result.error, result.error.code)
-    }
-    return {
-        requestId,
-        data: result.data !== undefined ? [result.data] : [],
-        transactionApplied: result.transactionApplied
-    }
-}
-
-function wrapMany(result: QueryResultMany, requestId?: string): BatchResult {
-    return {
-        requestId,
-        data: result.data,
-        partialFailures: result.partialFailures,
-        transactionApplied: result.transactionApplied,
-        error: result.partialFailures && result.partialFailures.length
-            ? { code: 'PARTIAL_FAILURE', message: 'Some items failed', details: result.partialFailures }
-            : undefined
-    }
-}
-
-function ensureArray(payload: any, action: Action): any[] {
-    if (Array.isArray(payload)) return payload
-    throw withCode('INVALID_PAYLOAD', `Payload for ${action} must be an array`)
-}
-
-export function validateAndNormalizeRequest(body: any): BatchRequest {
-    if (!body || typeof body.action !== 'string') {
-        throw withCode('INVALID_REQUEST', 'Invalid Atoma request payload')
-    }
-
-    const action = body.action as Action
-
-    if (action === 'query') {
-        if (!Array.isArray(body.queries)) {
-            throw withCode('INVALID_QUERY', 'Invalid query payload: queries missing')
-        }
-        const queries = body.queries.map((q: any) => {
-            if (!q || typeof q.resource !== 'string') {
-                throw withCode('INVALID_QUERY', 'Invalid query: resource missing')
+    if (typeof adapter.batchFindMany === 'function') {
+        try {
+            const resList = await adapter.batchFindMany(entries.map(e => ({
+                resource: e.op.query.resource,
+                params: e.op.query.params
+            })))
+            for (let i = 0; i < entries.length; i++) {
+                const e = entries[i]
+                const res = resList[i]
+                out[e.index] = {
+                    opId: e.op.opId,
+                    ok: true,
+                    data: res?.data ?? [],
+                    pageInfo: res?.pageInfo
+                }
             }
-            const params: QueryParams = lodash.isPlainObject(q.params) ? { ...q.params } : {}
-            params.orderBy = normalizeOrderBy(params.orderBy)
-            return {
-                resource: q.resource,
-                requestId: q.requestId,
-                params
+            return
+        } catch {
+            // fallback to per-query execution to preserve per-op error contract
+        }
+    }
+
+    const settled = await Promise.allSettled(entries.map(e => adapter.findMany(e.op.query.resource, e.op.query.params)))
+    for (let i = 0; i < entries.length; i++) {
+        const e = entries[i]
+        const res = settled[i]
+        if (res.status === 'fulfilled') {
+            out[e.index] = { opId: e.op.opId, ok: true, data: res.value.data, pageInfo: res.value.pageInfo }
+            continue
+        }
+        out[e.index] = { opId: e.op.opId, ok: false, error: toStandardError(res.reason, 'QUERY_FAILED') }
+    }
+}
+
+async function executeWrites(
+    entries: Array<{ index: number; op: Exclude<BatchOp, { action: 'query' }> }>,
+    adapter: IOrmAdapter,
+    out: BatchResult[]
+) {
+    if (!entries.length) return
+
+    const limit = pLimit(8)
+
+    const settled = await Promise.allSettled(entries.map(e => limit(async () => {
+        const op = e.op
+        try {
+            switch (op.action) {
+                case 'bulkCreate': {
+                    if (typeof adapter.bulkCreate !== 'function') {
+                        out[e.index] = adapterNotImplemented(op.opId, op.action)
+                        return
+                    }
+                    const res = await adapter.bulkCreate(op.resource, op.payload, op.options)
+                    out[e.index] = wrapMany(op.opId, res)
+                    return
+                }
+                case 'bulkUpdate': {
+                    if (typeof adapter.bulkUpdate !== 'function') {
+                        out[e.index] = adapterNotImplemented(op.opId, op.action)
+                        return
+                    }
+                    const res = await adapter.bulkUpdate(op.resource, op.payload as any, op.options)
+                    out[e.index] = wrapMany(op.opId, res)
+                    return
+                }
+                case 'bulkPatch': {
+                    if (typeof adapter.bulkPatch !== 'function') {
+                        out[e.index] = adapterNotImplemented(op.opId, op.action)
+                        return
+                    }
+                    const res = await adapter.bulkPatch(op.resource, op.payload as any, op.options)
+                    out[e.index] = wrapMany(op.opId, res)
+                    return
+                }
+                case 'bulkDelete': {
+                    if (typeof adapter.bulkDelete !== 'function') {
+                        out[e.index] = adapterNotImplemented(op.opId, op.action)
+                        return
+                    }
+                    const res = await adapter.bulkDelete(op.resource, op.payload, op.options)
+                    out[e.index] = wrapMany(op.opId, res)
+                    return
+                }
             }
-        })
-        return { action, queries }
-    }
-
-    if (!body.resource || typeof body.resource !== 'string') {
-        throw withCode('INVALID_WRITE', 'Invalid write payload: resource missing')
-    }
-
-    return {
-        action,
-        resource: body.resource,
-        payload: body.payload,
-        where: lodash.isPlainObject(body.where) ? body.where : undefined,
-        options: lodash.isPlainObject(body.options) ? body.options : undefined,
-        requestId: body.requestId
-    }
-}
-
-function normalizeOrderBy(orderBy: QueryParams['orderBy']): QueryParams['orderBy'] {
-    if (!orderBy) return undefined
-
-    const normalizeOne = (rule: any) => {
-        if (typeof rule === 'string') {
-            const [field, dir] = rule.split(':')
-            if (!field) throw withCode('INVALID_ORDER_BY', 'Invalid orderBy')
-            const direction = dir?.toLowerCase() === 'asc' ? 'asc' : 'desc'
-            return { field, direction }
+        } catch (err) {
+            out[e.index] = { opId: op.opId, ok: false, error: toStandardError(err, 'WRITE_FAILED') }
         }
-        if (rule && typeof rule === 'object' && typeof (rule as any).field === 'string') {
-            const direction = (rule as any).direction === 'asc' ? 'asc' : 'desc'
-            return { field: (rule as any).field, direction }
+    })))
+
+    // Should never happen (we write into out in the limited function), but keep it safe.
+    settled.forEach((r, i) => {
+        if (r.status === 'rejected') {
+            const e = entries[i]
+            out[e.index] = { opId: e.op.opId, ok: false, error: toStandardError(r.reason, 'WRITE_FAILED') }
         }
-        throw withCode('INVALID_ORDER_BY', 'Invalid orderBy')
-    }
-
-    if (Array.isArray(orderBy)) return orderBy.map(normalizeOne)
-    return [normalizeOne(orderBy)]
+    })
 }
 
-function toErrorResult(requestId: string | undefined, reason: any, code = 'INTERNAL'): BatchResult {
+function adapterNotImplemented(opId: string, action: string): BatchResult {
     return {
-        requestId,
-        data: [],
-        error: toStandardError(reason, code)
+        opId,
+        ok: false,
+        error: {
+            code: 'ADAPTER_NOT_IMPLEMENTED',
+            message: `Adapter does not implement ${action}`,
+            details: { kind: 'adapter' }
+        }
     }
 }
 
-function toStandardError(reason: any, fallbackCode: string): StandardError {
-    if (reason?.code && reason?.message) return reason as StandardError
+function wrapMany(opId: string, result: any): BatchResult {
+    const partialFailures = Array.isArray(result?.partialFailures)
+        ? result.partialFailures.map((pf: any) => ({
+            index: pf.index,
+            error: toStandardError(pf.error, pf.error?.code)
+        }))
+        : undefined
+
     return {
-        code: reason?.code ?? fallbackCode,
-        message: reason?.message || String(reason),
-        details: reason
+        opId,
+        ok: true,
+        data: Array.isArray(result?.data) ? result.data : [],
+        partialFailures: partialFailures && partialFailures.length ? partialFailures : undefined,
+        transactionApplied: result?.transactionApplied
     }
-}
-
-function withCode(code: string, message: string) {
-    const err: any = new Error(message)
-    err.code = code
-    return err
 }

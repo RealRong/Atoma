@@ -1,7 +1,7 @@
 import { IndexDefinition, IndexType, StoreKey } from '../../types'
 import { binarySearchLeft, binarySearchRight } from '../utils'
 import { normalizeNumber } from '../validators'
-import { IndexStats } from '../types'
+import { CandidateResult, IndexStats } from '../types'
 import { IIndex } from '../base/IIndex'
 import { ISortableIndex } from '../base/ISortableIndex'
 
@@ -49,7 +49,7 @@ export class NumberDateIndex<T> implements ISortableIndex<T>, IIndex<T> {
         this.dirty = true
     }
 
-    query(condition: any): Set<StoreKey> | undefined {
+    queryCandidates(condition: any): CandidateResult {
         if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
             if (condition.in && Array.isArray(condition.in)) {
                 const result = new Set<StoreKey>()
@@ -60,22 +60,28 @@ export class NumberDateIndex<T> implements ISortableIndex<T>, IIndex<T> {
                         if (set) set.forEach(id => result.add(id))
                     } catch { /* ignore invalid */ }
                 })
-                return result
+                if (result.size === 0) return { kind: 'empty' }
+                return { kind: 'candidates', ids: result, exactness: 'exact' }
             }
             if (condition.gt !== undefined || condition.gte !== undefined || condition.lt !== undefined || condition.lte !== undefined) {
-                return this.queryRange(condition)
+                const result = this.queryRange(condition)
+                if (result.size === 0) return { kind: 'empty' }
+                return { kind: 'candidates', ids: result, exactness: 'exact' }
             }
+            return { kind: 'unsupported' }
         }
 
-        if (condition !== undefined) {
+        if (condition !== undefined && condition !== null && (typeof condition !== 'object' || Array.isArray(condition))) {
             try {
                 const num = normalizeNumber(condition, this.config.field, this.type as IndexType, 'eq')
-                return this.valueMap.get(num)
+                const set = this.valueMap.get(num)
+                if (!set || set.size === 0) return { kind: 'empty' }
+                return { kind: 'candidates', ids: set, exactness: 'exact' }
             } catch {
-                return undefined
+                return { kind: 'empty' }
             }
         }
-        return undefined
+        return { kind: 'unsupported' }
     }
 
     getOrderedKeys(
@@ -150,16 +156,24 @@ export class NumberDateIndex<T> implements ISortableIndex<T>, IIndex<T> {
         let start = 0
         let end = entries.length
 
-        if (gte !== undefined) {
-            start = binarySearchLeft(entries, gte)
-        } else if (gt !== undefined) {
-            start = binarySearchRight(entries, gt)
-        }
+        try {
+            if (gte !== undefined) {
+                const bound = normalizeNumber(gte, this.config.field, this.type as IndexType, 'gte')
+                start = binarySearchLeft(entries, bound)
+            } else if (gt !== undefined) {
+                const bound = normalizeNumber(gt, this.config.field, this.type as IndexType, 'gt')
+                start = binarySearchRight(entries, bound)
+            }
 
-        if (lt !== undefined) {
-            end = binarySearchLeft(entries, lt)
-        } else if (lte !== undefined) {
-            end = binarySearchRight(entries, lte)
+            if (lt !== undefined) {
+                const bound = normalizeNumber(lt, this.config.field, this.type as IndexType, 'lt')
+                end = binarySearchLeft(entries, bound)
+            } else if (lte !== undefined) {
+                const bound = normalizeNumber(lte, this.config.field, this.type as IndexType, 'lte')
+                end = binarySearchRight(entries, bound)
+            }
+        } catch {
+            return new Set()
         }
 
         const result = new Set<StoreKey>()

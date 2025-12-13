@@ -20,7 +20,16 @@ export async function parseHttp(incoming: IncomingHttp, options: ParserOptions =
             if (!body || typeof body !== 'object') {
                 return parseError(400, 'INVALID_BODY', 'Batch body must be a JSON object')
             }
-            return { ok: true, request: body as BatchRequest, context }
+            return {
+                ok: true,
+                request: body as BatchRequest,
+                context,
+                route: {
+                    kind: 'batch',
+                    method,
+                    pathname
+                }
+            }
         }
 
         if (!enableRest) {
@@ -29,12 +38,23 @@ export async function parseHttp(incoming: IncomingHttp, options: ParserOptions =
 
         const bodyNeeded = method !== 'GET' && method !== 'HEAD'
         const body = bodyNeeded ? await readBody(incoming, options.bodyReader) : undefined
-        const pathParts = pathname.replace(/^\/+/, '').split('/')
+        const pathParts = pathname.replace(/^\/+/, '').split('/').filter(Boolean)
         const mapped = restMapping({ method, pathParts, searchParams: urlObj.searchParams, body })
         if (!mapped) {
             return { ok: 'pass' }
         }
-        return { ok: true, request: mapped, context }
+        return {
+            ok: true,
+            request: mapped,
+            context,
+            route: {
+                kind: 'rest',
+                method,
+                pathname,
+                resource: pathParts[0],
+                id: pathParts[1]
+            }
+        }
     } catch (err: any) {
         return parseError(400, 'BAD_REQUEST', err?.message || 'Invalid request')
     }
@@ -59,6 +79,6 @@ async function readBody(incoming: IncomingHttp, bodyReader?: BodyReader) {
 }
 
 function parseError(httpStatus: number, code: string, message: string): ParsedOutcome {
-    const error: StandardError = { code, message }
+    const error: StandardError = { code, message, details: { kind: 'validation' } }
     return { ok: false, httpStatus, error }
 }

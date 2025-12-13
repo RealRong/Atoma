@@ -270,7 +270,7 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
 
         if (write !== 'remote-only') {
             if (this.config.local.applyPatches) {
-                promises.push(this.config.local.applyPatches(patches, metadata))
+                promises.push(this.config.local.applyPatches(patches, metadata).then(() => undefined))
             } else {
                 promises.push(this.applyPatchesViaOperations(this.config.local, patches))
             }
@@ -278,7 +278,7 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
 
         if (write !== 'local-only') {
             if (this.config.remote.applyPatches) {
-                promises.push(this.config.remote.applyPatches(patches, metadata))
+                promises.push(this.config.remote.applyPatches(patches, metadata).then(() => undefined))
             } else {
                 promises.push(this.applyPatchesViaOperations(this.config.remote, patches))
             }

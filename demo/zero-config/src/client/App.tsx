@@ -81,7 +81,7 @@ export function App() {
                 <div style={styles.panelHead}>
                     <div>
                         <div style={styles.panelTitle}>快速演示自动批量</div>
-                        <div style={styles.panelHint}>同一事件循环内的写操作会自动合并到单个 /batch 请求，无需后端额外代码</div>
+                        <div style={styles.panelHint}>同一事件循环内的写操作会自动合并到单个 /api/batch 请求，无需后端额外代码</div>
                     </div>
                     <div style={styles.panelActions}>
                         <button style={styles.ghostBtn} onClick={burstCreate}>一键新增 3 条</button>

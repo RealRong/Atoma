@@ -67,9 +67,8 @@ export class HTTPClient<T> {
         const etag = this.etagManager.extractFromResponse(response)
         if (etag) {
             const parsed = await this.safeParse(response)
-            if (parsed?.id !== undefined) {
-                this.etagManager.set(parsed.id, etag)
-            }
+            const parsedId = (parsed as any)?.id as StoreKey | undefined
+            if (parsedId !== undefined) this.etagManager.set(parsedId, etag)
         }
 
         return this.safeParse(response)

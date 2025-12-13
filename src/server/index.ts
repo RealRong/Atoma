@@ -4,27 +4,35 @@ export type { ParserOptions, ParsedOutcome, IncomingHttp } from './parser/types'
 
 export { guardRequest } from './guard/guard'
 export type { GuardOptions } from './guard/guard'
+export type { FieldListRule, FieldPolicy, FieldPolicyInput, FieldPolicyResolverArgs } from './guard/fieldPolicy'
 
 export {
-    executeRequest,
-    validateAndNormalizeRequest
+    executeRequest
 } from './executor/executor'
+
+export { validateAndNormalizeRequest } from './validator/validator'
 
 export { createHandler } from './handler'
 
+export { AtomaError, createError, throwError } from './error'
+export type { ErrorKind, StandardErrorDetails } from './error'
+
 export type {
-    BatchQuery,
     BatchRequest,
     BatchResponse,
     BatchResult,
+    BatchOp,
     Action,
     IOrmAdapter,
-    OrderByField,
+    OrderByRule,
+    CursorToken,
+    Page,
     QueryParams,
     QueryResult,
     QueryResultOne,
     QueryResultMany,
     WriteOptions,
+    OrmAdapterOptions,
     StandardError
 } from './types'
 

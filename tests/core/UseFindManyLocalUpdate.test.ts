@@ -1,3 +1,5 @@
+/** @vitest-environment jsdom */
+
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { atom, createStore } from 'jotai'
 import { renderHook, act, waitFor } from '@testing-library/react'

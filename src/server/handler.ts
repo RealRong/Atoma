@@ -1,7 +1,9 @@
 import type { BatchRequest, BatchResponse, IOrmAdapter, StandardError } from './types'
 import { parseHttp } from './parser/parseHttp'
 import { guardRequest } from './guard/guard'
-import { executeRequest, validateAndNormalizeRequest } from './executor/executor'
+import { executeRequest } from './executor/executor'
+import { validateAndNormalizeRequest } from './validator/validator'
+import { errorStatus, toStandardError } from './error'
 import type { ParserOptions } from './parser/types'
 import type { GuardOptions } from './guard/guard'
 
@@ -30,42 +32,18 @@ export function createHandler(options: HandlerOptions) {
 
         try {
             request = validateAndNormalizeRequest(parsed.request)
-            guardRequest(request, { adapter, ...(guardOptions ?? {}) })
+            guardRequest(request, { adapter, ...(guardOptions ?? {}) }, { ctx })
             const response = await executeRequest(request, adapter)
             if (onSuccess) await onSuccess(response, request, ctx)
-            return { status: successStatus(request), body: response }
+            if (parsed.route.kind === 'rest') {
+                return toRestResponse(parsed.route, request, response)
+            }
+            return { status: 200, body: response }
         } catch (err: any) {
             if (onError) await onError(err, request, ctx)
             const error = toStandardError(err, 'INTERNAL')
             return { status: errorStatus(error), body: { error } }
         }
-    }
-}
-
-function successStatus(req: BatchRequest) {
-    if (req.action === 'delete') return 204
-    if (req.action === 'create') return 201
-    return 200
-}
-
-function errorStatus(error: StandardError) {
-    switch (error.code) {
-        case 'ACCESS_DENIED':
-            return 403
-        case 'RESOURCE_NOT_ALLOWED':
-            return 403
-        case 'TOO_MANY_QUERIES':
-        case 'TOO_MANY_ITEMS':
-        case 'INVALID_REQUEST':
-        case 'INVALID_QUERY':
-        case 'INVALID_WRITE':
-        case 'INVALID_PAYLOAD':
-        case 'INVALID_ORDER_BY':
-            return 422
-        case 'PAYLOAD_TOO_LARGE':
-            return 413
-        default:
-            return 500
     }
 }
 
@@ -81,11 +59,50 @@ function notFound() {
     }
 }
 
-function toStandardError(reason: any, fallbackCode: string): StandardError {
-    if (reason?.code && reason?.message) return reason as StandardError
-    return {
-        code: reason?.code ?? fallbackCode,
-        message: reason?.message || String(reason),
-        details: reason
+function toRestResponse(
+    route: { kind: 'rest'; id?: string; method: string },
+    req: BatchRequest,
+    res: BatchResponse
+): { status: number; body: any } {
+    const first = Array.isArray(res.results) ? res.results[0] : undefined
+    if (!first) {
+        return { status: 500, body: { error: { code: 'INTERNAL', message: 'Empty result' } } }
     }
+
+    if (first.ok === false || first.error) {
+        const error = (first.error as StandardError) ?? { code: 'INTERNAL', message: 'Internal error' }
+        return { status: errorStatus(error), body: { error } }
+    }
+
+    const method = (route.method || '').toUpperCase()
+
+    if (method === 'GET') {
+        if (route.id !== undefined) {
+            const item = Array.isArray(first.data) ? first.data[0] : undefined
+            if (!item) {
+                return { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Not found' } } }
+            }
+            return { status: 200, body: { data: item } }
+        }
+        return { status: 200, body: { data: first.data ?? [], pageInfo: first.pageInfo } }
+    }
+
+    if (method === 'DELETE') {
+        if (Array.isArray(first.partialFailures) && first.partialFailures.length) {
+            const error = first.partialFailures[0].error as StandardError
+            return { status: errorStatus(error), body: { error } }
+        }
+        return { status: 204, body: undefined }
+    }
+
+    if (Array.isArray(first.partialFailures) && first.partialFailures.length) {
+        const error = first.partialFailures[0].error as StandardError
+        return { status: errorStatus(error), body: { error } }
+    }
+
+    const item = Array.isArray(first.data) ? first.data[0] : undefined
+    const status = method === 'POST' ? 201 : 200
+    return { status, body: { data: item ?? null } }
 }
+
+// toStandardError/errorStatus moved to src/server/error.ts

@@ -4,6 +4,7 @@ import { HistoryRecorder } from './history/HistoryRecorder'
 import { OperationApplier } from './ops/OperationApplier'
 import { AdapterSync } from './ops/AdapterSync'
 import { QueueConfig } from './types'
+import { IndexRegistry } from './indexes/IndexRegistry'
 
 /**
  * Per-store context holding dependencies
@@ -15,6 +16,7 @@ export interface StoreContext {
     historyRecorder: HistoryRecorder
     operationApplier: OperationApplier
     adapterSync: AdapterSync
+    indexRegistry: IndexRegistry
     queueConfig: QueueConfig
 }
 
@@ -34,6 +36,7 @@ export function createStoreContext(queueConfigOverride?: Partial<QueueConfig>): 
         historyRecorder: new HistoryRecorder(),
         operationApplier: new OperationApplier(),
         adapterSync: new AdapterSync(),
+        indexRegistry: new IndexRegistry(),
         queueConfig
     }
 }

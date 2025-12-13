@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useRef } from 'react'
 import { applyQuery, extractQueryFields, stableStringify } from '../core/query'
 import { getVersionSnapshot, globalStore } from '../core/BaseStore'
 import { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, UseFindManyResult, RelationMap, Entity } from '../core/types'
-import { RelationResolver } from '../core/relations/RelationResolver'
+import { useRelations } from './useRelations'
 
 export function createUseFindMany<T extends Entity, Relations extends RelationMap<T> = {}>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
@@ -17,6 +17,7 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
         const map = useAtomValue(objectMapAtom, { store: actualStore })
         const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'local-then-remote'
         const shouldUseLocal = fetchPolicy !== 'remote'
+        const effectiveSkipStore = Boolean(options?.skipStore || (options as any)?.fields?.length)
 
         const queryKey = useMemo(() => stableStringify({ ...(options || {}), fetchPolicy }), [options, fetchPolicy])
         const fields = useMemo(() => shouldUseLocal ? extractQueryFields(options) : [], [shouldUseLocal, queryKey])
@@ -33,8 +34,6 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
         const [loading, setLoading] = useState(fetchPolicy !== 'local')
         const [error, setError] = useState<Error | undefined>(undefined)
         const [isStale, setIsStale] = useState(false)
-        const [finalData, setFinalData] = useState<T[]>([])
-        const [relationLoading, setRelationLoading] = useState(false)
 
         // 本地过滤（仅在 local / local-then-remote 使用）
         const filteredIds = useMemo(() => {
@@ -100,7 +99,7 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
                     const res = await store.findMany(options)
                     if (cancelled) return
                     const { data, pageInfo } = normalizeResult(res)
-                    if (!options?.skipStore) {
+                    if (!effectiveSkipStore) {
                         upsertIntoMap(data)
                     }
                     setRemoteData(data)
@@ -134,7 +133,7 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
             return store.findMany(options)
                 .then(res => {
                     const { data, pageInfo } = normalizeResult(res)
-                    if (!options?.skipStore) {
+                    if (!effectiveSkipStore) {
                         upsertIntoMap(data)
                     }
                     setRemoteData(data)
@@ -163,14 +162,18 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
                 throw err
             }
             try {
-                // Use skipStore setting from original options if not overridden (or force it to match?)
-                // Generally we want consistency.
-                const effectiveOptions = { ...moreOptions, skipStore: options?.skipStore }
+                const baseFields = (options as any)?.fields
+                const effectiveOptions: any = {
+                    ...moreOptions,
+                    fields: (moreOptions as any)?.fields ?? baseFields,
+                    // fields 存在时，强制 transient（不写入 store）
+                    skipStore: Boolean((moreOptions as any)?.skipStore || (moreOptions as any)?.fields?.length || baseFields?.length)
+                }
 
                 const res = await store.findMany(effectiveOptions)
                 const { data, pageInfo: newPageInfo } = normalizeResult(res)
 
-                if (options?.skipStore) {
+                if (effectiveSkipStore) {
                     setRemoteData(prev => [...prev, ...data])
                 } else {
                     upsertIntoMap(data)
@@ -201,57 +204,14 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
                     ? remoteData
                     : (localData.length ? localData : remoteData)
 
-        useEffect(() => {
-            // 无 include 或无关系定义时直接返回数据
-            if (!options?.include || !store._relations || data.length === 0) {
-                setFinalData(data)
-                setRelationLoading(false)
-                return
-            }
-
-            let cancelled = false
-            setRelationLoading(true)
-
-            // 默认 skipStore: true 避免污染缓存
-            const includeWithSkipStore = Object.fromEntries(
-                Object.entries(options.include).map(([key, opts]) => {
-                    if (opts === false || opts === undefined) return [key, opts]
-                    if (opts && typeof opts === 'object') {
-                        const o = opts as any
-                        return [key, { ...o, skipStore: o.skipStore ?? true }]
-                    }
-                    return [key, { skipStore: true }]
-                })
-            ) as Record<string, boolean | FindManyOptions<any>>
-
-            RelationResolver.resolveBatch(
-                data,
-                includeWithSkipStore,
-                store._relations as any,
-                { onError: 'partial', timeout: 5000, maxConcurrency: 10 }
-            )
-                .then(resolved => {
-                    if (cancelled) return
-                    setFinalData(resolved)
-                })
-                .catch(err => {
-                    console.error('[Atoma Relations] Resolution failed:', err)
-                    if (!cancelled) {
-                        setFinalData(data)
-                    }
-                })
-                .finally(() => {
-                    if (!cancelled) setRelationLoading(false)
-                })
-
-            return () => { cancelled = true }
-        // stableStringify 用于 include 依赖
-        }, [data, stableStringify(options?.include), store._relations])
+        const relationsResult = useRelations(data, options?.include as any, store._relations as any)
+        const finalData = relationsResult.data
+        const combinedError = relationsResult.error ?? error
 
         return {
             data: finalData as any,
-            loading: loading || relationLoading,
-            error,
+            loading: loading || relationsResult.loading,
+            error: combinedError,
             refetch,
             isStale,
             pageInfo,

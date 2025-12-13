@@ -1,5 +1,5 @@
 import { IndexDefinition, StoreKey } from '../../types'
-import { IndexStats } from '../types'
+import { CandidateResult, IndexStats } from '../types'
 import { binarySearchPrefix, intersectAll, levenshteinDistance } from '../utils'
 import { defaultTokenizer } from '../tokenizer'
 import { validateString } from '../validators'
@@ -68,37 +68,10 @@ export class TextIndex<T> implements IIndex<T> {
         this.dirty = true
     }
 
-    query(condition: any): Set<StoreKey> | undefined {
-        let searchType: 'prefix' | 'suffix' | 'fulltext' | 'exact' = 'fulltext'
-        let queryVal: string | undefined
-
-        if (condition && typeof condition === 'object' && !Array.isArray(condition) && (condition as any).startsWith) {
-            queryVal = String((condition as any).startsWith)
-            searchType = 'prefix'
-        } else if (condition && typeof condition === 'object' && !Array.isArray(condition) && (condition as any).endsWith) {
-            queryVal = String((condition as any).endsWith)
-            searchType = 'suffix'
-        } else if (condition && typeof condition === 'object' && !Array.isArray(condition) && (condition as any).contains) {
-            queryVal = String((condition as any).contains)
-            searchType = 'fulltext'
-        } else if (typeof condition === 'string') {
-            queryVal = condition
-            searchType = 'exact'
-        }
-
-        if (!queryVal) return undefined
-
-        switch (searchType) {
-            case 'prefix':
-                return this.prefixSearch(queryVal)
-            case 'suffix':
-                return this.suffixSearch(queryVal)
-            case 'exact':
-                return this.exactSearch(queryVal)
-            case 'fulltext':
-            default:
-                return this.fulltextSearch(queryVal)
-        }
+    queryCandidates(_condition: any): CandidateResult {
+        // 当前 where 语义（applyQuery）对 contains/startsWith/endsWith 是“整段字符串子串”匹配；
+        // token 倒排索引无法保证无假阴性，因此在引入专用 search 操作符之前，TextIndex 不参与候选集过滤。
+        return { kind: 'unsupported' }
     }
 
     getStats(): IndexStats {

@@ -1,18 +1,25 @@
 import type {
     IOrmAdapter,
+    OrmAdapterOptions,
+    OrderByRule,
     QueryParams,
     QueryResult,
     QueryResultMany,
     QueryResultOne,
     WriteOptions
 } from '../types'
+import { applyPatches, enablePatches } from 'immer'
+import {
+    compareOpForAfter,
+    decodeCursorToken,
+    encodeCursorToken,
+    ensureStableOrderBy,
+    getCursorValuesFromRow,
+    reverseOrderBy
+} from '../adapters/shared/keyset'
+import { createError, isAtomaError, throwError } from '../error'
 
-export interface PrismaAdapterOptions {
-    /** cursor 字段名，默认 id */
-    cursorField?: string
-    /** 是否强制禁用 $transaction 包裹批量查询 */
-    disableTransaction?: boolean
-}
+enablePatches()
 
 type PrismaDelegate = {
     findMany: (args: any) => Promise<any[]>
@@ -26,19 +33,22 @@ type PrismaDelegate = {
 }
 
 type PrismaClientLike = Record<string, any> & {
-    $transaction?: <T>(operations: Promise<T>[]) => Promise<T[]>
+    $transaction?: {
+        <T>(operations: Promise<T>[]): Promise<T[]>
+        <T>(fn: (tx: any) => Promise<T>): Promise<T>
+    }
 }
 
 export class AtomaPrismaAdapter implements IOrmAdapter {
-    private readonly cursorField: string
-    private readonly disableTransaction: boolean
+    private readonly idField: string
+    private readonly defaultOrderBy?: OrderByRule[]
 
     constructor(
         private readonly client: PrismaClientLike,
-        options: PrismaAdapterOptions = {}
+        options: OrmAdapterOptions = {}
     ) {
-        this.cursorField = options.cursorField ?? 'id'
-        this.disableTransaction = options.disableTransaction ?? false
+        this.idField = options.idField ?? 'id'
+        this.defaultOrderBy = options.defaultOrderBy
     }
 
     isResourceAllowed(resource: string): boolean {
@@ -48,41 +58,90 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     async findMany(resource: string, params: QueryParams = {}): Promise<QueryResult> {
         const delegate = this.getDelegate(resource)
         if (!delegate?.findMany) {
-            throw new Error(`Resource not allowed: ${resource}`)
+            throwError('RESOURCE_NOT_ALLOWED', `Resource not allowed: ${resource}`, { kind: 'access', resource })
         }
 
-        const prismaWhere = this.buildWhere(params.where, params.cursor)
-        const prismaOrderBy = this.buildOrderBy(params.orderBy)
-        const select = this.buildSelect(params.select)
-        const skip = typeof params.offset === 'number' ? params.offset : undefined
-        const take = typeof params.limit === 'number' ? params.limit : undefined
+        const orderBy = ensureStableOrderBy(params.orderBy, {
+            idField: this.idField,
+            defaultOrderBy: this.defaultOrderBy
+        })
 
-        const [data, total] = await Promise.all([
-            delegate.findMany({
-                where: prismaWhere,
+        const baseWhere = this.buildWhere(params.where)
+        const { prismaOrderBy, reverseResult, keysetWhere } = this.buildKeysetWhere(params, orderBy)
+        const where = keysetWhere ? this.andWhere(baseWhere, keysetWhere) : baseWhere
+
+        const { select, project } = this.buildSelectWithProjection(params.select, orderBy)
+
+        const page = params.page
+        if (!page) {
+            const data = await delegate.findMany({
+                where,
                 orderBy: prismaOrderBy,
-                select,
-                skip,
-                take
-            }),
-            delegate.count ? delegate.count({ where: prismaWhere }) : Promise.resolve(undefined)
-        ])
+                select
+            })
+            return { data: project ? data.map(project) : data }
+        }
 
-        const pageInfo = typeof take === 'number'
-            ? {
-                total,
-                hasNext: total !== undefined
-                    ? (skip ?? 0) + take < total
-                    : undefined
+        if (page.mode === 'offset') {
+            const skip = typeof page.offset === 'number' ? page.offset : undefined
+            const take = page.limit
+            const includeTotal = page.includeTotal ?? true
+
+            if (includeTotal && delegate.count) {
+                const [data, total] = await Promise.all([
+                    delegate.findMany({ where, orderBy: prismaOrderBy, select, skip, take }),
+                    delegate.count({ where })
+                ])
+                const projected = project ? data.map(project) : data
+                return {
+                    data: projected,
+                    pageInfo: {
+                        total,
+                        hasNext: typeof skip === 'number' ? skip + take < total : take < total
+                    }
+                }
             }
-            : { total }
 
-        return { data, pageInfo }
+            const data = await delegate.findMany({ where, orderBy: prismaOrderBy, select, skip, take: take + 1 })
+            const hasNext = data.length > take
+            const sliced = data.slice(0, take)
+            const projected = project ? sliced.map(project) : sliced
+            return {
+                data: projected,
+                pageInfo: { hasNext }
+            }
+        }
+
+        // cursor keyset：默认不返回 total
+        const take = page.limit
+        const data = await delegate.findMany({
+            where,
+            orderBy: prismaOrderBy,
+            select,
+            take: take + 1
+        })
+        const hasNext = data.length > take
+        const sliced = data.slice(0, take)
+        const finalRows = reverseResult ? sliced.reverse() : sliced
+
+        const projected = project ? finalRows.map(project) : finalRows
+        const cursorRow = page.before ? finalRows[0] : finalRows[finalRows.length - 1]
+        const cursor = cursorRow
+            ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy))
+            : undefined
+
+        return {
+            data: projected,
+            pageInfo: {
+                hasNext,
+                cursor
+            }
+        }
     }
 
     async batchFindMany(requests: Array<{ resource: string; params: QueryParams }>): Promise<QueryResult[]> {
         const operations = requests.map(r => this.findMany(r.resource, r.params))
-        if (!this.disableTransaction && this.client.$transaction) {
+        if (this.client.$transaction) {
             return this.client.$transaction(operations)
         }
         return Promise.all(operations)
@@ -125,6 +184,112 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const fn = () => delegate.delete!(args)
         const res = await this.runMaybeTransaction([fn], options.transaction)
         return { data: options.returning === false ? undefined : res.data[0], transactionApplied: res.transactionApplied }
+    }
+
+    async patch(
+        resource: string,
+        item: { id: any; patches: any[]; baseVersion?: number; timestamp?: number },
+        options: WriteOptions = {}
+    ): Promise<QueryResultOne> {
+        if (item?.id === undefined || !Array.isArray(item?.patches)) {
+            throw new Error('patch requires id and patches[]')
+        }
+
+        const run = async (client: PrismaClientLike) => {
+            const delegate = this.requireDelegateFromClient(client, resource, 'update')
+            const current = await this.findOneByKey(client, resource, this.idField, item.id)
+            if (!current) throw new Error('Not found')
+
+            const normalized = this.stripIdPrefix(item.patches, item.id)
+            const next = applyPatches(current, normalized)
+            const data = this.toUpdateData(next, this.idField)
+            const updated = await delegate.update!({
+                where: { [this.idField]: item.id },
+                data,
+                select: this.buildSelect(options.select)
+            })
+            return updated
+        }
+
+        const res = await this.runMaybeTransactionCallback(run, options.transaction)
+        return {
+            data: options.returning === false ? undefined : res.data,
+            transactionApplied: res.transactionApplied
+        }
+    }
+
+    async bulkPatch(
+        resource: string,
+        items: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number }>,
+        options: WriteOptions = {}
+    ): Promise<QueryResultMany> {
+        const returning = options.returning !== false
+
+        if (options.transaction && this.client.$transaction) {
+            const res = await this.runMaybeTransactionCallback(async (tx: PrismaClientLike) => {
+                const delegate = this.requireDelegateFromClient(tx, resource, 'update')
+                const updated: any[] = []
+                for (const item of items) {
+                    if (item?.id === undefined || !Array.isArray(item?.patches)) {
+                        throw new Error('bulkPatch item missing id or patches')
+                    }
+                    const current = await this.findOneByKey(tx, resource, this.idField, item.id)
+                    if (!current) throw new Error('Not found')
+
+                    const normalized = this.stripIdPrefix(item.patches, item.id)
+                    const next = applyPatches(current, normalized)
+                    const data = this.toUpdateData(next, this.idField)
+                    const row = await delegate.update!({
+                        where: { [this.idField]: item.id },
+                        data,
+                        select: this.buildSelect(options.select)
+                    })
+                    if (returning) updated.push(row)
+                }
+                return updated
+            }, options.transaction)
+
+            return {
+                data: returning ? res.data : [],
+                transactionApplied: res.transactionApplied
+            }
+        }
+
+        const operations = items.map(item => async () => {
+            if (item?.id === undefined || !Array.isArray(item?.patches)) {
+                throw new Error('bulkPatch item missing id or patches')
+            }
+            const delegate = this.requireDelegate(resource, 'update')
+            const current = await this.findOneByKey(this.client, resource, this.idField, item.id)
+            if (!current) throw new Error('Not found')
+
+            const normalized = this.stripIdPrefix(item.patches, item.id)
+            const next = applyPatches(current, normalized)
+            const data = this.toUpdateData(next, this.idField)
+            const row = await delegate.update!({
+                where: { [this.idField]: item.id },
+                data,
+                select: this.buildSelect(options.select)
+            })
+            return returning ? row : undefined
+        })
+
+        const settled = await Promise.allSettled(operations.map(op => op()))
+        const data: any[] = []
+        const partialFailures: Array<{ index: number; error: any }> = []
+        settled.forEach((res, idx) => {
+            if (res.status === 'fulfilled') {
+                if (returning && res.value !== undefined) data.push(res.value)
+            } else {
+                partialFailures.push({ index: idx, error: this.toError(res.reason) })
+            }
+        })
+
+        return {
+            data: returning ? data : [],
+            partialFailures: partialFailures.length ? partialFailures : undefined,
+            transactionApplied: false
+        }
     }
 
     async bulkCreate(resource: string, items: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
@@ -206,7 +371,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         }
     }
 
-    private buildWhere(where: QueryParams['where'], cursor?: QueryParams['cursor']) {
+    private buildWhere(where: QueryParams['where']) {
         const result: Record<string, any> = {}
         if (where) {
             Object.entries(where).forEach(([field, value]) => {
@@ -215,15 +380,6 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                     result[field] = mapped
                 }
             })
-        }
-        if (cursor !== undefined) {
-            const existing = result[this.cursorField]
-            const cursorCond = { gt: cursor }
-            if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
-                result[this.cursorField] = { ...existing, ...cursorCond }
-            } else {
-                result[this.cursorField] = cursorCond
-            }
         }
         return Object.keys(result).length ? result : undefined
     }
@@ -250,10 +406,8 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return value
     }
 
-    private buildOrderBy(orderBy: QueryParams['orderBy']) {
-        if (!orderBy) return undefined
-        const list = Array.isArray(orderBy) ? orderBy : [orderBy]
-        return list.map(rule => ({ [rule.field]: rule.direction ?? 'asc' }))
+    private buildOrderBy(orderBy: OrderByRule[]) {
+        return orderBy.map(rule => ({ [rule.field]: rule.direction ?? 'asc' }))
     }
 
     private buildSelect(select?: Record<string, boolean>) {
@@ -271,8 +425,22 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return delegate as PrismaDelegate
     }
 
+    private getDelegateFromClient(client: PrismaClientLike, resource: string): PrismaDelegate | undefined {
+        const delegate = (client as any)?.[resource]
+        if (!delegate || typeof delegate.findMany !== 'function') return undefined
+        return delegate as PrismaDelegate
+    }
+
     private requireDelegate(resource: string, method: keyof PrismaDelegate): PrismaDelegate {
         const delegate = this.getDelegate(resource)
+        if (!delegate || typeof (delegate as any)[method] !== 'function') {
+            throw new Error(`Resource not allowed or missing method ${method}: ${resource}`)
+        }
+        return delegate
+    }
+
+    private requireDelegateFromClient(client: PrismaClientLike, resource: string, method: keyof PrismaDelegate): PrismaDelegate {
+        const delegate = this.getDelegateFromClient(client, resource)
         if (!delegate || typeof (delegate as any)[method] !== 'function') {
             throw new Error(`Resource not allowed or missing method ${method}: ${resource}`)
         }
@@ -308,8 +476,135 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return { data, transactionApplied: false }
     }
 
+    private async runMaybeTransactionCallback<T>(
+        fn: (client: PrismaClientLike) => Promise<T>,
+        useTransaction?: boolean
+    ): Promise<{ data: T; transactionApplied: boolean }> {
+        if (useTransaction && this.client.$transaction) {
+            const data = await (this.client.$transaction as any)(async (tx: any) => fn(tx))
+            return { data, transactionApplied: true }
+        }
+        const data = await fn(this.client)
+        return { data, transactionApplied: false }
+    }
+
     private toError(reason: any) {
-        if (reason?.code && reason?.message) return reason
-        return { code: 'INTERNAL', message: reason?.message || String(reason), details: reason }
+        if (isAtomaError(reason)) return reason
+        // Do not leak raw adapter/DB errors to clients.
+        return createError('INTERNAL', 'Internal error', { kind: 'adapter' })
+    }
+
+    private async findOneByKey(client: PrismaClientLike, resource: string, field: string, value: any) {
+        const delegate = this.requireDelegateFromClient(client, resource, 'findMany')
+        const list = await delegate.findMany({
+            where: { [field]: value },
+            take: 1
+        })
+        return Array.isArray(list) ? list[0] : undefined
+    }
+
+    private toUpdateData(row: any, idField: string) {
+        if (!row || typeof row !== 'object') return row
+        const { [idField]: _id, ...rest } = row
+        return rest
+    }
+
+    private stripIdPrefix(patches: any[], id: any) {
+        return (patches || []).map(patch => {
+            if (!Array.isArray(patch.path) || !patch.path.length) return patch
+            const [head, ...rest] = patch.path
+            // 宽松比较以兼容字符串/数字 id
+            if (head == id) {
+                return { ...patch, path: rest }
+            }
+            return patch
+        })
+    }
+
+    private buildKeysetWhere(params: QueryParams, orderBy: OrderByRule[]) {
+        const page = params.page
+        if (!page || page.mode !== 'cursor') {
+            return {
+                prismaOrderBy: this.buildOrderBy(orderBy),
+                reverseResult: false,
+                keysetWhere: undefined as any
+            }
+        }
+
+        const before = Boolean(page.before)
+        const token = page.before ?? page.after
+        if (!token) {
+            return {
+                prismaOrderBy: this.buildOrderBy(orderBy),
+                reverseResult: false,
+                keysetWhere: undefined as any
+            }
+        }
+
+        const queryOrderBy = before ? reverseOrderBy(orderBy) : orderBy
+        let values: any[]
+        try {
+            values = decodeCursorToken(token)
+        } catch {
+            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path: before ? 'page.before' : 'page.after' })
+        }
+        const keysetWhere = this.buildPrismaKeysetWhere(queryOrderBy, values, before ? 'page.before' : 'page.after')
+
+        return {
+            prismaOrderBy: this.buildOrderBy(queryOrderBy),
+            reverseResult: before,
+            keysetWhere
+        }
+    }
+
+    private buildPrismaKeysetWhere(orderBy: OrderByRule[], values: any[], path: string) {
+        if (values.length < orderBy.length) {
+            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path })
+        }
+
+        const or: any[] = []
+        for (let i = 0; i < orderBy.length; i++) {
+            const and: any[] = []
+            for (let j = 0; j < i; j++) {
+                and.push({ [orderBy[j].field]: values[j] })
+            }
+            const op = compareOpForAfter(orderBy[i].direction)
+            and.push({ [orderBy[i].field]: { [op]: values[i] } })
+            or.push({ AND: and })
+        }
+
+        return { OR: or }
+    }
+
+    private andWhere(a: any, b: any) {
+        if (a && b) return { AND: [a, b] }
+        return a || b
+    }
+
+    private buildSelectWithProjection(select: QueryParams['select'], orderBy: OrderByRule[]) {
+        if (!select) {
+            return { select: undefined as any, project: undefined as ((row: any) => any) | undefined }
+        }
+
+        const requiredFields = orderBy.map(r => r.field)
+        const prismaSelect: Record<string, boolean> = {}
+
+        Object.entries(select).forEach(([field, enabled]) => {
+            if (enabled) prismaSelect[field] = true
+        })
+        requiredFields.forEach(field => {
+            prismaSelect[field] = true
+        })
+
+        const finalSelect = Object.keys(prismaSelect).length ? prismaSelect : undefined
+        const project = (row: any) => {
+            const out: any = {}
+            Object.entries(select).forEach(([field, enabled]) => {
+                if (enabled) out[field] = row?.[field]
+            })
+            return out
+        }
+
+        return { select: finalSelect, project }
     }
 }

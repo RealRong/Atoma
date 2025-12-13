@@ -1,9 +1,12 @@
 import { PrimitiveAtom } from 'jotai'
 import { applyPatches, Patch } from 'immer'
+import isEqual from 'lodash/isEqual'
 import { ApplyResult } from './OperationApplier'
 import { IAdapter, PatchMetadata, Entity, StoreDispatchEvent } from '../types'
 import { AtomVersionTracker } from '../state/AtomVersionTracker'
 import { HistoryRecorder } from '../history/HistoryRecorder'
+import type { IndexRegistry } from '../indexes/IndexRegistry'
+import { IndexSynchronizer } from '../indexes/IndexSynchronizer'
 
 type CallbackEntry = { onSuccess?: (...args: any[]) => void, onFail?: (error?: Error) => void }
 
@@ -15,6 +18,7 @@ interface SyncParams<T extends Entity> {
     store: any
     versionTracker: AtomVersionTracker
     historyRecorder: HistoryRecorder
+    indexRegistry?: IndexRegistry
     mode: 'optimistic' | 'strict'
 }
 
@@ -46,11 +50,14 @@ const applyPatchesViaOperations = async <T extends Entity>(
         }
     })
 
-    let createdResults: T[] | void
+    let createdResults: T[] | undefined
 
     if (createActions.length) {
         if (adapter.bulkCreate) {
-            createdResults = await adapter.bulkCreate(createActions)
+            const res = await adapter.bulkCreate(createActions)
+            if (Array.isArray(res)) {
+                createdResults = res
+            }
         } else {
             await adapter.bulkPut(createActions)
         }
@@ -67,11 +74,23 @@ const applyPatchesViaOperations = async <T extends Entity>(
     }
 }
 
+function mapsEqual(a: Map<any, any>, b: Map<any, any>) {
+    if (a === b) return true
+    if (a.size !== b.size) return false
+    for (const [key, valA] of a.entries()) {
+        if (!b.has(key)) return false
+        const valB = b.get(key)
+        if (!isEqual(valA, valB)) return false
+    }
+    return true
+}
+
 export class AdapterSync {
     async syncAtom<T extends Entity>(params: SyncParams<T>): Promise<void> {
-        const { adapter, applyResult, atom, callbacks, store, versionTracker, historyRecorder, mode } = params
+        const { adapter, applyResult, atom, callbacks, store, versionTracker, historyRecorder, indexRegistry, mode } = params
         const { newValue, patches, inversePatches, changedFields } = applyResult
         const originalValue = store.get(atom)
+        const indexManager = indexRegistry?.get(atom as any)
 
         const metadata: PatchMetadata = {
             atom,
@@ -84,6 +103,9 @@ export class AdapterSync {
         if (mode === 'optimistic') {
             store.set(atom, newValue)
             versionTracker.bump(atom, changedFields)
+            if (indexManager) {
+                IndexSynchronizer.applyPatches(indexManager, originalValue, newValue, patches)
+            }
         }
 
         let sideEffects: ApplySideEffects<T> | undefined
@@ -120,8 +142,13 @@ export class AdapterSync {
                     applyResult.appliedData[idx] = serverItem
                 })
 
-                store.set(atom, next)
-                versionTracker.bump(atom, new Set(['id']))
+                if (!mapsEqual(current, next)) {
+                    store.set(atom, next)
+                    versionTracker.bump(atom, new Set(['id']))
+                    if (indexManager) {
+                        IndexSynchronizer.applyMapDiff(indexManager, current as any, next as any)
+                    }
+                }
             }
 
             if (mode === 'strict') {
@@ -143,8 +170,13 @@ export class AdapterSync {
                     })
                     latest = map as any
                 }
-                store.set(atom, latest)
-                versionTracker.bump(atom, changedFields)
+                if (!mapsEqual(currentValue, latest)) {
+                    store.set(atom, latest)
+                    versionTracker.bump(atom, changedFields)
+                    if (indexManager) {
+                        IndexSynchronizer.applyMapDiff(indexManager, currentValue as any, latest as any)
+                    }
+                }
             } else {
                 // 乐观模式已写入 temp，若有 server 返回则替换为最终 ID
                 rewriteCreated(sideEffects?.createdResults)
@@ -161,6 +193,10 @@ export class AdapterSync {
             if (mode === 'optimistic') {
                 // rollback 乐观写入
                 store.set(atom, originalValue)
+                if (indexManager) {
+                    // 对称回滚：以 inversePatches 驱动索引恢复
+                    IndexSynchronizer.applyPatches(indexManager, newValue, originalValue, inversePatches)
+                }
             }
             const err = error instanceof Error ? error : new Error(String(error))
             callbacks.forEach(({ onFail }) => setTimeout(() => onFail?.(err), 0))

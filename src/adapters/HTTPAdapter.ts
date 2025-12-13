@@ -14,7 +14,7 @@ import { SyncOrchestrator } from './http/syncOrchestrator'
 import { createOperationExecutors, OperationExecutors } from './http/operationExecutors'
 import type { QueuedOperation } from './http/offlineQueue'
 import type { QuerySerializerConfig } from './http/query'
-import { BatchDispatcher } from '../batch'
+import { BatchEngine } from '../batch'
 
 // ===== Config Interfaces =====
 
@@ -245,7 +245,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     private orchestrator: SyncOrchestrator<T>
     private executors: OperationExecutors<T>
     private serializerConfig?: QuerySerializerConfig
-    private batchDispatcher?: BatchDispatcher
+    private batchEngine?: BatchEngine
     private resourceNameForBatch: string
     private usePatchForUpdate: boolean
 
@@ -376,7 +376,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         if (batchConfig.enabled) {
             const endpointPath = batchConfig.endpoint ?? '/batch'
             const batchEndpoint = makeUrl(this.config.baseURL, endpointPath)
-            this.batchDispatcher = new BatchDispatcher({
+            this.batchEngine = new BatchEngine({
                 endpoint: batchEndpoint,
                 maxBatchSize: batchConfig.maxBatchSize,
                 flushIntervalMs: batchConfig.flushIntervalMs,
@@ -403,17 +403,21 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         this.orchestrator.dispose()
         // Clear ETag cache to free memory
         this.etagManager.clear()
-        this.batchDispatcher?.dispose()
+        this.batchEngine?.dispose()
     }
 
     async put(key: StoreKey, value: T): Promise<void> {
-        if (this.batchDispatcher) {
+        if (this.batchEngine) {
             const clientVersion = this.resolveClientVersion(key, value)
-            return this.batchDispatcher.enqueueUpdate(
-                this.resourceNameForBatch,
-                { id: key, data: value, clientVersion },
-                () => this.executors.put(key, value)
-            )
+            try {
+                return await this.batchEngine.enqueueUpdate(
+                    this.resourceNameForBatch,
+                    { id: key, data: value, clientVersion }
+                )
+            } catch (error) {
+                this.onError(error as Error, 'put(batch)')
+                throw error
+            }
         }
         return this.executors.put(key, value)
     }
@@ -423,12 +427,11 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     async bulkCreate(items: T[]): Promise<T[] | void> {
-        if (this.batchDispatcher) {
+        if (this.batchEngine) {
             const created = await Promise.all(items.map(item => {
-                return this.batchDispatcher!.enqueueCreate(
+                return this.batchEngine!.enqueueCreate(
                     this.resourceNameForBatch,
-                    item,
-                    () => this.client.create(item.id, item)
+                    item
                 )
             }))
             return created
@@ -442,12 +445,13 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     async delete(key: StoreKey): Promise<void> {
-        if (this.batchDispatcher) {
-            return this.batchDispatcher.enqueueDelete(
-                this.resourceNameForBatch,
-                key,
-                () => this.executors.delete(key)
-            )
+        if (this.batchEngine) {
+            try {
+                return await this.batchEngine.enqueueDelete(this.resourceNameForBatch, key)
+            } catch (error) {
+                this.onError(error as Error, 'delete(batch)')
+                throw error
+            }
         }
         return this.executors.delete(key)
     }
@@ -457,6 +461,32 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     async get(key: StoreKey): Promise<T | undefined> {
+        if (this.batchEngine) {
+            const params: FindManyOptions<T> = {
+                where: { id: key } as any,
+                limit: 1,
+                includeTotal: false
+            }
+
+            try {
+                const result = await this.batchEngine.enqueueQuery(
+                    this.resourceNameForBatch,
+                    params,
+                    () => this.executors.findMany(params)
+                )
+
+                const data: T[] = Array.isArray(result)
+                    ? result as T[]
+                    : Array.isArray((result as any)?.data)
+                        ? (result as any).data as T[]
+                        : []
+
+                return data[0]
+            } catch (error) {
+                this.onError(error as Error, 'get(batch-fallback)')
+            }
+        }
+
         return this.executors.get(key)
     }
 
@@ -464,15 +494,15 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         if (!keys.length) return []
 
         // 若启用 batch，则将 bulkGet 转为一次批量 query（where in），否则回退并发 GET
-        if (this.batchDispatcher) {
+        if (this.batchEngine) {
             const uniqueKeys = Array.from(new Set(keys))
-            const params: FindManyOptions<T> = { where: { id: { in: uniqueKeys } }, skipStore: false }
+            const params: FindManyOptions<T> = { where: { id: { in: uniqueKeys } } as any, skipStore: false }
 
             try {
-                const result = await this.batchDispatcher.enqueueQuery(
+                const result = await this.batchEngine.enqueueQuery<T>(
                     this.resourceNameForBatch,
                     params,
-                    () => this.executors.bulkGet(uniqueKeys)
+                    () => this.executors.bulkGet(uniqueKeys).then(list => list.filter((i): i is T => i !== undefined))
                 )
 
                 const data: T[] = Array.isArray(result)
@@ -499,12 +529,32 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     async getAll(filter?: (item: T) => boolean): Promise<T[]> {
+        if (this.batchEngine) {
+            try {
+                const result = await this.batchEngine.enqueueQuery(
+                    this.resourceNameForBatch,
+                    undefined,
+                    () => this.executors.getAll(filter)
+                )
+
+                const data: T[] = Array.isArray(result)
+                    ? result as T[]
+                    : Array.isArray((result as any)?.data)
+                        ? (result as any).data as T[]
+                        : []
+
+                return filter ? data.filter(filter) : data
+            } catch (error) {
+                this.onError(error as Error, 'getAll(batch-fallback)')
+            }
+        }
+
         return this.executors.getAll(filter)
     }
 
     async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo } | T[]> {
-        if (this.batchDispatcher) {
-            return this.batchDispatcher.enqueueQuery(
+        if (this.batchEngine) {
+            return this.batchEngine.enqueueQuery(
                 this.resourceNameForBatch,
                 options,
                 () => this.executors.findMany(options)
@@ -528,12 +578,11 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const createdResults: T[] = []
 
         const handleCreate = (id: StoreKey, value: T) => {
-            if (this.batchDispatcher) {
+            if (this.batchEngine) {
                 tasks.push(
-                    this.batchDispatcher.enqueueCreate(
+                    this.batchEngine.enqueueCreate(
                         this.resourceNameForBatch,
-                        value,
-                        () => this.client.create(id, value)
+                        value
                     )
                 )
                 return
@@ -542,12 +591,11 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         }
 
         const handleDelete = (id: StoreKey) => {
-            if (this.batchDispatcher) {
+            if (this.batchEngine) {
                 tasks.push(
-                    this.batchDispatcher.enqueueDelete(
+                    this.batchEngine.enqueueDelete(
                         this.resourceNameForBatch,
-                        id,
-                        () => this.executors.delete(id)
+                        id
                     )
                 )
                 return
@@ -556,17 +604,16 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         }
 
         const handlePatch = (id: StoreKey, itemPatches: Patch[]) => {
-            if (this.batchDispatcher) {
+            if (this.batchEngine) {
                 tasks.push(
-                    this.batchDispatcher.enqueuePatch(
+                    this.batchEngine.enqueuePatch(
                         this.resourceNameForBatch,
                         {
                             id,
                             patches: itemPatches,
                             baseVersion: metadata.baseVersion,
                             timestamp: metadata.timestamp
-                        },
-                        () => this.client.patch(id, itemPatches, metadata)
+                        }
                     )
                 )
                 return
@@ -586,13 +633,12 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 next = applyPatches(current as any, itemPatches)
             }
 
-            if (this.batchDispatcher) {
+            if (this.batchEngine) {
                 const clientVersion = this.resolveClientVersion(id, next)
                 tasks.push(
-                    this.batchDispatcher.enqueueUpdate(
+                    this.batchEngine.enqueueUpdate(
                         this.resourceNameForBatch,
-                        { id, data: next, clientVersion },
-                        () => this.executors.put(id, next)
+                        { id, data: next, clientVersion }
                     )
                 )
                 return

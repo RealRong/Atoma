@@ -22,6 +22,20 @@
 - **IndexedDBAdapter**：基于 Dexie，本地离线缓存，支持 `findMany`（本地 applyQuery + 简易 cursor）。
 - **HybridAdapter**：组合 local + remote，读写策略（local-first/remote-first/both 等）、缓存超时、删除同步、后台刷新。
 
+### server
+- **目标**：提供一套语言无关的 HTTP 协议（REST + Batch）与参考实现；后端可以直接使用 `src/server/*`，也可以在 Java/PHP 等环境按同一协议自行实现解析与数据库访问。
+- **统一执行链**：`parseHttp → validateAndNormalizeRequest → guardRequest → executeRequest`（`src/server/handler.ts`）。
+- **REST（默认路径，面向普通开发者）**：
+  - 路由：`GET /:resource`、`GET /:resource/:id`、`POST /:resource`、`PUT|PATCH /:resource/:id`、`DELETE /:resource/:id`
+  - 查询参数（分页/过滤/排序）：`limit/offset/includeTotal/after/before/orderBy/where[...]`
+    - where 示例：`where[id]=1`、`where[id][in][]=1&where[id][in][]=2`、`where[age][gte]=18`
+  - 响应形态：列表返回 `{ data: T[], pageInfo? }`；单条返回 `{ data: T }`；错误返回 `{ error }`
+- **Batch（性能路径）**：
+  - 路由：`POST /batch`
+  - 请求形态：`{ action:'query'|'bulkUpdate'|..., ... }`
+  - 响应形态：`{ results: [...] }`
+  - 约束：启用 Batch 时，前端（HTTPAdapter/BatchEngine）应将所有操作都发往 `/batch`，避免 REST 与 Batch 两套语义漂移。
+
 ### hooks
 - `createUseValue`：按 id 精细订阅（selectAtom），缺失时触发 `getOneById`。
 - `createUseAll`：订阅整个 Map，返回数组。

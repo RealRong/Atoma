@@ -16,6 +16,9 @@ export interface ResolveBatchOptions {
 }
 
 export class RelationResolver {
+    // cacheKey -> (normalizedKey -> related items[])
+    private static relationCache = new Map<string, Map<string, any[]>>()
+
     static async resolveBatch<T extends Entity>(
         items: T[],
         include: Record<string, boolean | FindManyOptions<any>> | undefined,
@@ -37,6 +40,7 @@ export class RelationResolver {
                             relName,
                             relOpts,
                             relations,
+                            maxConcurrency,
                             controller.signal
                         ),
                         new Promise((_, reject) => {
@@ -68,6 +72,7 @@ export class RelationResolver {
         relName: string,
         relOpts: boolean | FindManyOptions<any>,
         relations: RelationMap<T>,
+        maxConcurrency: number,
         signal: AbortSignal
     ): Promise<void> {
         if (signal.aborted) return
@@ -77,7 +82,9 @@ export class RelationResolver {
 
         const userOptions = typeof relOpts === 'object' ? relOpts : {}
         this.validateIncludeOptions(relName, userOptions)
-        this.validateIncludeOptions(relName, config.options)
+        if (config.type !== 'variants') {
+            this.validateIncludeOptions(relName, config.options)
+        }
 
         if (config.type === 'variants') {
             await this.resolveVariants(results, relName, config, userOptions, maxConcurrency, signal)
@@ -110,6 +117,11 @@ export class RelationResolver {
         const targetKeyField = this.getTargetKeyField(config)
         const bucket = new Map<string, any[]>()
         const normalizedHitKeys = new Set<string>()
+        const cacheKey = this.getRelationCacheKey(config.store, relName, targetKeyField, mergedOptions.where)
+        const cacheBucket = cacheKey ? (this.relationCache.get(cacheKey) || new Map<string, any[]>()) : undefined
+        if (cacheKey && cacheBucket && !this.relationCache.has(cacheKey)) {
+            this.relationCache.set(cacheKey, cacheBucket)
+        }
 
         try {
             // 1) 先尝试通过 getMultipleByIds 命中 Store Map（仅适用于按 id 查询的 belongsTo/hasOne）
@@ -123,6 +135,18 @@ export class RelationResolver {
                     if (!bucket.has(keyVal)) bucket.set(keyVal, [])
                     bucket.get(keyVal)!.push(item)
                     normalizedHitKeys.add(keyVal)
+                })
+                missingKeys = uniqueKeys.filter(k => !normalizedHitKeys.has(normalizeKey(k)))
+            }
+
+            // 1.5) 关系级缓存（适用于 hasMany/hasOne/belongsTo，但仅在 where 语义可安全复用时启用）
+            if (cacheBucket) {
+                uniqueKeys.forEach(k => {
+                    const nk = normalizeKey(k)
+                    if (!cacheBucket.has(nk)) return
+                    const cached = cacheBucket.get(nk) || []
+                    bucket.set(nk, cached.slice())
+                    normalizedHitKeys.add(nk)
                 })
                 missingKeys = uniqueKeys.filter(k => !normalizedHitKeys.has(normalizeKey(k)))
             }
@@ -142,6 +166,14 @@ export class RelationResolver {
                     if (!bucket.has(keyVal)) bucket.set(keyVal, [])
                     bucket.get(keyVal)!.push(item)
                 })
+
+                // 写入缓存：缺失键即使无结果也缓存为空数组，避免重复查询
+                if (cacheBucket) {
+                    missingKeys.forEach(k => {
+                        const nk = normalizeKey(k)
+                        cacheBucket.set(nk, (bucket.get(nk) || []).slice())
+                    })
+                }
             }
 
             this.hydrateResults(results, relName, config, itemToKeyMap, bucket)
@@ -365,6 +397,25 @@ export class RelationResolver {
         return config.type === 'belongsTo'
             ? (config.primaryKey as string) || 'id'
             : config.foreignKey
+    }
+
+    private static getRelationCacheKey(
+        store: IStore<any>,
+        relName: string,
+        targetKeyField: string,
+        where?: FindManyOptions<any>['where']
+    ): string | undefined {
+        // 仅在 where 为空或仅包含目标字段的 in 条件时启用缓存，避免跨过滤器复用导致结果错误
+        if (where && typeof where === 'object') {
+            const keys = Object.keys(where as any)
+            if (keys.length !== 1 || keys[0] !== targetKeyField) return undefined
+            const cond = (where as any)[targetKeyField]
+            if (!cond || typeof cond !== 'object' || Array.isArray(cond) || !Array.isArray((cond as any).in)) return undefined
+        } else if (where) {
+            return undefined
+        }
+        const storeName = (store as any).name || 'store'
+        return `${storeName}:${relName}:${targetKeyField}`
     }
 
     private static validateIncludeOptions(relName: string, options?: FindManyOptions<any>) {

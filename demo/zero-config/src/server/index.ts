@@ -1,8 +1,5 @@
 import express from 'express'
-import {
-    AtomaTypeormAdapter,
-    createHandler
-} from 'atoma/server'
+import { AtomaTypeormAdapter, createHandler } from 'atoma/server'
 import { AppDataSource } from './datasource.js'
 import { ensureSeedData } from './seed.js'
 

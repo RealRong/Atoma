@@ -42,6 +42,10 @@ class FakeQueryBuilder implements Partial<SelectQueryBuilder<any>> {
         return this
     }
 
+    async getMany() {
+        return this.data
+    }
+
     async getManyAndCount() {
         return [this.data, this.total]
     }
@@ -66,29 +70,33 @@ describe('AtomaTypeormAdapter', () => {
 
         const res = await adapter.findMany('comment', {
             where: { postId: { in: [1, 2] }, score: { gt: 10 }, title: { contains: 'abc' } },
-            orderBy: { field: 'createdAt', direction: 'desc' },
-            limit: 5,
-            offset: 10,
+            orderBy: [{ field: 'createdAt', direction: 'desc' }],
+            page: { mode: 'offset', limit: 5, offset: 10, includeTotal: true },
             select: { id: true, title: true }
         })
 
         expect(res.pageInfo?.total).toBe(2)
         expect(qb.conditions.length).toBeGreaterThanOrEqual(2)
         expect(qb.orders[0]).toMatchObject({ column: 'comment.createdAt', direction: 'DESC' })
+        // 稳定排序：追加 id asc
+        expect(qb.orders[1]).toMatchObject({ column: 'comment.id', direction: 'ASC' })
         expect(qb.takeValue).toBe(5)
         expect(qb.skipValue).toBe(10)
         expect(qb.selected).toContain('comment.id')
         expect(qb.selected).toContain('comment.title')
     })
 
-    it('cursor 默认为 id 大于给定值的过滤', async () => {
+    it('cursor keyset 会生成基于 orderBy 的过滤（默认按 id asc）', async () => {
         const qb = new FakeQueryBuilder()
         const ds = createDataSource(qb)
         const adapter = new AtomaTypeormAdapter(ds)
 
-        await adapter.findMany('comment', { cursor: 100 })
+        // token: [id]
+        const after = Buffer.from(JSON.stringify({ v: [100] }), 'utf8').toString('base64')
+            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+        await adapter.findMany('comment', { page: { mode: 'cursor', limit: 10, after } })
 
-        expect(qb.conditions.some(c => c.sql.includes('.id > :cursor'))).toBe(true)
+        expect(qb.conditions.some(c => c.sql.includes('.id > :'))).toBe(true)
     })
 
     it('bulkCreate 非事务模式下返回 partialFailures', async () => {

@@ -1,9 +1,20 @@
 import type { DataSource, SelectQueryBuilder } from 'typeorm'
 import { applyPatches, enablePatches } from 'immer'
+import {
+    compareOpForAfter,
+    decodeCursorToken,
+    encodeCursorToken,
+    ensureStableOrderBy,
+    getCursorValuesFromRow,
+    reverseOrderBy
+} from '../adapters/shared/keyset'
+import { createError, isAtomaError, throwError } from '../error'
 
 enablePatches()
 import type {
     IOrmAdapter,
+    OrmAdapterOptions,
+    OrderByRule,
     QueryParams,
     QueryResult,
     QueryResultMany,
@@ -24,17 +35,18 @@ type OperatorValue = {
 
 type WhereValue = any | OperatorValue
 
-export interface TypeormAdapterOptions {
-    aliasPrefix?: string
-}
-
 export class AtomaTypeormAdapter implements IOrmAdapter {
     private paramIndex = 0
+    private readonly idField: string
+    private readonly defaultOrderBy?: OrderByRule[]
 
     constructor(
         private readonly dataSource: DataSource,
-        private readonly options: TypeormAdapterOptions = {}
-    ) {}
+        options: OrmAdapterOptions = {}
+    ) {
+        this.idField = options.idField ?? 'id'
+        this.defaultOrderBy = options.defaultOrderBy
+    }
 
     isResourceAllowed(resource: string): boolean {
         try {
@@ -50,21 +62,67 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         const alias = this.getAlias(resource)
         const qb = repo.createQueryBuilder(alias)
 
-        this.applyWhere(qb, params.where, alias)
-        this.applyOrderBy(qb, params.orderBy, alias)
-        this.applyCursor(qb, params.cursor, alias)
+        const orderBy = ensureStableOrderBy(params.orderBy, {
+            idField: this.idField,
+            defaultOrderBy: this.defaultOrderBy
+        })
 
-        if (typeof params.offset === 'number') qb.skip(params.offset)
-        if (typeof params.limit === 'number') qb.take(params.limit)
-        const selectFields = params.select ? this.buildSelectFields(params.select, alias) : undefined
+        this.applyWhere(qb, params.where, alias)
+
+        const { queryOrderBy, reverseResult } = this.applyKeysetIfNeeded(qb, params.page, orderBy, alias)
+        this.applyOrderBy(qb, queryOrderBy, alias)
+
+        const { selectFields, project } = this.buildSelectFieldsWithProjection(params.select, orderBy, alias)
         if (selectFields) qb.select(selectFields)
 
-        const [data, total] = await qb.getManyAndCount()
-        const hasNext = typeof params.limit === 'number'
-            ? (params.offset ?? 0) + params.limit < total
+        const page = params.page
+        if (!page) {
+            const data = await qb.getMany()
+            return { data: project ? data.map(project) : data }
+        }
+
+        if (page.mode === 'offset') {
+            const offset = typeof page.offset === 'number' ? page.offset : undefined
+            const limit = page.limit
+            const includeTotal = page.includeTotal ?? true
+
+            if (typeof offset === 'number') qb.skip(offset)
+            qb.take(limit)
+
+            if (includeTotal) {
+                const [data, total] = await qb.getManyAndCount()
+                const projected = project ? data.map(project) : data
+                const hasNext = (offset ?? 0) + limit < total
+                return { data: projected, pageInfo: { total, hasNext } }
+            }
+
+            // 不返回 total：用 limit+1 判断 hasNext
+            qb.take(limit + 1)
+            const dataPlus = await qb.getMany()
+            const hasNext = dataPlus.length > limit
+            const sliced = dataPlus.slice(0, limit)
+            const projected = project ? sliced.map(project) : sliced
+            return { data: projected, pageInfo: { hasNext } }
+        }
+
+        // cursor keyset：默认不返回 total
+        const limit = page.limit
+        qb.take(limit + 1)
+        const dataPlus = await qb.getMany()
+        const hasNext = dataPlus.length > limit
+        const sliced = dataPlus.slice(0, limit)
+        const finalRows = reverseResult ? sliced.reverse() : sliced
+        const projected = project ? finalRows.map(project) : finalRows
+
+        const cursorRow = page.before ? finalRows[0] : finalRows[finalRows.length - 1]
+        const cursor = cursorRow
+            ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy))
             : undefined
 
-        return { data, pageInfo: { total, hasNext } }
+        return {
+            data: projected,
+            pageInfo: { hasNext, cursor }
+        }
     }
 
     async batchFindMany(requests: Array<{ resource: string; params: QueryParams }>): Promise<QueryResult[]> {
@@ -92,7 +150,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         try {
             if (runner) await runner.startTransaction()
             const repo = (runner?.manager ?? this.dataSource).getRepository(resource as any)
-            const target = options.where ?? (data?.id !== undefined ? { id: data.id } : undefined)
+            const target = options.where ?? (data?.id !== undefined ? { [this.idField]: data.id } : undefined)
             if (!target) throw new Error('update requires where or id in data')
             await repo.update(target as any, data)
             const returning = options.returning !== false
@@ -141,7 +199,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             if (item?.id === undefined || !Array.isArray(item?.patches)) {
                 throw new Error('patch requires id and patches[]')
             }
-            const current = await repo.findOne({ where: { id: item.id } as any })
+            const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
             if (!current) {
                 throw new Error('Not found')
             }
@@ -153,7 +211,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             const returning = options.returning !== false
             const data = returning
                 ? (options.select ? await repo.findOne({
-                    where: { id: item.id } as any,
+                    where: { [this.idField]: item.id } as any,
                     select: this.buildSelect(options.select, repo.metadata?.columns)
                 }) : saved)
                 : undefined
@@ -200,11 +258,11 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             return this.runBulk(resource, items, options, async (repo, payload) => {
                 for (const item of payload) {
                     if (item.id === undefined) throw new Error('bulkUpdate item missing id')
-                    await repo.update({ id: item.id } as any, item.data)
+                    await repo.update({ [this.idField]: item.id } as any, item.data)
                 }
                 if (options.returning === false) return []
                 const ids = payload.map(p => p.id)
-                return repo.findBy({ id: ids as any } as any)
+                return repo.findBy({ [this.idField]: ids as any } as any)
             })
         }
 
@@ -216,9 +274,9 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             const item = items[i]
             try {
                 if (item.id === undefined) throw new Error('bulkUpdate item missing id')
-                await repo.update({ id: item.id } as any, item.data)
+                await repo.update({ [this.idField]: item.id } as any, item.data)
                 if (options.returning !== false) {
-                    const fetched = await repo.findOneBy({ id: item.id } as any)
+                    const fetched = await repo.findOneBy({ [this.idField]: item.id } as any)
                     if (fetched) data.push(fetched)
                 }
             } catch (err) {
@@ -236,11 +294,11 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
     async bulkDelete(resource: string, ids: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
         if (options.transaction) {
             return this.runBulk(resource, ids, options, async (repo, payload) => {
-                const where = Array.isArray(payload) ? { id: payload as any } : payload
+                const where = Array.isArray(payload) ? { [this.idField]: payload as any } : payload
                 const returning = options.returning === true
                 let deleted: any[] | undefined
                 if (returning) {
-                    deleted = await repo.findBy({ id: payload as any } as any)
+                    deleted = await repo.findBy({ [this.idField]: payload as any } as any)
                 }
                 await repo.delete(where as any)
                 return returning ? deleted : []
@@ -256,10 +314,10 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             try {
                 const returning = options.returning === true
                 if (returning) {
-                    const fetched = await repo.findOneBy({ id } as any)
+                    const fetched = await repo.findOneBy({ [this.idField]: id } as any)
                     if (fetched) data.push(fetched)
                 }
-                await repo.delete({ id } as any)
+                await repo.delete({ [this.idField]: id } as any)
             } catch (err) {
                 partialFailures.push({ index: i, error: this.toError(err) })
             }
@@ -284,7 +342,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                     if (item.id === undefined || !Array.isArray(item.patches)) {
                         throw new Error('bulkPatch item missing id or patches')
                     }
-                    const current = await repo.findOne({ where: { id: item.id } as any })
+                    const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
                     if (!current) {
                         throw new Error('Not found')
                     }
@@ -299,7 +357,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 if (options.returning === false) return []
                 return options.select
                     ? repo.find({
-                        where: { id: payload.map(p => p.id) } as any,
+                        where: { [this.idField]: payload.map(p => p.id) } as any,
                         select: this.buildSelect(options.select, repo.metadata?.columns)
                     })
                     : updated
@@ -316,7 +374,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 if (item.id === undefined || !Array.isArray(item.patches)) {
                     throw new Error('bulkPatch item missing id or patches')
                 }
-                const current = await repo.findOne({ where: { id: item.id } as any })
+                const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
                 if (!current) throw new Error('Not found')
                 const base = this.toPlain(current)
                 const normalized = this.stripIdPrefix(item.patches, item.id)
@@ -325,7 +383,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 if (options.returning !== false) {
                     data.push(options.select
                         ? await repo.findOne({
-                            where: { id: item.id } as any,
+                            where: { [this.idField]: item.id } as any,
                             select: this.buildSelect(options.select, repo.metadata?.columns)
                         })
                         : saved)
@@ -405,10 +463,8 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         }
     }
 
-    private applyOrderBy(qb: SelectQueryBuilder<any>, orderBy: QueryParams['orderBy'], alias: string) {
-        if (!orderBy) return
-        const list = Array.isArray(orderBy) ? orderBy : [orderBy]
-        list.forEach((rule, idx) => {
+    private applyOrderBy(qb: SelectQueryBuilder<any>, orderBy: OrderByRule[], alias: string) {
+        orderBy.forEach((rule, idx) => {
             const direction = rule.direction?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
             const column = `${alias}.${rule.field}`
             if (idx === 0) qb.orderBy(column, direction)
@@ -416,14 +472,101 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         })
     }
 
-    private applyCursor(qb: SelectQueryBuilder<any>, cursor: QueryParams['cursor'], alias: string) {
-        if (cursor === undefined) return
-        qb.andWhere(`${alias}.id > :cursor`, { cursor })
+    private applyKeysetIfNeeded(
+        qb: SelectQueryBuilder<any>,
+        page: QueryParams['page'],
+        orderBy: OrderByRule[],
+        alias: string
+    ) {
+        if (!page || page.mode !== 'cursor') {
+            return { queryOrderBy: orderBy, reverseResult: false }
+        }
+
+        const before = Boolean(page.before)
+        const token = page.before ?? page.after
+        if (!token) {
+            return { queryOrderBy: orderBy, reverseResult: false }
+        }
+
+        const queryOrderBy = before ? reverseOrderBy(orderBy) : orderBy
+        let values: any[]
+        try {
+            values = decodeCursorToken(token)
+        } catch {
+            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path: before ? 'page.before' : 'page.after' })
+        }
+        this.applyKeysetWhere(qb, queryOrderBy, values, alias, before ? 'page.before' : 'page.after')
+
+        return { queryOrderBy, reverseResult: before }
+    }
+
+    private applyKeysetWhere(qb: SelectQueryBuilder<any>, orderBy: OrderByRule[], values: any[], alias: string, path: string) {
+        if (values.length < orderBy.length) {
+            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path })
+        }
+
+        const orParts: string[] = []
+        const params: Record<string, any> = {}
+
+        for (let i = 0; i < orderBy.length; i++) {
+            const andParts: string[] = []
+
+            for (let j = 0; j < i; j++) {
+                const field = orderBy[j].field
+                const column = `${alias}.${field}`
+                const value = values[j]
+                if (value === null) {
+                    andParts.push(`${column} IS NULL`)
+                } else {
+                    const key = this.nextParam(`ks_eq_${field}`)
+                    andParts.push(`${column} = :${key}`)
+                    params[key] = value
+                }
+            }
+
+            const field = orderBy[i].field
+            const column = `${alias}.${field}`
+            const value = values[i]
+            const op = compareOpForAfter(orderBy[i].direction)
+            const sqlOp = op === 'gt' ? '>' : '<'
+            const key = this.nextParam(`ks_cmp_${field}`)
+            andParts.push(`${column} ${sqlOp} :${key}`)
+            params[key] = value
+
+            orParts.push(`(${andParts.join(' AND ')})`)
+        }
+
+        qb.andWhere(`(${orParts.join(' OR ')})`, params)
     }
 
     private buildSelectFields(select: Record<string, boolean>, alias: string) {
         const fields = Object.entries(select).filter(([, enabled]) => enabled).map(([key]) => `${alias}.${key}`)
         return fields.length ? fields : undefined
+    }
+
+    private buildSelectFieldsWithProjection(select: QueryParams['select'], orderBy: OrderByRule[], alias: string) {
+        if (!select) {
+            return { selectFields: undefined as string[] | undefined, project: undefined as ((row: any) => any) | undefined }
+        }
+
+        const merged: Record<string, boolean> = {}
+        Object.entries(select).forEach(([field, enabled]) => {
+            if (enabled) merged[field] = true
+        })
+        orderBy.forEach(r => {
+            merged[r.field] = true
+        })
+
+        const selectFields = this.buildSelectFields(merged, alias)
+        const project = (row: any) => {
+            const out: any = {}
+            Object.entries(select).forEach(([field, enabled]) => {
+                if (enabled) out[field] = row?.[field]
+            })
+            return out
+        }
+
+        return { selectFields, project }
     }
 
     private buildSelect(select: Record<string, boolean> | undefined, columns?: Array<{ propertyName: string }>) {
@@ -454,17 +597,18 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
     }
 
     private getAlias(resource: string) {
-        return this.options.aliasPrefix ? `${this.options.aliasPrefix}_${resource}` : resource
+        return resource
     }
 
     private normalizeWhereOrId(whereOrId: any) {
         if (whereOrId && typeof whereOrId === 'object' && !Array.isArray(whereOrId)) return whereOrId
-        return { id: whereOrId }
+        return { [this.idField]: whereOrId }
     }
 
     private toError(err: any) {
-        if (err?.code && err?.message) return err
-        return { code: 'INTERNAL', message: err?.message || String(err), details: err }
+        if (isAtomaError(err)) return err
+        // Do not leak raw adapter/DB errors to clients.
+        return createError('INTERNAL', 'Internal error', { kind: 'adapter' })
     }
 
     private toPlain(obj: any) {

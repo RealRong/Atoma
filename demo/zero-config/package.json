@@ -5,7 +5,7 @@
     "version": "0.0.1",
     "scripts": {
         "dev": "concurrently -n server,client -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
-        "dev:server": "NODE_OPTIONS=--preserve-symlinks tsx src/server/index.ts",
+        "dev:server": "TSX_TSCONFIG_PATHS=1 NODE_OPTIONS=--preserve-symlinks tsx src/server/index.ts",
         "dev:client": "NODE_OPTIONS=--preserve-symlinks vite",
         "build": "vite build",
         "preview": "vite preview"

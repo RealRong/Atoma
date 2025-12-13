@@ -1,4 +1,4 @@
-import type { BatchRequest, QueryParams } from '../types'
+import type { BatchOp, BatchRequest, Page, QueryParams } from '../types'
 
 type RestMappingParams = {
     method: string
@@ -14,35 +14,59 @@ export function restMapping({ method, pathParts, searchParams, body }: RestMappi
 
     const params = parseQueryParams(searchParams)
     const numericId = toNumberIfFinite(id)
+    const opId = 'rest:0'
 
     if (method === 'GET') {
         if (id !== undefined) {
             params.where = { ...(params.where || {}), id: numericId }
-            params.limit = 1
+            params.page = { mode: 'offset', limit: 1, includeTotal: false }
         }
-        return {
-            action: 'query',
-            queries: [{ resource, params }]
-        }
+        const op: BatchOp = { opId, action: 'query', query: { resource, params } }
+        return { ops: [op] }
     }
 
     if (method === 'POST' && id === undefined) {
-        return { action: 'create', resource, payload: body }
+        const op: BatchOp = {
+            opId,
+            action: 'bulkCreate',
+            resource,
+            payload: [body]
+        }
+        return { ops: [op] }
     }
 
     if ((method === 'PUT' || method === 'PATCH' || method === 'POST') && id !== undefined) {
-        const payload = typeof body === 'object' && body ? { ...body, id: numericId } : { id: numericId }
-        const action = Array.isArray((payload as any).patches) ? 'patch' : 'update'
-        return {
-            action,
-            resource,
-            payload,
-            where: { id: numericId }
+        const isPatch = body && typeof body === 'object' && Array.isArray((body as any).patches)
+        if (isPatch) {
+            const op: BatchOp = {
+                opId,
+                action: 'bulkPatch',
+                resource,
+                payload: [{
+                    id: numericId,
+                    patches: (body as any).patches,
+                    baseVersion: (body as any).baseVersion,
+                    timestamp: (body as any).timestamp
+                }]
+            }
+            return { ops: [op] }
         }
+
+        const op: BatchOp = {
+            opId,
+            action: 'bulkUpdate',
+            resource,
+            payload: [{
+                id: numericId,
+                data: (body && typeof body === 'object') ? body : {}
+            }]
+        }
+        return { ops: [op] }
     }
 
     if (method === 'DELETE' && id !== undefined) {
-        return { action: 'delete', resource, where: { id: numericId } }
+        const op: BatchOp = { opId, action: 'bulkDelete', resource, payload: [numericId] }
+        return { ops: [op] }
     }
 
     return null
@@ -52,18 +76,39 @@ function parseQueryParams(searchParams: URLSearchParams): QueryParams {
     const params: QueryParams = {}
     const where: Record<string, any> = {}
     const orderRules: Array<{ field: string; direction: 'asc' | 'desc' }> = []
+    const fields = new Set<string>()
+    let limit: number | undefined
+    let offset: number | undefined
+    let after: string | undefined
+    let before: string | undefined
+    let includeTotal: boolean | undefined
 
     searchParams.forEach((value, key) => {
+        if (key === 'fields') {
+            value.split(',').forEach(part => {
+                const trimmed = part.trim()
+                if (trimmed) fields.add(trimmed)
+            })
+            return
+        }
         if (key === 'limit') {
-            params.limit = toNumberIfFinite(value) as number | undefined
+            limit = toNumberIfFinite(value) as number | undefined
             return
         }
         if (key === 'offset') {
-            params.offset = toNumberIfFinite(value) as number | undefined
+            offset = toNumberIfFinite(value) as number | undefined
             return
         }
-        if (key === 'cursor') {
-            params.cursor = value
+        if (key === 'after') {
+            after = value
+            return
+        }
+        if (key === 'before') {
+            before = value
+            return
+        }
+        if (key === 'includeTotal') {
+            includeTotal = value === 'true'
             return
         }
         if (key === 'orderBy') {
@@ -73,17 +118,82 @@ function parseQueryParams(searchParams: URLSearchParams): QueryParams {
             }
             return
         }
-        if (key.startsWith('where.')) {
-            const field = key.slice(6)
-            if (field) where[field] = toPrimitive(value)
+
+        // where[field]=x
+        // where[field][op]=x
+        // where[field][in][]=1&where[field][in][]=2
+        const mArr = key.match(/^where\[(.+?)\]\[(.+?)\]\[\]$/)
+        if (mArr) {
+            const field = mArr[1]
+            const op = mArr[2]
+            if (!field || !op) return
+
+            const obj = ensureWhereObject(where, field)
+            const list = Array.isArray(obj[op]) ? obj[op] : []
+            list.push(toPrimitive(value))
+            obj[op] = list
             return
         }
-        where[key] = toPrimitive(value)
+
+        const mOp = key.match(/^where\[(.+?)\]\[(.+?)\]$/)
+        if (mOp) {
+            const field = mOp[1]
+            const op = mOp[2]
+            if (!field || !op) return
+
+            const obj = ensureWhereObject(where, field)
+            if (op === 'in') {
+                const list = Array.isArray(obj.in) ? obj.in : []
+                list.push(toPrimitive(value))
+                obj.in = list
+                return
+            }
+
+            obj[op] = toPrimitive(value)
+            return
+        }
+
+        const mEq = key.match(/^where\[(.+?)\]$/)
+        if (mEq) {
+            const field = mEq[1]
+            if (!field) return
+            where[field] = toPrimitive(value)
+            return
+        }
     })
 
-    if (orderRules.length) params.orderBy = orderRules.length === 1 ? orderRules[0] : orderRules
+    if (orderRules.length) params.orderBy = orderRules
     if (Object.keys(where).length) params.where = where
+    if (fields.size) {
+        const select: Record<string, boolean> = {}
+        Array.from(fields).forEach(f => { select[f] = true })
+        params.select = select
+    }
+
+    // 默认：不需要显式 pageMode。只要传 after/before 就走 cursor 分页；否则走 offset 分页。
+    if (after || before) {
+        const page: Page = { mode: 'cursor', limit: typeof limit === 'number' ? limit : 50 }
+        if (after) page.after = after
+        if (before) page.before = before
+        params.page = page
+    } else {
+        params.page = {
+            mode: 'offset',
+            limit: typeof limit === 'number' ? limit : 50,
+            offset,
+            includeTotal: includeTotal ?? true
+        }
+    }
     return params
+}
+
+function ensureWhereObject(where: Record<string, any>, field: string) {
+    const cur = where[field]
+    if (!cur || typeof cur !== 'object' || Array.isArray(cur)) {
+        // 若之前是 primitive（where[field]=x），这里直接覆盖成对象（以 op 形式为准）
+        where[field] = {}
+    }
+    return where[field] as Record<string, any>
 }
 
 function toPrimitive(value: string) {

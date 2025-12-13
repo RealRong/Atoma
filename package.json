@@ -1,6 +1,7 @@
 {
     "name": "atoma",
     "version": "1.0.0",
+    "type": "module",
     "description": "Atomic state management with universal persistence - built on Jotai and Immer",
     "main": "dist/index.mjs",
     "module": "dist/index.mjs",
@@ -85,12 +86,14 @@
         "p-limit": "^7.2.0"
     },
     "devDependencies": {
+        "@testing-library/react": "^14.3.1",
         "@types/lodash": "^4.14.0",
         "@types/node": "^20.0.0",
         "@types/react": "^18.0.0",
         "@vitejs/plugin-react": "^4.2.1",
         "immer": "^9.0.0 || ^10.0.0",
         "jotai": "^2.0.0",
+        "jsdom": "^25.0.0",
         "react": "^18.0.0",
         "react-dom": "^18.2.0",
         "reflect-metadata": "^0.1.13",

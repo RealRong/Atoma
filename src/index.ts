@@ -53,9 +53,9 @@ export { IndexedDBAdapter } from './adapters/IndexedDBAdapter'
 export { HTTPAdapter } from './adapters/HTTPAdapter'
 export { HybridAdapter } from './adapters/HybridAdapter'
 export { SQLiteHttpAdapter } from './adapters/SQLiteHttpAdapter'
-export { BatchDispatcher } from './batch'
+export { BatchEngine } from './batch'
 export type { HTTPAdapterConfig, BatchQueryConfig } from './adapters/HTTPAdapter'
-export type { QuerySerializerConfig, ArrayFormat } from './adapters/http/query'
+export type { QuerySerializerConfig } from './adapters/http/query'
 export type { HybridAdapterConfig } from './adapters/HybridAdapter'
 
 // Relations
@@ -71,6 +71,7 @@ export { enableGlobalDevtools, getGlobalDevtools, disableGlobalDevtools } from '
 // Hooks
 export { createUseValue, createUseAll } from './hooks'
 export { createUseFindMany } from './hooks'
+export { createUseMultiple } from './hooks'
 
 // History
 export { HistoryManager, applyPatchesOnAtom } from './history'
@@ -104,18 +105,21 @@ export {
     createHandler
 } from './server'
 export type {
-    BatchQuery,
     BatchRequest,
     BatchResponse,
     BatchResult,
+    BatchOp,
     Action,
     IOrmAdapter,
-    OrderByField,
+    OrderByRule,
+    CursorToken,
+    Page,
     QueryParams,
     QueryResult,
     QueryResultOne,
     QueryResultMany,
     WriteOptions,
+    OrmAdapterOptions,
     StandardError
 } from './server'
 export { AtomaTypeormAdapter } from './server/typeorm'
