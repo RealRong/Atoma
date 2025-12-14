@@ -1,6 +1,13 @@
 
 import { describe, it, expect, vi } from 'vitest'
-import { initializeLocalStore } from '../../src/core/initializeLocalStore'
+import { createStoreRuntime } from '../../src/core/store/runtime'
+import { createAddOne } from '../../src/core/store/addOne'
+import { createBatchGet } from '../../src/core/store/batchGet'
+import { createDeleteOneById } from '../../src/core/store/deleteOneById'
+import { createFindMany } from '../../src/core/store/findMany/index'
+import { createGetAll } from '../../src/core/store/getAll'
+import { createGetMultipleByIds } from '../../src/core/store/getMultipleByIds'
+import { createUpdateOne } from '../../src/core/store/updateOne'
 import { atom, createStore } from 'jotai'
 import { IAdapter, StoreKey, Entity } from '../../src/core/types'
 
@@ -35,10 +42,26 @@ describe('Optimistic Rollback', () => {
         const mapAtom = atom(new Map<StoreKey, TestItem>())
         const adapter = createMockAdapter(true) // Will fail
 
-        const localStore = initializeLocalStore(mapAtom, adapter, {
-            store,
-            indexes: [{ field: 'age', type: 'number' }]
+        const runtime = createStoreRuntime<TestItem>({
+            atom: mapAtom,
+            adapter,
+            config: {
+                store,
+                indexes: [{ field: 'age', type: 'number' }]
+            }
         })
+        const { getOneById, fetchOneById } = createBatchGet(runtime)
+        const findMany = createFindMany<TestItem>(runtime)
+        const localStore = {
+            addOne: createAddOne<TestItem>(runtime),
+            updateOne: createUpdateOne<TestItem>(runtime),
+            deleteOneById: createDeleteOneById<TestItem>(runtime),
+            getAll: createGetAll<TestItem>(runtime),
+            getMultipleByIds: createGetMultipleByIds<TestItem>(runtime),
+            getOneById,
+            fetchOneById,
+            findMany
+        }
 
         // Spy on internal index manager is hard without exposing it, 
         // but we can query using findMany if we implement a localized verify.
@@ -53,7 +76,7 @@ describe('Optimistic Rollback', () => {
         // We can do this by adding *another* item with different ID but same age, 
         // and querying with index logic (if exposed) or checking internal consistency if possible.
         //
-        // However, since we modified `initializeLocalStore` to call `indexManager.remove`, 
+        // However, since we modified store construction to call `indexManager.remove`, 
         // we are unit testing that *logic flow* here.
 
         const item: TestItem = { id: '1', name: 'Rollback Test', age: 25 }
@@ -72,6 +95,6 @@ describe('Optimistic Rollback', () => {
         // But functionally, if we re-add it successfully, it shouldn't duplicate or error.
 
         // Let's rely on our code inspection for the index call, 
-        // as we can't easily peek inside the closure of initializeLocalStore without exposing IndexManager.
+        // as we can't easily peek inside the closure without exposing IndexManager.
     })
 })

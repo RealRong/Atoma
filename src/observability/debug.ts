@@ -1,14 +1,7 @@
-import type { DebugEvent, DebugOptions, TraceContext } from './types'
+import type { DebugEmitter, DebugEvent, DebugOptions } from './types'
 import { shouldSampleTrace } from './sampling'
 
-export type DebugEmitter = {
-    traceId: string
-    emit: (
-        type: string,
-        payload?: unknown,
-        meta?: Partial<Pick<TraceContext, 'requestId' | 'opId'>> & { parentSpanId?: string }
-    ) => void
-}
+export type { DebugEmitter } from './types'
 
 const summarizeValue = (value: unknown): unknown => {
     if (value === null) return null

@@ -541,19 +541,22 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo }> {
+        const internalContext = (arguments as any)[1] as import('../observability/types').InternalOperationContext | undefined
         if (this.batchEngine) {
-            return this.batchEngine.enqueueQuery(
+            return (this.batchEngine as any).enqueueQuery(
                 this.resourceNameForBatch,
                 options,
-                () => this.executors.findMany(options)
+                () => this.executors.findMany(options, internalContext),
+                internalContext
             )
         }
-        return this.executors.findMany(options)
+        return this.executors.findMany(options, internalContext)
     }
 
     async applyPatches(patches: Patch[], metadata: PatchMetadata): Promise<{ created?: T[] } | void> {
         const supportsPatch = !!this.config.endpoints!.patch
         const usePatchForUpdates = this.usePatchForUpdate && supportsPatch
+        const internalContext = (arguments as any)[2] as import('../observability/types').InternalOperationContext | undefined
         const nextTraceHeaders = () => {
             const traceId = metadata.traceId
             if (typeof traceId !== 'string' || !traceId) return undefined
@@ -581,10 +584,10 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const handleCreate = (id: StoreKey, value: T) => {
             if (this.batchEngine) {
                 tasks.push(
-                    this.batchEngine.enqueueCreate(
+                    (this.batchEngine as any).enqueueCreate(
                         this.resourceNameForBatch,
                         value,
-                        { traceId: metadata.traceId, debugEmitter: metadata.debugEmitter }
+                        internalContext
                     )
                 )
                 return
@@ -594,17 +597,17 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 id,
                 value,
                 trace?.headers,
-                trace && metadata.debugEmitter ? { emitter: metadata.debugEmitter, requestId: trace.requestId } : undefined
+                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
             ))
         }
 
         const handleDelete = (id: StoreKey) => {
             if (this.batchEngine) {
                 tasks.push(
-                    this.batchEngine.enqueueDelete(
+                    (this.batchEngine as any).enqueueDelete(
                         this.resourceNameForBatch,
                         id,
-                        { traceId: metadata.traceId, debugEmitter: metadata.debugEmitter }
+                        internalContext
                     )
                 )
                 return
@@ -615,7 +618,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 () => this.client.delete(
                     id,
                     trace?.headers,
-                    trace && metadata.debugEmitter ? { emitter: metadata.debugEmitter, requestId: trace.requestId } : undefined
+                    trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
                 )
             ))
         }
@@ -623,7 +626,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const handlePatch = (id: StoreKey, itemPatches: Patch[]) => {
             if (this.batchEngine) {
                 tasks.push(
-                    this.batchEngine.enqueuePatch(
+                    (this.batchEngine as any).enqueuePatch(
                         this.resourceNameForBatch,
                         {
                             id,
@@ -631,7 +634,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                             baseVersion: metadata.baseVersion,
                             timestamp: metadata.timestamp
                         },
-                        { traceId: metadata.traceId, debugEmitter: metadata.debugEmitter }
+                        internalContext
                     )
                 )
                 return
@@ -642,7 +645,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 itemPatches,
                 metadata,
                 trace?.headers,
-                trace && metadata.debugEmitter ? { emitter: metadata.debugEmitter, requestId: trace.requestId } : undefined
+                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
             ))
         }
 
@@ -661,10 +664,10 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             if (this.batchEngine) {
                 const clientVersion = this.resolveClientVersion(id, next)
                 tasks.push(
-                    this.batchEngine.enqueueUpdate(
+                    (this.batchEngine as any).enqueueUpdate(
                         this.resourceNameForBatch,
                         { id, data: next, clientVersion },
-                        { traceId: metadata.traceId, debugEmitter: metadata.debugEmitter }
+                        internalContext
                     )
                 )
                 return
@@ -677,7 +680,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                     id,
                     next,
                     trace?.headers,
-                    trace && metadata.debugEmitter ? { emitter: metadata.debugEmitter, requestId: trace.requestId } : undefined
+                    trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
                 )
             ))
         }

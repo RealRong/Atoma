@@ -65,10 +65,9 @@ export function createReactStore<T extends Entity, Relations extends RelationMap
     reactStore.useMultiple = useMultiple as any
 
     // 确保 relations 的 live 订阅能拿到当前 store 的 atom/jotaiStore
-    registerStoreAccess(reactStore as any, access.atom as any, access.jotaiStore)
+    registerStoreAccess(reactStore as any, access)
 
     return reactStore
 }
 
 export const createSyncStore = createReactStore
-

@@ -46,8 +46,7 @@ export { createStore } from './core/createCoreStore'
 export type { TraceContext, Explain, DebugOptions, DebugEvent } from './observability'
 
 // Core utilities
-export { BaseStore, globalStore, setHistoryCallback } from './core/BaseStore'
-export { initializeLocalStore } from './core/initializeLocalStore'
+export { BaseStore, globalStore } from './core/BaseStore'
 export { setDefaultIdGenerator, defaultSnowflakeGenerator } from './core/idGenerator'
 
 // Adapters

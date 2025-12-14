@@ -32,11 +32,9 @@ export type {
     IEventEmitter
 } from './types'
 
-export { BaseStore, globalStore, setHistoryCallback } from './BaseStore'
-export { initializeLocalStore } from './initializeLocalStore'
+export { BaseStore, globalStore } from './BaseStore'
 export { setDefaultIdGenerator, defaultSnowflakeGenerator } from './idGenerator'
 
 export { createDevtoolsBridge } from '../devtools/bridge'
 export type { DevtoolsBridge, DevtoolsEvent, StoreSnapshot } from '../devtools/types'
 export { enableGlobalDevtools, getGlobalDevtools, disableGlobalDevtools } from '../devtools/global'
-

@@ -8,6 +8,7 @@ import {
     VariantsConfig
 } from '../types'
 import { deepMergeWhere, getValueByPath, normalizeKey } from './utils'
+import { resolveStoreName } from '../storeAccessRegistry'
 
 export interface ResolveBatchOptions {
     onError?: 'skip' | 'throw' | 'partial'
@@ -414,7 +415,7 @@ export class RelationResolver {
         } else if (where) {
             return undefined
         }
-        const storeName = (store as any).name || 'store'
+        const storeName = resolveStoreName(store) || 'store'
         return `${storeName}:${relName}:${targetKeyField}`
     }
 

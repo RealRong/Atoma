@@ -9,7 +9,7 @@ import type { SyncOrchestrator } from './syncOrchestrator'
 import type { StoreKey, FindManyOptions, PageInfo, Entity } from '../../core/types'
 import type { RequestIdSequencer } from '../../observability/trace'
 import { deriveRequestId } from '../../observability/trace'
-import { getDebugCarrier } from '../../observability/internal'
+import type { InternalOperationContext } from '../../observability/types'
 import { utf8ByteLength } from '../../observability/utf8'
 
 export interface OperationExecutors<T extends Entity> {
@@ -20,7 +20,7 @@ export interface OperationExecutors<T extends Entity> {
     get: (key: StoreKey) => Promise<T | undefined>
     bulkGet: (keys: StoreKey[]) => Promise<(T | undefined)[]>
     getAll: (filter?: (item: T) => boolean) => Promise<T[]>
-    findMany: (options?: FindManyOptions<T>) => Promise<{ data: T[]; pageInfo?: PageInfo }>
+    findMany: (options?: FindManyOptions<T>, context?: InternalOperationContext) => Promise<{ data: T[]; pageInfo?: PageInfo }>
 }
 
 type Deps<T extends Entity> = {
@@ -49,8 +49,8 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
     const endpoints = config.endpoints!
     const requestSeqByTraceId = deps.requestIdSequencer ? undefined : new Map<string, number>()
 
-    const traceHeadersFor = (options?: FindManyOptions<T>) => {
-        const traceId = typeof (options as any)?.debug?.traceId === 'string' ? (options as any).debug.traceId as string : undefined
+    const traceHeadersFor = (context?: InternalOperationContext) => {
+        const traceId = typeof context?.traceId === 'string' ? context.traceId : undefined
         if (!traceId) return undefined
         const requestId = deps.requestIdSequencer
             ? deps.requestIdSequencer.next(traceId)
@@ -278,23 +278,27 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
         }
     }
 
-    const findMany = async (options?: FindManyOptions<T>) => {
+    const findMany = async (options?: FindManyOptions<T>, context?: InternalOperationContext) => {
+        const optionsForQuery = options
+            ? ({ ...options, traceId: undefined, explain: undefined } as any)
+            : undefined
+
         if (config.query?.customFn) {
-            return config.query.customFn(options || {} as any)
+            return config.query.customFn(optionsForQuery || {} as any)
         }
 
         if (config.query?.serializer) {
-            const payload = config.query.serializer(options || {} as any)
+            const payload = config.query.serializer(optionsForQuery || {} as any)
             return dispatchSerializedQuery(payload)
         }
 
         const strategy = config.query?.strategy || 'REST'
         if (strategy === 'REST' || strategy === 'Django') {
-            const params = buildQueryParams(options, config.querySerializer)
+            const params = buildQueryParams(optionsForQuery, config.querySerializer)
             const url = `${config.baseURL}${resolveEndpoint(endpoints.getAll!)}?${params.toString()}`
             const headers = await getHeaders()
-            const trace = traceHeadersFor(options)
-            const emitter = getDebugCarrier(options)?.emitter
+            const trace = traceHeadersFor(context)
+            const emitter = context?.emitter
 
             const request = new Request(url, { method: 'GET', headers: { ...headers, ...(trace?.headers || {}) } })
             const startedAt = Date.now()
@@ -336,13 +340,13 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
 
         const url = `${config.baseURL}${resolveEndpoint(endpoints.getAll!)}`
         const headers = await getHeaders()
-        const trace = traceHeadersFor(options)
-        const emitter = getDebugCarrier(options)?.emitter
+        const trace = traceHeadersFor(context)
+        const emitter = context?.emitter
 
         const request = new Request(url, {
             method: 'POST',
             headers: { ...headers, ...(trace?.headers || {}), 'Content-Type': 'application/json' },
-            body: JSON.stringify(options || {})
+            body: JSON.stringify(optionsForQuery || {})
         })
         const startedAt = Date.now()
         try {
@@ -350,7 +354,7 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
                 method: 'POST',
                 endpoint: resolveEndpoint(endpoints.getAll!),
                 attempt: 1,
-                payloadBytes: utf8ByteLength(JSON.stringify(options || {}))
+                payloadBytes: utf8ByteLength(JSON.stringify(optionsForQuery || {}))
             }, { requestId: trace?.requestId })
 
             const { envelope, response } = await executeRequest(request)

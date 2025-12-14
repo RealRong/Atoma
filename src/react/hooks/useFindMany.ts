@@ -2,10 +2,11 @@ import { PrimitiveAtom, createStore } from 'jotai'
 import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { applyQuery, extractQueryFields, stableStringify } from '../../core/query'
-import { getVersionSnapshot, globalStore } from '../../core/BaseStore'
+import { globalStore } from '../../core/BaseStore'
 import { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, RelationMap, Entity } from '../../core/types'
 import type { UseFindManyResult } from '../types'
 import { useRelations } from './useRelations'
+import { resolveStoreAccess, resolveStoreMatcher, resolveStoreRelations } from '../../core/storeAccessRegistry'
 
 export function createUseFindMany<T extends Entity, Relations extends RelationMap<T> = {}>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
@@ -26,8 +27,13 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
 
         // Only track version when本地过滤
         const relevantVersion = useMemo(
-            () => shouldUseLocal ? getVersionSnapshot(objectMapAtom, fields) : 0,
-            [objectMapAtom, fieldsKey, shouldUseLocal]
+            () => {
+                if (!shouldUseLocal) return 0
+                const access = resolveStoreAccess(store as any)
+                if (!access) return 0
+                return access.context.versionTracker.getSnapshot(objectMapAtom as any, fields)
+            },
+            [objectMapAtom, fieldsKey, shouldUseLocal, store]
         )
 
         const [remoteData, setRemoteData] = useState<T[]>([])
@@ -40,7 +46,7 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
         const filteredIds = useMemo(() => {
             if (!shouldUseLocal) return []
             const arr = Array.from(map.values()) as T[]
-            const matcher = (store as any)._matcher
+            const matcher = resolveStoreMatcher(store as any)
             const result = applyQuery(arr as any, options, matcher ? { matcher } : undefined) as T[]
             return result.map(item => (item as any).id as StoreKey)
         }, [shouldUseLocal, relevantVersion, queryKey, map])
@@ -205,7 +211,8 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
                     ? remoteData
                     : (localData.length ? localData : remoteData)
 
-        const relationsResult = useRelations(data, options?.include as any, store._relations as any)
+        const relations = resolveStoreRelations<T>(store as any) as any
+        const relationsResult = useRelations(data, options?.include as any, relations)
         const finalData = relationsResult.data
         const combinedError = relationsResult.error ?? error
 

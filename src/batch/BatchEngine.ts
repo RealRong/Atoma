@@ -1,9 +1,12 @@
-import type { FindManyOptions, PageInfo, StoreKey } from '../core/types'
+import type { FindManyOptions, StoreKey } from '../core/types'
 import { createRequestIdSequencer } from '../observability/trace'
 import type { RequestIdSequencer } from '../observability/trace'
-import type { DebugEmitter } from '../observability/debug'
-import { getDebugCarrier } from '../observability/internal'
-import { utf8ByteLength } from '../observability/utf8'
+import type { InternalOperationContext } from '../observability/types'
+import { isWriteQueueFull, normalizeMaxBatchSize, normalizeMaxQueueLength, normalizeMaxQueryOpsPerRequest } from './config'
+import { drainQueryLane } from './queryLane'
+import { sendBatchRequest } from './transport'
+import type { Deferred, QueryEnvelope, QueryTask, WriteTask } from './types'
+import { bucketKey, drainWriteLane } from './writeLane'
 
 type FetchFn = typeof fetch
 
@@ -49,70 +52,6 @@ export interface BatchEngineConfig {
     onError?: (error: Error, context: any) => void
 }
 
-type Deferred<T> = {
-    resolve: (value: T) => void
-    reject: (reason?: any) => void
-}
-
-type QueryEnvelope<T> = { data: T[]; pageInfo?: PageInfo }
-
-type QueryTask<T> = {
-    kind: 'query'
-    opId: string
-    resource: string
-    params: FindManyOptions<T> | undefined
-    traceId?: string
-    fallback: () => Promise<any>
-    deferred: Deferred<QueryEnvelope<T>>
-}
-
-type CreateTask<T> = {
-    kind: 'create'
-    resource: string
-    item: T
-    deferred: Deferred<any>
-    traceId?: string
-    debugEmitter?: DebugEmitter
-}
-
-type UpdateTask<T> = {
-    kind: 'update'
-    resource: string
-    item: { id: StoreKey; data: T; clientVersion?: any }
-    deferred: Deferred<void>
-    traceId?: string
-    debugEmitter?: DebugEmitter
-}
-
-type PatchTask = {
-    kind: 'patch'
-    resource: string
-    item: { id: StoreKey; patches: any[]; baseVersion?: number; timestamp?: number }
-    deferred: Deferred<void>
-    traceId?: string
-    debugEmitter?: DebugEmitter
-}
-
-type DeleteTask = {
-    kind: 'delete'
-    resource: string
-    id: StoreKey
-    deferred: Deferred<void>
-    traceId?: string
-    debugEmitter?: DebugEmitter
-}
-
-type WriteTask = CreateTask<any> | UpdateTask<any> | PatchTask | DeleteTask
-
-type BatchOpResult = {
-    opId: string
-    ok: boolean
-    data?: any[]
-    pageInfo?: PageInfo
-    partialFailures?: Array<{ index: number; error: any }>
-    error?: any
-}
-
 export class BatchEngine {
     private disposed = false
     private seq = 0
@@ -147,18 +86,15 @@ export class BatchEngine {
         this.requestIdSequencer = config.requestIdSequencer ?? createRequestIdSequencer()
     }
 
-    enqueueQuery<T>(
-        resource: string,
-        params: FindManyOptions<T> | undefined,
-        fallback: () => Promise<any>
-    ): Promise<QueryEnvelope<T>> {
+    enqueueQuery<T>(resource: string, params: FindManyOptions<T> | undefined, fallback: () => Promise<any>): Promise<QueryEnvelope<T>> {
+        const internalContext = (arguments as any)[3] as InternalOperationContext | undefined
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
                 return
             }
 
-            const maxLen = this.normalizeMaxQueueLength('query')
+            const maxLen = normalizeMaxQueueLength(this.config, 'query')
             if (maxLen !== Infinity) {
                 const strategy = this.config.queryOverflowStrategy ?? 'reject_new'
                 if (strategy === 'drop_old_queries') {
@@ -180,7 +116,8 @@ export class BatchEngine {
                 opId,
                 resource,
                 params,
-                traceId: typeof (params as any)?.debug?.traceId === 'string' ? (params as any).debug.traceId : undefined,
+                traceId: typeof internalContext?.traceId === 'string' && internalContext.traceId ? internalContext.traceId : undefined,
+                debugEmitter: internalContext?.emitter,
                 fallback,
                 deferred: { resolve, reject }
             })
@@ -189,67 +126,69 @@ export class BatchEngine {
         })
     }
 
-    enqueueCreate<T>(resource: string, item: T, meta?: { traceId?: string; debugEmitter?: DebugEmitter }): Promise<any> {
+    enqueueCreate<T>(resource: string, item: T): Promise<any> {
+        const internalContext = (arguments as any)[2] as InternalOperationContext | undefined
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
                 return
             }
-            if (this.isWriteQueueFull()) {
+            if (isWriteQueueFull(this.config, this.writePendingCount)) {
                 reject(this.queueOverflowError)
                 return
             }
-            this.pushWriteTask({ kind: 'create', resource, item, deferred: { resolve, reject }, traceId: meta?.traceId, debugEmitter: meta?.debugEmitter })
+            this.pushWriteTask({ kind: 'create', resource, item, deferred: { resolve, reject }, traceId: internalContext?.traceId, debugEmitter: internalContext?.emitter })
         })
     }
 
     enqueueUpdate<T>(
         resource: string,
         item: { id: StoreKey; data: T; clientVersion?: any },
-        meta?: { traceId?: string; debugEmitter?: DebugEmitter }
     ): Promise<void> {
+        const internalContext = (arguments as any)[2] as InternalOperationContext | undefined
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
                 return
             }
-            if (this.isWriteQueueFull()) {
+            if (isWriteQueueFull(this.config, this.writePendingCount)) {
                 reject(this.queueOverflowError)
                 return
             }
-            this.pushWriteTask({ kind: 'update', resource, item, deferred: { resolve, reject }, traceId: meta?.traceId, debugEmitter: meta?.debugEmitter })
+            this.pushWriteTask({ kind: 'update', resource, item, deferred: { resolve, reject }, traceId: internalContext?.traceId, debugEmitter: internalContext?.emitter })
         })
     }
 
     enqueuePatch(
         resource: string,
         item: { id: StoreKey; patches: any[]; baseVersion?: number; timestamp?: number },
-        meta?: { traceId?: string; debugEmitter?: DebugEmitter }
     ): Promise<void> {
+        const internalContext = (arguments as any)[2] as InternalOperationContext | undefined
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
                 return
             }
-            if (this.isWriteQueueFull()) {
+            if (isWriteQueueFull(this.config, this.writePendingCount)) {
                 reject(this.queueOverflowError)
                 return
             }
-            this.pushWriteTask({ kind: 'patch', resource, item, deferred: { resolve, reject }, traceId: meta?.traceId, debugEmitter: meta?.debugEmitter })
+            this.pushWriteTask({ kind: 'patch', resource, item, deferred: { resolve, reject }, traceId: internalContext?.traceId, debugEmitter: internalContext?.emitter })
         })
     }
 
-    enqueueDelete(resource: string, id: StoreKey, meta?: { traceId?: string; debugEmitter?: DebugEmitter }): Promise<void> {
+    enqueueDelete(resource: string, id: StoreKey): Promise<void> {
+        const internalContext = (arguments as any)[2] as InternalOperationContext | undefined
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
                 return
             }
-            if (this.isWriteQueueFull()) {
+            if (isWriteQueueFull(this.config, this.writePendingCount)) {
                 reject(this.queueOverflowError)
                 return
             }
-            this.pushWriteTask({ kind: 'delete', resource, id, deferred: { resolve, reject }, traceId: meta?.traceId, debugEmitter: meta?.debugEmitter })
+            this.pushWriteTask({ kind: 'delete', resource, id, deferred: { resolve, reject }, traceId: internalContext?.traceId, debugEmitter: internalContext?.emitter })
         })
     }
 
@@ -314,7 +253,7 @@ export class BatchEngine {
     private signalQueryLane() {
         if (this.disposed) return
 
-        const max = this.normalizeMaxQueryOpsPerRequest()
+        const max = normalizeMaxQueryOpsPerRequest(this.config)
         if (max !== Infinity && this.queryQueue.length >= max) {
             this.scheduleQueryRun(true)
             return
@@ -325,7 +264,7 @@ export class BatchEngine {
     private signalWriteLane() {
         if (this.disposed) return
 
-        const max = this.normalizeMaxBatchSize()
+        const max = normalizeMaxBatchSize(this.config)
         // 若任意 bucket 达到 maxBatchSize，立即尝试 flush
         if (max !== Infinity) {
             for (const tasks of this.writeBuckets.values()) {
@@ -385,7 +324,7 @@ export class BatchEngine {
             this.queryTimer = undefined
         }
         if (this.disposed) return
-        void this.drainQueryLane()
+        void drainQueryLane(this as any)
     }
 
     private runWriteLane() {
@@ -395,303 +334,11 @@ export class BatchEngine {
             this.writeTimer = undefined
         }
         if (this.disposed) return
-        void this.drainWriteLane()
-    }
-
-    private async drainQueryLane() {
-        const maxInFlight = clampInt(this.config.queryMaxInFlight ?? 2, 1, 64)
-        const maxOps = this.normalizeMaxQueryOpsPerRequest()
-
-        while (!this.disposed && this.queryInFlight < maxInFlight && this.queryQueue.length) {
-            const batch = this.takeQueryBatch(maxOps)
-            this.queryInFlight++
-            batch.forEach(t => this.inFlightTasks.add(t as any))
-            const controller = createAbortController()
-            if (controller) this.inFlightControllers.add(controller)
-
-            const traceId = batch[0]?.traceId
-            const requestId = traceId ? this.nextRequestId(traceId) : undefined
-            const debugEmitter = (() => {
-                const emitters = batch
-                    .map(t => getDebugCarrier(t.params)?.emitter)
-                    .filter((e): e is DebugEmitter => Boolean(e))
-                if (!emitters.length) return undefined
-                const uniq = new Set(emitters)
-                return uniq.size === 1 ? emitters[0] : undefined
-            })()
-
-            let startedAt: number | undefined
-            try {
-                const payload = {
-                    ...(traceId ? { traceId } : {}),
-                    ...(requestId ? { requestId } : {}),
-                    ops: batch.map(t => ({
-                        opId: t.opId,
-                        action: 'query',
-                        query: {
-                            resource: t.resource,
-                            params: normalizeAtomaServerQueryParams(t.params)
-                        }
-                    }))
-                }
-
-                const payloadBytes = debugEmitter ? utf8ByteLength(JSON.stringify(payload)) : undefined
-                debugEmitter?.emit('adapter:request', {
-                    lane: 'query',
-                    method: 'POST',
-                    endpoint: this.endpoint,
-                    attempt: 1,
-                    payloadBytes,
-                    opCount: batch.length
-                }, { requestId })
-
-                startedAt = Date.now()
-                const response = await this.send(payload, controller?.signal, {
-                    ...(traceId ? { 'x-atoma-trace-id': traceId } : {}),
-                    ...(requestId ? { 'x-atoma-request-id': requestId } : {})
-                })
-                const durationMs = Date.now() - startedAt
-                debugEmitter?.emit('adapter:response', {
-                    lane: 'query',
-                    ok: true,
-                    status: response.status,
-                    durationMs,
-                    opCount: batch.length
-                }, { requestId })
-
-                const resultMap = mapResults(response.json?.results)
-
-                for (const task of batch) {
-                    if (this.disposed) {
-                        task.deferred.reject(this.disposedError)
-                        continue
-                    }
-                    const res = resultMap.get(task.opId)
-                    if (!res || res.ok === false || res.error) {
-                        await this.runQueryFallback(task, res?.error)
-                        continue
-                    }
-                    const normalized = normalizeQueryEnvelope(res)
-                    task.deferred.resolve(normalized)
-                }
-            } catch (error: any) {
-                debugEmitter?.emit('adapter:response', {
-                    lane: 'query',
-                    ok: false,
-                    status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
-                    durationMs: typeof startedAt === 'number' ? (Date.now() - startedAt) : undefined
-                }, { requestId })
-                this.config.onError?.(toError(error), { lane: 'query' })
-                for (const task of batch) {
-                    if (this.disposed) {
-                        task.deferred.reject(this.disposedError)
-                        continue
-                    }
-                    await this.runQueryFallback(task, error)
-                }
-            } finally {
-                if (controller) this.inFlightControllers.delete(controller)
-                batch.forEach(t => this.inFlightTasks.delete(t as any))
-                this.queryInFlight--
-            }
-        }
-
-        if (!this.disposed && this.queryQueue.length) {
-            this.signalQueryLane()
-        }
-    }
-
-    private async drainWriteLane() {
-        const maxInFlight = clampInt(this.config.writeMaxInFlight ?? 1, 1, 64)
-        const maxItems = this.normalizeMaxBatchSize()
-        const maxOps = this.normalizeMaxOpsPerRequest()
-
-        while (!this.disposed && this.writeInFlight < maxInFlight && this.writeReady.length) {
-            const ops: any[] = []
-            const slicesByOpId = new Map<string, WriteTask[]>()
-
-            while (ops.length < maxOps && this.writeReady.length) {
-                // round-robin：取队首 bucketKey
-                const key = this.writeReady.shift()!
-                this.writeReadySet.delete(key)
-
-                const tasks = this.writeBuckets.get(key)
-                if (!tasks || !tasks.length) {
-                    this.writeBuckets.delete(key)
-                    continue
-                }
-
-                // 每次从该 bucket 取一段，最多 maxItems
-                const slice = tasks.splice(0, maxItems === Infinity ? tasks.length : maxItems)
-                this.writePendingCount -= slice.length
-                if (!tasks.length) {
-                    this.writeBuckets.delete(key)
-                } else {
-                    // bucket 仍有剩余，放回队尾保持公平
-                    this.writeReady.push(key)
-                    this.writeReadySet.add(key)
-                }
-
-                const opId = this.nextOpId('w')
-                ops.push(buildWriteOp(opId, key, slice))
-                slicesByOpId.set(opId, slice)
-            }
-
-            if (!ops.length) break
-
-            const commonTraceId = (() => {
-                const ids: string[] = []
-                for (const slice of slicesByOpId.values()) {
-                    slice.forEach(t => {
-                        if (typeof (t as any).traceId === 'string' && (t as any).traceId) ids.push((t as any).traceId)
-                    })
-                }
-                if (!ids.length) return undefined
-                const uniq = new Set(ids)
-                return uniq.size === 1 ? ids[0] : undefined
-            })()
-            const requestId = commonTraceId ? this.nextRequestId(commonTraceId) : undefined
-            const debugEmitter = (() => {
-                const emitters: DebugEmitter[] = []
-                for (const slice of slicesByOpId.values()) {
-                    slice.forEach(t => {
-                        const e = (t as any).debugEmitter
-                        if (e) emitters.push(e)
-                    })
-                }
-                if (!emitters.length) return undefined
-                const uniq = new Set(emitters)
-                return uniq.size === 1 ? emitters[0] : undefined
-            })()
-
-            this.writeInFlight++
-            for (const slice of slicesByOpId.values()) {
-                slice.forEach(t => this.inFlightTasks.add(t as any))
-            }
-            const controller = createAbortController()
-            if (controller) this.inFlightControllers.add(controller)
-            let startedAt: number | undefined
-            try {
-                const payload = {
-                    ...(commonTraceId ? { traceId: commonTraceId } : {}),
-                    ...(requestId ? { requestId } : {}),
-                    ops
-                }
-                const payloadBytes = debugEmitter ? utf8ByteLength(JSON.stringify(payload)) : undefined
-                debugEmitter?.emit('adapter:request', {
-                    lane: 'write',
-                    method: 'POST',
-                    endpoint: this.endpoint,
-                    attempt: 1,
-                    payloadBytes,
-                    opCount: ops.length
-                }, { requestId })
-
-                startedAt = Date.now()
-                const response = await this.send(payload, controller?.signal, {
-                    ...(commonTraceId ? { 'x-atoma-trace-id': commonTraceId } : {}),
-                    ...(requestId ? { 'x-atoma-request-id': requestId } : {})
-                })
-                const durationMs = Date.now() - startedAt
-                debugEmitter?.emit('adapter:response', {
-                    lane: 'write',
-                    ok: true,
-                    status: response.status,
-                    durationMs,
-                    opCount: ops.length
-                }, { requestId })
-
-                const resultMap = mapResults(response.json?.results)
-
-                for (const [opId, slice] of slicesByOpId.entries()) {
-                    if (this.disposed) {
-                        slice.forEach(t => t.deferred.reject(this.disposedError))
-                        continue
-                    }
-                    const res = resultMap.get(opId)
-
-                    if (!res || res.ok === false || res.error) {
-                        const err = res?.error ?? new Error('Batch write failed')
-                        this.config.onError?.(toError(err), { lane: 'write', opId })
-                        slice.forEach(t => t.deferred.reject(err))
-                        continue
-                    }
-
-                    const failures = new Set<number>()
-                    res.partialFailures?.forEach((f: any) => failures.add(f.index))
-
-                    slice.forEach((task, index) => {
-                        if (failures.has(index)) {
-                            const failure = res.partialFailures?.find((f: any) => f.index === index)
-                            task.deferred.reject(failure?.error ?? new Error('Partial failure'))
-                            return
-                        }
-
-                        const payloadData = Array.isArray(res.data) ? res.data[index] : undefined
-                        task.deferred.resolve(payloadData as any)
-                    })
-                }
-            } catch (error: any) {
-                debugEmitter?.emit('adapter:response', {
-                    lane: 'write',
-                    ok: false,
-                    status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
-                    durationMs: typeof startedAt === 'number' ? (Date.now() - startedAt) : undefined
-                }, { requestId })
-                this.config.onError?.(toError(error), { lane: 'write', opCount: ops.length })
-                // request 级失败：对本次已摘出的 items 全部 reject（write 策略不做 fallback）
-                for (const slice of slicesByOpId.values()) {
-                    slice.forEach(t => t.deferred.reject(this.disposed ? this.disposedError : error))
-                }
-            } finally {
-                if (controller) this.inFlightControllers.delete(controller)
-                for (const slice of slicesByOpId.values()) {
-                    slice.forEach(t => this.inFlightTasks.delete(t as any))
-                }
-                this.writeInFlight--
-            }
-        }
-
-        if (!this.disposed && (this.writeReady.length || hasPendingBuckets(this.writeBuckets))) {
-            this.signalWriteLane()
-        }
-    }
-
-    private async runQueryFallback<T>(task: QueryTask<T>, reason?: any) {
-        try {
-            const res = await task.fallback()
-            task.deferred.resolve(normalizeQueryFallback(res))
-        } catch (fallbackError) {
-            task.deferred.reject(fallbackError ?? reason)
-        }
+        void drainWriteLane(this as any)
     }
 
     private async send(payload: any, signal?: AbortSignal, extraHeaders?: Record<string, string>) {
-        const headers = await this.resolveHeaders()
-        const response = await this.fetcher(this.endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...headers,
-                ...(extraHeaders || {})
-            },
-            body: JSON.stringify(payload),
-            signal
-        })
-
-        if (!response.ok) {
-            const err: any = new Error(`Batch request failed: ${response.status} ${response.statusText}`)
-            err.status = response.status
-            throw err
-        }
-
-        return { json: await response.json(), status: response.status }
-    }
-
-    private async resolveHeaders(): Promise<Record<string, string>> {
-        if (!this.config.headers) return {}
-        const h = this.config.headers()
-        return h instanceof Promise ? await h : h
+        return await sendBatchRequest(this.fetcher, this.endpoint, this.config.headers, payload, signal, extraHeaders)
     }
 
     private nextOpId(prefix: 'q' | 'w') {
@@ -701,209 +348,4 @@ export class BatchEngine {
     private nextRequestId(traceId: string) {
         return this.requestIdSequencer.next(traceId)
     }
-
-    private takeQueryBatch(maxOps: number) {
-        const max = maxOps === Infinity ? Infinity : Math.max(1, Math.floor(maxOps))
-        const traceId = this.queryQueue[0]?.traceId
-
-        if (!traceId) {
-            return this.queryQueue.splice(0, max === Infinity ? this.queryQueue.length : Math.min(this.queryQueue.length, max))
-        }
-
-        const batch: Array<QueryTask<any>> = []
-        for (let i = 0; i < this.queryQueue.length && batch.length < max; i++) {
-            const task = this.queryQueue[i]
-            if (task.traceId !== traceId) continue
-            batch.push(task)
-        }
-
-        if (!batch.length) {
-            return this.queryQueue.splice(0, max === Infinity ? this.queryQueue.length : Math.min(this.queryQueue.length, max))
-        }
-
-        const picked = new Set(batch)
-        this.queryQueue = this.queryQueue.filter(t => !picked.has(t))
-        return batch
-    }
-
-    private normalizeMaxQueueLength(lane: 'query' | 'write') {
-        const cfg = this.config.maxQueueLength
-        if (typeof cfg === 'number') {
-            return normalizePositiveInt(cfg) ?? Infinity
-        }
-        if (cfg && typeof cfg === 'object' && !Array.isArray(cfg)) {
-            const v = lane === 'query' ? (cfg as any).query : (cfg as any).write
-            return normalizePositiveInt(v) ?? Infinity
-        }
-        return Infinity
-    }
-
-    private isWriteQueueFull() {
-        const maxLen = this.normalizeMaxQueueLength('write')
-        if (maxLen === Infinity) return false
-        return this.writePendingCount >= maxLen
-    }
-
-    private normalizeMaxBatchSize() {
-        const n = this.config.maxBatchSize
-        return (typeof n === 'number' && Number.isFinite(n) && n > 0) ? Math.floor(n) : Infinity
-    }
-
-    private normalizeMaxOpsPerRequest() {
-        const n = this.config.maxOpsPerRequest
-        return (typeof n === 'number' && Number.isFinite(n) && n > 0) ? Math.floor(n) : Infinity
-    }
-
-    private normalizeMaxQueryOpsPerRequest() {
-        const a = this.normalizeMaxBatchSize()
-        const b = this.normalizeMaxOpsPerRequest()
-        return Math.min(a, b)
-    }
-}
-
-function bucketKey(task: WriteTask) {
-    const action =
-        task.kind === 'create' ? 'bulkCreate'
-            : task.kind === 'update' ? 'bulkUpdate'
-                : task.kind === 'patch' ? 'bulkPatch'
-                    : 'bulkDelete'
-    return `${action}:${task.resource}`
-}
-
-function buildWriteOp(opId: string, key: string, tasks: WriteTask[]) {
-    const [action, resource] = key.split(':', 2)
-    const payload = tasks.map(t => {
-        if (t.kind === 'create') return t.item
-        if (t.kind === 'update') return t.item
-        if (t.kind === 'patch') return t.item
-        return t.id
-    })
-
-    return {
-        opId,
-        action,
-        resource,
-        payload
-    }
-}
-
-function mapResults(results: any): Map<string, BatchOpResult> {
-    const map = new Map<string, BatchOpResult>()
-    if (!Array.isArray(results)) return map
-    results.forEach((r: any) => {
-        if (r && typeof r.opId === 'string') map.set(r.opId, r as BatchOpResult)
-    })
-    return map
-}
-
-function normalizeQueryEnvelope<T>(res: BatchOpResult): { data: T[]; pageInfo?: PageInfo } {
-    if (Array.isArray(res.data)) {
-        return res.pageInfo ? { data: res.data as T[], pageInfo: res.pageInfo } : { data: res.data as T[] }
-    }
-    return res.pageInfo ? { data: [], pageInfo: res.pageInfo } : { data: [] }
-}
-
-function normalizeQueryFallback<T>(res: any): { data: T[]; pageInfo?: PageInfo } {
-    if (Array.isArray(res)) return { data: res }
-    if (res && typeof res === 'object' && Array.isArray(res.data)) return { data: res.data, pageInfo: res.pageInfo }
-    return { data: [], pageInfo: res?.pageInfo }
-}
-
-function toError(err: any) {
-    return err instanceof Error ? err : new Error(String(err))
-}
-
-function createAbortController() {
-    if (typeof AbortController === 'undefined') return undefined
-    return new AbortController()
-}
-
-function clampInt(v: number, min: number, max: number) {
-    if (!Number.isFinite(v)) return min
-    const n = Math.floor(v)
-    if (n < min) return min
-    if (n > max) return max
-    return n
-}
-
-function hasPendingBuckets(map: Map<string, WriteTask[]>) {
-    for (const tasks of map.values()) {
-        if (tasks.length) return true
-    }
-    return false
-}
-
-function normalizePositiveInt(value: any) {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
-    return Math.floor(value)
-}
-
-function normalizeAtomaServerQueryParams<T>(input: FindManyOptions<T> | undefined) {
-    const params: any = (input && typeof input === 'object') ? { ...input } : {}
-
-    // 仅保留 server QueryParams 支持的字段（where/orderBy/page/select）
-    delete params.include
-    delete params.cache
-    delete params.skipStore
-    delete params.debug
-    delete params.fetchPolicy
-
-    // sparse fieldset alias: FindManyOptions.fields -> server QueryParams.select
-    if (Array.isArray(params.fields) && params.fields.length) {
-        const select: Record<string, boolean> = (params.select && typeof params.select === 'object' && !Array.isArray(params.select))
-            ? { ...params.select }
-            : {}
-        params.fields.forEach((f: any) => {
-            if (typeof f === 'string' && f) select[f] = true
-        })
-        params.select = Object.keys(select).length ? select : undefined
-        delete params.fields
-    }
-
-    // 若调用方已显式提供 server 侧 QueryParams（含 page），直接透传
-    if (params.page && typeof params.page === 'object' && (params.page.mode === 'offset' || params.page.mode === 'cursor')) {
-        if (params.orderBy && !Array.isArray(params.orderBy)) {
-            params.orderBy = [params.orderBy]
-        }
-        return params
-    }
-
-    // FindManyOptions.orderBy 支持 object | array；server 协议要求数组
-    if (params.orderBy && !Array.isArray(params.orderBy)) {
-        params.orderBy = [params.orderBy]
-    }
-
-    const limit = typeof params.limit === 'number' ? params.limit : 50
-    const offset = typeof params.offset === 'number' ? params.offset : undefined
-    const includeTotal = typeof params.includeTotal === 'boolean' ? params.includeTotal : undefined
-
-    const before = typeof params.before === 'string' ? params.before : undefined
-    const after = typeof params.after === 'string' ? params.after : undefined
-    const cursor = typeof params.cursor === 'string' ? params.cursor : undefined
-
-    if (before || after || cursor) {
-        params.page = {
-            mode: 'cursor',
-            limit,
-            before,
-            after: after ?? cursor
-        }
-    } else {
-        params.page = {
-            mode: 'offset',
-            limit,
-            offset,
-            ...(includeTotal !== undefined ? { includeTotal } : {})
-        }
-    }
-
-    // 防止旧字段误导：server REST/Batch 协议不使用 cursor（走 page.after/before）
-    delete params.cursor
-    delete params.limit
-    delete params.offset
-    delete params.includeTotal
-    delete params.before
-    delete params.after
-
-    return params
 }

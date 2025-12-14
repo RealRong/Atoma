@@ -54,13 +54,14 @@ export interface HistoryManagerConfig {
  * 
  * Usage:
  * ```typescript
- * import { HistoryManager, setHistoryCallback } from 'atoma'
+ * import { HistoryManager } from 'atoma'
  * 
  * const history = new HistoryManager({ maxStackSize: 50 })
  * 
- * setHistoryCallback((patches, inversePatches, atom, adapter) => {
- *   history.record(patches, inversePatches, atom, adapter)
- * })
+ * // 新架构下请通过 StoreContext 注入 history callback：
+ * // context.historyRecorder.setCallback((patches, inversePatches, atom, adapter) => {
+ * //   history.record(patches, inversePatches, atom, adapter)
+ * // })
  * 
  * // Later
  * history.undo()

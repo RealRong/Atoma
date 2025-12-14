@@ -2,8 +2,9 @@ import { PrimitiveAtom, createStore } from 'jotai'
 import { useAtomValue } from 'jotai'
 import { useMemo } from 'react'
 import { globalStore } from '../../core/BaseStore'
-import { Entity, InferIncludeType, OrderBy, RelationMap, StoreKey } from '../../core/types'
+import { Entity, IStore, InferIncludeType, OrderBy, RelationMap, StoreKey } from '../../core/types'
 import { useRelations } from './useRelations'
+import { resolveStoreRelations } from '../../core/storeAccessRegistry'
 
 type SortDirection = 'asc' | 'desc'
 
@@ -34,7 +35,7 @@ function sortBy<T>(items: T[], orderBy?: OrderBy<T>): T[] {
 
 export function createUseMultiple<T extends Entity, Relations extends RelationMap<T> = {}>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
-    store: { _relations?: Relations },
+    store: IStore<T, Relations>,
     jotaiStore?: ReturnType<typeof createStore>
 ) {
     const actualStore = jotaiStore || globalStore
@@ -63,7 +64,8 @@ export function createUseMultiple<T extends Entity, Relations extends RelationMa
             return limited
         }, [ids, map, orderBy, limit, unique])
 
-        const relationsResult = useRelations(baseList as any, include as any, store._relations as any)
+        const relations = resolveStoreRelations<T>(store as any) as any
+        const relationsResult = useRelations(baseList as any, include as any, relations)
         const withRelations = relationsResult.data as any as T[]
 
         return useMemo(() => {

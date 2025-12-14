@@ -1,8 +1,15 @@
 import { atom } from 'jotai/vanilla'
 import type { DevtoolsBridge, StoreSnapshot } from '../devtools/types'
 import { getGlobalDevtools, registerGlobalStore } from '../devtools/global'
-import { initializeLocalStore } from './initializeLocalStore'
-import { registerStoreAccess } from './storeAccessRegistry'
+import { createStoreRuntime } from './store/runtime'
+import { createAddOne } from './store/addOne'
+import { createBatchGet } from './store/batchGet'
+import { createDeleteOneById } from './store/deleteOneById'
+import { createFindMany } from './store/findMany/index'
+import { createGetAll } from './store/getAll'
+import { createGetMultipleByIds } from './store/getMultipleByIds'
+import { createUpdateOne } from './store/updateOne'
+import { registerStoreAccess, resolveStoreAccess } from './storeAccessRegistry'
 import { globalStore } from './BaseStore'
 import { createStoreContext } from './StoreContext'
 import type { JotaiStore } from './types'
@@ -90,20 +97,39 @@ export function createCoreStore<T extends Entity, Relations extends RelationMap<
     const context = createStoreContext(config.queue, { debug: resolvedDebug, storeName: name })
     const objectMapAtom = atom(new Map<StoreKey, T>())
 
-    const store = initializeLocalStore(objectMapAtom, resolvedAdapter, {
-        transformData: transformData ? (item: T) => transformData(item) ?? item : undefined,
-        idGenerator: config.idGenerator,
-        store: jotaiStore,
-        schema: config.schema,
-        hooks: config.hooks,
-        indexes: config.indexes,
-        context,
-        devtools: config.devtools,
-        storeName: name
-    }) as IStore<T>
+    const runtime = createStoreRuntime<T>({
+        atom: objectMapAtom,
+        adapter: resolvedAdapter,
+        config: {
+            transformData: transformData ? (item: T) => transformData(item) ?? item : undefined,
+            idGenerator: config.idGenerator,
+            store: jotaiStore,
+            schema: config.schema,
+            hooks: config.hooks,
+            indexes: config.indexes,
+            context,
+            devtools: config.devtools,
+            storeName: name
+        }
+    })
+    void runtime.stopIndexDevtools
+
+    const { getOneById, fetchOneById } = createBatchGet(runtime)
+    const findMany = createFindMany<T>(runtime)
+
+    const store = {
+        addOne: createAddOne<T>(runtime),
+        updateOne: createUpdateOne<T>(runtime),
+        deleteOneById: createDeleteOneById<T>(runtime),
+        getAll: createGetAll<T>(runtime),
+        getMultipleByIds: createGetMultipleByIds<T>(runtime),
+        getOneById,
+        fetchOneById,
+        findMany
+    } as IStore<T>
 
     const coreStore = store as unknown as CoreStore<T, Relations>
-    ;(coreStore as any).name = name
+    coreStore.name = name
 
     const snapshot = (): StoreSnapshot => {
         const map = jotaiStore.get(objectMapAtom)
@@ -142,9 +168,13 @@ export function createCoreStore<T extends Entity, Relations extends RelationMap<
             if (!cache) cache = factory()
             return cache
         }
-        Object.defineProperty(coreStore as any, '_relations', {
-            get: getter,
-            configurable: true
+        registerStoreAccess(coreStore as any, {
+            atom: objectMapAtom as any,
+            jotaiStore,
+            context,
+            matcher: runtime.matcher,
+            storeName: name,
+            relations: getter as any
         })
     }
 
@@ -170,7 +200,17 @@ export function createCoreStore<T extends Entity, Relations extends RelationMap<
 
     applyRelations(getRelations)
 
-    registerStoreAccess(coreStore as any, objectMapAtom as any, jotaiStore)
+    // 即使没有 relations，也要注册 atom/jotaiStore/matcher/storeName
+    if (!resolveStoreAccess(coreStore)) {
+        registerStoreAccess(coreStore, {
+            atom: objectMapAtom,
+            jotaiStore,
+            context,
+            matcher: runtime.matcher,
+            storeName: name,
+            relations: undefined
+        })
+    }
 
     return coreStore
 }

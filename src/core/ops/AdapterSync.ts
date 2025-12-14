@@ -97,9 +97,10 @@ export class AdapterSync {
         const originalValue = store.get(atom)
         const indexManager = indexRegistry?.get(atom as any)
 
+        const traceId = params.traceId
         const emitter = createDebugEmitter({
             debug: params.debug,
-            traceId: params.traceId,
+            traceId,
             store: params.storeName ?? adapter.name
         })
         const emit = (type: string, payload: any) => emitter?.emit(type, payload)
@@ -109,8 +110,7 @@ export class AdapterSync {
             databaseName: adapter.name,
             timestamp: Date.now(),
             baseVersion: Date.now(),
-            traceId: params.traceId,
-            debugEmitter: emitter
+            traceId
         }
 
         emit('mutation:patches', {
@@ -132,7 +132,10 @@ export class AdapterSync {
 
         try {
             if (adapter.applyPatches) {
-                const res = await adapter.applyPatches(patches, metadata)
+                const internalContext = (typeof traceId === 'string' && traceId)
+                    ? { traceId, store: params.storeName ?? adapter.name, emitter }
+                    : undefined
+                const res = await (adapter as any).applyPatches(patches, metadata, internalContext)
                 if (res && typeof res === 'object' && Array.isArray((res as any).created)) {
                     sideEffects = { createdResults: (res as any).created as T[] }
                 }

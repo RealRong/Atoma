@@ -1,7 +1,14 @@
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { initializeLocalStore } from '../../src/core/initializeLocalStore'
+import { createStoreRuntime } from '../../src/core/store/runtime'
+import { createAddOne } from '../../src/core/store/addOne'
+import { createBatchGet } from '../../src/core/store/batchGet'
+import { createDeleteOneById } from '../../src/core/store/deleteOneById'
+import { createFindMany } from '../../src/core/store/findMany/index'
+import { createGetAll } from '../../src/core/store/getAll'
+import { createGetMultipleByIds } from '../../src/core/store/getMultipleByIds'
+import { createUpdateOne } from '../../src/core/store/updateOne'
 import { atom, createStore } from 'jotai'
 import { IAdapter, StoreKey, Entity } from '../../src/core/types'
 import { createUseFindMany } from '../../src/react/hooks/useFindMany'
@@ -49,7 +56,19 @@ describe('useFindMany Infinite Scroll (fetchMore)', () => {
         store = createStore()
         mapAtom = atom(new Map<StoreKey, TestItem>())
         adapter = createMockAdapter()
-        localStore = initializeLocalStore(mapAtom, adapter, { store })
+        const runtime = createStoreRuntime<TestItem>({ atom: mapAtom, adapter, config: { store } })
+        const { getOneById, fetchOneById } = createBatchGet(runtime)
+        const findMany = createFindMany<TestItem>(runtime)
+        localStore = {
+            addOne: createAddOne<TestItem>(runtime),
+            updateOne: createUpdateOne<TestItem>(runtime),
+            deleteOneById: createDeleteOneById<TestItem>(runtime),
+            getAll: createGetAll<TestItem>(runtime),
+            getMultipleByIds: createGetMultipleByIds<TestItem>(runtime),
+            getOneById,
+            fetchOneById,
+            findMany
+        }
     })
 
     it('should support explicit infinite scroll in Store Mode', async () => {

@@ -1,11 +1,18 @@
 import { describe, it, expect, vi } from 'vitest'
 import { atom, createStore } from 'jotai'
-import { initializeLocalStore } from '../../src/core/initializeLocalStore'
+import { createStoreRuntime } from '../../src/core/store/runtime'
+import { createAddOne } from '../../src/core/store/addOne'
+import { createBatchGet } from '../../src/core/store/batchGet'
+import { createDeleteOneById } from '../../src/core/store/deleteOneById'
+import { createFindMany } from '../../src/core/store/findMany/index'
+import { createGetAll } from '../../src/core/store/getAll'
+import { createGetMultipleByIds } from '../../src/core/store/getMultipleByIds'
+import { createUpdateOne } from '../../src/core/store/updateOne'
 import type { Entity, IAdapter, StoreKey } from '../../src/core/types'
 
 type Item = Entity & { id: StoreKey; name: string }
 
-describe('findMany debug.explain', () => {
+describe('findMany explain', () => {
     it('返回 explain（含 traceId/index/finalize/cacheWrite/adapter）', async () => {
         const store = createStore()
         const mapAtom = atom(new Map<StoreKey, Item>())
@@ -32,15 +39,32 @@ describe('findMany debug.explain', () => {
             [2, { id: 2, name: 'B' }]
         ]))
 
-        const localStore = initializeLocalStore(mapAtom, adapter, {
-            store,
-            storeName: 'items',
-            indexes: [{ field: 'name', type: 'string' }]
+        const runtime = createStoreRuntime<Item>({
+            atom: mapAtom,
+            adapter,
+            config: {
+                store,
+                storeName: 'items',
+                indexes: [{ field: 'name', type: 'string' }]
+            }
         })
+        const { getOneById, fetchOneById } = createBatchGet(runtime)
+        const findMany = createFindMany<Item>(runtime)
+        const localStore = {
+            addOne: createAddOne<Item>(runtime),
+            updateOne: createUpdateOne<Item>(runtime),
+            deleteOneById: createDeleteOneById<Item>(runtime),
+            getAll: createGetAll<Item>(runtime),
+            getMultipleByIds: createGetMultipleByIds<Item>(runtime),
+            getOneById,
+            fetchOneById,
+            findMany
+        }
 
         const res = await localStore.findMany({
             where: { name: 'A' } as any,
-            debug: { explain: true, traceId: 't_test' }
+            explain: true,
+            traceId: 't_test'
         })
 
         expect(Array.isArray(res.data)).toBe(true)
@@ -51,4 +75,3 @@ describe('findMany debug.explain', () => {
         expect(res.explain?.adapter?.ok).toBe(true)
     })
 })
-

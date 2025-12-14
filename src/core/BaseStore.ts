@@ -9,8 +9,7 @@ import {
     StoreKey
 } from './types'
 import { getIdGenerator } from './idGenerator'
-import { StoreContext, createStoreContext } from './StoreContext'
-import { HistoryCallback } from './history/HistoryRecorder'
+import type { StoreContext } from './StoreContext'
 
 // Enable Map/Set drafting for Immer (required for Map-based atom state)
 enableMapSet()
@@ -22,74 +21,26 @@ enablePatches()
  */
 export const globalStore = createStore()
 
-/**
- * Default global context for backward compatibility
- * @deprecated Use per-store context via createCoreStore/createReactStore instead
- */
-const defaultGlobalContext = createStoreContext()
-
-export const getVersionSnapshot = (
-    atom: PrimitiveAtom<Map<any, any>>,
-    fields?: string[],
-    context?: StoreContext
-): number => {
-    const ctx = context || defaultGlobalContext
-    return ctx.versionTracker.getSnapshot(atom, fields)
-}
-
-/** Bump version counters for an atom; use empty set to bump全局 */
+/** Bump version counters for an atom; use empty set to bump global */
 export const bumpAtomVersion = (
     atom: PrimitiveAtom<Map<any, any>>,
-    fields?: Set<string>,
-    context?: StoreContext
+    fields: Set<string> | undefined,
+    context: StoreContext
 ) => {
-    const ctx = context || defaultGlobalContext
-    ctx.versionTracker.bump(atom, fields ?? new Set())
-}
-
-/**
- * Set the history callback for undo/redo support
- * @deprecated Use per-store context instead
- */
-export function setHistoryCallback(callback: HistoryCallback) {
-    defaultGlobalContext.historyRecorder.setCallback(callback)
+    context.versionTracker.bump(atom, fields ?? new Set())
 }
 
 /**
  * Process queued operations (support external queue map for direct writes)
  */
-const handleQueue = (
-    contextOrQueueMap?: StoreContext | Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>,
-    queueMap?: Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>
-) => {
-    // Determine context and queue map from parameters
-    let context: StoreContext
-    let atomQueues: Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>
-
-    if (contextOrQueueMap instanceof Map) {
-        // Called with (queueMap)
-        context = defaultGlobalContext
-        atomQueues = contextOrQueueMap
-    } else if (contextOrQueueMap && queueMap) {
-        // Called with (context, queueMap)
-        context = contextOrQueueMap
-        atomQueues = queueMap
-    } else if (contextOrQueueMap) {
-        // Called with (context)
-        context = contextOrQueueMap
-        atomQueues = context.queueManager.flush()
-    } else {
-        // Called with ()
-        context = defaultGlobalContext
-        atomQueues = context.queueManager.flush()
-    }
+const handleQueue = (context: StoreContext, queueMap?: Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>) => {
+    const atomQueues = queueMap ?? context.queueManager.flush()
 
     const mode = context.queueConfig.mode || 'optimistic'
 
     Array.from(atomQueues.entries()).forEach(([atom, operations]) => {
-        // Use context from first operation if available, otherwise use passed context
-        const eventContext = operations[0]?.context || context
-        const store = operations[0]?.store || globalStore
+        const eventContext = operations[0].context
+        const store = operations[0].store
         const { adapter } = operations[0]
         const applyResult = eventContext.operationApplier.apply(operations, store.get(atom))
         const sharedTraceId = (() => {
@@ -185,7 +136,7 @@ export const BaseStore = {
      * Dispatch an operation to the queue for batched processing
      */
     dispatch<T extends import('./types').Entity>(event: StoreDispatchEvent<T>) {
-        const context = event.context || defaultGlobalContext
+        const context = event.context
 
         if (!context.queueConfig.enabled) {
             const directQueue = new Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>()
@@ -248,8 +199,4 @@ export const BaseStore = {
 
 export default BaseStore
 
-/**
- * Export createStoreContext for use in createCoreStore/createReactStore
- */
-export { createStoreContext } from './StoreContext'
 export type { StoreContext } from './StoreContext'

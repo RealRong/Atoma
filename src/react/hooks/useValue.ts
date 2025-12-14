@@ -5,6 +5,7 @@ import { useAtomValue } from 'jotai'
 import { globalStore } from '../../core/BaseStore'
 import { IStore, StoreKey, RelationMap, Entity } from '../../core/types'
 import { useRelations } from './useRelations'
+import { resolveStoreRelations } from '../../core/storeAccessRegistry'
 
 /**
  * React hook to subscribe to a single entity by ID
@@ -37,9 +38,10 @@ export function createUseValue<T extends Entity, Relations extends RelationMap<T
         }, [id])
 
         const base = useAtomValue(selectedAtom, { store: actualStore })
-        if (!options?.include || !store._relations) return base as any
+        const relations = resolveStoreRelations<T>(store as any) as any
+        if (!options?.include || !relations) return base as any
 
-        const rel = useRelations(base ? [base] : [], options.include as any, store._relations as any)
+        const rel = useRelations(base ? [base] : [], options.include as any, relations)
         return rel.data[0] as any
     }
 }

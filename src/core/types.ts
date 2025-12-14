@@ -97,7 +97,6 @@ export interface PatchMetadata {
     baseVersion?: number
     etag?: string         // Optional: ETag for HTTP conflict detection
     traceId?: string
-    debugEmitter?: import('../observability/debug').DebugEmitter
 }
 
 /**
@@ -107,8 +106,8 @@ export type StoreDispatchEvent<T extends Entity> = {
     atom: PrimitiveAtom<Map<StoreKey, T>>
     data: PartialWithId<T>
     adapter: IAdapter<T>
-    store?: JotaiStore // Jotai store instance
-    context?: StoreContext // StoreContext for per-store dependencies (avoids circular import)
+    store: JotaiStore // Jotai store instance
+    context: StoreContext // StoreContext for per-store dependencies (avoids circular import)
     traceId?: string
     onFail?: (error?: Error) => void  // Accept error object for rejection
 } & (
@@ -136,9 +135,7 @@ export type StoreDispatchEvent<T extends Entity> = {
  */
 export interface StoreOperationOptions {
     force?: boolean
-    debug?: {
-        traceId?: string
-    }
+    traceId?: string
 }
 
 export type WhereOperator<T> = Partial<Record<keyof T & string, any | {
@@ -193,11 +190,10 @@ export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
     skipStore?: boolean
     /** Relations include 配置 */
     include?: Include
-    /** 可观测性/诊断（默认不启用） */
-    debug?: {
-        traceId?: string
-        explain?: boolean
-    }
+    /** 仅用于关联一次调用链（可选）。不传时由 store 决定是否分配。 */
+    traceId?: string
+    /** 生成 explain 诊断产物（默认 false） */
+    explain?: boolean
 }
 
 export type FindManyResult<T> = { data: T[]; pageInfo?: PageInfo; explain?: Explain }
@@ -365,9 +361,6 @@ export interface IStore<T, Relations extends RelationMap<T> = {}> {
 
     /** Query with filtering/sorting/paging */
     findMany?(options?: FindManyOptions<T>): Promise<FindManyResult<T>>
-
-    /** 内部缓存的关系映射 */
-    _relations?: Relations
 }
 
 type InferTargetType<R> =

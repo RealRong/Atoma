@@ -4,6 +4,25 @@ export type TraceContext = {
     opId?: string
 }
 
+export type DebugEmitter = {
+    traceId: string
+    emit: (
+        type: string,
+        payload?: unknown,
+        meta?: Partial<Pick<TraceContext, 'requestId' | 'opId'>> & { parentSpanId?: string }
+    ) => void
+}
+
+/**
+ * InternalOperationContext 用于在 core/adapter/batch/server 之间显式传递可观测性上下文：
+ * - 禁止再通过 carrier（Symbol 挂载）从业务对象里“挖 emitter”
+ * - store 通常由上层（store/adapter）补齐；对调用方可选
+ */
+export type InternalOperationContext = TraceContext & {
+    store?: string
+    emitter?: DebugEmitter
+}
+
 /**
  * Explain 是单次可复制的诊断产物：
  * - 由 core 生成并挂在 findMany 返回值上
