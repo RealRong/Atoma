@@ -24,10 +24,12 @@ export function createDebugEmitter(args: {
     debug?: DebugOptions
     traceId?: string
     store: string
+    sink?: (e: DebugEvent) => void
 }): DebugEmitter | undefined {
     const debug = args.debug
     const traceId = args.traceId
-    if (!debug?.enabled || !debug?.sink) return undefined
+    const sink = args.sink
+    if (!debug?.enabled || !sink) return undefined
     if (typeof traceId !== 'string' || !traceId) return undefined
     const sampleRate = typeof debug.sampleRate === 'number' ? debug.sampleRate : 0
     if (!shouldSampleTrace(traceId, sampleRate)) return undefined
@@ -79,7 +81,7 @@ export function createDebugEmitter(args: {
         }
 
         try {
-            debug.sink!(e)
+            sink(e)
         } catch {
             // ignore
         }

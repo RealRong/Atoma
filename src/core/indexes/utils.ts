@@ -56,26 +56,88 @@ export const binarySearchPrefix = (tokens: string[], prefix: string): { start: n
     return { start, end: left }
 }
 
-export const levenshteinDistance = (a: string, b: string): number => {
+export const levenshteinDistance = (a: string, b: string, maxDistance?: number): number => {
     if (a === b) return 0
-    const m = a.length
-    const n = b.length
-    if (m === 0) return n
-    if (n === 0) return m
-    const dp = Array.from({ length: m + 1 }, () => new Array<number>(n + 1))
-    for (let i = 0; i <= m; i++) dp[i][0] = i
-    for (let j = 0; j <= n; j++) dp[0][j] = j
-    for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-            const cost = a[i - 1] === b[j - 1] ? 0 : 1
-            dp[i][j] = Math.min(
-                dp[i - 1][j] + 1,
-                dp[i][j - 1] + 1,
-                dp[i - 1][j - 1] + cost
-            )
-        }
+
+    let left = a
+    let right = b
+    let m = left.length
+    let n = right.length
+
+    if (m === 0) {
+        if (maxDistance !== undefined) return n > maxDistance ? maxDistance + 1 : n
+        return n
     }
-    return dp[m][n]
+    if (n === 0) {
+        if (maxDistance !== undefined) return m > maxDistance ? maxDistance + 1 : m
+        return m
+    }
+
+    if (m > n) {
+        ;[left, right] = [right, left]
+        ;[m, n] = [n, m]
+    }
+
+    let prev = new Uint32Array(n + 1)
+    let curr = new Uint32Array(n + 1)
+
+    if (maxDistance === undefined) {
+        for (let j = 0; j <= n; j++) prev[j] = j
+        for (let i = 1; i <= m; i++) {
+            curr[0] = i
+            const leftChar = left.charCodeAt(i - 1)
+            for (let j = 1; j <= n; j++) {
+                const cost = leftChar === right.charCodeAt(j - 1) ? 0 : 1
+                const del = prev[j] + 1
+                const ins = curr[j - 1] + 1
+                const sub = prev[j - 1] + cost
+                curr[j] = del < ins ? (del < sub ? del : sub) : ins < sub ? ins : sub
+            }
+            const tmp = prev
+            prev = curr
+            curr = tmp
+        }
+        return prev[n]
+    }
+
+    const limit = maxDistance
+    const big = limit + 1
+    const offset = n - m
+    if (offset > limit) return big
+
+    prev.fill(big)
+    const initMax = Math.min(n, offset + limit)
+    for (let j = 0; j <= initMax; j++) prev[j] = j
+
+    for (let i = 1; i <= m; i++) {
+        const center = i + offset
+        const minJ = Math.max(1, center - limit)
+        const maxJ = Math.min(n, center + limit)
+
+        curr[0] = i
+        if (minJ > 1) curr[minJ - 1] = big
+        if (maxJ < n) curr[maxJ + 1] = big
+
+        let rowMin = big
+        const leftChar = left.charCodeAt(i - 1)
+        for (let j = minJ; j <= maxJ; j++) {
+            const cost = leftChar === right.charCodeAt(j - 1) ? 0 : 1
+            const del = prev[j] + 1
+            const ins = curr[j - 1] + 1
+            const sub = prev[j - 1] + cost
+            const v = del < ins ? (del < sub ? del : sub) : ins < sub ? ins : sub
+            curr[j] = v
+            if (v < rowMin) rowMin = v
+        }
+
+        if (rowMin > limit) return big
+        const tmp = prev
+        prev = curr
+        curr = tmp
+    }
+
+    const result = prev[n]
+    return result > limit ? big : result
 }
 
 export const intersectAll = <T>(sets: Set<T>[]): Set<T> => {

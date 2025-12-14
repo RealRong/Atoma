@@ -1,5 +1,6 @@
 import type { DebugEmitter } from '../observability/debug'
 import { utf8ByteLength } from '../observability/utf8'
+import { emitAdapterEvent } from './adapterEvents'
 import { normalizeMaxQueryOpsPerRequest } from './config'
 import { mapResults, normalizeQueryEnvelope, normalizeQueryFallback } from './protocol'
 import { normalizeAtomaServerQueryParams } from './queryParams'
@@ -36,21 +37,37 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
         const controller = createAbortController()
         if (controller) engine.inFlightControllers.add(controller)
 
-        const traceId = batch[0]?.traceId
-        const requestId = traceId ? engine.nextRequestId(traceId) : undefined
-        const debugEmitter = (() => {
-            const emitters = batch
-                .map(t => t.debugEmitter)
-                .filter((e): e is DebugEmitter => Boolean(e))
-            if (!emitters.length) return undefined
-            const uniq = new Set(emitters)
-            return uniq.size === 1 ? emitters[0] : undefined
+        const traceState = (() => {
+            const distinct = new Set<string>()
+            let hasMissing = false
+            batch.forEach(t => {
+                const id = typeof t.traceId === 'string' && t.traceId ? t.traceId : undefined
+                if (id) distinct.add(id)
+                else hasMissing = true
+            })
+            const commonTraceId = (!hasMissing && distinct.size === 1) ? Array.from(distinct)[0] : undefined
+            const mixedTrace = distinct.size > 1 || (hasMissing && distinct.size > 0)
+            return { commonTraceId, mixedTrace }
         })()
+        const commonTraceId = traceState.commonTraceId
+        const requestId = commonTraceId ? engine.nextRequestId(commonTraceId) : undefined
+        const debugEmitters = (() => {
+            const byEmitter = new Map<DebugEmitter, { opCount: number }>()
+            batch.forEach(t => {
+                const e = t.debugEmitter
+                if (!e) return
+                const cur = byEmitter.get(e) ?? { opCount: 0 }
+                cur.opCount++
+                byEmitter.set(e, cur)
+            })
+            return Array.from(byEmitter.entries()).map(([emitter, meta]) => ({ emitter, ...meta }))
+        })()
+        const shouldEmitAdapterEvents = debugEmitters.length > 0
 
         let startedAt: number | undefined
         try {
             const payload = {
-                ...(traceId ? { traceId } : {}),
+                ...(commonTraceId ? { traceId: commonTraceId } : {}),
                 ...(requestId ? { requestId } : {}),
                 ops: batch.map(t => ({
                     opId: t.opId,
@@ -62,29 +79,43 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
                 }))
             }
 
-            const payloadBytes = debugEmitter ? utf8ByteLength(JSON.stringify(payload)) : undefined
-            debugEmitter?.emit('adapter:request', {
-                lane: 'query',
-                method: 'POST',
-                endpoint: engine.endpoint,
-                attempt: 1,
-                payloadBytes,
-                opCount: batch.length
-            }, { requestId })
+            const payloadBytes = shouldEmitAdapterEvents ? utf8ByteLength(JSON.stringify(payload)) : undefined
+            emitAdapterEvent({
+                emitters: debugEmitters,
+                type: 'adapter:request',
+                meta: { requestId },
+                payloadFor: ({ opCount }) => ({
+                    lane: 'query',
+                    method: 'POST',
+                    endpoint: engine.endpoint,
+                    attempt: 1,
+                    payloadBytes,
+                    opCount,
+                    totalOpCount: batch.length,
+                    mixedTrace: traceState.mixedTrace
+                })
+            })
 
             startedAt = Date.now()
             const response = await engine.send(payload, controller?.signal, {
-                ...(traceId ? { 'x-atoma-trace-id': traceId } : {}),
+                ...(commonTraceId ? { 'x-atoma-trace-id': commonTraceId } : {}),
                 ...(requestId ? { 'x-atoma-request-id': requestId } : {})
             })
             const durationMs = Date.now() - startedAt
-            debugEmitter?.emit('adapter:response', {
-                lane: 'query',
-                ok: true,
-                status: response.status,
-                durationMs,
-                opCount: batch.length
-            }, { requestId })
+            emitAdapterEvent({
+                emitters: debugEmitters,
+                type: 'adapter:response',
+                meta: { requestId },
+                payloadFor: ({ opCount }) => ({
+                    lane: 'query',
+                    ok: true,
+                    status: response.status,
+                    durationMs,
+                    opCount,
+                    totalOpCount: batch.length,
+                    mixedTrace: traceState.mixedTrace
+                })
+            })
 
             const resultMap = mapResults(response.json?.results)
 
@@ -102,12 +133,20 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
                 task.deferred.resolve(normalized)
             }
         } catch (error: any) {
-            debugEmitter?.emit('adapter:response', {
-                lane: 'query',
-                ok: false,
-                status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
-                durationMs: typeof startedAt === 'number' ? (Date.now() - startedAt) : undefined
-            }, { requestId })
+            emitAdapterEvent({
+                emitters: debugEmitters,
+                type: 'adapter:response',
+                meta: { requestId },
+                payloadFor: ({ opCount }) => ({
+                    lane: 'query',
+                    ok: false,
+                    status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
+                    durationMs: typeof startedAt === 'number' ? (Date.now() - startedAt) : undefined,
+                    opCount,
+                    totalOpCount: batch.length,
+                    mixedTrace: traceState.mixedTrace
+                })
+            })
             engine.config.onError?.(toError(error), { lane: 'query' })
             for (const task of batch) {
                 if (engine.disposed) {
@@ -130,28 +169,21 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
 
 function takeQueryBatch(queue: Array<QueryTask<any>>, maxOps: number) {
     const max = maxOps === Infinity ? Infinity : Math.max(1, Math.floor(maxOps))
-    const traceId = queue[0]?.traceId
-
-    if (!traceId) {
-        const batch = queue.splice(0, max === Infinity ? queue.length : Math.min(queue.length, max))
-        return { batch, remainingQueue: queue }
+    const normalizeTraceId = (traceId: unknown) => {
+        return typeof traceId === 'string' && traceId ? traceId : undefined
     }
 
-    const batch: Array<QueryTask<any>> = []
-    for (let i = 0; i < queue.length && batch.length < max; i++) {
+    const firstKey = normalizeTraceId(queue[0]?.traceId)
+    let takeCount = 0
+    for (let i = 0; i < queue.length && takeCount < max; i++) {
         const task = queue[i]
-        if (task.traceId !== traceId) continue
-        batch.push(task)
+        const key = normalizeTraceId(task.traceId)
+        if (key !== firstKey) break
+        takeCount++
     }
 
-    if (!batch.length) {
-        const fallbackBatch = queue.splice(0, max === Infinity ? queue.length : Math.min(queue.length, max))
-        return { batch: fallbackBatch, remainingQueue: queue }
-    }
-
-    const picked = new Set(batch)
-    const remainingQueue = queue.filter(t => !picked.has(t))
-    return { batch, remainingQueue }
+    const batch = queue.splice(0, takeCount)
+    return { batch, remainingQueue: queue }
 }
 
 async function runQueryFallback<T>(task: QueryTask<T>, reason?: any) {

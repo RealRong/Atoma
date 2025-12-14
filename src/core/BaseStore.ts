@@ -78,6 +78,7 @@ const handleQueue = (context: StoreContext, queueMap?: Map<PrimitiveAtom<any>, S
             mode,
             traceId: sharedTraceId,
             debug: eventContext.debug,
+            debugSink: eventContext.debugSink,
             storeName: eventContext.storeName
         })
     })

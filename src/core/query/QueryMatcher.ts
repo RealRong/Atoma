@@ -95,7 +95,7 @@ const matchesFuzzy = (fieldValue: any, spec: FuzzySpec, defaults?: FieldMatcherO
     const fuzzyHas = (q: string): boolean => {
         for (const t of docTokens) {
             if (Math.abs(t.length - q.length) > distance) continue
-            if (levenshteinDistance(q, t) <= distance) return true
+            if (levenshteinDistance(q, t, distance) <= distance) return true
         }
         return false
     }
@@ -161,4 +161,3 @@ export const QueryMatcher = {
         })
     }
 }
-

@@ -1,5 +1,6 @@
 import type { DebugEmitter } from '../observability/debug'
 import { utf8ByteLength } from '../observability/utf8'
+import { emitAdapterEvent } from './adapterEvents'
 import { normalizeMaxBatchSize, normalizeMaxOpsPerRequest } from './config'
 import { mapResults } from './protocol'
 import type { Deferred, WriteTask } from './types'
@@ -63,30 +64,41 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
 
         if (!ops.length) break
 
-        const commonTraceId = (() => {
-            const ids: string[] = []
+        const traceState = (() => {
+            const distinct = new Set<string>()
+            let hasMissing = false
             for (const slice of slicesByOpId.values()) {
                 slice.forEach(t => {
-                    if (typeof (t as any).traceId === 'string' && (t as any).traceId) ids.push((t as any).traceId)
+                    const id = typeof t.traceId === 'string' && t.traceId ? t.traceId : undefined
+                    if (id) distinct.add(id)
+                    else hasMissing = true
                 })
             }
-            if (!ids.length) return undefined
-            const uniq = new Set(ids)
-            return uniq.size === 1 ? ids[0] : undefined
+            const commonTraceId = (!hasMissing && distinct.size === 1) ? Array.from(distinct)[0] : undefined
+            const mixedTrace = distinct.size > 1 || (hasMissing && distinct.size > 0)
+            return { commonTraceId, mixedTrace }
         })()
+        const commonTraceId = traceState.commonTraceId
         const requestId = commonTraceId ? engine.nextRequestId(commonTraceId) : undefined
-        const debugEmitter = (() => {
-            const emitters: DebugEmitter[] = []
-            for (const slice of slicesByOpId.values()) {
+        const debugEmitters = (() => {
+            const byEmitter = new Map<DebugEmitter, { taskCount: number; opIds: Set<string> }>()
+            for (const [opId, slice] of slicesByOpId.entries()) {
                 slice.forEach(t => {
-                    const e = (t as any).debugEmitter
-                    if (e) emitters.push(e)
+                    const e = t.debugEmitter
+                    if (!e) return
+                    const cur = byEmitter.get(e) ?? { taskCount: 0, opIds: new Set<string>() }
+                    cur.taskCount++
+                    cur.opIds.add(opId)
+                    byEmitter.set(e, cur)
                 })
             }
-            if (!emitters.length) return undefined
-            const uniq = new Set(emitters)
-            return uniq.size === 1 ? emitters[0] : undefined
+            return Array.from(byEmitter.entries()).map(([emitter, meta]) => ({
+                emitter,
+                taskCount: meta.taskCount,
+                opCount: meta.opIds.size
+            }))
         })()
+        const shouldEmitAdapterEvents = debugEmitters.length > 0
 
         engine.writeInFlight++
         for (const slice of slicesByOpId.values()) {
@@ -101,15 +113,23 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
                 ...(requestId ? { requestId } : {}),
                 ops
             }
-            const payloadBytes = debugEmitter ? utf8ByteLength(JSON.stringify(payload)) : undefined
-            debugEmitter?.emit('adapter:request', {
-                lane: 'write',
-                method: 'POST',
-                endpoint: engine.endpoint,
-                attempt: 1,
-                payloadBytes,
-                opCount: ops.length
-            }, { requestId })
+            const payloadBytes = shouldEmitAdapterEvents ? utf8ByteLength(JSON.stringify(payload)) : undefined
+            emitAdapterEvent({
+                emitters: debugEmitters,
+                type: 'adapter:request',
+                meta: { requestId },
+                payloadFor: ({ opCount, taskCount }) => ({
+                    lane: 'write',
+                    method: 'POST',
+                    endpoint: engine.endpoint,
+                    attempt: 1,
+                    payloadBytes,
+                    opCount,
+                    taskCount,
+                    totalOpCount: ops.length,
+                    mixedTrace: traceState.mixedTrace
+                })
+            })
 
             startedAt = Date.now()
             const response = await engine.send(payload, controller?.signal, {
@@ -117,13 +137,21 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
                 ...(requestId ? { 'x-atoma-request-id': requestId } : {})
             })
             const durationMs = Date.now() - startedAt
-            debugEmitter?.emit('adapter:response', {
-                lane: 'write',
-                ok: true,
-                status: response.status,
-                durationMs,
-                opCount: ops.length
-            }, { requestId })
+            emitAdapterEvent({
+                emitters: debugEmitters,
+                type: 'adapter:response',
+                meta: { requestId },
+                payloadFor: ({ opCount, taskCount }) => ({
+                    lane: 'write',
+                    ok: true,
+                    status: response.status,
+                    durationMs,
+                    opCount,
+                    taskCount,
+                    totalOpCount: ops.length,
+                    mixedTrace: traceState.mixedTrace
+                })
+            })
 
             const resultMap = mapResults(response.json?.results)
 
@@ -156,12 +184,21 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
                 })
             }
         } catch (error: any) {
-            debugEmitter?.emit('adapter:response', {
-                lane: 'write',
-                ok: false,
-                status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
-                durationMs: typeof startedAt === 'number' ? (Date.now() - startedAt) : undefined
-            }, { requestId })
+            emitAdapterEvent({
+                emitters: debugEmitters,
+                type: 'adapter:response',
+                meta: { requestId },
+                payloadFor: ({ opCount, taskCount }) => ({
+                    lane: 'write',
+                    ok: false,
+                    status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
+                    durationMs: typeof startedAt === 'number' ? (Date.now() - startedAt) : undefined,
+                    opCount,
+                    taskCount,
+                    totalOpCount: ops.length,
+                    mixedTrace: traceState.mixedTrace
+                })
+            })
             engine.config.onError?.(toError(error), { lane: 'write', opCount: ops.length })
             // request 级失败：对本次已摘出的 items 全部 reject（write 策略不做 fallback）
             for (const slice of slicesByOpId.values()) {
@@ -213,4 +250,3 @@ export function hasPendingBuckets(map: Map<string, WriteTask[]>) {
     }
     return false
 }
-

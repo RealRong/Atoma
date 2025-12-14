@@ -1,5 +1,5 @@
-import { FindManyOptions } from './types'
-import { QueryMatcher, QueryMatcherOptions } from './query/QueryMatcher'
+import { FindManyOptions } from '../types'
+import { QueryMatcher, QueryMatcherOptions } from './QueryMatcher'
 
 /**
  * Create a comparison function from OrderBy rules

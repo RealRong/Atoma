@@ -8,6 +8,7 @@ export type {
     BaseEntity,
     PartialWithId,
     StoreOperationOptions,
+    StoreReadOptions,
     PatchMetadata,
     QueueConfig,
     Entity,

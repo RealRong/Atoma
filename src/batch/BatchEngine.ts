@@ -11,48 +11,62 @@ import { bucketKey, drainWriteLane } from './writeLane'
 type FetchFn = typeof fetch
 
 export interface BatchEngineConfig {
-    /** 批量端点，默认 /batch（与 atoma/server 默认 batchPath 对齐） */
+    /** Batch endpoint path (default: `/batch`, aligned with atoma/server default batchPath) */
     endpoint?: string
-    /** 自定义 headers（可异步获取 token） */
+    /** Custom headers (can be async, e.g. for tokens) */
     headers?: () => Promise<Record<string, string>> | Record<string, string>
-    /** 自定义 fetch（便于 polyfill 或注入超时） */
+    /** Custom fetch implementation (polyfills, timeouts, instrumentation) */
     fetchFn?: FetchFn
     /**
-     * 队列背压上限（per-lane）。
-     * - number：同时应用到 query/write
-     * - object：分别指定 query/write
-     * 默认无限制。
+     * Per-lane queue backpressure limit.
+     * - number: applies to both query and write lanes
+     * - object: configure query/write separately
+     * Default: unlimited.
      */
     maxQueueLength?: number | { query?: number; write?: number }
     /**
-     * query lane 超过 maxQueueLength 时的策略：
-     * - reject_new（默认）：拒绝新入队
-     * - drop_old_queries：丢弃最旧的 query（reject 被丢弃的 promise），再接受新入队
+     * Query-lane overflow strategy when `maxQueueLength` is exceeded:
+     * - `reject_new` (default): reject new enqueues
+     * - `drop_old_queries`: drop the oldest queued queries (rejecting their promises) and accept new ones
      */
     queryOverflowStrategy?: 'reject_new' | 'drop_old_queries'
     /**
-     * 单个 bulk op 的最大 item 数；query lane 则表示单次请求最多带多少个 query op。
-     * 默认无限制。
+     * Max items per bulk op. For the query lane, this is the max query ops per request.
+     * Default: unlimited.
      */
     maxBatchSize?: number
-    /** 额外延迟 flush 的毫秒数；默认 0（同一事件循环聚合） */
+    /** Additional delay before flushing (ms). Default: 0 (coalesce within the same tick). */
     flushIntervalMs?: number
-    /** query lane 最大并发请求数；默认 2 */
+    /** Query-lane max concurrent in-flight requests. Default: 2. */
     queryMaxInFlight?: number
-    /** write lane 最大并发请求数；默认 1 */
+    /** Write-lane max concurrent in-flight requests. Default: 1. */
     writeMaxInFlight?: number
     /**
-     * 单次 HTTP 请求最多携带多少个 op（query/write 共用）。
-     * 默认无限制（仅受 maxBatchSize 影响）。
+     * Max ops per HTTP request (shared by query/write lanes).
+     * Default: unlimited (still bounded by `maxBatchSize` for writes).
      */
     maxOpsPerRequest?: number
-    /** 统一的 requestId 生成器（用于跨 query/write 共享序列） */
+    /** Shared requestId sequencer (to share a sequence across query/write lanes). */
     requestIdSequencer?: RequestIdSequencer
-    /** 批量请求失败时的回调，用于埋点或日志 */
+    /** Called when a batch request fails (instrumentation/logging hook). */
     onError?: (error: Error, context: any) => void
 }
 
 export class BatchEngine {
+    /**
+     * In-memory batch scheduler.
+     *
+     * BatchEngine owns two independent "lanes" that share a single transport endpoint:
+     * - Query lane: coalesces read/query operations into fewer HTTP requests.
+     * - Write lane: coalesces mutations into bucketed bulk operations with fairness.
+     *
+     * The actual drain algorithms live in `./queryLane` and `./writeLane` as engine-driven functions
+     * (`drainQueryLane(engine)` / `drainWriteLane(engine)`).
+     *
+     * This class intentionally owns scheduling (microtasks/timers), lifecycle (`dispose`), and shared
+     * resources (abort controllers). Keeping timers here (instead of inside lane modules) makes the
+     * drainers easier to test and keeps "who cancels timers on dispose" unambiguous.
+     */
     private disposed = false
     private seq = 0
     private readonly disposedError = new Error('BatchEngine disposed')
@@ -64,13 +78,28 @@ export class BatchEngine {
     private readonly inFlightControllers = new Set<AbortController>()
     private readonly inFlightTasks = new Set<{ deferred: Deferred<any> }>()
 
-    // query lane
+    /**
+     * Query lane state.
+     *
+     * Callers: adapters enqueue query tasks via `enqueueQuery`, which triggers `signalQueryLane()`.
+     * Drain: `runQueryLane()` delegates to `drainQueryLane(this)`.
+     *
+     * Scheduling:
+     * - `queryScheduled/queryTimer` implement coalesced flushing (microtask by default, optional delay via `flushIntervalMs`)
+     * - `queryInFlight` enforces `queryMaxInFlight`
+     */
     private queryQueue: Array<QueryTask<any>> = []
     private queryScheduled = false
     private queryTimer?: ReturnType<typeof setTimeout>
     private queryInFlight = 0
 
-    // write lane (bucketed)
+    /**
+     * Write lane state (bucketed).
+     *
+     * Writes are bucketed by `{action}:{resource}` to build stable bulk ops and provide fairness
+     * (round-robin across buckets). Callers enqueue write tasks via `enqueue*`, which triggers
+     * `signalWriteLane()`. Drain: `runWriteLane()` delegates to `drainWriteLane(this)`.
+     */
     private writeBuckets = new Map<string, WriteTask[]>()
     private writeReady: string[] = []
     private writeReadySet = new Set<string>()
@@ -86,8 +115,23 @@ export class BatchEngine {
         this.requestIdSequencer = config.requestIdSequencer ?? createRequestIdSequencer()
     }
 
-    enqueueQuery<T>(resource: string, params: FindManyOptions<T> | undefined, fallback: () => Promise<any>): Promise<QueryEnvelope<T>> {
-        const internalContext = (arguments as any)[3] as InternalOperationContext | undefined
+    /**
+     * Enqueue a query task to be batched.
+     *
+     * Where it's called:
+     * - Adapters (e.g. HTTP adapter) call this when batch mode is enabled.
+     *
+     * How it's designed:
+     * - Backpressure is applied per-lane via `maxQueueLength` and `queryOverflowStrategy`.
+     * - Observability context is passed explicitly via `internalContext` (traceId/emitter).
+     * - The lane is scheduled via `signalQueryLane()` (microtask/timer coalescing).
+     */
+    enqueueQuery<T>(
+        resource: string,
+        params: FindManyOptions<T> | undefined,
+        fallback: () => Promise<any>,
+        internalContext?: InternalOperationContext
+    ): Promise<QueryEnvelope<T>> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -126,8 +170,18 @@ export class BatchEngine {
         })
     }
 
-    enqueueCreate<T>(resource: string, item: T): Promise<any> {
-        const internalContext = (arguments as any)[2] as InternalOperationContext | undefined
+    /**
+     * Enqueue write tasks to be batched.
+     *
+     * Where it's called:
+     * - Adapters enqueue mutations (create/update/patch/delete).
+     *
+     * How it's designed:
+     * - Backpressure uses `writePendingCount` (across all buckets) and `isWriteQueueFull`.
+     * - Tasks are bucketed by `bucketKey(task)` to build bulk ops and avoid starvation.
+     * - The lane is scheduled via `signalWriteLane()`.
+     */
+    enqueueCreate<T>(resource: string, item: T, internalContext?: InternalOperationContext): Promise<any> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -144,8 +198,8 @@ export class BatchEngine {
     enqueueUpdate<T>(
         resource: string,
         item: { id: StoreKey; data: T; clientVersion?: any },
+        internalContext?: InternalOperationContext
     ): Promise<void> {
-        const internalContext = (arguments as any)[2] as InternalOperationContext | undefined
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -162,8 +216,8 @@ export class BatchEngine {
     enqueuePatch(
         resource: string,
         item: { id: StoreKey; patches: any[]; baseVersion?: number; timestamp?: number },
+        internalContext?: InternalOperationContext
     ): Promise<void> {
-        const internalContext = (arguments as any)[2] as InternalOperationContext | undefined
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -177,8 +231,7 @@ export class BatchEngine {
         })
     }
 
-    enqueueDelete(resource: string, id: StoreKey): Promise<void> {
-        const internalContext = (arguments as any)[2] as InternalOperationContext | undefined
+    enqueueDelete(resource: string, id: StoreKey, internalContext?: InternalOperationContext): Promise<void> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -250,6 +303,13 @@ export class BatchEngine {
         this.signalWriteLane()
     }
 
+    /**
+     * Schedule a query-lane drain.
+     *
+     * We flush immediately when `queryQueue` reaches the per-request op cap, otherwise we coalesce:
+     * - `flushIntervalMs === 0`: microtask flush (same tick)
+     * - `flushIntervalMs > 0`: timer-based batching
+     */
     private signalQueryLane() {
         if (this.disposed) return
 
@@ -261,11 +321,17 @@ export class BatchEngine {
         this.scheduleQueryRun(false)
     }
 
+    /**
+     * Schedule a write-lane drain.
+     *
+     * We flush immediately when any bucket reaches `maxBatchSize`, otherwise we coalesce
+     * using the same microtask/timer strategy as the query lane.
+     */
     private signalWriteLane() {
         if (this.disposed) return
 
         const max = normalizeMaxBatchSize(this.config)
-        // 若任意 bucket 达到 maxBatchSize，立即尝试 flush
+        // If any bucket reaches maxBatchSize, try to flush immediately.
         if (max !== Infinity) {
             for (const tasks of this.writeBuckets.values()) {
                 if (tasks.length >= max) {
@@ -277,9 +343,16 @@ export class BatchEngine {
         this.scheduleWriteRun(false)
     }
 
+    /**
+     * Implements the coalesced-flush pattern for query lane.
+     *
+     * - Only one scheduled run at a time (`queryScheduled`)
+     * - If a timer is pending and we need to flush immediately, we cancel the timer and flush in a microtask
+     */
     private scheduleQueryRun(immediate: boolean) {
         if (this.queryScheduled) {
-            // 若已被 timer 安排（flushIntervalMs>0），当达到阈值时需要“升级”为立即 flush
+            // If we were waiting on a timer (flushIntervalMs > 0) and a threshold is reached,
+            // upgrade to an immediate flush by cancelling the timer.
             if (immediate && this.queryTimer) {
                 clearTimeout(this.queryTimer)
                 this.queryTimer = undefined
@@ -297,9 +370,13 @@ export class BatchEngine {
         queueMicrotask(() => this.runQueryLane())
     }
 
+    /**
+     * Implements the coalesced-flush pattern for write lane (independent from query lane).
+     */
     private scheduleWriteRun(immediate: boolean) {
         if (this.writeScheduled) {
-            // 若已被 timer 安排（flushIntervalMs>0），当达到阈值时需要“升级”为立即 flush
+            // If we were waiting on a timer (flushIntervalMs > 0) and a threshold is reached,
+            // upgrade to an immediate flush by cancelling the timer.
             if (immediate && this.writeTimer) {
                 clearTimeout(this.writeTimer)
                 this.writeTimer = undefined
@@ -317,6 +394,12 @@ export class BatchEngine {
         queueMicrotask(() => this.runWriteLane())
     }
 
+    /**
+     * Drains the query lane.
+     *
+     * Called only by the scheduler (microtask/timer). Clears scheduling state and delegates
+     * the actual drain algorithm to `drainQueryLane`.
+     */
     private runQueryLane() {
         this.queryScheduled = false
         if (this.queryTimer) {
@@ -327,6 +410,12 @@ export class BatchEngine {
         void drainQueryLane(this as any)
     }
 
+    /**
+     * Drains the write lane.
+     *
+     * Called only by the scheduler (microtask/timer). Clears scheduling state and delegates
+     * the actual drain algorithm to `drainWriteLane`.
+     */
     private runWriteLane() {
         this.writeScheduled = false
         if (this.writeTimer) {

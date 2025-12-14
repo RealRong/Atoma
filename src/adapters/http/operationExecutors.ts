@@ -13,13 +13,13 @@ import type { InternalOperationContext } from '../../observability/types'
 import { utf8ByteLength } from '../../observability/utf8'
 
 export interface OperationExecutors<T extends Entity> {
-    put: (key: StoreKey, value: T) => Promise<void>
-    bulkPut: (items: T[]) => Promise<void>
-    delete: (key: StoreKey) => Promise<void>
-    bulkDelete: (keys: StoreKey[]) => Promise<void>
-    get: (key: StoreKey) => Promise<T | undefined>
-    bulkGet: (keys: StoreKey[]) => Promise<(T | undefined)[]>
-    getAll: (filter?: (item: T) => boolean) => Promise<T[]>
+    put: (key: StoreKey, value: T, context?: InternalOperationContext) => Promise<void>
+    bulkPut: (items: T[], context?: InternalOperationContext) => Promise<void>
+    delete: (key: StoreKey, context?: InternalOperationContext) => Promise<void>
+    bulkDelete: (keys: StoreKey[], context?: InternalOperationContext) => Promise<void>
+    get: (key: StoreKey, context?: InternalOperationContext) => Promise<T | undefined>
+    bulkGet: (keys: StoreKey[], context?: InternalOperationContext) => Promise<(T | undefined)[]>
+    getAll: (filter?: (item: T) => boolean, context?: InternalOperationContext) => Promise<T[]>
     findMany: (options?: FindManyOptions<T>, context?: InternalOperationContext) => Promise<{ data: T[]; pageInfo?: PageInfo }>
 }
 
@@ -150,25 +150,52 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
         return { envelope, response }
     }
 
-    const put = async (key: StoreKey, value: T) => {
-        await orchestrator.handleWithOfflineFallback({ type: 'put', key, value }, () => client.put(key, value))
+    const put = async (key: StoreKey, value: T, context?: InternalOperationContext) => {
+        const trace = traceHeadersFor(context)
+        await orchestrator.handleWithOfflineFallback(
+            { type: 'put', key, value },
+            () => client.put(
+                key,
+                value,
+                trace?.headers,
+                trace && context?.emitter ? { emitter: context.emitter, requestId: trace.requestId } : undefined
+            )
+        )
     }
 
-    const del = async (key: StoreKey) => {
-        await orchestrator.handleWithOfflineFallback({ type: 'delete', key }, () => client.delete(key))
+    const del = async (key: StoreKey, context?: InternalOperationContext) => {
+        const trace = traceHeadersFor(context)
+        await orchestrator.handleWithOfflineFallback(
+            { type: 'delete', key },
+            () => client.delete(
+                key,
+                trace?.headers,
+                trace && context?.emitter ? { emitter: context.emitter, requestId: trace.requestId } : undefined
+            )
+        )
     }
 
-    const bulkPut = async (items: T[]) => {
+    const bulkPut = async (items: T[], context?: InternalOperationContext) => {
         if (config.endpoints!.bulkUpdate) {
-            await client.bulkUpdate(items)
+            const trace = traceHeadersFor(context)
+            await client.bulkUpdate(
+                items,
+                trace?.headers,
+                trace && context?.emitter ? { emitter: context.emitter, requestId: trace.requestId } : undefined
+            )
             return
         }
-        await bulkOps.runFallbackPut(items)
+        await bulkOps.runFallbackPut(items, context)
     }
 
-    const bulkDelete = async (keys: StoreKey[]) => {
+    const bulkDelete = async (keys: StoreKey[], context?: InternalOperationContext) => {
         if (config.endpoints!.bulkDelete) {
-            await client.bulkDelete(keys)
+            const trace = traceHeadersFor(context)
+            await client.bulkDelete(
+                keys,
+                trace?.headers,
+                trace && context?.emitter ? { emitter: context.emitter, requestId: trace.requestId } : undefined
+            )
             return
         }
 
@@ -178,7 +205,22 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
             const maxLen = qp.maxUrlLength ?? 1800
             if (url.length <= maxLen) {
                 const headers = await getHeaders()
-                const response = await fetchWithRetry(url, { method: 'DELETE', headers })
+                const trace = traceHeadersFor(context)
+                const startedAt = context?.emitter ? Date.now() : 0
+                context?.emitter?.emit('adapter:request', {
+                    method: 'DELETE',
+                    endpoint: resolveEndpoint(qp.path),
+                    attempt: 1,
+                    payloadBytes: 0
+                }, { requestId: trace?.requestId })
+
+                const response = await fetchWithRetry(url, { method: 'DELETE', headers: { ...headers, ...(trace?.headers || {}) } })
+
+                context?.emitter?.emit('adapter:response', {
+                    ok: response.ok,
+                    status: response.status,
+                    durationMs: context?.emitter ? (Date.now() - startedAt) : undefined
+                }, { requestId: trace?.requestId })
                 if (response.ok) {
                     keys.forEach(k => etagManager.delete(k))
                     return
@@ -186,49 +228,94 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
             }
         }
 
-        await bulkOps.runFallbackDelete(keys)
+        await bulkOps.runFallbackDelete(keys, context)
     }
 
-    const get = async (key: StoreKey): Promise<T | undefined> => {
+    const get = async (key: StoreKey, context?: InternalOperationContext): Promise<T | undefined> => {
+        const trace = traceHeadersFor(context)
+        const emitter = context?.emitter
+        const endpoint = resolveEndpoint(endpoints.getOne!, key)
+        const startedAt = emitter ? Date.now() : 0
         try {
-            const url = makeUrl(config.baseURL, resolveEndpoint(endpoints.getOne!, key))
+            const url = makeUrl(config.baseURL, endpoint)
             const headers = await getHeaders()
 
             // Build Request
-            const request = new Request(url, { method: 'GET', headers })
+            const request = new Request(url, { method: 'GET', headers: { ...headers, ...(trace?.headers || {}) } })
 
-            // Execute with Interceptors
-            // Execute with Interceptors
+            emitter?.emit('adapter:request', {
+                method: 'GET',
+                endpoint,
+                attempt: 1,
+                payloadBytes: 0
+            }, { requestId: trace?.requestId })
+
             const { envelope, response } = await executeRequest(request)
 
             const etag = etagManager.extractFromResponse(response)
             if (etag) etagManager.set(key, etag)
 
+            emitter?.emit('adapter:response', {
+                ok: response.ok,
+                status: response.status,
+                durationMs: emitter ? (Date.now() - startedAt) : undefined,
+                itemCount: envelope.data ? 1 : 0
+            }, { requestId: trace?.requestId })
+
             return envelope.data as T
 
         } catch (error) {
+            emitter?.emit('adapter:response', {
+                ok: false,
+                status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
+                durationMs: emitter ? (Date.now() - startedAt) : undefined
+            }, { requestId: trace?.requestId })
             onError(error as Error, `get(${key})`)
             return undefined
         }
     }
 
-    const bulkGet = async (keys: StoreKey[]) => {
+    const bulkGet = async (keys: StoreKey[], context?: InternalOperationContext) => {
         const concurrency = config.concurrency?.bulk ?? config.concurrency?.get ?? 5
         const limit = pLimit(concurrency)
-        return Promise.all(keys.map(key => limit(() => get(key))))
+        return Promise.all(keys.map(key => limit(() => get(key, context))))
     }
 
-    const getAll = async (filter?: (item: T) => boolean) => {
+    const getAll = async (filter?: (item: T) => boolean, context?: InternalOperationContext) => {
+        const trace = traceHeadersFor(context)
+        const emitter = context?.emitter
+        const endpoint = resolveEndpoint(endpoints.getAll!)
+        const startedAt = emitter ? Date.now() : 0
+
         try {
-            const url = makeUrl(config.baseURL, resolveEndpoint(endpoints.getAll!))
+            const url = makeUrl(config.baseURL, endpoint)
             const headers = await getHeaders()
 
-            const request = new Request(url, { method: 'GET', headers })
-            const { envelope } = await executeRequest(request)
+            const request = new Request(url, { method: 'GET', headers: { ...headers, ...(trace?.headers || {}) } })
+
+            emitter?.emit('adapter:request', {
+                method: 'GET',
+                endpoint,
+                attempt: 1,
+                payloadBytes: 0
+            }, { requestId: trace?.requestId })
+
+            const { envelope, response } = await executeRequest(request)
 
             const items: T[] = Array.isArray(envelope.data) ? envelope.data : []
+            emitter?.emit('adapter:response', {
+                ok: response.ok,
+                status: response.status,
+                durationMs: emitter ? (Date.now() - startedAt) : undefined,
+                itemCount: items.length
+            }, { requestId: trace?.requestId })
             return filter ? items.filter(filter) : items
         } catch (error) {
+            emitter?.emit('adapter:response', {
+                ok: false,
+                status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
+                durationMs: emitter ? (Date.now() - startedAt) : undefined
+            }, { requestId: trace?.requestId })
             onError(error as Error, 'getAll')
             return []
         }

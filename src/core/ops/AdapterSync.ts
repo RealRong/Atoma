@@ -9,6 +9,7 @@ import type { IndexRegistry } from '../indexes/IndexRegistry'
 import { IndexSynchronizer } from '../indexes/IndexSynchronizer'
 import type { DebugOptions } from '../../observability/types'
 import { createDebugEmitter } from '../../observability/debug'
+import type { InternalOperationContext } from '../../observability/types'
 
 type CallbackEntry = { onSuccess?: (...args: any[]) => void, onFail?: (error?: Error) => void }
 
@@ -24,6 +25,7 @@ interface SyncParams<T extends Entity> {
     mode: 'optimistic' | 'strict'
     traceId?: string
     debug?: DebugOptions
+    debugSink?: (e: import('../../observability/types').DebugEvent) => void
     storeName?: string
 }
 
@@ -35,7 +37,8 @@ const applyPatchesViaOperations = async <T extends Entity>(
     adapter: IAdapter<T>,
     patches: Patch[],
     _appliedData: T[],
-    _operationTypes: StoreDispatchEvent<T>['type'][]
+    _operationTypes: StoreDispatchEvent<T>['type'][],
+    internalContext?: InternalOperationContext
 ): Promise<ApplySideEffects<T>> => {
     const createActions: T[] = []
     const putActions: T[] = []
@@ -59,20 +62,20 @@ const applyPatchesViaOperations = async <T extends Entity>(
 
     if (createActions.length) {
         if (adapter.bulkCreate) {
-            const res = await adapter.bulkCreate(createActions)
+            const res = await adapter.bulkCreate(createActions, internalContext)
             if (Array.isArray(res)) {
                 createdResults = res
             }
         } else {
-            await adapter.bulkPut(createActions)
+            await adapter.bulkPut(createActions, internalContext)
         }
     }
 
     if (putActions.length) {
-        await adapter.bulkPut(putActions)
+        await adapter.bulkPut(putActions, internalContext)
     }
     if (deleteKeys.length) {
-        await adapter.bulkDelete(deleteKeys)
+        await adapter.bulkDelete(deleteKeys, internalContext)
     }
     return {
         createdResults: Array.isArray(createdResults) ? createdResults : undefined
@@ -101,7 +104,8 @@ export class AdapterSync {
         const emitter = createDebugEmitter({
             debug: params.debug,
             traceId,
-            store: params.storeName ?? adapter.name
+            store: params.storeName ?? adapter.name,
+            sink: params.debugSink
         })
         const emit = (type: string, payload: any) => emitter?.emit(type, payload)
 
@@ -135,12 +139,21 @@ export class AdapterSync {
                 const internalContext = (typeof traceId === 'string' && traceId)
                     ? { traceId, store: params.storeName ?? adapter.name, emitter }
                     : undefined
-                const res = await (adapter as any).applyPatches(patches, metadata, internalContext)
+                const res = await adapter.applyPatches(patches, metadata, internalContext)
                 if (res && typeof res === 'object' && Array.isArray((res as any).created)) {
                     sideEffects = { createdResults: (res as any).created as T[] }
                 }
             } else {
-                sideEffects = await applyPatchesViaOperations(adapter, patches, applyResult.appliedData, applyResult.operationTypes)
+                const internalContext = (typeof traceId === 'string' && traceId)
+                    ? { traceId, store: params.storeName ?? adapter.name, emitter }
+                    : undefined
+                sideEffects = await applyPatchesViaOperations(
+                    adapter,
+                    patches,
+                    applyResult.appliedData,
+                    applyResult.operationTypes,
+                    internalContext
+                )
             }
 
             // Apply patches & reconcile server返回ID（尤其 create）

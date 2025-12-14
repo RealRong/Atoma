@@ -1,6 +1,6 @@
 import { IndexDefinition, StoreKey } from '../../types'
 import { CandidateResult, IndexStats } from '../types'
-import { binarySearchPrefix, intersectAll, levenshteinDistance } from '../utils'
+import { intersectAll, levenshteinDistance } from '../utils'
 import { defaultTokenizer } from '../tokenizer'
 import { validateString } from '../validators'
 import { IIndex } from '../base/IIndex'
@@ -11,8 +11,6 @@ export class TextIndex<T> implements IIndex<T> {
 
     private invertedIndex = new Map<string, Set<StoreKey>>()
     private docTokens = new Map<StoreKey, string[]>()
-    private sortedTokens: string[] | null = null
-    private dirty = false
 
     private tokenizer: (text: string) => string[]
     private minTokenLength: number
@@ -41,8 +39,6 @@ export class TextIndex<T> implements IIndex<T> {
             }
             set.add(id)
         })
-        this.sortedTokens = null
-        this.dirty = true
     }
 
     remove(id: StoreKey, value: any): void {
@@ -57,15 +53,11 @@ export class TextIndex<T> implements IIndex<T> {
             }
         })
         this.docTokens.delete(id)
-        this.sortedTokens = null
-        this.dirty = true
     }
 
     clear(): void {
         this.invertedIndex.clear()
         this.docTokens.clear()
-        this.sortedTokens = null
-        this.dirty = true
     }
 
     queryCandidates(_condition: any): CandidateResult {
@@ -102,7 +94,7 @@ export class TextIndex<T> implements IIndex<T> {
             const fuzzyMatches = new Set<StoreKey>()
             this.invertedIndex.forEach((set, t) => {
                 if (Math.abs(t.length - token.length) > distance) return
-                if (levenshteinDistance(token, t) <= distance) {
+                if (levenshteinDistance(token, t, distance) <= distance) {
                     set.forEach(id => fuzzyMatches.add(id))
                 }
             })
@@ -159,84 +151,10 @@ export class TextIndex<T> implements IIndex<T> {
     }
 
     isDirty(): boolean {
-        return this.dirty
+        return false
     }
 
     private tokenize(input: string): string[] {
         return this.tokenizer(input.toLowerCase()).filter(t => t.length >= this.minTokenLength)
-    }
-
-    private buildSortedTokens(): string[] {
-        if (!this.sortedTokens || this.dirty) {
-            this.sortedTokens = Array.from(this.invertedIndex.keys()).sort()
-            this.dirty = false
-        }
-        return this.sortedTokens
-    }
-
-    private prefixSearch(prefix: string): Set<StoreKey> {
-        const normalized = prefix.toLowerCase()
-        if (normalized.length < this.minTokenLength) return new Set()
-        const sorted = this.buildSortedTokens()
-        const { start, end } = binarySearchPrefix(sorted, normalized)
-        const results = new Set<StoreKey>()
-        for (let i = start; i < end; i++) {
-            const token = sorted[i]
-            if (!token.startsWith(normalized)) break
-            const ids = this.invertedIndex.get(token)
-            if (ids) ids.forEach(id => results.add(id))
-        }
-        return results
-    }
-
-    /**
-     * 后缀搜索（无索引优化，O(N)）
-     */
-    private suffixSearch(suffix: string): Set<StoreKey> {
-        const normalized = suffix.toLowerCase()
-        if (normalized.length < this.minTokenLength) return new Set()
-        const results = new Set<StoreKey>()
-        this.invertedIndex.forEach((set, token) => {
-            if (token.length < normalized.length) return
-            if (token.endsWith(normalized)) {
-                set.forEach(id => results.add(id))
-            }
-        })
-        return results
-    }
-
-    private exactSearch(query: string): Set<StoreKey> | undefined {
-        const tokens = this.tokenize(query)
-        if (!tokens.length) return new Set()
-        const sets: Set<StoreKey>[] = []
-        tokens.forEach(token => {
-            const ids = this.invertedIndex.get(token)
-            if (ids) sets.push(new Set(ids))
-        })
-        return sets.length ? intersectAll(sets) : new Set()
-    }
-
-    private fulltextSearch(query: string): Set<StoreKey> | undefined {
-        const tokens = this.tokenize(query)
-        if (!tokens.length) return new Set()
-        const tokenSets: Set<StoreKey>[] = []
-        tokens.forEach(token => {
-            const exact = this.invertedIndex.get(token)
-            if (exact) {
-                tokenSets.push(new Set(exact))
-                return
-            }
-            if (this.fuzzyDistance > 0) {
-                const fuzzyMatches = new Set<StoreKey>()
-                this.invertedIndex.forEach((set, t) => {
-                    if (Math.abs(t.length - token.length) > this.fuzzyDistance) return
-                    if (levenshteinDistance(token, t) <= this.fuzzyDistance) {
-                        set.forEach(id => fuzzyMatches.add(id))
-                    }
-                })
-                if (fuzzyMatches.size) tokenSets.push(fuzzyMatches)
-            }
-        })
-        return tokenSets.length ? intersectAll(tokenSets) : new Set()
     }
 }

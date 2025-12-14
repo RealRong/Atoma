@@ -1,7 +1,7 @@
 import { BaseStore } from '../../BaseStore'
 import { createDebugEmitter } from '../../../observability/debug'
 import { createTraceId } from '../../../observability/trace'
-import type { Explain, InternalOperationContext } from '../../../observability/types'
+import type { Explain } from '../../../observability/types'
 import type { Entity, FindManyOptions, FindManyResult, PartialWithId, StoreKey } from '../../types'
 import { commitAtomMapUpdate } from '../cacheWriter'
 import { resolveCachePolicy } from './cachePolicy'
@@ -9,7 +9,7 @@ import { evaluateWithIndexes } from './localEvaluate'
 import { normalizeFindManyResult } from './normalize'
 import { summarizeFindManyParams } from './paramsSummary'
 import { applyQuery } from '../../query'
-import type { StoreRuntime } from '../runtime'
+import { type StoreRuntime, resolveInternalOperationContext } from '../runtime'
 
 export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
     const { jotaiStore, atom, adapter, context, storeName, indexManager, matcher, transform } = runtime
@@ -29,14 +29,14 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
 
     return async (options?: FindManyOptions<T>): Promise<FindManyResult<T>> => {
         const debugOptions = context.debug as any
+        const debugSink = context.debugSink
         const explainEnabled = options?.explain === true
         const cachePolicy = resolveCachePolicy(options)
 
-        const shouldAllocateTrace = explainEnabled || (
-            Boolean(debugOptions?.enabled && debugOptions?.sink) && (debugOptions?.sampleRate ?? 0) > 0
-        )
+        const internalContext = resolveInternalOperationContext(runtime, options)
+        const traceId = internalContext?.traceId
+        const emitter = internalContext?.emitter
 
-        const traceId = options?.traceId || (shouldAllocateTrace ? createTraceId() : undefined)
         const optionsForAdapter = options
             ? ({ ...options, traceId: undefined, explain: undefined } as any as FindManyOptions<T>)
             : options
@@ -45,12 +45,9 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
             ? { schemaVersion: 1, traceId: traceId || createTraceId() }
             : undefined
 
-        const emitter = createDebugEmitter({ debug: debugOptions, traceId, store: storeName })
         const emit = (type: string, payload: any) => emitter?.emit(type, payload)
 
-        const operationContext: InternalOperationContext | undefined = (typeof traceId === 'string' && traceId)
-            ? { traceId, store: storeName, emitter }
-            : undefined
+        const operationContext = internalContext
 
         const withExplain = (out: any, extra?: any) => {
             if (!explainEnabled) return out
@@ -79,10 +76,10 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
             }
         )
 
-        if (typeof (adapter as any).findMany === 'function') {
+        if (typeof adapter.findMany === 'function') {
             try {
                 const startedAt = Date.now()
-                const raw = await (adapter as any).findMany(optionsForAdapter, operationContext)
+                const raw = await adapter.findMany(optionsForAdapter, operationContext)
                 const durationMs = Date.now() - startedAt
                 const normalized = normalizeFindManyResult<T>(raw)
                 const { data, pageInfo, explain: adapterExplain } = normalized
@@ -153,7 +150,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
         try {
             const adapterFilter = typeof options?.where === 'function' ? options.where : undefined
 
-            let remote = await adapter.getAll(adapterFilter as any)
+            let remote = await adapter.getAll(adapterFilter as any, operationContext)
             remote = remote.map(item => transform(item))
 
             if (cachePolicy.effectiveSkipStore) {

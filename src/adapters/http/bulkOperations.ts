@@ -1,5 +1,6 @@
 import pLimit from 'p-limit'
 import { StoreKey } from '../../core/types'
+import type { InternalOperationContext } from '../../observability/types'
 
 export interface BulkOperationConfig {
     bulkCreate?: string | (() => string)
@@ -15,8 +16,8 @@ export interface BulkOperationConfig {
     batchSize?: number
 }
 
-export type SinglePutHandler<T> = (item: T) => Promise<void>
-export type SingleDeleteHandler = (key: StoreKey) => Promise<void>
+export type SinglePutHandler<T> = (item: T, internalContext?: InternalOperationContext) => Promise<void>
+export type SingleDeleteHandler = (key: StoreKey, internalContext?: InternalOperationContext) => Promise<void>
 
 export class BulkOperationHandler<T> {
     constructor(
@@ -27,7 +28,7 @@ export class BulkOperationHandler<T> {
         }
     ) { }
 
-    async runFallbackPut(items: T[]): Promise<void> {
+    async runFallbackPut(items: T[], internalContext?: InternalOperationContext): Promise<void> {
         if (this.config.fallback === 'error') {
             throw new Error('Bulk update not supported and fallback is disabled')
         }
@@ -37,16 +38,16 @@ export class BulkOperationHandler<T> {
             const concurrency = this.config.concurrency ?? 5
             if (this.config.fallback === 'parallel') {
                 const limit = pLimit(concurrency)
-                await Promise.all(batch.map(item => limit(() => this.handlers.put(item))))
+                await Promise.all(batch.map(item => limit(() => this.handlers.put(item, internalContext))))
             } else {
                 for (const item of batch) {
-                    await this.handlers.put(item)
+                    await this.handlers.put(item, internalContext)
                 }
             }
         })
     }
 
-    async runFallbackDelete(keys: StoreKey[]): Promise<void> {
+    async runFallbackDelete(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<void> {
         if (this.config.fallback === 'error') {
             throw new Error('Bulk delete not supported and fallback is disabled')
         }
@@ -56,10 +57,10 @@ export class BulkOperationHandler<T> {
             const concurrency = this.config.concurrency ?? 5
             if (this.config.fallback === 'parallel') {
                 const limit = pLimit(concurrency)
-                await Promise.all(batch.map(key => limit(() => this.handlers.delete(key))))
+                await Promise.all(batch.map(key => limit(() => this.handlers.delete(key, internalContext))))
             } else {
                 for (const key of batch) {
-                    await this.handlers.delete(key)
+                    await this.handlers.delete(key, internalContext)
                 }
             }
         })

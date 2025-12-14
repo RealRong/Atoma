@@ -96,9 +96,6 @@ export function createOperationTraceIdResolver(context: StoreContext) {
         const explicit = options?.traceId
         if (typeof explicit === 'string' && explicit) return explicit
 
-        const explain = (options as any)?.explain === true
-        if (explain) return createTraceId()
-
         const debug = context.debug as any
         const enabled = Boolean(debug?.enabled && context.debugSink)
         const sampleRate = typeof debug?.sampleRate === 'number' ? debug.sampleRate : 0
@@ -156,27 +153,4 @@ export function registerIndexManagerSnapshot<T>(params: {
     }
 
     return devtools?.registerIndexManager?.({ name, snapshot }) || registerGlobalIndex({ name, snapshot })
-}
-
-export function resolveInternalOperationContext<T extends Entity>(
-    runtime: StoreRuntime<T>,
-    options?: StoreOperationOptions | StoreReadOptions
-): InternalOperationContext | undefined {
-    const { context, storeName, resolveOperationTraceId } = runtime
-    const traceId = resolveOperationTraceId(options)
-
-    if (typeof traceId !== 'string' || !traceId) return undefined
-
-    const emitter = createDebugEmitter({
-        debug: context.debug as any,
-        traceId,
-        store: storeName,
-        sink: context.debugSink
-    })
-
-    return {
-        traceId,
-        store: storeName,
-        emitter
-    }
 }

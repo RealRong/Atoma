@@ -264,21 +264,23 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
 
     async applyPatches(patches: Patch[], metadata: PatchMetadata): Promise<void> {
         const { write } = this.config.strategy
+        const local = this.config.local
+        const remote = this.config.remote
 
         // Apply patches to both adapters
         const promises: Promise<void>[] = []
 
         if (write !== 'remote-only') {
-            if (this.config.local.applyPatches) {
-                promises.push(this.config.local.applyPatches(patches, metadata).then(() => undefined))
+            if (local.applyPatches) {
+                promises.push(local.applyPatches(patches, metadata).then(() => undefined))
             } else {
                 promises.push(this.applyPatchesViaOperations(this.config.local, patches))
             }
         }
 
         if (write !== 'local-only') {
-            if (this.config.remote.applyPatches) {
-                promises.push(this.config.remote.applyPatches(patches, metadata).then(() => undefined))
+            if (remote.applyPatches) {
+                promises.push(remote.applyPatches(patches, metadata).then(() => undefined))
             } else {
                 promises.push(this.applyPatchesViaOperations(this.config.remote, patches))
             }
@@ -316,8 +318,10 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
      * Get with local-first strategy
      */
     private async getLocalFirst(key: StoreKey): Promise<T | undefined> {
+        const local = this.config.local
+        const remote = this.config.remote
         // 1. Try local cache first
-        let item = await this.config.local.get(key)
+        let item = await local.get(key)
 
         // 2. Check if cache is valid
         const lastSync = this.lastSyncTime.get(key)
@@ -329,7 +333,7 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
 
         // 3. Cache miss or expired, fetch from remote
         try {
-            item = await this.config.remote.get(key)
+            item = await remote.get(key)
 
             if (item) {
                 // 4. Update local cache
@@ -350,9 +354,11 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
      * Get with remote-first strategy
      */
     private async getRemoteFirst(key: StoreKey): Promise<T | undefined> {
+        const local = this.config.local
+        const remote = this.config.remote
         try {
             // 1. Fetch from remote
-            const item = await this.config.remote.get(key)
+            const item = await remote.get(key)
 
             if (item) {
                 // 2. Update local cache
@@ -366,7 +372,7 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
             this.emitError(error as Error, 'get')
 
             // 3. Fallback to local cache
-            return this.config.local.get(key)
+            return local.get(key)
         }
     }
 

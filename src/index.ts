@@ -15,6 +15,7 @@ export type {
     BaseEntity,
     PartialWithId,
     StoreOperationOptions,
+    StoreReadOptions,
     PatchMetadata,
     QueueConfig,
     Entity,
@@ -43,7 +44,7 @@ export type {
 export { createStore } from './core/createCoreStore'
 
 // Observability
-export type { TraceContext, Explain, DebugOptions, DebugEvent } from './observability'
+export type { TraceContext, Explain } from './observability'
 
 // Core utilities
 export { BaseStore, globalStore } from './core/BaseStore'

@@ -1,11 +1,12 @@
 import { BaseStore } from '../BaseStore'
-import type { Entity, PartialWithId, StoreKey } from '../types'
+import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
 import { commitAtomMapUpdate } from './cacheWriter'
-import type { StoreRuntime } from './runtime'
+import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
 
 export function createGetMultipleByIds<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexManager, transform } = runtime
-    return async (ids: StoreKey[], cache = true) => {
+    const { jotaiStore, atom, adapter, context, indexManager, transform, storeName, resolveOperationTraceId } = runtime
+
+    return async (ids: StoreKey[], cache = true, options?: StoreReadOptions) => {
         const map = jotaiStore.get(atom) as Map<StoreKey, T>
 
         const hitMap = new Map<StoreKey, T>()
@@ -21,7 +22,9 @@ export function createGetMultipleByIds<T extends Entity>(runtime: StoreRuntime<T
 
         let fetched: T[] = []
         if (missing.length > 0) {
-            fetched = (await adapter.bulkGet(missing)).filter((i): i is T => i !== undefined)
+            const internalContext = resolveInternalOperationContext(runtime, options)
+
+            fetched = (await adapter.bulkGet(missing, internalContext)).filter((i): i is T => i !== undefined)
             fetched = fetched.map(transform)
 
             if (cache && fetched.some(i => !map.has((i as any).id))) {

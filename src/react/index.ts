@@ -3,7 +3,7 @@ export type { ReactStore, ReactStoreConfig } from './createReactStore'
 
 export type { UseFindManyResult } from './types'
 
-export { createUseValue, createUseAll, createUseFindMany, createUseMultiple } from './hooks'
+export { createUseValue, createUseAll, createUseFindMany, createUseMultiple, useFuzzySearch } from './hooks'
 
 export { AtomaDevTools } from './devtools/AtomaDevTools'
 

@@ -15,6 +15,7 @@ import { createStoreContext } from './StoreContext'
 import type { JotaiStore } from './types'
 import { getDefaultAdapterFactory } from './defaultAdapterFactory'
 import type { DebugOptions } from '../observability/types'
+import type { DebugEvent } from '../observability/types'
 import type {
     Entity,
     IAdapter,
@@ -61,23 +62,13 @@ export function createCoreStore<T extends Entity, Relations extends RelationMap<
 ): CoreStore<T, Relations> {
     const { name, transformData } = config
     const resolvedDebug: DebugOptions | undefined = config.debug
-        ? {
-            ...config.debug,
-            sink: (e) => {
-                // 先调用用户 sink（若有），再透传到 devtools
-                if (config.debug?.sink) {
-                    try {
-                        config.debug.sink(e)
-                    } catch {
-                        // ignore
-                    }
-                }
-                const bridge = config.devtools ?? getGlobalDevtools()
-                try {
-                    bridge?.emit({ type: 'debug-event', payload: e as any })
-                } catch {
-                    // ignore
-                }
+    const debugSink: ((e: DebugEvent) => void) | undefined = resolvedDebug?.enabled
+        ? (e) => {
+            const bridge = config.devtools ?? getGlobalDevtools()
+            try {
+                bridge?.emit({ type: 'debug-event', payload: e as any })
+            } catch {
+                // ignore
             }
         }
         : undefined
@@ -94,7 +85,7 @@ export function createCoreStore<T extends Entity, Relations extends RelationMap<
     }
 
     const jotaiStore = config.store || globalStore
-    const context = createStoreContext(config.queue, { debug: resolvedDebug, storeName: name })
+    const context = createStoreContext(config.queue, { debug: resolvedDebug, debugSink, storeName: name })
     const objectMapAtom = atom(new Map<StoreKey, T>())
 
     const runtime = createStoreRuntime<T>({

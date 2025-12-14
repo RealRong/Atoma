@@ -16,6 +16,7 @@ import type { QueuedOperation } from './http/offlineQueue'
 import type { QuerySerializerConfig } from './http/query'
 import { BatchEngine } from '../batch'
 import { createRequestIdSequencer } from '../observability/trace'
+import type { InternalOperationContext } from '../observability/types'
 
 // ===== Config Interfaces =====
 
@@ -305,8 +306,8 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 batchSize: config.bulk?.batchSize ?? Infinity
             },
             {
-                put: (item) => this.put(item.id, item),
-                delete: (key) => this.delete(key)
+                put: (item, internalContext) => this.put(item.id, item, internalContext),
+                delete: (key, internalContext) => this.delete(key, internalContext)
             }
         )
         const conflictHandler: ConflictHandler<T> = {
@@ -410,61 +411,71 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         this.batchEngine?.dispose()
     }
 
-    async put(key: StoreKey, value: T): Promise<void> {
+    async put(key: StoreKey, value: T, internalContext?: InternalOperationContext): Promise<void> {
         if (this.batchEngine) {
             const clientVersion = this.resolveClientVersion(key, value)
             try {
                 return await this.batchEngine.enqueueUpdate(
                     this.resourceNameForBatch,
-                    { id: key, data: value, clientVersion }
+                    { id: key, data: value, clientVersion },
+                    internalContext
                 )
             } catch (error) {
                 this.onError(error as Error, 'put(batch)')
                 throw error
             }
         }
-        return this.executors.put(key, value)
+        return this.executors.put(key, value, internalContext)
     }
 
-    async bulkPut(items: T[]): Promise<void> {
-        return this.executors.bulkPut(items)
+    async bulkPut(items: T[], internalContext?: InternalOperationContext): Promise<void> {
+        return this.executors.bulkPut(items, internalContext)
     }
 
-    async bulkCreate(items: T[]): Promise<T[] | void> {
+    async bulkCreate(items: T[], internalContext?: InternalOperationContext): Promise<T[] | void> {
         if (this.batchEngine) {
             const created = await Promise.all(items.map(item => {
                 return this.batchEngine!.enqueueCreate(
                     this.resourceNameForBatch,
-                    item
+                    item,
+                    internalContext
                 )
             }))
             return created
         }
 
         if (this.config.endpoints!.bulkCreate) {
-            return await this.client.bulkCreate(items)
+            const traceId = internalContext?.traceId
+            const trace = (typeof traceId === 'string' && traceId)
+                ? { traceId, requestId: this.requestIdSequencer.next(traceId) }
+                : undefined
+            return await this.client.bulkCreate(
+                items,
+                trace ? { 'x-atoma-trace-id': trace.traceId, 'x-atoma-request-id': trace.requestId } : undefined,
+                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+            )
         }
 
-        await this.executors.bulkPut(items)
+        await this.executors.bulkPut(items, internalContext)
     }
 
-    async delete(key: StoreKey): Promise<void> {
+    async delete(key: StoreKey, internalContext?: InternalOperationContext): Promise<void> {
         if (this.batchEngine) {
             try {
-                return await this.batchEngine.enqueueDelete(this.resourceNameForBatch, key)
+                return await this.batchEngine.enqueueDelete(this.resourceNameForBatch, key, internalContext)
             } catch (error) {
                 this.onError(error as Error, 'delete(batch)')
                 throw error
             }
         }
-        return this.executors.delete(key)
+        return this.executors.delete(key, internalContext)
     }
 
-    async bulkDelete(keys: StoreKey[]): Promise<void> {
-        return this.executors.bulkDelete(keys)
+    async bulkDelete(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<void> {
+        return this.executors.bulkDelete(keys, internalContext)
     }
 
-    async get(key: StoreKey): Promise<T | undefined> {
+    async get(key: StoreKey, internalContext?: InternalOperationContext): Promise<T | undefined> {
         if (this.batchEngine) {
             const params: FindManyOptions<T> = {
                 where: { id: key } as any,
@@ -476,7 +487,8 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 const result = await this.batchEngine.enqueueQuery(
                     this.resourceNameForBatch,
                     params,
-                    () => this.executors.findMany(params)
+                    () => this.executors.findMany(params, internalContext),
+                    internalContext
                 )
 
                 return result.data[0]
@@ -485,10 +497,10 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             }
         }
 
-        return this.executors.get(key)
+        return this.executors.get(key, internalContext)
     }
 
-    async bulkGet(keys: StoreKey[]): Promise<(T | undefined)[]> {
+    async bulkGet(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<(T | undefined)[]> {
         if (!keys.length) return []
 
         // 若启用 batch，则将 bulkGet 转为一次批量 query（where in），否则回退并发 GET
@@ -500,7 +512,8 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 const result = await this.batchEngine.enqueueQuery<T>(
                     this.resourceNameForBatch,
                     params,
-                    () => this.executors.bulkGet(uniqueKeys).then(list => list.filter((i): i is T => i !== undefined))
+                    () => this.executors.bulkGet(uniqueKeys, internalContext).then(list => list.filter((i): i is T => i !== undefined)),
+                    internalContext
                 )
 
                 const data = result.data
@@ -519,16 +532,17 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             }
         }
 
-        return this.executors.bulkGet(keys)
+        return this.executors.bulkGet(keys, internalContext)
     }
 
-    async getAll(filter?: (item: T) => boolean): Promise<T[]> {
+    async getAll(filter?: (item: T) => boolean, internalContext?: InternalOperationContext): Promise<T[]> {
         if (this.batchEngine) {
             try {
                 const result = await this.batchEngine.enqueueQuery<T>(
                     this.resourceNameForBatch,
                     undefined,
-                    () => this.executors.getAll(filter)
+                    () => this.executors.getAll(filter, internalContext),
+                    internalContext
                 )
 
                 return filter ? result.data.filter(filter) : result.data
@@ -537,13 +551,15 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             }
         }
 
-        return this.executors.getAll(filter)
+        return this.executors.getAll(filter, internalContext)
     }
 
-    async findMany(options?: FindManyOptions<T>): Promise<{ data: T[]; pageInfo?: PageInfo }> {
-        const internalContext = (arguments as any)[1] as import('../observability/types').InternalOperationContext | undefined
+    async findMany(
+        options?: FindManyOptions<T>,
+        internalContext?: InternalOperationContext
+    ): Promise<{ data: T[]; pageInfo?: PageInfo }> {
         if (this.batchEngine) {
-            return (this.batchEngine as any).enqueueQuery(
+            return this.batchEngine.enqueueQuery(
                 this.resourceNameForBatch,
                 options,
                 () => this.executors.findMany(options, internalContext),
@@ -553,10 +569,13 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         return this.executors.findMany(options, internalContext)
     }
 
-    async applyPatches(patches: Patch[], metadata: PatchMetadata): Promise<{ created?: T[] } | void> {
+    async applyPatches(
+        patches: Patch[],
+        metadata: PatchMetadata,
+        internalContext?: InternalOperationContext
+    ): Promise<{ created?: T[] } | void> {
         const supportsPatch = !!this.config.endpoints!.patch
         const usePatchForUpdates = this.usePatchForUpdate && supportsPatch
-        const internalContext = (arguments as any)[2] as import('../observability/types').InternalOperationContext | undefined
         const nextTraceHeaders = () => {
             const traceId = metadata.traceId
             if (typeof traceId !== 'string' || !traceId) return undefined
@@ -584,7 +603,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const handleCreate = (id: StoreKey, value: T) => {
             if (this.batchEngine) {
                 tasks.push(
-                    (this.batchEngine as any).enqueueCreate(
+                    this.batchEngine.enqueueCreate(
                         this.resourceNameForBatch,
                         value,
                         internalContext
@@ -604,7 +623,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const handleDelete = (id: StoreKey) => {
             if (this.batchEngine) {
                 tasks.push(
-                    (this.batchEngine as any).enqueueDelete(
+                    this.batchEngine.enqueueDelete(
                         this.resourceNameForBatch,
                         id,
                         internalContext
@@ -626,7 +645,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const handlePatch = (id: StoreKey, itemPatches: Patch[]) => {
             if (this.batchEngine) {
                 tasks.push(
-                    (this.batchEngine as any).enqueuePatch(
+                    this.batchEngine.enqueuePatch(
                         this.resourceNameForBatch,
                         {
                             id,
@@ -656,7 +675,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             if (rootReplace) {
                 next = rootReplace.value
             } else {
-                const current = await this.executors.get(id)
+                const current = await this.executors.get(id, internalContext)
                 if (current === undefined) throw new Error(`Item ${id} not found for put`)
                 next = applyPatches(current as any, itemPatches)
             }
@@ -664,7 +683,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             if (this.batchEngine) {
                 const clientVersion = this.resolveClientVersion(id, next)
                 tasks.push(
-                    (this.batchEngine as any).enqueueUpdate(
+                    this.batchEngine.enqueueUpdate(
                         this.resourceNameForBatch,
                         { id, data: next, clientVersion },
                         internalContext

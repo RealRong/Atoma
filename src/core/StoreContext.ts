@@ -6,6 +6,7 @@ import { AdapterSync } from './ops/AdapterSync'
 import { QueueConfig } from './types'
 import { IndexRegistry, globalIndexRegistry } from './indexes/IndexRegistry'
 import type { DebugOptions } from '../observability/types'
+import type { DebugEvent } from '../observability/types'
 
 /**
  * Per-store context holding dependencies
@@ -20,12 +21,13 @@ export interface StoreContext {
     indexRegistry: IndexRegistry
     queueConfig: QueueConfig
     debug?: DebugOptions
+    debugSink?: (e: DebugEvent) => void
     storeName?: string
 }
 
 export function createStoreContext(
     queueConfigOverride?: Partial<QueueConfig>,
-    options?: { debug?: DebugOptions; storeName?: string }
+    options?: { debug?: DebugOptions; debugSink?: (e: DebugEvent) => void; storeName?: string }
 ): StoreContext {
     const queueConfig: QueueConfig = {
         enabled: true,
@@ -42,6 +44,7 @@ export function createStoreContext(
         indexRegistry: globalIndexRegistry,
         queueConfig,
         debug: options?.debug,
+        debugSink: options?.debugSink,
         storeName: options?.storeName
     }
 }

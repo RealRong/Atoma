@@ -2,7 +2,7 @@ import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import { Patch } from 'immer'
 import type { StoreContext } from './StoreContext'
 import type { DevtoolsBridge } from '../devtools/types'
-import type { Explain } from '../observability/types'
+import type { Explain, InternalOperationContext } from '../observability/types'
 
 /**
  * Base key type for entities
@@ -53,27 +53,37 @@ export interface IAdapter<T extends Entity> {
     /** Adapter name for debugging */
     name: string
 
+    /**
+     * Internal context (optional):
+     * - Only adapters that perform I/O (e.g. HTTP) need to actually consume it.
+     * - Other adapters can safely ignore the extra param.
+     */
     /**  
      * Persistence operations
      */
-    put(key: StoreKey, value: T): Promise<void>
-    bulkPut(items: T[]): Promise<void>
-    /** 可选：批量创建（区别于更新），未实现则回退到 bulkPut */
-    bulkCreate?(items: T[]): Promise<T[] | void>
-    delete(key: StoreKey): Promise<void>
-    bulkDelete(keys: StoreKey[]): Promise<void>
+    put(key: StoreKey, value: T, internalContext?: InternalOperationContext): Promise<void>
+    bulkPut(items: T[], internalContext?: InternalOperationContext): Promise<void>
+    bulkCreate?(items: T[], internalContext?: InternalOperationContext): Promise<T[] | void>
+    delete(key: StoreKey, internalContext?: InternalOperationContext): Promise<void>
+    bulkDelete(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<void>
 
     /**
      * Retrieval operations
      */
-    get(key: StoreKey): Promise<T | undefined>
-    bulkGet(keys: StoreKey[]): Promise<(T | undefined)[]>
-    getAll(filter?: (item: T) => boolean): Promise<T[]>
+    get(key: StoreKey, internalContext?: InternalOperationContext): Promise<T | undefined>
+    bulkGet(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<(T | undefined)[]>
+    getAll(filter?: (item: T) => boolean, internalContext?: InternalOperationContext): Promise<T[]>
+
+    /** Query operations (optional) */
+    findMany?(
+        options?: FindManyOptions<T>,
+        internalContext?: InternalOperationContext
+    ): Promise<{ data: T[]; pageInfo?: PageInfo; explain?: unknown }>
 
     /**
      * Patch-based update (optional, falls back to put) 
      */
-    applyPatches?(patches: Patch[], metadata: PatchMetadata): Promise<void | { created?: any[] }>
+    applyPatches?(patches: Patch[], metadata: PatchMetadata, internalContext?: InternalOperationContext): Promise<void | { created?: any[] }>
 
     /**
      * Lifecycle hooks
@@ -135,6 +145,13 @@ export type StoreDispatchEvent<T extends Entity> = {
  */
 export interface StoreOperationOptions {
     force?: boolean
+    traceId?: string
+}
+
+/**
+ * Options for read operations (public, pure-data)
+ */
+export interface StoreReadOptions {
     traceId?: string
 }
 
@@ -341,23 +358,23 @@ export interface IStore<T, Relations extends RelationMap<T> = {}> {
     deleteOneById(id: StoreKey, options?: StoreOperationOptions): Promise<boolean>
 
     /** Get one item by ID */
-    getOneById(id: StoreKey, options?: StoreOperationOptions): Promise<T | undefined>
+    getOneById(id: StoreKey, options?: StoreReadOptions): Promise<T | undefined>
 
     /** Fetch one from backend (bypass cache) */
-    fetchOneById(id: StoreKey): Promise<T | undefined>
+    fetchOneById(id: StoreKey, options?: StoreReadOptions): Promise<T | undefined>
 
     /** 
      * Get all items 
      * @param filter - Filter items from backend
      * @param cacheFilter - Only cache items matching this filter (optimization)
      */
-    getAll(filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean): Promise<T[]>
+    getAll(filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions): Promise<T[]>
 
     /** Fetch all from backend */
     fetchAll?(): Promise<T[]>
 
     /** Get multiple items by IDs */
-    getMultipleByIds(ids: StoreKey[], cache?: boolean): Promise<T[]>
+    getMultipleByIds(ids: StoreKey[], cache?: boolean, options?: StoreReadOptions): Promise<T[]>
 
     /** Query with filtering/sorting/paging */
     findMany?(options?: FindManyOptions<T>): Promise<FindManyResult<T>>
