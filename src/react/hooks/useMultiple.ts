@@ -6,32 +6,13 @@ import { Entity, IStore, InferIncludeType, OrderBy, RelationMap, StoreKey } from
 import { useRelations } from './useRelations'
 import { resolveStoreRelations } from '../../core/storeAccessRegistry'
 
-type SortDirection = 'asc' | 'desc'
-
 export interface UseMultipleOptions<T, Relations extends RelationMap<T> = {}> {
-    orderBy?: OrderBy<T>
     limit?: number
     unique?: boolean
     selector?: (item: T) => any
     include?: { [K in keyof Relations]?: InferIncludeType<Relations[K]> }
 }
 
-function sortBy<T>(items: T[], orderBy?: OrderBy<T>): T[] {
-    if (!orderBy) return items
-    const rules = Array.isArray(orderBy) ? orderBy : [orderBy]
-    const copy = [...items]
-    copy.sort((a, b) => {
-        for (const { field, direction } of rules) {
-            const av = (a as any)[field]
-            const bv = (b as any)[field]
-            if (av === bv) continue
-            const cmp = av < bv ? -1 : 1
-            return direction === 'asc' ? cmp : -cmp
-        }
-        return 0
-    })
-    return copy
-}
 
 export function createUseMultiple<T extends Entity, Relations extends RelationMap<T> = {}>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
@@ -45,7 +26,7 @@ export function createUseMultiple<T extends Entity, Relations extends RelationMa
         options?: UseMultipleOptions<T, Relations> & { include?: Include }
     ): T[] {
         const map = useAtomValue(objectMapAtom, { store: actualStore })
-        const { orderBy, limit, unique = true, selector, include } = options || {}
+        const { limit, unique = true, selector, include } = options || {}
 
         const baseList = useMemo(() => {
             const seen = new Set<StoreKey>()
@@ -59,10 +40,9 @@ export function createUseMultiple<T extends Entity, Relations extends RelationMa
                 }
             })
 
-            const sorted = sortBy(arr, orderBy)
-            const limited = limit !== undefined ? sorted.slice(0, limit) : sorted
+            const limited = limit !== undefined ? arr.slice(0, limit) : arr
             return limited
-        }, [ids, map, orderBy, limit, unique])
+        }, [ids, map, limit, unique])
 
         const relations = resolveStoreRelations<T>(store as any) as any
         const relationsResult = useRelations(baseList as any, include as any, relations)
