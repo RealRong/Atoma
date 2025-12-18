@@ -7,6 +7,7 @@ export type ErrorKind =
     | 'limits'
     | 'adapter'
     | 'executor'
+    | 'conflict'
     | 'internal'
 
 export type StandardErrorDetails = {
@@ -25,6 +26,12 @@ export type StandardErrorDetails = {
 }
 
 const ATOMA_ERROR_BRAND = Symbol.for('atoma.error')
+
+function byteLengthUtf8(input: string) {
+    if (typeof Buffer !== 'undefined') return Buffer.byteLength(input, 'utf8')
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(input).length
+    return input.length
+}
 
 export class AtomaError extends Error {
     readonly code: string
@@ -62,6 +69,7 @@ export function sanitizeDetails(details: unknown): StandardErrorDetails | undefi
         && kind !== 'limits'
         && kind !== 'adapter'
         && kind !== 'executor'
+        && kind !== 'conflict'
         && kind !== 'internal'
     ) {
         return undefined
@@ -122,7 +130,7 @@ export function sanitizeDetails(details: unknown): StandardErrorDetails | undefi
 
     try {
         const json = JSON.stringify(normalized)
-        if (Buffer.byteLength(json, 'utf8') > maxBytes) {
+        if (byteLengthUtf8(json) > maxBytes) {
             // Hard truncate: keep kind + a marker.
             return { kind, truncated: true } as StandardErrorDetails
         }
@@ -150,10 +158,18 @@ export function toStandardError(reason: unknown, fallbackCode: string = 'INTERNA
 
 export function errorStatus(error: Pick<StandardError, 'code'>) {
     switch (error.code) {
+        case 'METHOD_NOT_ALLOWED':
+            return 405
+        case 'NOT_FOUND':
+            return 404
+        case 'BAD_REQUEST':
+            return 400
         case 'ACCESS_DENIED':
             return 403
         case 'RESOURCE_NOT_ALLOWED':
             return 403
+        case 'CONFLICT':
+            return 409
         case 'ADAPTER_NOT_IMPLEMENTED':
             return 501
         case 'TOO_MANY_QUERIES':

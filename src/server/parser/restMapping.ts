@@ -46,30 +46,50 @@ export function restMapping({ method, pathParts, searchParams, body }: RestMappi
                     id: numericId,
                     patches: (body as any).patches,
                     baseVersion: (body as any).baseVersion,
-                    timestamp: (body as any).timestamp
+                    timestamp: (body as any).timestamp,
+                    idempotencyKey: (body as any).idempotencyKey
                 }]
             }
             return { ops: [op] }
         }
 
+        const full = (body && typeof body === 'object') ? { ...stripWriteMeta(body), id: numericId } : { id: numericId }
         const op: BatchOp = {
             opId,
-            action: 'bulkUpdate',
+            action: 'bulkPatch',
             resource,
             payload: [{
                 id: numericId,
-                data: (body && typeof body === 'object') ? body : {}
+                patches: [{ op: 'replace', path: [numericId], value: full }],
+                baseVersion: (body as any)?.baseVersion,
+                timestamp: (body as any)?.timestamp,
+                idempotencyKey: (body as any)?.idempotencyKey
             }]
         }
         return { ops: [op] }
     }
 
     if (method === 'DELETE' && id !== undefined) {
-        const op: BatchOp = { opId, action: 'bulkDelete', resource, payload: [numericId] }
+        const op: BatchOp = {
+            opId,
+            action: 'bulkDelete',
+            resource,
+            payload: [{
+                id: numericId,
+                baseVersion: (body as any)?.baseVersion,
+                idempotencyKey: (body as any)?.idempotencyKey
+            }]
+        }
         return { ops: [op] }
     }
 
     return null
+}
+
+function stripWriteMeta(body: any) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return body
+    const { baseVersion, timestamp, idempotencyKey, patches, ...rest } = body as any
+    return rest
 }
 
 function parseQueryParams(searchParams: URLSearchParams): QueryParams {

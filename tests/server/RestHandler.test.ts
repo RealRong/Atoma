@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createHandler } from '../../src/server'
+import { createAtomaServer } from '../../src/server'
 import type { IOrmAdapter, QueryResult } from '../../src/server'
 import { createError } from '../../src/server'
+import { createNoopSyncAdapter } from './noopSyncAdapter'
 
 const makeRestIncoming = (args: { method: string; url: string; body?: any }) => ({
     method: args.method,
@@ -9,13 +10,12 @@ const makeRestIncoming = (args: { method: string; url: string; body?: any }) => 
     json: async () => args.body
 })
 
-describe('createHandler（REST 输出 {data,pageInfo}）', () => {
+describe('createAtomaServer（REST 输出 {data,pageInfo}）', () => {
     it('GET /resource 返回 {data,pageInfo}', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [{ id: 1 }], pageInfo: { hasNext: true } } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [{ id: 1 }], pageInfo: { hasNext: true } } satisfies QueryResult))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'GET',
@@ -34,10 +34,9 @@ describe('createHandler（REST 输出 {data,pageInfo}）', () => {
 
     it('GET /resource 支持 fields，并映射为 params.select', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [{ id: 1, title: 'hi', body: 'x' }] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [{ id: 1, title: 'hi', body: 'x' }] } satisfies QueryResult))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'GET',
@@ -52,10 +51,9 @@ describe('createHandler（REST 输出 {data,pageInfo}）', () => {
 
     it('GET /resource/:id 命中返回 {data:item}', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [{ id: 1, title: 'hi' }] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [{ id: 1, title: 'hi' }] } satisfies QueryResult))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'GET',
@@ -68,10 +66,9 @@ describe('createHandler（REST 输出 {data,pageInfo}）', () => {
 
     it('GET /resource/:id 未命中返回 404', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'GET',
@@ -85,10 +82,9 @@ describe('createHandler（REST 输出 {data,pageInfo}）', () => {
     it('POST /resource create 返回 201 + {data:item}', async () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(),
-            isResourceAllowed: vi.fn(() => true),
-            bulkCreate: vi.fn(async () => ({ data: [{ id: 1, title: 'hi' }] }))
+            create: vi.fn(async () => ({ data: { id: 1, title: 'hi', version: 1 } }))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'POST',
@@ -100,80 +96,84 @@ describe('createHandler（REST 输出 {data,pageInfo}）', () => {
         expect(res.body).toMatchObject({ data: { id: 1, title: 'hi' } })
     })
 
-    it('PUT /resource/:id 映射为 bulkUpdate（payload 长度=1）并返回 200 + {data:item}', async () => {
+    it('PUT /resource/:id 映射为 bulkPatch（replace root）并返回 200 + {data:item}', async () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(),
-            isResourceAllowed: vi.fn(() => true),
-            bulkUpdate: vi.fn(async () => ({ data: [{ id: 1, title: 'x' }] }))
+            patch: vi.fn(async () => ({ data: { id: 1, title: 'x', version: 1 } }))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'PUT',
             url: 'http://localhost/post/1',
-            body: { title: 'x' }
+            body: { title: 'x', baseVersion: 0 }
         }))
 
         expect(res.status).toBe(200)
-        expect(adapter.bulkUpdate).toHaveBeenCalledWith('post', [{ id: 1, data: { title: 'x' } }], undefined)
+        expect(adapter.patch).toHaveBeenCalledWith('post', {
+            id: 1,
+            patches: [{ op: 'replace', path: [1], value: { title: 'x', id: 1 } }],
+            baseVersion: 0,
+            timestamp: undefined
+        }, expect.anything())
         expect(res.body).toMatchObject({ data: { id: 1, title: 'x' } })
     })
 
     it('PATCH /resource/:id（patches）映射为 bulkPatch 并返回 200 + {data:item}', async () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(),
-            isResourceAllowed: vi.fn(() => true),
-            bulkPatch: vi.fn(async () => ({ data: [{ id: 1, title: 'y' }] }))
+            patch: vi.fn(async () => ({ data: { id: 1, title: 'y', version: 1 } }))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'PATCH',
             url: 'http://localhost/post/1',
-            body: { patches: [{ op: 'replace', path: ['title'], value: 'y' }] }
+            body: { patches: [{ op: 'replace', path: ['title'], value: 'y' }], baseVersion: 0 }
         }))
 
         expect(res.status).toBe(200)
-        expect(adapter.bulkPatch).toHaveBeenCalledWith('post', [{
+        expect(adapter.patch).toHaveBeenCalledWith('post', {
             id: 1,
             patches: [{ op: 'replace', path: ['title'], value: 'y' }],
-            baseVersion: undefined,
+            baseVersion: 0,
             timestamp: undefined
-        }], undefined)
+        }, expect.anything())
         expect(res.body).toMatchObject({ data: { id: 1, title: 'y' } })
     })
 
     it('DELETE /resource/:id 映射为 bulkDelete 并返回 204', async () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(),
-            isResourceAllowed: vi.fn(() => true),
-            bulkDelete: vi.fn(async () => ({ data: [] }))
+            delete: vi.fn(async () => ({ data: undefined }))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'DELETE',
             url: 'http://localhost/post/1'
+            ,
+            body: { baseVersion: 0 }
         }))
 
         expect(res.status).toBe(204)
-        expect(adapter.bulkDelete).toHaveBeenCalledWith('post', [1], undefined)
+        expect(adapter.delete).toHaveBeenCalledWith('post', { id: 1, baseVersion: 0 }, expect.anything())
     })
 
     it('DELETE /resource/:id 若 bulkDelete partialFailures[0] 失败则返回对应错误码', async () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(),
-            isResourceAllowed: vi.fn(() => true),
-            bulkDelete: vi.fn(async () => ({
-                data: [],
-                partialFailures: [{ index: 0, error: createError('INVALID_WRITE', 'bad', { kind: 'validation' }) }]
-            }))
+            delete: vi.fn(async () => {
+                throw createError('INVALID_WRITE', 'bad', { kind: 'validation' })
+            })
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'DELETE',
             url: 'http://localhost/post/1'
+            ,
+            body: { baseVersion: 0 }
         }))
 
         expect(res.status).toBe(422)
@@ -182,10 +182,9 @@ describe('createHandler（REST 输出 {data,pageInfo}）', () => {
 
     it('未知 where op 返回 422 INVALID_QUERY', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'GET',
@@ -198,10 +197,9 @@ describe('createHandler（REST 输出 {data,pageInfo}）', () => {
 
     it('contains 必须是 string，否则 422 INVALID_QUERY', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'GET',

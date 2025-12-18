@@ -1,5 +1,4 @@
 import { BaseStore } from '../../BaseStore'
-import { createDebugEmitter } from '../../../observability/debug'
 import { createTraceId } from '../../../observability/trace'
 import type { Explain } from '../../../observability/types'
 import type { Entity, FindManyOptions, FindManyResult, PartialWithId, StoreKey } from '../../types'
@@ -12,7 +11,7 @@ import { applyQuery } from '../../query'
 import { type StoreRuntime, resolveInternalOperationContext } from '../runtime'
 
 export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, storeName, indexManager, matcher, transform } = runtime
+    const { jotaiStore, atom, adapter, context, indexManager, matcher, transform } = runtime
 
     const preserveReference = (incoming: T): T => {
         const existing = jotaiStore.get(atom).get((incoming as any).id)
@@ -28,8 +27,6 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
     }
 
     return async (options?: FindManyOptions<T>): Promise<FindManyResult<T>> => {
-        const debugOptions = context.debug as any
-        const debugSink = context.debugSink
         const explainEnabled = options?.explain === true
         const cachePolicy = resolveCachePolicy(options)
 

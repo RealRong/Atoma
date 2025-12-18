@@ -47,4 +47,6 @@ export interface ParserOptions {
     enableRest?: boolean
     buildContext?: (incoming: IncomingHttp) => Promise<any> | any
     bodyReader?: BodyReader
+    traceIdHeader?: string
+    requestIdHeader?: string
 }

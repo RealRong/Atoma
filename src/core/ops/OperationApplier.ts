@@ -53,8 +53,9 @@ export class OperationApplier {
                     break
                 }
                 case 'forceRemove':
+                    // 尽量保留被删除的原始值（用于版本/冲突处理、审计、离线队列等）
+                    appliedData.push((draft.get(data.id) ?? currentValue.get(data.id) ?? data) as T)
                     draft.delete(data.id)
-                    appliedData.push(data as T)
                     operationTypes.push('forceRemove')
                     break
                 case 'remove': {

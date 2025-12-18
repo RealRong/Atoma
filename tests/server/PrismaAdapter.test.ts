@@ -97,12 +97,13 @@ describe('AtomaPrismaAdapter', () => {
         expect(Array.isArray(decoded)).toBe(true)
     })
 
-    it('isResourceAllowed 根据 client 上的模型是否存在', () => {
+    it('resource 不存在时 findMany 抛 RESOURCE_NOT_ALLOWED', async () => {
         const client = createClient(new FakeDelegate())
         const adapter = new AtomaPrismaAdapter(client)
 
-        expect(adapter.isResourceAllowed('comment')).toBe(true)
-        expect(adapter.isResourceAllowed('post')).toBe(false)
+        await expect(adapter.findMany('post', { page: { mode: 'offset', limit: 1, includeTotal: true } }))
+            .rejects
+            .toMatchObject({ code: 'RESOURCE_NOT_ALLOWED' })
     })
 
     it('batchFindMany 默认走 $transaction，若存在', async () => {
@@ -175,15 +176,17 @@ describe('AtomaPrismaAdapter', () => {
         expect(res.partialFailures?.[0]).toMatchObject({ index: 1 })
     })
 
-    it('patch 在 transaction=true 且存在 $transaction 时会走事务回调', async () => {
+    it('patch 在 adapter.transaction() 且存在 $transaction 时会走事务回调', async () => {
         const delegate = new FakeDelegate([{ id: 1, title: 'old' }], 1)
         const client = createClient(delegate, true)
         const adapter = new AtomaPrismaAdapter(client)
 
-        await adapter.patch('comment', {
-            id: 1,
-            patches: [{ op: 'replace', path: [1, 'title'], value: 'new' }]
-        }, { transaction: true })
+        await adapter.transaction(async ({ orm }) => {
+            await orm.patch?.('comment', {
+                id: 1,
+                patches: [{ op: 'replace', path: [1, 'title'], value: 'new' }]
+            })
+        })
 
         expect(client.$transaction).toHaveBeenCalled()
     })

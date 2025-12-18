@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AtomaDevTools } from 'atoma'
+import type { StoreKey } from 'atoma'
 import { PostsStore } from './stores'
 
 export function App() {
@@ -120,12 +120,11 @@ export function App() {
                     <PostCard key={post.id} id={post.id} />
                 ))}
             </div>
-            <AtomaDevTools />
         </div>
     )
 }
 
-const PostCard = React.memo(function PostCard({ id }: { id: number }) {
+const PostCard = React.memo(function PostCard({ id }: { id: StoreKey }) {
     const post = PostsStore.useValue(id)
     const [editing, setEditing] = useState(false)
     const [title, setTitle] = useState(post?.title ?? '')

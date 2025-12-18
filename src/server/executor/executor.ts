@@ -1,11 +1,21 @@
 import pLimit from 'p-limit'
 import type { BatchOp, BatchRequest, BatchResponse, BatchResult, IOrmAdapter } from '../types'
 import { toStandardError } from '../error'
+import type { ISyncAdapter } from '../sync/types'
+import { executeWriteItemWithSemantics } from '../writeSemantics/executeWriteItemWithSemantics'
 
-export async function executeRequest(request: BatchRequest, adapter: IOrmAdapter): Promise<BatchResponse> {
+export async function executeRequest(
+    request: BatchRequest,
+    adapter: { orm: IOrmAdapter; sync?: ISyncAdapter },
+    options?: {
+        syncEnabled?: boolean
+        idempotencyTtlMs?: number
+    }
+): Promise<BatchResponse> {
     const ops = Array.isArray(request.ops) ? request.ops : []
     const results: BatchResult[] = new Array(ops.length)
     const traceMeta = { traceId: request.traceId, requestId: request.requestId }
+    const syncEnabled = options?.syncEnabled === true
 
     const queryEntries: Array<{ index: number; op: Extract<BatchOp, { action: 'query' }> }> = []
     const writeEntries: Array<{ index: number; op: Exclude<BatchOp, { action: 'query' }> }> = []
@@ -17,8 +27,8 @@ export async function executeRequest(request: BatchRequest, adapter: IOrmAdapter
     }
 
     await Promise.all([
-        executeQueries(queryEntries, adapter, results, traceMeta),
-        executeWrites(writeEntries, adapter, results, traceMeta)
+        executeQueries(queryEntries, adapter.orm, results, traceMeta),
+        executeWrites(writeEntries, adapter, results, traceMeta, { syncEnabled, idempotencyTtlMs: options?.idempotencyTtlMs })
     ])
 
     return { results }
@@ -72,9 +82,10 @@ async function executeQueries(
 
 async function executeWrites(
     entries: Array<{ index: number; op: Exclude<BatchOp, { action: 'query' }> }>,
-    adapter: IOrmAdapter,
+    adapter: { orm: IOrmAdapter; sync?: ISyncAdapter },
     out: BatchResult[],
-    meta: { traceId?: string; requestId?: string }
+    meta: { traceId?: string; requestId?: string },
+    options: { syncEnabled: boolean; idempotencyTtlMs?: number }
 ) {
     if (!entries.length) return
 
@@ -85,39 +96,36 @@ async function executeWrites(
         try {
             switch (op.action) {
                 case 'bulkCreate': {
-                    if (typeof adapter.bulkCreate !== 'function') {
+                    if (typeof adapter.orm.create !== 'function' && typeof (adapter.orm as any).bulkCreate !== 'function') {
                         out[e.index] = adapterNotImplemented(op.opId, op.action)
                         return
                     }
-                    const res = await adapter.bulkCreate(op.resource, op.payload, op.options)
-                    out[e.index] = wrapMany(op.opId, res, meta)
+                    out[e.index] = await executeBulkCreate(op, adapter, meta, options)
                     return
                 }
                 case 'bulkUpdate': {
-                    if (typeof adapter.bulkUpdate !== 'function') {
+                    // 最优语义：update 统一走 patch（replace root），并强制 baseVersion
+                    if (typeof adapter.orm.patch !== 'function') {
                         out[e.index] = adapterNotImplemented(op.opId, op.action)
                         return
                     }
-                    const res = await adapter.bulkUpdate(op.resource, op.payload as any, op.options)
-                    out[e.index] = wrapMany(op.opId, res, meta)
+                    out[e.index] = await executeBulkUpdateAsPatch(op, adapter, meta, options)
                     return
                 }
                 case 'bulkPatch': {
-                    if (typeof adapter.bulkPatch !== 'function') {
+                    if (typeof adapter.orm.patch !== 'function') {
                         out[e.index] = adapterNotImplemented(op.opId, op.action)
                         return
                     }
-                    const res = await adapter.bulkPatch(op.resource, op.payload as any, op.options)
-                    out[e.index] = wrapMany(op.opId, res, meta)
+                    out[e.index] = await executeBulkPatch(op, adapter, meta, options)
                     return
                 }
                 case 'bulkDelete': {
-                    if (typeof adapter.bulkDelete !== 'function') {
+                    if (typeof adapter.orm.delete !== 'function') {
                         out[e.index] = adapterNotImplemented(op.opId, op.action)
                         return
                     }
-                    const res = await adapter.bulkDelete(op.resource, op.payload, op.options)
-                    out[e.index] = wrapMany(op.opId, res, meta)
+                    out[e.index] = await executeBulkDelete(op, adapter, meta, options)
                     return
                 }
             }
@@ -179,4 +187,222 @@ function withTrace(error: any, meta: { traceId?: string; requestId?: string; opI
         ? { ...details, ...meta }
         : { kind: 'internal', ...meta }
     return { ...error, details: nextDetails }
+}
+
+async function runItem<T>(
+    adapter: { orm: IOrmAdapter; sync?: ISyncAdapter },
+    options: { syncEnabled: boolean; idempotencyTtlMs?: number },
+    fn: (args: { orm: IOrmAdapter; tx?: unknown }) => Promise<T>
+): Promise<T> {
+    if (options.syncEnabled) {
+        return adapter.orm.transaction(async (tx) => fn({ orm: tx.orm, tx: tx.tx }))
+    }
+    return fn({ orm: adapter.orm, tx: undefined })
+}
+
+async function executeBulkCreate(
+    op: Extract<BatchOp, { action: 'bulkCreate' }>,
+    adapter: { orm: IOrmAdapter; sync?: ISyncAdapter },
+    meta: { traceId?: string; requestId?: string },
+    options: { syncEnabled: boolean; idempotencyTtlMs?: number }
+): Promise<BatchResult> {
+    const payload = Array.isArray(op.payload) ? op.payload : []
+    const data: any[] = []
+    const partialFailures: Array<{ index: number; error: any }> = []
+
+    for (let i = 0; i < payload.length; i++) {
+        const raw = payload[i]
+        const wrapped = raw && typeof raw === 'object' && !Array.isArray(raw)
+            ? (raw as any)
+            : undefined
+        const itemData = (wrapped && wrapped.__atoma && typeof wrapped.__atoma === 'object' && (wrapped as any).data !== undefined)
+            ? (wrapped as any).data
+            : raw
+        const itemKey = (wrapped && wrapped.__atoma && typeof wrapped.__atoma === 'object')
+            ? (wrapped.__atoma as any).idempotencyKey
+            : undefined
+
+        const res = await runItem(adapter, options, async ({ orm, tx }) => {
+            return executeWriteItemWithSemantics({
+                orm,
+                sync: adapter.sync,
+                tx,
+                syncEnabled: options.syncEnabled,
+                idempotencyTtlMs: options.idempotencyTtlMs,
+                meta: { ...meta, opId: op.opId },
+                write: {
+                    kind: 'create',
+                    resource: op.resource,
+                    idempotencyKey: typeof itemKey === 'string' ? itemKey : (payload.length === 1 ? op.options?.idempotencyKey : undefined),
+                    data: itemData
+                }
+            })
+        })
+
+        if (res.ok) {
+            data.push(res.data)
+            continue
+        }
+        partialFailures.push({ index: i, error: withTrace(res.error, { ...meta, opId: op.opId }) })
+    }
+
+    return {
+        opId: op.opId,
+        ok: true,
+        data,
+        partialFailures: partialFailures.length ? partialFailures : undefined,
+        transactionApplied: options.syncEnabled
+    }
+}
+
+async function executeBulkPatch(
+    op: Extract<BatchOp, { action: 'bulkPatch' }>,
+    adapter: { orm: IOrmAdapter; sync?: ISyncAdapter },
+    meta: { traceId?: string; requestId?: string },
+    options: { syncEnabled: boolean; idempotencyTtlMs?: number }
+): Promise<BatchResult> {
+    const payload = Array.isArray(op.payload) ? op.payload : []
+    const data: any[] = []
+    const partialFailures: Array<{ index: number; error: any }> = []
+
+    for (let i = 0; i < payload.length; i++) {
+        const item = payload[i] as any
+        const itemKey = item && typeof item === 'object' && !Array.isArray(item) ? item.idempotencyKey : undefined
+
+        const res = await runItem(adapter, options, async ({ orm, tx }) => {
+            return executeWriteItemWithSemantics({
+                orm,
+                sync: adapter.sync,
+                tx,
+                syncEnabled: options.syncEnabled,
+                idempotencyTtlMs: options.idempotencyTtlMs,
+                meta: { ...meta, opId: op.opId },
+                write: {
+                    kind: 'patch',
+                    resource: op.resource,
+                    idempotencyKey: typeof itemKey === 'string' ? itemKey : (payload.length === 1 ? op.options?.idempotencyKey : undefined),
+                    id: item?.id,
+                    patches: item?.patches,
+                    baseVersion: item?.baseVersion,
+                    timestamp: item?.timestamp
+                }
+            })
+        })
+
+        if (res.ok) {
+            data.push(res.data)
+            continue
+        }
+        partialFailures.push({ index: i, error: withTrace(res.error, { ...meta, opId: op.opId }) })
+    }
+
+    return {
+        opId: op.opId,
+        ok: true,
+        data,
+        partialFailures: partialFailures.length ? partialFailures : undefined,
+        transactionApplied: options.syncEnabled
+    }
+}
+
+async function executeBulkUpdateAsPatch(
+    op: Extract<BatchOp, { action: 'bulkUpdate' }>,
+    adapter: { orm: IOrmAdapter; sync?: ISyncAdapter },
+    meta: { traceId?: string; requestId?: string },
+    options: { syncEnabled: boolean; idempotencyTtlMs?: number }
+): Promise<BatchResult> {
+    const payload = Array.isArray(op.payload) ? op.payload : []
+    const data: any[] = []
+    const partialFailures: Array<{ index: number; error: any }> = []
+
+    for (let i = 0; i < payload.length; i++) {
+        const item = payload[i] as any
+        const itemKey = item && typeof item === 'object' && !Array.isArray(item) ? item.idempotencyKey : undefined
+        const baseVersion = (typeof item?.baseVersion === 'number' ? item.baseVersion : item?.clientVersion)
+        const full = (item?.data && typeof item.data === 'object') ? { ...item.data, id: item.id } : { id: item.id }
+        const patches = [{ op: 'replace', path: [item.id], value: full }]
+
+        const res = await runItem(adapter, options, async ({ orm, tx }) => {
+            return executeWriteItemWithSemantics({
+                orm,
+                sync: adapter.sync,
+                tx,
+                syncEnabled: options.syncEnabled,
+                idempotencyTtlMs: options.idempotencyTtlMs,
+                meta: { ...meta, opId: op.opId },
+                write: {
+                    kind: 'patch',
+                    resource: op.resource,
+                    idempotencyKey: typeof itemKey === 'string' ? itemKey : (payload.length === 1 ? op.options?.idempotencyKey : undefined),
+                    id: item?.id,
+                    patches,
+                    baseVersion
+                }
+            })
+        })
+
+        if (res.ok) {
+            data.push(res.data)
+            continue
+        }
+        partialFailures.push({ index: i, error: withTrace(res.error, { ...meta, opId: op.opId }) })
+    }
+
+    return {
+        opId: op.opId,
+        ok: true,
+        data,
+        partialFailures: partialFailures.length ? partialFailures : undefined,
+        transactionApplied: options.syncEnabled
+    }
+}
+
+async function executeBulkDelete(
+    op: Extract<BatchOp, { action: 'bulkDelete' }>,
+    adapter: { orm: IOrmAdapter; sync?: ISyncAdapter },
+    meta: { traceId?: string; requestId?: string },
+    options: { syncEnabled: boolean; idempotencyTtlMs?: number }
+): Promise<BatchResult> {
+    const payload = Array.isArray(op.payload) ? op.payload : []
+    const data: any[] = []
+    const partialFailures: Array<{ index: number; error: any }> = []
+
+    for (let i = 0; i < payload.length; i++) {
+        const raw = payload[i] as any
+        const id = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.id : raw
+        const baseVersion = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.baseVersion : undefined
+        const itemKey = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.idempotencyKey : undefined
+
+        const res = await runItem(adapter, options, async ({ orm, tx }) => {
+            return executeWriteItemWithSemantics({
+                orm,
+                sync: adapter.sync,
+                tx,
+                syncEnabled: options.syncEnabled,
+                idempotencyTtlMs: options.idempotencyTtlMs,
+                meta: { ...meta, opId: op.opId },
+                write: {
+                    kind: 'delete',
+                    resource: op.resource,
+                    idempotencyKey: typeof itemKey === 'string' ? itemKey : (payload.length === 1 ? op.options?.idempotencyKey : undefined),
+                    id,
+                    baseVersion
+                }
+            })
+        })
+
+        if (res.ok) {
+            data.push(undefined)
+            continue
+        }
+        partialFailures.push({ index: i, error: withTrace(res.error, { ...meta, opId: op.opId }) })
+    }
+
+    return {
+        opId: op.opId,
+        ok: true,
+        data,
+        partialFailures: partialFailures.length ? partialFailures : undefined,
+        transactionApplied: options.syncEnabled
+    }
 }

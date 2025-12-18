@@ -53,6 +53,5 @@ export function createUseMultiple<T extends Entity, Relations extends RelationMa
             return withRelations.map(selector)
         }, [withRelations, selector])
 
-        // Note: loading/error 由上层（包含 useFindMany 等）或用户使用 relationsResult?.loading 来判断
     }
 }

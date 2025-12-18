@@ -4,7 +4,7 @@ import { commitAtomMapUpdate } from './cacheWriter'
 import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
 
 export function createGetAll<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexManager, transform, storeName, resolveOperationTraceId } = runtime
+    const { jotaiStore, atom, adapter, context, indexManager, transform } = runtime
 
     return async (filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions) => {
         const existingMap = jotaiStore.get(atom) as Map<StoreKey, T>

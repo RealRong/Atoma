@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createHandler } from '../../src/server'
+import { createAtomaServer } from '../../src/server'
 import type { IOrmAdapter, QueryResult } from '../../src/server'
+import { createNoopSyncAdapter } from './noopSyncAdapter'
 
 const makeBatchIncoming = (body: any) => ({
     method: 'POST',
@@ -17,15 +18,14 @@ const makeRestIncoming = (args: { method: string; url: string; body?: any }) => 
 const createAdapter = (results: QueryResult[] = [{ data: [] }]): IOrmAdapter => {
     const findMany = vi.fn(async () => results.shift() || { data: [] })
     return {
-        findMany,
-        isResourceAllowed: vi.fn(() => true)
+        findMany
     }
 }
 
 describe('字段级安全边界（GuardOptions.policy）', () => {
     it('未配置 policy：where/orderBy/select 全部放行', async () => {
         const adapter = createAdapter([{ data: [{ id: 1 }] }])
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeBatchIncoming({
             ops: [{
@@ -49,11 +49,10 @@ describe('字段级安全边界（GuardOptions.policy）', () => {
 
     it('policy.allow：where 字段不在 allow 内 → 422 INVALID_QUERY', async () => {
         const adapter = createAdapter()
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                policy: { where: ['title'] }
-            }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: { fieldPolicy: { where: ['title'] } }
         })
 
         const res = await handler(makeBatchIncoming({
@@ -77,11 +76,10 @@ describe('字段级安全边界（GuardOptions.policy）', () => {
 
     it('policy.deny：where 命中 deny → 422 INVALID_QUERY', async () => {
         const adapter = createAdapter()
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                policy: { where: { deny: ['passwordHash'] } }
-            }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: { fieldPolicy: { where: { deny: ['passwordHash'] } } }
         })
 
         const res = await handler(makeBatchIncoming({
@@ -104,13 +102,10 @@ describe('字段级安全边界（GuardOptions.policy）', () => {
 
     it('deny 优先：allow + deny 同时存在时 deny 命中仍拒绝', async () => {
         const adapter = createAdapter()
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                policy: {
-                    where: { allow: ['passwordHash'], deny: ['passwordHash'] }
-                }
-            }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: { fieldPolicy: { where: { allow: ['passwordHash'], deny: ['passwordHash'] } } }
         })
 
         const res = await handler(makeBatchIncoming({
@@ -133,11 +128,10 @@ describe('字段级安全边界（GuardOptions.policy）', () => {
 
     it('orderBy 字段不允许 → 422 INVALID_ORDER_BY', async () => {
         const adapter = createAdapter()
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                policy: { orderBy: ['createdAt'] }
-            }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: { fieldPolicy: { orderBy: ['createdAt'] } }
         })
 
         const res = await handler(makeBatchIncoming({
@@ -160,11 +154,10 @@ describe('字段级安全边界（GuardOptions.policy）', () => {
 
     it('select 未传：放行（默认可返回全字段）', async () => {
         const adapter = createAdapter([{ data: [{ id: 1 }] }])
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                policy: { select: ['id'] }
-            }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: { fieldPolicy: { select: ['id'] } }
         })
 
         const res = await handler(makeBatchIncoming({
@@ -186,14 +179,12 @@ describe('字段级安全边界（GuardOptions.policy）', () => {
 
     it('where.id 作为系统字段永远放行：即使 where.allow 不包含 id 也不应阻断 REST GET /:resource/:id', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [{ id: 1, title: 'hi' }] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [{ id: 1, title: 'hi' }] } satisfies QueryResult))
         }
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                policy: { where: ['title'] }
-            }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: { fieldPolicy: { where: ['title'] } }
         })
 
         const res = await handler(makeRestIncoming({
@@ -208,14 +199,12 @@ describe('字段级安全边界（GuardOptions.policy）', () => {
 
     it('where.id 系统字段：即使 deny 包含 id 也放行', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [{ id: 1 }] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [{ id: 1 }] } satisfies QueryResult))
         }
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                policy: { where: { deny: ['id'] } }
-            }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: { fieldPolicy: { where: { deny: ['id'] } } }
         })
 
         const res = await handler(makeRestIncoming({
@@ -228,10 +217,11 @@ describe('字段级安全边界（GuardOptions.policy）', () => {
 
     it('policy resolver 返回 undefined：默认放行', async () => {
         const adapter = createAdapter([{ data: [{ id: 1 }] }])
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                policy: ({ resource }) => resource === 'post' ? undefined : { where: ['x'] }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: {
+                fieldPolicy: ({ resource }) => resource === 'post' ? undefined : { where: ['x'] }
             }
         })
 

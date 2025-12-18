@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { parseHttp } from '../../../src/server/parser/parseHttp'
 import { validateAndNormalizeRequest } from '../../../src/server/validator/validator'
-import { createHandler } from '../../../src/server/handler'
+import { createAtomaServer } from '../../../src/server'
 import type { IOrmAdapter, QueryResult } from '../../../src/server/types'
 import { HTTP_STATUS_VECTORS, PROTOCOL_VECTORS } from './vectors'
+import { createNoopSyncAdapter } from '../noopSyncAdapter'
 
 const makeIncoming = (args: { method: string; url: string; body?: any }) => ({
     method: args.method,
@@ -12,10 +13,8 @@ const makeIncoming = (args: { method: string; url: string; body?: any }) => ({
 })
 
 function createPlannedAdapter(plan?: {
-    isResourceAllowed?: boolean
     findMany?: Array<{ data?: any[]; pageInfo?: any; throws?: string }>
 }): IOrmAdapter {
-    const isResourceAllowed = plan?.isResourceAllowed ?? true
     const queue = Array.isArray(plan?.findMany) ? [...plan!.findMany!] : []
 
     const findMany = vi.fn(async () => {
@@ -27,8 +26,7 @@ function createPlannedAdapter(plan?: {
     })
 
     return {
-        findMany,
-        isResourceAllowed: vi.fn(() => isResourceAllowed)
+        findMany
     }
 }
 
@@ -70,13 +68,44 @@ describe('协议一致性测试向量：parseHttp + validateAndNormalizeRequest'
     }
 })
 
-describe('协议一致性测试向量：createHandler（HTTP status + 承载位置）', () => {
+describe('协议一致性测试向量：createAtomaServer（HTTP status + 承载位置）', () => {
+    const translateGuardOptions = (guardOptions: any) => {
+        const out: any = {}
+
+        if (guardOptions?.allowList) {
+            out.authz = { ...(out.authz ?? {}), resources: { allow: guardOptions.allowList } }
+        }
+        if (guardOptions?.policy) {
+            out.authz = { ...(out.authz ?? {}), fieldPolicy: guardOptions.policy }
+        }
+
+        if (guardOptions?.maxQueries || guardOptions?.maxLimit || guardOptions?.maxBatchSize || guardOptions?.maxPayloadBytes) {
+            out.limits = { ...(out.limits ?? {}) }
+        }
+        if (guardOptions?.maxQueries || guardOptions?.maxLimit) {
+            out.limits.query = { ...(out.limits.query ?? {}) }
+            if (guardOptions.maxQueries) out.limits.query.maxQueries = guardOptions.maxQueries
+            if (guardOptions.maxLimit) out.limits.query.maxLimit = guardOptions.maxLimit
+        }
+        if (guardOptions?.maxBatchSize || guardOptions?.maxPayloadBytes) {
+            out.limits.write = { ...(out.limits.write ?? {}) }
+            if (guardOptions.maxBatchSize) out.limits.write.maxBatchSize = guardOptions.maxBatchSize
+            if (guardOptions.maxPayloadBytes) out.limits.write.maxPayloadBytes = guardOptions.maxPayloadBytes
+        }
+
+        return out
+    }
+
     for (const v of HTTP_STATUS_VECTORS) {
         it(v.name, async () => {
             if (v.pipeline !== 'handler') throw new Error('invalid vector pipeline')
 
             const adapter = createPlannedAdapter(v.adapter)
-            const handler = createHandler({ adapter, guardOptions: v.handler?.guardOptions })
+            const handler = createAtomaServer({
+                adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+                sync: { enabled: false },
+                ...translateGuardOptions(v.handler?.guardOptions)
+            })
 
             const res = await handler(makeIncoming(v.incoming))
 
@@ -111,4 +140,3 @@ describe('协议一致性测试向量：createHandler（HTTP status + 承载位�
         })
     }
 })
-

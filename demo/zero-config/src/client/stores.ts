@@ -1,4 +1,5 @@
-import { createSyncStore, HTTPAdapter, belongsTo, hasMany, setDefaultAdapterFactory, BaseEntity } from 'atoma'
+import { HTTPAdapter, belongsTo, hasMany, BaseEntity } from 'atoma'
+import { createAtomaStore, setDefaultAdapterFactory } from 'atoma/react'
 
 export type User = {
     id: number
@@ -22,7 +23,8 @@ export type Post = BaseEntity & {
     comments?: Comment[]
 }
 
-const API_BASE = 'http://localhost:3000/api'
+// 走 Vite devServer 代理（/api -> http://localhost:3000），避免跨域预检
+const API_BASE = '/api'
 
 // 全局默认 HTTP 适配器工厂（针对 demo 资源）
 setDefaultAdapterFactory((resourceName: string) =>
@@ -30,23 +32,28 @@ setDefaultAdapterFactory((resourceName: string) =>
         baseURL: API_BASE,
         resourceName,
         batch: true,
-        usePatchForUpdate: true
+        usePatchForUpdate: true,
+        offline: { enabled: true, syncOnReconnect: true },
+        sync: { enabled: true, mode: 'sse' }
     })
 )
 
-export const UsersStore = createSyncStore<User>({
-    name: 'users'
+export const UsersStore = createAtomaStore<User>({
+    name: 'users',
+    debug: { enabled: true, sampleRate: 1 }
 })
 
-export const CommentsStore = createSyncStore<Comment>({
+export const CommentsStore = createAtomaStore<Comment>({
     name: 'comments',
+    debug: { enabled: true, sampleRate: 1 },
     relations: () => ({
         author: belongsTo(UsersStore, { foreignKey: 'authorId' })
     })
 })
 
-export const PostsStore = createSyncStore<Post>({
-    name: 'posts'
+export const PostsStore = createAtomaStore<Post>({
+    name: 'posts',
+    debug: { enabled: true, sampleRate: 1 }
 }).withRelations(() => ({
     author: belongsTo(UsersStore, { foreignKey: 'authorId' }),
     comments: hasMany(CommentsStore, { foreignKey: 'postId' })

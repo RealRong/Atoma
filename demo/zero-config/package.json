@@ -4,7 +4,8 @@
     "type": "module",
     "version": "0.0.1",
     "scripts": {
-        "dev": "concurrently -n server,client -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
+        "dev": "concurrently -n devtools,server,client -c yellow,cyan,magenta \"npm:dev:devtools\" \"npm:dev:server\" \"npm:dev:client\"",
+        "dev:devtools": "npm --prefix ../../devtools run build -- --watch",
         "dev:server": "TSX_TSCONFIG_PATHS=1 NODE_OPTIONS=--preserve-symlinks tsx src/server/index.ts",
         "dev:client": "NODE_OPTIONS=--preserve-symlinks vite",
         "build": "vite build",

@@ -51,6 +51,13 @@ export interface QueryResultMany<T = any> {
     transactionApplied?: boolean
 }
 
+export type OrmTransactionContext = unknown
+
+export type OrmTransactionArgs = {
+    orm: IOrmAdapter
+    tx: OrmTransactionContext
+}
+
 export type Action =
     | 'query'
     | 'bulkCreate'
@@ -61,7 +68,6 @@ export type Action =
 export interface WriteOptions {
     select?: Record<string, boolean>
     returning?: boolean
-    transaction?: boolean
     idempotencyKey?: string
     clientVersion?: number
     merge?: boolean
@@ -88,14 +94,14 @@ export type BatchOp =
         opId: string
         action: 'bulkUpdate'
         resource: string
-        payload: Array<{ id: any; data: any; clientVersion?: number }>
+        payload: Array<{ id: any; data: any; clientVersion?: number; idempotencyKey?: string; baseVersion?: number }>
         options?: WriteOptions
     }
     | {
         opId: string
         action: 'bulkPatch'
         resource: string
-        payload: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number }>
+        payload: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number; idempotencyKey?: string }>
         options?: WriteOptions
     }
     | {
@@ -129,6 +135,7 @@ export interface BatchResponse<T = any> {
 export interface IOrmAdapter {
     findMany(resource: string, params: QueryParams): Promise<QueryResult>
     batchFindMany?(requests: Array<{ resource: string; params: QueryParams }>): Promise<QueryResult[]>
+    transaction<T>(fn: (args: OrmTransactionArgs) => Promise<T>): Promise<T>
     create?(resource: string, data: any, options?: WriteOptions): Promise<QueryResultOne>
     update?(resource: string, data: any, options?: WriteOptions & { where?: Record<string, any> }): Promise<QueryResultOne>
     patch?(
@@ -145,7 +152,6 @@ export interface IOrmAdapter {
         options?: WriteOptions
     ): Promise<QueryResultMany>
     bulkDelete?(resource: string, ids: any[], options?: WriteOptions): Promise<QueryResultMany>
-    isResourceAllowed(resource: string): boolean
 }
 
 export interface OrmAdapterOptions {

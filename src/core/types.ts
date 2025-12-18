@@ -3,6 +3,7 @@ import { Patch } from 'immer'
 import type { StoreContext } from './StoreContext'
 import type { DevtoolsBridge } from '../devtools/types'
 import type { Explain, InternalOperationContext } from '../observability/types'
+import type { QueryMatcherOptions } from './query/QueryMatcher'
 
 /**
  * Base key type for entities
@@ -52,6 +53,13 @@ export type PartialWithId<T> = Partial<T> & { id: StoreKey }
 export interface IAdapter<T extends Entity> {
     /** Adapter name for debugging */
     name: string
+
+    /**
+     * Store bindings (optional)
+     * - Sync-enabled adapters can use this to write back remote changes into the store cache.
+     */
+    attachStoreAccess?: (access: StoreAccess<T>) => void
+    detachStoreAccess?: () => void
 
     /**
      * Internal context (optional):
@@ -450,3 +458,20 @@ export interface IEventEmitter {
 
 /** Helper type alias for Jotai store to reduce `any` usage */
 export type JotaiStore = ReturnType<typeof import('jotai/vanilla').createStore>
+
+/**
+ * Store access bindings exposed to adapters（可选）。
+ * 主要用于 sync/pull/subscribe 这类“服务端推动”的写回场景。
+ */
+export type StoreAccess<T extends Entity = any> = {
+    atom: PrimitiveAtom<Map<StoreKey, T>>
+    jotaiStore: JotaiStore
+    context: StoreContext
+    matcher?: QueryMatcherOptions
+    storeName?: string
+    relations?: () => RelationMap<any> | undefined
+
+    transform?: (item: T) => T
+    schema?: SchemaValidator<T>
+    indexManager?: any
+}

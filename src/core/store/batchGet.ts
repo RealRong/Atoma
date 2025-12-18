@@ -11,7 +11,7 @@ type GetOneTask<T> = {
 }
 
 export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, transform, context, indexManager, storeName, resolveOperationTraceId } = runtime
+    const { jotaiStore, atom, adapter, transform, context, indexManager } = runtime
 
     let batchGetOneTaskQueue: GetOneTask<T>[] = []
     let batchFetchOneTaskQueue: GetOneTask<T>[] = []

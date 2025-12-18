@@ -38,3 +38,6 @@ coverage/
 !/HTTP_PROTOCOL.md
 # Unfinished Atoma docs
 atoma-docs
+todo_docs
+
+AGENTS.md

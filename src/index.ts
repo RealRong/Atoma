@@ -45,6 +45,7 @@ export { createStore } from './core/createCoreStore'
 
 // Observability
 export type { TraceContext, Explain } from './observability'
+export type { DebugEvent } from './observability/types'
 
 // Core utilities
 export { BaseStore, globalStore } from './core/BaseStore'
@@ -66,7 +67,7 @@ export { belongsTo, hasMany, hasOne, variants } from './core/relations/builders'
 
 // Devtools
 export { createDevtoolsBridge } from './devtools/bridge'
-export type { DevtoolsBridge, DevtoolsEvent, StoreSnapshot } from './devtools/types'
+export type { DevtoolsBridge, DevtoolsEvent, StoreSnapshot, IndexSnapshot, IndexQueryPlan, QueueItem, HistoryEntrySummary } from './devtools/types'
 export { enableGlobalDevtools, getGlobalDevtools, disableGlobalDevtools } from './devtools/global'
 
 // History
@@ -77,10 +78,10 @@ export type { HistoryRecord, HistoryManagerConfig } from './history'
 export {
     parseHttp,
     restMapping,
-    guardRequest,
     executeRequest,
     validateAndNormalizeRequest,
-    createHandler
+    createAtomaServer,
+    authzHelpers
 } from './server'
 export type {
     BatchRequest,
@@ -99,6 +100,12 @@ export type {
     WriteOptions,
     OrmAdapterOptions,
     StandardError
+} from './server'
+export type {
+    AtomaServerConfig,
+    AtomaServerLogger,
+    AtomaServerRoute,
+    AtomaAuthzHooks
 } from './server'
 export { AtomaTypeormAdapter } from './server/typeorm'
 export type { TypeormAdapterOptions } from './server/typeorm'

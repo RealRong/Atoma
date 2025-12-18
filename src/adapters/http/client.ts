@@ -1,7 +1,7 @@
 import { StoreKey, PatchMetadata } from '../../core/types'
 import { Patch } from 'immer'
 import { ETagManager } from './etagManager'
-import { makeUrl, sendJson, sendDelete, sendPutJson, RequestSender, resolveEndpoint } from './request'
+import { makeUrl, sendJson, sendDelete, sendDeleteJson, sendPutJson, RequestSender, resolveEndpoint } from './request'
 import type { VersionConfig } from '../HTTPAdapter'
 import type { DebugEmitter } from '../../observability/debug'
 import { utf8ByteLength } from '../../observability/utf8'
@@ -133,9 +133,16 @@ export class HTTPClient<T> {
 
     async delete(
         key: StoreKey,
-        extraHeaders?: Record<string, string>,
-        debug?: { emitter: DebugEmitter; requestId?: string }
+        metaOrHeaders?: { baseVersion: number; idempotencyKey?: string } | Record<string, string>,
+        extraHeadersOrDebug?: Record<string, string> | { emitter: DebugEmitter; requestId?: string },
+        debugMaybe?: { emitter: DebugEmitter; requestId?: string }
     ): Promise<void> {
+        const meta = (metaOrHeaders && typeof metaOrHeaders === 'object' && !Array.isArray(metaOrHeaders) && typeof (metaOrHeaders as any).baseVersion === 'number')
+            ? (metaOrHeaders as any)
+            : undefined
+        const extraHeaders = meta ? (extraHeadersOrDebug as any) : (metaOrHeaders as any)
+        const debug = meta ? debugMaybe : (extraHeadersOrDebug as any)
+
         const endpoint = resolveEndpoint(this.config.endpoints.delete, key)
         const url = makeUrl(this.config.baseURL, endpoint)
         const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
@@ -150,7 +157,9 @@ export class HTTPClient<T> {
             payloadBytes: 0
         }, { requestId: debug.requestId })
 
-        const response = await sendDelete(this.sender, url, headers)
+        const response = meta
+            ? await sendDeleteJson(this.sender, url, { baseVersion: meta.baseVersion, idempotencyKey: meta.idempotencyKey }, headers)
+            : await sendDelete(this.sender, url, headers)
 
         debug?.emitter.emit('adapter:response', {
             ok: response.ok,
@@ -158,9 +167,21 @@ export class HTTPClient<T> {
             durationMs: Date.now() - startedAt
         }, { requestId: debug.requestId })
 
-        if (response.ok) {
-            this.etagManager.delete(key)
+        if (response.status === 409 || !response.ok) {
+            const body = await (async () => {
+                try {
+                    return await response.clone().json()
+                } catch {
+                    return undefined
+                }
+            })()
+            const err = new Error(response.status === 409 ? 'Conflict' : `Request failed: ${response.status}`)
+            ;(err as any).status = response.status
+            ;(err as any).body = body
+            throw err
         }
+
+        this.etagManager.delete(key)
     }
 
     async patch(

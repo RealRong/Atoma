@@ -1,20 +1,23 @@
 import type { BatchRequest, StandardError } from '../types'
 import { restMapping } from './restMapping'
 import type { BodyReader, IncomingHttp, ParsedOutcome, ParserOptions } from './types'
+import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../../protocol/trace'
 
 const DEFAULT_BATCH_PATH = '/batch'
 
 export async function parseHttp(incoming: IncomingHttp, options: ParserOptions = {}): Promise<ParsedOutcome> {
     const batchPath = options.batchPath ?? DEFAULT_BATCH_PATH
     const enableRest = options.enableRest ?? true
+    const traceIdHeaderName = options.traceIdHeader ?? TRACE_ID_HEADER
+    const requestIdHeaderName = options.requestIdHeader ?? REQUEST_ID_HEADER
     const method = (incoming.method || '').toUpperCase()
 
     try {
         const urlObj = new URL(incoming.url, 'http://localhost')
         const pathname = urlObj.pathname
         const context = options.buildContext ? await options.buildContext(incoming) : {}
-        const traceIdHeader = getHeader(incoming.headers, 'x-atoma-trace-id')
-        const requestIdHeader = getHeader(incoming.headers, 'x-atoma-request-id')
+        const traceIdHeader = getHeader(incoming.headers, traceIdHeaderName)
+        const requestIdHeader = getHeader(incoming.headers, requestIdHeaderName)
 
         const isBatch = method === 'POST' && normalizePath(pathname) === normalizePath(batchPath)
         if (isBatch) {

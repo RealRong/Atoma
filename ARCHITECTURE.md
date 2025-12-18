@@ -59,7 +59,7 @@
 
 ## 4. 队列与合并
 - 同一 atom 的操作按 id 合并：delete 优先级最高；add+update 折叠为 add；多次 update 合并字段。
-- 默认 `queueConfig.enabled=true`；可通过 `createSyncStore({ queue: { enabled: false }})` 关闭立即执行。
+- 默认 `queueConfig.enabled=true`；可通过 `createAtomaStore({ queue: { enabled: false }})` 关闭立即执行。
 
 ## 5. 版本与订阅
 - `AtomVersionTracker` 为每个 atom 维护全局版本与字段版本；`getVersionSnapshot(atom, fields)` 用于 `useFindMany` 依赖，避免粗暴全量订阅。
@@ -79,7 +79,7 @@
 - `normalizeNumber` 现拒绝 NaN/Infinity（含无效日期字符串转数值失败的情况），防止不可排序键进入索引。
 
 ## 7. 乐观与严格模式
-- 配置入口：`createSyncStore({ queue: { mode: 'optimistic' | 'strict' }})`。
+- 配置入口：`createAtomaStore({ queue: { mode: 'optimistic' | 'strict' }})`。
 - 乐观模式：UI/atom 立即更新；**onSuccess 在适配器成功后才触发**，失败则回滚本地并触发 onFail。
 - 严格模式：适配器成功后才写 atom，并触发 onSuccess；失败不改本地。
 
@@ -91,7 +91,7 @@
 ## 9. 扩展点
 - 自定义适配器：实现 `IAdapter<T>`（put/bulkPut/delete/bulkDelete/get/bulkGet/getAll，选实现 applyPatches）。
 - 自定义索引：实现 `IIndex<T>`（add/remove/queryCandidates/clear/getStats）。
-- 自定义 id 生成：`setDefaultIdGenerator` 或在 `createSyncStore` 传入 `idGenerator`。
+- 自定义 id 生成：`setDefaultIdGenerator` 或在 `createAtomaStore` 传入 `idGenerator`。
 - Schema：接受 Zod/Yup 或函数，支持 sync/async。
 - 生命周期钩子：beforeSave / afterSave。
 
@@ -103,7 +103,7 @@
 
 ## 11. 开发者快速路径
 1) 定义适配器（HTTP / IndexedDB / Hybrid）。
-2) `const todoStore = createSyncStore({ name: 'todos', adapter, indexes: [...] })`
+2) `const todoStore = createAtomaStore({ name: 'todos', adapter, indexes: [...] })`
 3) 组件使用 `const todos = todoStore.useFindMany({...})` / `useValue(id)`。
 4) 可选：`setHistoryCallback(history.record)` 启用 undo/redo。
 5) 需要多资源时，用 `StoreRegistry` 注册并设置默认适配器工厂。
@@ -112,4 +112,3 @@
 - 统一回调语义（乐观回滚与 onSuccess/onFail 的顺序）和索引同步时机。
 - 增加可插拔 logger/metrics，便于生产观测。
 - 补充端到端示例与测试矩阵，覆盖队列、索引、乐观/严格模式、离线与冲突场景。
-

@@ -191,13 +191,21 @@ export class BatchEngine {
                 reject(this.queueOverflowError)
                 return
             }
-            this.pushWriteTask({ kind: 'create', resource, item, deferred: { resolve, reject }, traceId: internalContext?.traceId, debugEmitter: internalContext?.emitter })
+            this.pushWriteTask({
+                kind: 'create',
+                resource,
+                item,
+                idempotencyKey: this.createIdempotencyKey(),
+                deferred: { resolve, reject },
+                traceId: internalContext?.traceId,
+                debugEmitter: internalContext?.emitter
+            })
         })
     }
 
     enqueueUpdate<T>(
         resource: string,
-        item: { id: StoreKey; data: T; clientVersion?: any },
+        item: { id: StoreKey; data: T; clientVersion?: any; idempotencyKey?: string },
         internalContext?: InternalOperationContext
     ): Promise<void> {
         return new Promise((resolve, reject) => {
@@ -209,13 +217,23 @@ export class BatchEngine {
                 reject(this.queueOverflowError)
                 return
             }
-            this.pushWriteTask({ kind: 'update', resource, item, deferred: { resolve, reject }, traceId: internalContext?.traceId, debugEmitter: internalContext?.emitter })
+            this.pushWriteTask({
+                kind: 'update',
+                resource,
+                item: {
+                    ...item,
+                    idempotencyKey: (typeof item.idempotencyKey === 'string' && item.idempotencyKey) ? item.idempotencyKey : this.createIdempotencyKey()
+                },
+                deferred: { resolve, reject },
+                traceId: internalContext?.traceId,
+                debugEmitter: internalContext?.emitter
+            })
         })
     }
 
     enqueuePatch(
         resource: string,
-        item: { id: StoreKey; patches: any[]; baseVersion?: number; timestamp?: number },
+        item: { id: StoreKey; patches: any[]; baseVersion?: number; timestamp?: number; idempotencyKey?: string },
         internalContext?: InternalOperationContext
     ): Promise<void> {
         return new Promise((resolve, reject) => {
@@ -227,11 +245,21 @@ export class BatchEngine {
                 reject(this.queueOverflowError)
                 return
             }
-            this.pushWriteTask({ kind: 'patch', resource, item, deferred: { resolve, reject }, traceId: internalContext?.traceId, debugEmitter: internalContext?.emitter })
+            this.pushWriteTask({
+                kind: 'patch',
+                resource,
+                item: {
+                    ...item,
+                    idempotencyKey: (typeof item.idempotencyKey === 'string' && item.idempotencyKey) ? item.idempotencyKey : this.createIdempotencyKey()
+                },
+                deferred: { resolve, reject },
+                traceId: internalContext?.traceId,
+                debugEmitter: internalContext?.emitter
+            })
         })
     }
 
-    enqueueDelete(resource: string, id: StoreKey, internalContext?: InternalOperationContext): Promise<void> {
+    enqueueDelete(resource: string, item: { id: StoreKey; baseVersion: number; idempotencyKey?: string }, internalContext?: InternalOperationContext): Promise<void> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -241,7 +269,17 @@ export class BatchEngine {
                 reject(this.queueOverflowError)
                 return
             }
-            this.pushWriteTask({ kind: 'delete', resource, id, deferred: { resolve, reject }, traceId: internalContext?.traceId, debugEmitter: internalContext?.emitter })
+            this.pushWriteTask({
+                kind: 'delete',
+                resource,
+                item: {
+                    ...item,
+                    idempotencyKey: (typeof item.idempotencyKey === 'string' && item.idempotencyKey) ? item.idempotencyKey : this.createIdempotencyKey()
+                },
+                deferred: { resolve, reject },
+                traceId: internalContext?.traceId,
+                debugEmitter: internalContext?.emitter
+            })
         })
     }
 
@@ -301,6 +339,14 @@ export class BatchEngine {
         }
 
         this.signalWriteLane()
+    }
+
+    private createIdempotencyKey(): string {
+        if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+            return `b_${(crypto as any).randomUUID()}`
+        }
+        this.seq += 1
+        return `b_${Date.now()}_${this.seq}`
     }
 
     /**

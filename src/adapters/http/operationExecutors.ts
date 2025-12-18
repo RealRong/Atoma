@@ -11,6 +11,7 @@ import type { RequestIdSequencer } from '../../observability/trace'
 import { deriveRequestId } from '../../observability/trace'
 import type { InternalOperationContext } from '../../observability/types'
 import { utf8ByteLength } from '../../observability/utf8'
+import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../../protocol/trace'
 
 export interface OperationExecutors<T extends Entity> {
     put: (key: StoreKey, value: T, context?: InternalOperationContext) => Promise<void>
@@ -64,8 +65,8 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
             traceId,
             requestId,
             headers: {
-                'x-atoma-trace-id': traceId,
-                'x-atoma-request-id': requestId
+                [TRACE_ID_HEADER]: traceId,
+                [REQUEST_ID_HEADER]: requestId
             }
         }
     }

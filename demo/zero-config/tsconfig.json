@@ -22,6 +22,12 @@
             "atoma/*": [
                 "../../src/*"
             ],
+            "atoma-devtools": [
+                "../../devtools/src/index.ts"
+            ],
+            "atoma-devtools/*": [
+                "../../devtools/src/*"
+            ],
             "atoma/server": [
                 "../../src/server"
             ],

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createHandler } from '../../src/server'
+import { createAtomaServer } from '../../src/server'
 import type { IOrmAdapter, QueryResult } from '../../src/server'
+import { createNoopSyncAdapter } from './noopSyncAdapter'
 
 const makeFetchLike = (body: any) => ({
     method: 'POST',
@@ -11,15 +12,14 @@ const makeFetchLike = (body: any) => ({
 const createAdapter = (results: QueryResult[] = [{ data: [] }]): IOrmAdapter => {
     const findMany = vi.fn(async () => results.shift() || { data: [] })
     return {
-        findMany,
-        isResourceAllowed: vi.fn(() => true)
+        findMany
     }
 }
 
-describe('createHandler', () => {
+describe('createAtomaServer', () => {
     it('执行 query 并返回 requestId 对应的数据', async () => {
         const adapter = createAdapter([{ data: [{ id: 1 }] }])
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeFetchLike({
             ops: [{
@@ -39,7 +39,11 @@ describe('createHandler', () => {
 
     it('当资源不在 allowList 时返回 403', async () => {
         const adapter = createAdapter()
-        const handler = createHandler({ adapter, guardOptions: { allowList: ['comment'] } })
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: { resources: { allow: ['comment'] } }
+        })
 
         const res = await handler(makeFetchLike({
             ops: [{
@@ -55,7 +59,11 @@ describe('createHandler', () => {
 
     it('maxLimit 会截断超出的 limit 并继续查询', async () => {
         const adapter = createAdapter([{ data: [] }])
-        const handler = createHandler({ adapter, guardOptions: { maxLimit: 50 } })
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            limits: { query: { maxLimit: 50 } }
+        })
 
         await handler(makeFetchLike({
             ops: [{
@@ -72,10 +80,9 @@ describe('createHandler', () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(async () => {
                 throw new Error('boom')
-            }),
-            isResourceAllowed: vi.fn(() => true)
+            })
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeFetchLike({
             ops: [{
@@ -89,13 +96,12 @@ describe('createHandler', () => {
         expect(res.body.results[0].error).toMatchObject({ code: 'QUERY_FAILED' })
     })
 
-    it('写操作 bulkCreate 会调用 adapter.bulkCreate（/batch 固定 200）', async () => {
+    it('写操作 bulkCreate 会逐条调用 adapter.create（/batch 固定 200）', async () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(),
-            isResourceAllowed: vi.fn(() => true),
-            bulkCreate: vi.fn(async () => ({ data: [{ id: 1, title: 'hi' }] }))
+            create: vi.fn(async (_resource: string, data: any) => ({ data: { ...data, id: 1, version: 1 } }))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeFetchLike({
             ops: [{
@@ -106,7 +112,7 @@ describe('createHandler', () => {
             }]
         }))
 
-        expect(adapter.bulkCreate).toHaveBeenCalledWith('post', [{ title: 'hi' }], undefined)
+        expect(adapter.create).toHaveBeenCalledWith('post', { title: 'hi', version: 1 }, expect.anything())
         expect(res.status).toBe(200)
         expect(res.body.results[0]).toMatchObject({ opId: 'r1', ok: true, data: [{ id: 1, title: 'hi' }] })
     })
@@ -114,10 +120,13 @@ describe('createHandler', () => {
     it('bulkCreate 超过 maxBatchSize 会被拒绝', async () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(),
-            isResourceAllowed: vi.fn(() => true),
             bulkCreate: vi.fn()
         }
-        const handler = createHandler({ adapter, guardOptions: { maxBatchSize: 2 } })
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            limits: { write: { maxBatchSize: 2 } }
+        })
 
         const res = await handler(makeFetchLike({
             ops: [{
@@ -134,10 +143,9 @@ describe('createHandler', () => {
 
     it('当 adapter 未实现 action 时，/batch 返回 200 + results[i].error', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn()
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeFetchLike({
             ops: [{
@@ -155,10 +163,9 @@ describe('createHandler', () => {
     it('允许 query 与 write ops 混合：互不影响并保持 results 顺序', async () => {
         const adapter: IOrmAdapter = {
             findMany: vi.fn(async () => ({ data: [{ id: 1 }] })),
-            isResourceAllowed: vi.fn(() => true),
-            bulkCreate: vi.fn(async () => ({ data: [{ id: 2 }] }))
+            create: vi.fn(async (_resource: string, data: any) => ({ data: { ...data, id: 2, version: 1 } }))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeFetchLike({
             ops: [

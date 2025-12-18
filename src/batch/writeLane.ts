@@ -1,5 +1,6 @@
 import type { DebugEmitter } from '../observability/debug'
 import { utf8ByteLength } from '../observability/utf8'
+import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../protocol/trace'
 import { emitAdapterEvent } from './adapterEvents'
 import { normalizeMaxBatchSize, normalizeMaxOpsPerRequest } from './config'
 import { mapResults } from './protocol'
@@ -133,8 +134,8 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
 
             startedAt = Date.now()
             const response = await engine.send(payload, controller?.signal, {
-                ...(commonTraceId ? { 'x-atoma-trace-id': commonTraceId } : {}),
-                ...(requestId ? { 'x-atoma-request-id': requestId } : {})
+                ...(commonTraceId ? { [TRACE_ID_HEADER]: commonTraceId } : {}),
+                ...(requestId ? { [REQUEST_ID_HEADER]: requestId } : {})
             })
             const durationMs = Date.now() - startedAt
             emitAdapterEvent({
@@ -230,10 +231,10 @@ export function bucketKey(task: WriteTask) {
 export function buildWriteOp(opId: string, key: string, tasks: WriteTask[]) {
     const [action, resource] = key.split(':', 2)
     const payload = tasks.map(t => {
-        if (t.kind === 'create') return t.item
+        if (t.kind === 'create') return { __atoma: { idempotencyKey: t.idempotencyKey }, data: t.item }
         if (t.kind === 'update') return t.item
         if (t.kind === 'patch') return t.item
-        return t.id
+        return t.item
     })
 
     return {

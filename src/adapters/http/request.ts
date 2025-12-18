@@ -63,6 +63,19 @@ export async function sendDelete(
     return sender(url, { method: 'DELETE', headers })
 }
 
+export async function sendDeleteJson(
+    sender: RequestSender,
+    url: string,
+    body: any,
+    headers: Record<string, string>
+): Promise<Response> {
+    return sender(url, {
+        method: 'DELETE',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
+}
+
 export async function sendPutJson(
     sender: RequestSender,
     url: string,

@@ -70,4 +70,4 @@ export function createReactStore<T extends Entity, Relations extends RelationMap
     return reactStore
 }
 
-export const createSyncStore = createReactStore
+export const createAtomaStore = createReactStore

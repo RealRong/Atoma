@@ -42,17 +42,28 @@ type PrismaClientLike = Record<string, any> & {
 export class AtomaPrismaAdapter implements IOrmAdapter {
     private readonly idField: string
     private readonly defaultOrderBy?: OrderByRule[]
+    private readonly adapterOptions: OrmAdapterOptions
+    private readonly inTransaction: boolean
 
     constructor(
         private readonly client: PrismaClientLike,
-        options: OrmAdapterOptions = {}
+        options: OrmAdapterOptions = {},
+        inTransaction: boolean = false
     ) {
+        this.adapterOptions = options
+        this.inTransaction = inTransaction
         this.idField = options.idField ?? 'id'
         this.defaultOrderBy = options.defaultOrderBy
     }
 
-    isResourceAllowed(resource: string): boolean {
-        return Boolean(this.getDelegate(resource)?.findMany)
+    async transaction<T>(fn: (args: { orm: IOrmAdapter; tx: unknown }) => Promise<T>): Promise<T> {
+        if (typeof this.client.$transaction !== 'function') {
+            return fn({ orm: this, tx: undefined })
+        }
+        return (this.client.$transaction as any)(async (tx: any) => {
+            const txOrm = new AtomaPrismaAdapter(tx, this.adapterOptions, true)
+            return fn({ orm: txOrm, tx })
+        })
     }
 
     async findMany(resource: string, params: QueryParams = {}): Promise<QueryResult> {
@@ -153,9 +164,8 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             data,
             select: this.buildSelect(options.select)
         }
-        const fn = () => delegate.create!(args)
-        const res = await this.runMaybeTransaction([fn], options.transaction)
-        return { data: res.data[0], transactionApplied: res.transactionApplied }
+        const row = await delegate.create!(args)
+        return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
     }
 
     async update(resource: string, data: any, options: WriteOptions & { where?: Record<string, any> } = {}): Promise<QueryResultOne> {
@@ -169,21 +179,47 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             select: this.buildSelect(options.select)
         }
 
-        const fn = () => delegate.update!(args)
-        const res = await this.runMaybeTransaction([fn], options.transaction)
-        return { data: res.data[0], transactionApplied: res.transactionApplied }
+        const row = await delegate.update!(args)
+        return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
     }
 
     async delete(resource: string, whereOrId: any, options: WriteOptions = {}): Promise<QueryResultOne> {
+        const baseVersion = (whereOrId && typeof whereOrId === 'object' && !Array.isArray(whereOrId))
+            ? (whereOrId as any).baseVersion
+            : undefined
+
+        if (typeof baseVersion === 'number' && Number.isFinite(baseVersion)) {
+            const id = (whereOrId as any).id
+            if (id === undefined) throw new Error('delete requires id')
+
+            const delegate = this.requireDelegateFromClient(this.client, resource, 'delete')
+            const current = await this.findOneByKey(this.client, resource, this.idField, id)
+            if (!current) throw new Error('Not found')
+            const currentVersion = (current as any).version
+            if (typeof currentVersion !== 'number') {
+                throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+            }
+            if (currentVersion !== baseVersion) {
+                throwError('CONFLICT', 'Version conflict', {
+                    kind: 'conflict',
+                    resource,
+                    currentVersion,
+                    currentValue: current
+                })
+            }
+
+            await delegate.delete!({ where: { [this.idField]: id } })
+            return { data: undefined, transactionApplied: this.inTransaction }
+        }
+
         const delegate = this.requireDelegate(resource, 'delete')
         const where = this.normalizeWhereOrId(whereOrId)
         const args: any = {
             where,
             select: this.buildSelect(options.select)
         }
-        const fn = () => delegate.delete!(args)
-        const res = await this.runMaybeTransaction([fn], options.transaction)
-        return { data: options.returning === false ? undefined : res.data[0], transactionApplied: res.transactionApplied }
+        const row = await delegate.delete!(args)
+        return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
     }
 
     async patch(
@@ -200,8 +236,27 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             const current = await this.findOneByKey(client, resource, this.idField, item.id)
             if (!current) throw new Error('Not found')
 
+            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
+                const currentVersion = (current as any).version
+                if (typeof currentVersion !== 'number') {
+                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+                }
+                if (currentVersion !== item.baseVersion) {
+                    throwError('CONFLICT', 'Version conflict', {
+                        kind: 'conflict',
+                        resource,
+                        currentVersion,
+                        currentValue: current
+                    })
+                }
+            }
+
             const normalized = this.stripIdPrefix(item.patches, item.id)
             const next = applyPatches(current, normalized)
+            const baseVersion = (current as any).version
+            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion) && typeof baseVersion === 'number') {
+                ;(next as any).version = baseVersion + 1
+            }
             const data = this.toUpdateData(next, this.idField)
             const updated = await delegate.update!({
                 where: { [this.idField]: item.id },
@@ -211,10 +266,10 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             return updated
         }
 
-        const res = await this.runMaybeTransactionCallback(run, options.transaction)
+        const row = await run(this.client)
         return {
-            data: options.returning === false ? undefined : res.data,
-            transactionApplied: res.transactionApplied
+            data: options.returning === false ? undefined : row,
+            transactionApplied: this.inTransaction
         }
     }
 
@@ -225,33 +280,30 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     ): Promise<QueryResultMany> {
         const returning = options.returning !== false
 
-        if (options.transaction && this.client.$transaction) {
-            const res = await this.runMaybeTransactionCallback(async (tx: PrismaClientLike) => {
-                const delegate = this.requireDelegateFromClient(tx, resource, 'update')
-                const updated: any[] = []
-                for (const item of items) {
-                    if (item?.id === undefined || !Array.isArray(item?.patches)) {
-                        throw new Error('bulkPatch item missing id or patches')
-                    }
-                    const current = await this.findOneByKey(tx, resource, this.idField, item.id)
-                    if (!current) throw new Error('Not found')
-
-                    const normalized = this.stripIdPrefix(item.patches, item.id)
-                    const next = applyPatches(current, normalized)
-                    const data = this.toUpdateData(next, this.idField)
-                    const row = await delegate.update!({
-                        where: { [this.idField]: item.id },
-                        data,
-                        select: this.buildSelect(options.select)
-                    })
-                    if (returning) updated.push(row)
+        if (this.inTransaction) {
+            const delegate = this.requireDelegate(resource, 'update')
+            const updated: any[] = []
+            for (const item of items) {
+                if (item?.id === undefined || !Array.isArray(item?.patches)) {
+                    throw new Error('bulkPatch item missing id or patches')
                 }
-                return updated
-            }, options.transaction)
+                const current = await this.findOneByKey(this.client, resource, this.idField, item.id)
+                if (!current) throw new Error('Not found')
+
+                const normalized = this.stripIdPrefix(item.patches, item.id)
+                const next = applyPatches(current, normalized)
+                const data = this.toUpdateData(next, this.idField)
+                const row = await delegate.update!({
+                    where: { [this.idField]: item.id },
+                    data,
+                    select: this.buildSelect(options.select)
+                })
+                if (returning) updated.push(row)
+            }
 
             return {
-                data: returning ? res.data : [],
-                transactionApplied: res.transactionApplied
+                data: returning ? updated : [],
+                transactionApplied: true
             }
         }
 
@@ -296,9 +348,13 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const delegate = this.requireDelegate(resource, 'create')
         const operations = items.map(item => () => delegate.create!({ data: item, select: this.buildSelect(options.select) }))
 
-        if (options.transaction && this.client.$transaction) {
-            const res = await this.runMaybeTransaction(operations, options.transaction)
-            return { data: res.data, transactionApplied: res.transactionApplied }
+        if (this.inTransaction) {
+            const data: any[] = []
+            for (const op of operations) {
+                const row = await op()
+                if (options.returning !== false) data.push(row)
+            }
+            return { data: options.returning === false ? [] : data, transactionApplied: true }
         }
 
         const settled = await Promise.allSettled(operations.map(op => op()))
@@ -326,9 +382,13 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             })
         })
 
-        if (options.transaction && this.client.$transaction) {
-            const res = await this.runMaybeTransaction(operations, options.transaction)
-            return { data: res.data, transactionApplied: res.transactionApplied }
+        if (this.inTransaction) {
+            const data: any[] = []
+            for (const op of operations) {
+                const row = await op()
+                if (options.returning !== false) data.push(row)
+            }
+            return { data: options.returning === false ? [] : data, transactionApplied: true }
         }
 
         const settled = await Promise.allSettled(operations.map(op => op()))
@@ -352,9 +412,13 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             select: this.buildSelect(options.select)
         }))
 
-        if (options.transaction && this.client.$transaction) {
-            const res = await this.runMaybeTransaction(operations, options.transaction)
-            return { data: options.returning === false ? [] : res.data, transactionApplied: res.transactionApplied }
+        if (this.inTransaction) {
+            const data: any[] = []
+            for (const op of operations) {
+                const row = await op()
+                if (options.returning !== false) data.push(row)
+            }
+            return { data: options.returning === false ? [] : data, transactionApplied: true }
         }
 
         const settled = await Promise.allSettled(operations.map(op => op()))
@@ -467,26 +531,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return { id: whereOrId }
     }
 
-    private async runMaybeTransaction(operations: Array<() => Promise<any>>, useTransaction?: boolean) {
-        if (useTransaction && this.client.$transaction) {
-            const data = await this.client.$transaction(operations.map(op => op()))
-            return { data, transactionApplied: true }
-        }
-        const data = await Promise.all(operations.map(op => op()))
-        return { data, transactionApplied: false }
-    }
-
-    private async runMaybeTransactionCallback<T>(
-        fn: (client: PrismaClientLike) => Promise<T>,
-        useTransaction?: boolean
-    ): Promise<{ data: T; transactionApplied: boolean }> {
-        if (useTransaction && this.client.$transaction) {
-            const data = await (this.client.$transaction as any)(async (tx: any) => fn(tx))
-            return { data, transactionApplied: true }
-        }
-        const data = await fn(this.client)
-        return { data, transactionApplied: false }
-    }
+    // 事务由 IOrmAdapter.transaction 作为宿主统一管理（不在单个方法内隐式开启事务）
 
     private toError(reason: any) {
         if (isAtomaError(reason)) return reason

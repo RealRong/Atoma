@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createHandler } from '../../src/server'
+import { createAtomaServer } from '../../src/server'
 import type { IOrmAdapter, QueryResult } from '../../src/server'
+import { createNoopSyncAdapter } from './noopSyncAdapter'
 
 const makeBatchIncoming = (body: any) => ({
     method: 'POST',
@@ -17,14 +18,12 @@ const makeRestIncoming = (args: { method: string; url: string; body?: any }) => 
 describe('StandardError.details（最终规范）', () => {
     it('field_policy：包含 kind/resource/part/field/queryIndex/opId', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult))
         }
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                policy: { where: { deny: ['passwordHash'] } }
-            }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: { fieldPolicy: { where: { deny: ['passwordHash'] } } }
         })
 
         const res = await handler(makeBatchIncoming({
@@ -55,10 +54,9 @@ describe('StandardError.details（最终规范）', () => {
 
     it('validation：未知 where op 返回 kind=validation + path=where.<field>.<op>', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({ adapter: { orm: adapter, sync: createNoopSyncAdapter() }, sync: { enabled: false } })
 
         const res = await handler(makeRestIncoming({
             method: 'GET',
@@ -75,14 +73,12 @@ describe('StandardError.details（最终规范）', () => {
 
     it('limits：TOO_MANY_QUERIES 返回 kind=limits + max/actual', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => true)
+            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult))
         }
-        const handler = createHandler({
-            adapter,
-            guardOptions: {
-                maxQueries: 1
-            }
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            limits: { query: { maxQueries: 1 } }
         })
 
         const res = await handler(makeBatchIncoming({
@@ -99,12 +95,19 @@ describe('StandardError.details（最终规范）', () => {
 
     it('internal：未知异常不泄露原始 error（message 固定为 Internal error）', async () => {
         const adapter: IOrmAdapter = {
-            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult)),
-            isResourceAllowed: vi.fn(() => {
-                throw new Error('boom')
-            })
+            findMany: vi.fn(async () => ({ data: [] } satisfies QueryResult))
         }
-        const handler = createHandler({ adapter })
+        const handler = createAtomaServer({
+            adapter: { orm: adapter, sync: createNoopSyncAdapter() },
+            sync: { enabled: false },
+            authz: {
+                hooks: {
+                    authorize: [() => {
+                        throw new Error('boom')
+                    }]
+                }
+            }
+        })
 
         const res = await handler(makeBatchIncoming({
             ops: [{

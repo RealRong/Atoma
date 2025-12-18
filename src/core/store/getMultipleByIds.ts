@@ -4,7 +4,7 @@ import { commitAtomMapUpdate } from './cacheWriter'
 import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
 
 export function createGetMultipleByIds<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexManager, transform, storeName, resolveOperationTraceId } = runtime
+    const { jotaiStore, atom, adapter, context, indexManager, transform } = runtime
 
     return async (ids: StoreKey[], cache = true, options?: StoreReadOptions) => {
         const map = jotaiStore.get(atom) as Map<StoreKey, T>

@@ -17,6 +17,14 @@ import type { QuerySerializerConfig } from './http/query'
 import { BatchEngine } from '../batch'
 import { createRequestIdSequencer } from '../observability/trace'
 import type { InternalOperationContext } from '../observability/types'
+import type { StoreAccess } from '../core/types'
+import { commitAtomMapUpdate } from '../core/store/cacheWriter'
+import { validateWithSchema } from '../core/store/validation'
+import type { IndexManager } from '../core/indexes/IndexManager'
+import { getSyncHub, SyncHub } from './http/syncHub'
+import type { AtomaChange } from '../protocol/sync'
+import type { SyncQueuedOperation } from './http/syncOfflineQueue'
+import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../protocol/trace'
 
 // ===== Config Interfaces =====
 
@@ -48,6 +56,63 @@ export interface OfflineConfig {
     enabled?: boolean
     maxQueueSize?: number
     syncOnReconnect?: boolean
+}
+
+export interface SyncEndpointsConfig {
+    push?: string
+    pull?: string
+    subscribe?: string
+}
+
+export interface SyncSseConfig {
+    /**
+     * 自定义订阅 URL（用于 token query 等）
+     * - url: 不含 cursor 的 subscribe 完整 URL（已做 baseURL 拼接）
+     * - cursor: 当前游标
+     * - headers: 同步模式下的 auth headers（可复用其中的 token）
+     */
+    buildSubscribeUrl?: (args: { url: string; cursor: number; headers: Record<string, string> }) => string | Promise<string>
+
+    /**
+     * 自定义 EventSource 构造（用于 polyfill 注入 headers / withCredentials 等）
+     */
+    eventSourceFactory?: (args: { url: string; headers: Record<string, string> }) => EventSource
+}
+
+export interface SyncConfig {
+    /**
+     * 启用 sync/offline（基于 /sync/push|pull|subscribe）
+     * - 开启后写操作优先走 /sync/push（在线立即 push；离线入队，重连后重放）
+     * - 变更流不带 payload：收到 changes 后会二次通过 bulkGet/batch 拉最终态写回 store
+     */
+    enabled?: boolean
+
+    /**
+     * 订阅模式
+     * - 'sse'：使用 EventSource 连接 /sync/subscribe（浏览器优先）
+     * - 'poll'：定时 GET /sync/pull（Node/SSR 或无 EventSource 时）
+     */
+    mode?: 'sse' | 'poll'
+
+    endpoints?: SyncEndpointsConfig
+
+    /** poll 模式间隔（默认 2000ms） */
+    pollIntervalMs?: number
+
+    /** pull 每次最大条数（默认 200） */
+    pullLimit?: number
+
+    /** 持久化游标 key（默认根据 baseURL 生成） */
+    cursorKey?: string
+
+    /** 持久化 deviceId key（默认根据 baseURL 生成） */
+    deviceIdKey?: string
+
+    /** attachStoreAccess 后自动启动（默认 true） */
+    autoStart?: boolean
+
+    /** SSE 行为扩展（鉴权/自定义 EventSource） */
+    sse?: SyncSseConfig
 }
 
 export interface QueryConfig<T> {
@@ -123,6 +188,9 @@ export interface HTTPAdapterConfig<T> {
 
     /** Offline queue */
     offline?: OfflineConfig
+
+    /** Sync + offline（/sync/*） */
+    sync?: SyncConfig
 
     /** Query/findMany configuration */
     query?: QueryConfig<T>
@@ -251,6 +319,11 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     private resourceNameForBatch: string
     private usePatchForUpdate: boolean
     private readonly requestIdSequencer = createRequestIdSequencer()
+    private storeAccess?: StoreAccess<T>
+    private syncHub?: SyncHub
+    private syncHandler?: (changes: AtomaChange[]) => void
+    private pendingChangeFlush: ReturnType<typeof setTimeout> | undefined
+    private bufferedChanges: AtomaChange[] = []
 
     constructor(private config: HTTPAdapterConfig<T>) {
         // Auto-generate endpoints from resourceName if not explicitly provided
@@ -361,8 +434,18 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             queueStorageKey: this.queueStorageKey,
             eventEmitter: this.eventEmitter,
             client: this.client,
+            fetchWithRetry: this.fetchWithRetry.bind(this),
+            getHeaders: this.getHeaders.bind(this),
+            requestIdSequencer: this.requestIdSequencer,
             retry: config.retry,
-            devtools: config.devtools ?? getGlobalDevtools()
+            devtools: config.devtools ?? getGlobalDevtools(),
+            onSyncPushResult: async (res, ops) => {
+                await this.handleSyncRejected(res.rejected as any, ops as any, undefined)
+                await this.applyAckedVersions(res.acked.map(a => ({
+                    id: (typeof a.id === 'string' && /^[0-9]+$/.test(a.id)) ? Number(a.id) : a.id as any,
+                    serverVersion: a.serverVersion
+                })))
+            }
         })
 
         this.executors = createOperationExecutors({
@@ -405,19 +488,48 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     dispose(): void {
+        this.detachStoreAccess()
         this.orchestrator.dispose()
         // Clear ETag cache to free memory
         this.etagManager.clear()
         this.batchEngine?.dispose()
     }
 
+    attachStoreAccess(access: StoreAccess<T>) {
+        this.storeAccess = access
+        if (this.config.sync?.enabled === true && this.config.sync?.autoStart !== false) {
+            void this.startSync()
+        }
+    }
+
+    detachStoreAccess() {
+        this.stopSync()
+        this.storeAccess = undefined
+    }
+
     async put(key: StoreKey, value: T, internalContext?: InternalOperationContext): Promise<void> {
+        if (this.config.sync?.enabled === true) {
+            const op = this.buildSyncPutOp(key, value)
+            const res = await this.orchestrator.pushOrQueueSyncOps([op], { traceId: internalContext?.traceId })
+            if (!res) return
+            await this.handleSyncRejected(res.rejected, [op], internalContext)
+            await this.applyAckedVersions(res.acked.map(a => ({
+                id: (typeof a.id === 'string' && /^[0-9]+$/.test(a.id)) ? Number(a.id) : a.id as any,
+                serverVersion: a.serverVersion
+            })))
+            return
+        }
         if (this.batchEngine) {
-            const clientVersion = this.resolveClientVersion(key, value)
             try {
-                return await this.batchEngine.enqueueUpdate(
+                const baseVersion = this.resolveLocalBaseVersion(key, value)
+                return await this.batchEngine.enqueuePatch(
                     this.resourceNameForBatch,
-                    { id: key, data: value, clientVersion },
+                    {
+                        id: key,
+                        patches: [{ op: 'replace', path: [key], value }] as any,
+                        baseVersion,
+                        timestamp: Date.now()
+                    },
                     internalContext
                 )
             } catch (error) {
@@ -425,11 +537,39 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 throw error
             }
         }
-        return this.executors.put(key, value, internalContext)
+        const baseVersion = this.resolveLocalBaseVersion(key, value)
+        const traceId = internalContext?.traceId
+        const trace = (typeof traceId === 'string' && traceId)
+            ? { traceId, requestId: this.requestIdSequencer.next(traceId) }
+            : undefined
+        const payload = (value && typeof value === 'object')
+            ? ({ ...(value as any), baseVersion } as any)
+            : value
+        await this.orchestrator.handleWithOfflineFallback(
+            { type: 'put', key, value: payload },
+            () => this.client.put(
+                key,
+                payload,
+                trace ? { [TRACE_ID_HEADER]: trace.traceId, [REQUEST_ID_HEADER]: trace.requestId } : undefined,
+                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+            )
+        )
     }
 
     async bulkPut(items: T[], internalContext?: InternalOperationContext): Promise<void> {
-        return this.executors.bulkPut(items, internalContext)
+        if (this.config.sync?.enabled === true) {
+            const ops = items.map(item => this.buildSyncPutOp((item as any).id, item))
+            const res = await this.orchestrator.pushOrQueueSyncOps(ops, { traceId: internalContext?.traceId })
+            if (!res) return
+            await this.handleSyncRejected(res.rejected, ops, internalContext)
+            await this.applyAckedVersions(res.acked.map(a => ({
+                id: (typeof a.id === 'string' && /^[0-9]+$/.test(a.id)) ? Number(a.id) : a.id as any,
+                serverVersion: a.serverVersion
+            })))
+            return
+        }
+        if (!items.length) return
+        await Promise.all(items.map(item => this.put((item as any).id, item, internalContext)))
     }
 
     async bulkCreate(items: T[], internalContext?: InternalOperationContext): Promise<T[] | void> {
@@ -451,7 +591,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 : undefined
             return await this.client.bulkCreate(
                 items,
-                trace ? { 'x-atoma-trace-id': trace.traceId, 'x-atoma-request-id': trace.requestId } : undefined,
+                trace ? { [TRACE_ID_HEADER]: trace.traceId, [REQUEST_ID_HEADER]: trace.requestId } : undefined,
                 trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
             )
         }
@@ -460,19 +600,48 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     async delete(key: StoreKey, internalContext?: InternalOperationContext): Promise<void> {
+        if (this.config.sync?.enabled === true) {
+            const op = this.buildSyncDeleteOp(key)
+            const res = await this.orchestrator.pushOrQueueSyncOps([op], { traceId: internalContext?.traceId })
+            if (!res) return
+            await this.handleSyncRejected(res.rejected, [op], internalContext)
+            return
+        }
         if (this.batchEngine) {
             try {
-                return await this.batchEngine.enqueueDelete(this.resourceNameForBatch, key, internalContext)
+                const baseVersion = this.resolveLocalBaseVersion(key)
+                return await this.batchEngine.enqueueDelete(this.resourceNameForBatch, { id: key, baseVersion }, internalContext)
             } catch (error) {
                 this.onError(error as Error, 'delete(batch)')
                 throw error
             }
         }
-        return this.executors.delete(key, internalContext)
+        const baseVersion = this.resolveLocalBaseVersion(key)
+        const traceId = internalContext?.traceId
+        const trace = (typeof traceId === 'string' && traceId)
+            ? { traceId, requestId: this.requestIdSequencer.next(traceId) }
+            : undefined
+        await this.orchestrator.handleWithOfflineFallback(
+            { type: 'delete', key },
+            () => this.client.delete(
+                key,
+                { baseVersion },
+                trace ? { [TRACE_ID_HEADER]: trace.traceId, [REQUEST_ID_HEADER]: trace.requestId } : undefined,
+                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+            )
+        )
     }
 
     async bulkDelete(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<void> {
-        return this.executors.bulkDelete(keys, internalContext)
+        if (this.config.sync?.enabled === true) {
+            const ops = keys.map(k => this.buildSyncDeleteOp(k))
+            const res = await this.orchestrator.pushOrQueueSyncOps(ops, { traceId: internalContext?.traceId })
+            if (!res) return
+            await this.handleSyncRejected(res.rejected, ops, internalContext)
+            return
+        }
+        if (!keys.length) return
+        await Promise.all(keys.map(k => this.delete(k, internalContext)))
     }
 
     async get(key: StoreKey, internalContext?: InternalOperationContext): Promise<T | undefined> {
@@ -574,6 +743,9 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         metadata: PatchMetadata,
         internalContext?: InternalOperationContext
     ): Promise<{ created?: T[] } | void> {
+        if (this.config.sync?.enabled === true) {
+            return this.applyPatchesViaSync(patches, metadata, internalContext)
+        }
         const supportsPatch = !!this.config.endpoints!.patch
         const usePatchForUpdates = this.usePatchForUpdate && supportsPatch
         const nextTraceHeaders = () => {
@@ -584,8 +756,8 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 traceId,
                 requestId,
                 headers: {
-                    'x-atoma-trace-id': traceId,
-                    'x-atoma-request-id': requestId
+                    [TRACE_ID_HEADER]: traceId,
+                    [REQUEST_ID_HEADER]: requestId
                 }
             }
         }
@@ -602,13 +774,16 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
 
         const handleCreate = (id: StoreKey, value: T) => {
             if (this.batchEngine) {
-                tasks.push(
-                    this.batchEngine.enqueueCreate(
-                        this.resourceNameForBatch,
-                        value,
-                        internalContext
-                    )
-                )
+                tasks.push(this.batchEngine.enqueueCreate(
+                    this.resourceNameForBatch,
+                    value,
+                    internalContext
+                ).then((res: any) => {
+                    if (res && typeof res === 'object' && (res as any).id !== undefined) {
+                        createdResults.push(res as T)
+                    }
+                    return res
+                }))
                 return
             }
             const trace = nextTraceHeaders()
@@ -617,25 +792,33 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 value,
                 trace?.headers,
                 trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
-            ))
+            ).then((res: any) => {
+                if (res && typeof res === 'object' && (res as any).id !== undefined) {
+                    createdResults.push(res as T)
+                }
+                return res
+            }))
         }
 
         const handleDelete = (id: StoreKey) => {
             if (this.batchEngine) {
+                const baseVersion = this.resolveLocalBaseVersion(id)
                 tasks.push(
                     this.batchEngine.enqueueDelete(
                         this.resourceNameForBatch,
-                        id,
+                        { id, baseVersion },
                         internalContext
                     )
                 )
                 return
             }
             const trace = nextTraceHeaders()
+            const baseVersion = this.resolveLocalBaseVersion(id)
             tasks.push(this.orchestrator.handleWithOfflineFallback(
                 { type: 'delete', key: id },
                 () => this.client.delete(
                     id,
+                    { baseVersion },
                     trace?.headers,
                     trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
                 )
@@ -643,6 +826,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         }
 
         const handlePatch = (id: StoreKey, itemPatches: Patch[]) => {
+            const baseVersion = this.resolveLocalBaseVersion(id)
             if (this.batchEngine) {
                 tasks.push(
                     this.batchEngine.enqueuePatch(
@@ -650,7 +834,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                         {
                             id,
                             patches: itemPatches,
-                            baseVersion: metadata.baseVersion,
+                            baseVersion,
                             timestamp: metadata.timestamp
                         },
                         internalContext
@@ -662,7 +846,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             tasks.push(this.client.patch(
                 id,
                 itemPatches,
-                metadata,
+                { ...metadata, baseVersion },
                 trace?.headers,
                 trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
             ))
@@ -681,11 +865,16 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             }
 
             if (this.batchEngine) {
-                const clientVersion = this.resolveClientVersion(id, next)
+                const baseVersion = this.resolveLocalBaseVersion(id, next)
                 tasks.push(
-                    this.batchEngine.enqueueUpdate(
+                    this.batchEngine.enqueuePatch(
                         this.resourceNameForBatch,
-                        { id, data: next, clientVersion },
+                        {
+                            id,
+                            patches: [{ op: 'replace', path: [id], value: next }] as any,
+                            baseVersion,
+                            timestamp: metadata.timestamp ?? Date.now()
+                        },
                         internalContext
                     )
                 )
@@ -693,11 +882,13 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             }
 
             const trace = nextTraceHeaders()
+            const baseVersion = this.resolveLocalBaseVersion(id, next)
+            const payload = (next && typeof next === 'object') ? ({ ...(next as any), baseVersion } as any) : next
             tasks.push(this.orchestrator.handleWithOfflineFallback(
-                { type: 'put', key: id, value: next },
+                { type: 'put', key: id, value: payload },
                 () => this.client.put(
                     id,
-                    next,
+                    payload,
                     trace?.headers,
                     trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
                 )
@@ -726,17 +917,360 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             }
         }
 
-        const results = await Promise.all(tasks)
-
-        results.forEach(res => {
-            if (res && typeof res === 'object' && (res as any).id !== undefined) {
-                createdResults.push(res as T)
-            }
-        })
+        await Promise.all(tasks)
 
         if (createdResults.length) {
             return { created: createdResults }
         }
+    }
+
+    private async startSync() {
+        if (this.syncHub) return
+        if (this.config.sync?.enabled !== true) return
+        if (!this.storeAccess) return
+
+        const mode = this.config.sync?.mode ?? 'sse'
+        const pullLimit = this.config.sync?.pullLimit ?? 200
+        const pollIntervalMs = this.config.sync?.pollIntervalMs ?? 2000
+        const endpoints = {
+            pull: this.config.sync?.endpoints?.pull ?? '/sync/pull',
+            subscribe: this.config.sync?.endpoints?.subscribe ?? '/sync/subscribe'
+        }
+
+        const hubKey = `${this.config.baseURL}::${endpoints.pull}::${endpoints.subscribe}::${mode}`
+        this.syncHub = getSyncHub(hubKey, () => new SyncHub({
+            baseURL: this.config.baseURL,
+            endpoints,
+            mode,
+            pollIntervalMs,
+            pullLimit,
+            cursorKey: this.config.sync?.cursorKey,
+            deviceIdKey: this.config.sync?.deviceIdKey,
+            getHeaders: this.getHeaders.bind(this),
+            fetchFn: this.fetchWithRetry.bind(this),
+            buildSubscribeUrl: this.config.sync?.sse?.buildSubscribeUrl,
+            eventSourceFactory: this.config.sync?.sse?.eventSourceFactory
+        }))
+        this.orchestrator.setSyncHub(this.syncHub)
+
+        const resource = this.resourceNameForBatch
+        const handler = (changes: AtomaChange[]) => {
+            this.bufferedChanges.push(...changes)
+            if (this.pendingChangeFlush) return
+            this.pendingChangeFlush = setTimeout(() => {
+                this.pendingChangeFlush = undefined
+                void this.flushBufferedChanges()
+            }, 0)
+        }
+        this.syncHandler = handler
+        this.syncHub.register(resource, handler)
+    }
+
+    private stopSync() {
+        if (this.pendingChangeFlush) {
+            clearTimeout(this.pendingChangeFlush)
+            this.pendingChangeFlush = undefined
+        }
+        this.bufferedChanges = []
+
+        if (this.syncHub && this.syncHandler) {
+            this.syncHub.unregister(this.resourceNameForBatch, this.syncHandler)
+        }
+        this.syncHandler = undefined
+        this.syncHub = undefined
+        this.orchestrator.setSyncHub(undefined)
+    }
+
+    private async flushBufferedChanges() {
+        const changes = this.bufferedChanges
+        this.bufferedChanges = []
+        if (!changes.length) return
+        if (!this.storeAccess) return
+
+        const pending = this.orchestrator.getPendingEntityKeys()
+
+        const upsertIds = new Set<StoreKey>()
+        const deleteIds = new Set<StoreKey>()
+
+        for (const c of changes) {
+            const id = c?.id
+            if (id === undefined || id === null) continue
+            const key: StoreKey = (typeof id === 'string' && /^[0-9]+$/.test(id)) ? Number(id) : id
+            if (pending.has(`${this.resourceNameForBatch}:${String(key)}`)) continue
+            if (c.kind === 'delete') {
+                deleteIds.add(key)
+            } else {
+                upsertIds.add(key)
+            }
+        }
+
+        if (!upsertIds.size && !deleteIds.size) return
+
+        const fetched = upsertIds.size
+            ? await this.executors.bulkGet(Array.from(upsertIds))
+            : []
+
+        const items = fetched.filter((i): i is T => i !== undefined)
+        await this.applyRemoteWriteback({ upserts: items, deletes: Array.from(deleteIds) })
+    }
+
+    private async applyRemoteWriteback(args: { upserts: T[]; deletes: StoreKey[] }) {
+        const access = this.storeAccess
+        if (!access) return
+
+        const before = access.jotaiStore.get(access.atom)
+        const after = new Map(before)
+        let changed = false
+
+        args.deletes.forEach(id => {
+            if (after.has(id)) {
+                after.delete(id)
+                changed = true
+            }
+        })
+
+        const preserveReference = (incoming: T): T => {
+            const existing = before.get((incoming as any).id)
+            if (!existing) return incoming
+            const keys = new Set([...Object.keys(existing as any), ...Object.keys(incoming as any)])
+            for (const key of keys) {
+                if ((existing as any)[key] !== (incoming as any)[key]) {
+                    return incoming
+                }
+            }
+            return existing
+        }
+
+        for (const raw of args.upserts) {
+            const transformed = access.transform ? access.transform(raw) : raw
+            const validated = await validateWithSchema(transformed, access.schema as any)
+            const item = preserveReference(validated)
+            const id = (item as any).id
+            const prev = before.get(id)
+            if (prev !== item) changed = true
+            after.set((item as any).id, item)
+        }
+
+        if (!changed) return
+        commitAtomMapUpdate({
+            jotaiStore: access.jotaiStore,
+            atom: access.atom,
+            before,
+            after,
+            context: access.context,
+            indexManager: (access.indexManager as IndexManager<T>) ?? null
+        })
+    }
+
+    private resolveLocalBaseVersion(id: StoreKey, value?: any): number {
+        const versionFromValue = value && typeof value === 'object' ? (value as any).version : undefined
+        if (typeof versionFromValue === 'number' && Number.isFinite(versionFromValue)) return versionFromValue
+        const fromStore = this.storeAccess?.jotaiStore.get(this.storeAccess.atom).get(id) as any
+        const v = fromStore?.version
+        if (typeof v === 'number' && Number.isFinite(v)) return v
+        return 0
+    }
+
+    private buildSyncPutOp(id: StoreKey, value: T): SyncQueuedOperation {
+        const baseVersion = this.resolveLocalBaseVersion(id, value)
+        return {
+            idempotencyKey: `w_${this.generateOperationId()}`,
+            resource: this.resourceNameForBatch,
+            kind: 'patch',
+            id,
+            baseVersion,
+            timestamp: Date.now(),
+            patches: [{ op: 'replace', path: [id], value }] as any
+        }
+    }
+
+    private buildSyncDeleteOp(id: StoreKey): SyncQueuedOperation {
+        const baseVersion = this.resolveLocalBaseVersion(id)
+        return {
+            idempotencyKey: `w_${this.generateOperationId()}`,
+            resource: this.resourceNameForBatch,
+            kind: 'delete',
+            id,
+            baseVersion,
+            timestamp: Date.now()
+        }
+    }
+
+    private generateOperationId(): string {
+        if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+            return (crypto as any).randomUUID()
+        }
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }
+
+    private async applyPatchesViaSync(
+        patches: Patch[],
+        metadata: PatchMetadata,
+        internalContext?: InternalOperationContext
+    ): Promise<{ created?: T[] } | void> {
+        const patchesByItemId = new Map<StoreKey, Patch[]>()
+        patches.forEach(patch => {
+            const itemId = patch.path[0] as StoreKey
+            if (!patchesByItemId.has(itemId)) patchesByItemId.set(itemId, [])
+            patchesByItemId.get(itemId)!.push(patch)
+        })
+
+        const createOps: Array<{ id: StoreKey; op: SyncQueuedOperation }> = []
+        const ops: SyncQueuedOperation[] = []
+
+        for (const [id, itemPatches] of patchesByItemId.entries()) {
+            const isDelete = itemPatches.some(p => p.op === 'remove' && p.path.length === 1)
+            if (isDelete) {
+                ops.push(this.buildSyncDeleteOp(id))
+                continue
+            }
+
+            const rootAdd = itemPatches.find(p => p.op === 'add' && p.path.length === 1)
+            const isCreate = Boolean(rootAdd)
+            if (isCreate) {
+                const op: SyncQueuedOperation = {
+                    idempotencyKey: `w_${this.generateOperationId()}`,
+                    resource: this.resourceNameForBatch,
+                    kind: 'create',
+                    id,
+                    timestamp: metadata.timestamp,
+                    data: rootAdd!.value
+                }
+                createOps.push({ id, op })
+                ops.push(op)
+                continue
+            }
+
+            const baseVersion = this.resolveLocalBaseVersion(id)
+            ops.push({
+                idempotencyKey: `w_${this.generateOperationId()}`,
+                resource: this.resourceNameForBatch,
+                kind: 'patch',
+                id,
+                baseVersion,
+                timestamp: metadata.timestamp,
+                patches: itemPatches
+            })
+        }
+
+        const res = await this.orchestrator.pushOrQueueSyncOps(
+            ops,
+            { traceId: internalContext?.traceId }
+        )
+
+        if (!res) return
+
+        // 更新游标，避免订阅延迟
+        if (this.syncHub && typeof res.serverCursor === 'number') {
+            await this.syncHub.advanceCursor(res.serverCursor)
+        }
+
+        // 处理 conflict：rejected 携带 currentValue/currentVersion
+        await this.handleSyncRejected(res.rejected, ops, internalContext)
+
+        await this.applyAckedVersions(res.acked.map(a => ({
+            id: (typeof a.id === 'string' && /^[0-9]+$/.test(a.id)) ? Number(a.id) : a.id as any,
+            serverVersion: a.serverVersion
+        })))
+
+        // create：二次拉取最终态（为了 rewrite temp id）
+        if (createOps.length) {
+            const ackedCreate = res.acked.filter(a => createOps.some(c => c.op.idempotencyKey === a.idempotencyKey))
+            const ids = ackedCreate.map(a => (typeof a.id === 'string' && /^[0-9]+$/.test(a.id)) ? Number(a.id) : a.id as any)
+            const fetched = await this.executors.bulkGet(ids as any)
+            const created = fetched.filter((i): i is T => i !== undefined)
+            return created.length ? { created } : undefined
+        }
+    }
+
+    private async handleSyncRejected(
+        rejected: any[],
+        originalOps: SyncQueuedOperation[],
+        internalContext?: InternalOperationContext
+    ) {
+        if (!rejected || !rejected.length) return
+        const byKey = new Map<string, SyncQueuedOperation>()
+        originalOps.forEach(op => byKey.set(op.idempotencyKey, op))
+
+        for (const r of rejected) {
+            const idempotencyKey = r?.idempotencyKey
+            const op = typeof idempotencyKey === 'string' ? byKey.get(idempotencyKey) : undefined
+            if (!op) continue
+
+            const err = r?.error
+            const code = err?.code
+            const currentValue = r?.currentValue ?? err?.details?.currentValue
+            const currentVersion = r?.currentVersion ?? err?.details?.currentVersion
+
+            if (code === 'CONFLICT' && currentValue !== undefined && this.storeAccess) {
+                // 默认策略：server-wins -> 写回 server currentValue；last-write-wins/retry-local -> 重新入队 patch（以 currentVersion 作为 baseVersion）
+                const decision = this.config.conflict?.onConflict
+                    ? await this.config.conflict.onConflict({
+                        key: (op as any).id,
+                        local: op.kind === 'patch' ? op.patches : (op as any).data,
+                        server: { currentValue, currentVersion },
+                        metadata: undefined
+                    })
+                    : undefined
+
+                const resolution = this.config.conflict?.resolution ?? 'last-write-wins'
+                const effective = decision
+                    ? decision
+                    : (resolution === 'server-wins' ? 'accept-server' : (resolution === 'manual' ? 'ignore' : 'retry-local'))
+
+                if (effective === 'accept-server') {
+                    await this.applyRemoteWriteback({ upserts: [currentValue], deletes: [] })
+                    continue
+                }
+
+                if (effective === 'retry-local' && typeof currentVersion === 'number') {
+                    if (op.kind === 'patch') {
+                        const retry: SyncQueuedOperation = {
+                            ...op,
+                            idempotencyKey: `w_${this.generateOperationId()}`,
+                            baseVersion: currentVersion,
+                            timestamp: Date.now()
+                        } as any
+                        await this.orchestrator.pushOrQueueSyncOps([retry], { traceId: internalContext?.traceId })
+                    }
+
+                    if (op.kind === 'delete') {
+                        const retry: SyncQueuedOperation = {
+                            ...op,
+                            idempotencyKey: `w_${this.generateOperationId()}`,
+                            baseVersion: currentVersion,
+                            timestamp: Date.now()
+                        } as any
+                        await this.orchestrator.pushOrQueueSyncOps([retry], { traceId: internalContext?.traceId })
+                    }
+                }
+            }
+        }
+    }
+
+    private async applyAckedVersions(acked: Array<{ id: StoreKey; serverVersion: number }>) {
+        const access = this.storeAccess
+        if (!access) return
+        if (!acked.length) return
+        const before = access.jotaiStore.get(access.atom)
+        const after = new Map(before)
+        let changed = false
+        for (const a of acked) {
+            const cur = before.get(a.id) as any
+            if (!cur || typeof cur !== 'object') continue
+            if (cur.version === a.serverVersion) continue
+            after.set(a.id, { ...cur, version: a.serverVersion })
+            changed = true
+        }
+        if (!changed) return
+        commitAtomMapUpdate({
+            jotaiStore: access.jotaiStore,
+            atom: access.atom,
+            before,
+            after,
+            context: access.context,
+            indexManager: (access.indexManager as IndexManager<T>) ?? null
+        })
     }
 
     async onConnect(): Promise<void> {

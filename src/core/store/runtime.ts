@@ -168,7 +168,7 @@ export function resolveInternalOperationContext<T extends Entity>(
     if (typeof traceId !== 'string' || !traceId) return undefined
 
     const emitter = createDebugEmitter({
-        debug: context.debug as any,
+        debug: context.debug,
         traceId,
         store: storeName,
         sink: context.debugSink

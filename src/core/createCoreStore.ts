@@ -165,7 +165,10 @@ export function createCoreStore<T extends Entity, Relations extends RelationMap<
             context,
             matcher: runtime.matcher,
             storeName: name,
-            relations: getter as any
+            relations: getter as any,
+            transform: runtime.transform as any,
+            schema: runtime.schema as any,
+            indexManager: runtime.indexManager as any
         })
     }
 
@@ -199,8 +202,17 @@ export function createCoreStore<T extends Entity, Relations extends RelationMap<
             context,
             matcher: runtime.matcher,
             storeName: name,
-            relations: undefined
+            relations: undefined,
+            transform: runtime.transform as any,
+            schema: runtime.schema as any,
+            indexManager: runtime.indexManager as any
         })
+    }
+
+    // 让 adapter（若支持）绑定 store access，用于 sync/pull/subscribe 写回
+    const access = resolveStoreAccess(coreStore)
+    if (access) {
+        resolvedAdapter.attachStoreAccess?.(access as any)
     }
 
     return coreStore

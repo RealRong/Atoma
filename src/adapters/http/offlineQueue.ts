@@ -1,53 +1,7 @@
 import { StoreKey } from '../../core/types'
+import { createKVStore } from './kvStore'
 
-// Simple IndexedDB wrapper to avoid external dependencies
-class SimpleIDB {
-    private dbName = 'atoma-offline-db'
-    private storeName = 'queues'
-    private dbPromise: Promise<IDBDatabase> | null = null
-
-    constructor() {
-        if (typeof indexedDB !== 'undefined') {
-            this.dbPromise = new Promise((resolve, reject) => {
-                const request = indexedDB.open(this.dbName, 1)
-                request.onerror = () => reject(request.error)
-                request.onsuccess = () => resolve(request.result)
-                request.onupgradeneeded = () => {
-                    const db = request.result
-                    if (!db.objectStoreNames.contains(this.storeName)) {
-                        db.createObjectStore(this.storeName)
-                    }
-                }
-            })
-        }
-    }
-
-    async get<T>(key: string): Promise<T | undefined> {
-        if (!this.dbPromise) return undefined
-        const db = await this.dbPromise
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(this.storeName, 'readonly')
-            const store = tx.objectStore(this.storeName)
-            const req = store.get(key)
-            req.onsuccess = () => resolve(req.result)
-            req.onerror = () => reject(req.error)
-        })
-    }
-
-    async set(key: string, value: any): Promise<void> {
-        if (!this.dbPromise) return
-        const db = await this.dbPromise
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(this.storeName, 'readwrite')
-            const store = tx.objectStore(this.storeName)
-            const req = store.put(value, key)
-            req.onsuccess = () => resolve()
-            req.onerror = () => reject(req.error)
-        })
-    }
-}
-
-const idb = new SimpleIDB()
+const kv = createKVStore()
 
 export interface QueuedOperation {
     id: string
@@ -167,7 +121,7 @@ export class OfflineQueue {
 
     private async persist() {
         try {
-            await idb.set(this.storageKey, this.queue)
+            await kv.set(this.storageKey, this.queue)
         } catch (error) {
             console.error('Failed to persist offline queue:', error)
         }
@@ -175,7 +129,7 @@ export class OfflineQueue {
 
     private async restore() {
         try {
-            const stored = await idb.get<QueuedOperation[]>(this.storageKey)
+            const stored = await kv.get<QueuedOperation[]>(this.storageKey)
             if (stored && Array.isArray(stored)) {
                 this.queue = stored
                 this.events?.onQueueChange?.(this.queue.length)

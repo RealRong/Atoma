@@ -1,5 +1,6 @@
 import type { DebugEmitter } from '../observability/debug'
 import { utf8ByteLength } from '../observability/utf8'
+import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../protocol/trace'
 import { emitAdapterEvent } from './adapterEvents'
 import { normalizeMaxQueryOpsPerRequest } from './config'
 import { mapResults, normalizeQueryEnvelope, normalizeQueryFallback } from './protocol'
@@ -98,8 +99,8 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
 
             startedAt = Date.now()
             const response = await engine.send(payload, controller?.signal, {
-                ...(commonTraceId ? { 'x-atoma-trace-id': commonTraceId } : {}),
-                ...(requestId ? { 'x-atoma-request-id': requestId } : {})
+                ...(commonTraceId ? { [TRACE_ID_HEADER]: commonTraceId } : {}),
+                ...(requestId ? { [REQUEST_ID_HEADER]: requestId } : {})
             })
             const durationMs = Date.now() - startedAt
             emitAdapterEvent({

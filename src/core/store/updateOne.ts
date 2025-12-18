@@ -7,7 +7,7 @@ import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
 import { prepareForUpdate } from './writePipeline'
 
 export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexManager, hooks, schema, transform, resolveOperationTraceId, storeName } = runtime
+    const { jotaiStore, atom, adapter, context, indexManager, hooks, schema, transform } = runtime
     return (obj: PartialWithId<T>, options?: StoreOperationOptions) => {
         return new Promise<T>((resolve, reject) => {
             const internalContext = resolveInternalOperationContext(runtime, options)

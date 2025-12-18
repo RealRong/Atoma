@@ -25,6 +25,7 @@ export type CreateTask<T> = {
     kind: 'create'
     resource: string
     item: T
+    idempotencyKey: string
     deferred: Deferred<any>
     traceId?: string
     debugEmitter?: DebugEmitter
@@ -33,7 +34,7 @@ export type CreateTask<T> = {
 export type UpdateTask<T> = {
     kind: 'update'
     resource: string
-    item: { id: StoreKey; data: T; clientVersion?: any }
+    item: { id: StoreKey; data: T; clientVersion?: any; idempotencyKey?: string }
     deferred: Deferred<void>
     traceId?: string
     debugEmitter?: DebugEmitter
@@ -42,7 +43,7 @@ export type UpdateTask<T> = {
 export type PatchTask = {
     kind: 'patch'
     resource: string
-    item: { id: StoreKey; patches: any[]; baseVersion?: number; timestamp?: number }
+    item: { id: StoreKey; patches: any[]; baseVersion?: number; timestamp?: number; idempotencyKey?: string }
     deferred: Deferred<void>
     traceId?: string
     debugEmitter?: DebugEmitter
@@ -51,7 +52,7 @@ export type PatchTask = {
 export type DeleteTask = {
     kind: 'delete'
     resource: string
-    id: StoreKey
+    item: { id: StoreKey; baseVersion?: number; idempotencyKey?: string }
     deferred: Deferred<void>
     traceId?: string
     debugEmitter?: DebugEmitter

@@ -1,16 +1,4 @@
-import { PrimitiveAtom } from 'jotai/vanilla'
-import type { QueryMatcherOptions } from './query/QueryMatcher'
-import type { JotaiStore, RelationMap, StoreKey, IStore } from './types'
-import type { StoreContext } from './StoreContext'
-
-export type StoreAccess = {
-    atom: PrimitiveAtom<Map<StoreKey, any>>
-    jotaiStore: JotaiStore
-    context: StoreContext
-    matcher?: QueryMatcherOptions
-    storeName?: string
-    relations?: () => RelationMap<any> | undefined
-}
+import type { RelationMap, IStore, StoreAccess } from './types'
 
 const registry = new WeakMap<IStore<any>, StoreAccess>()
 

@@ -17,6 +17,9 @@ export class UserEntity {
     @Column('text')
     title!: string
 
+    @Column({ type: 'integer', default: 0 })
+    version!: number
+
     @OneToMany(() => PostEntity, post => post.author)
     posts!: PostEntity[]
 
@@ -46,6 +49,9 @@ export class PostEntity {
 
     @Column({ type: 'integer' })
     createdAt!: number
+
+    @Column({ type: 'integer', default: 0 })
+    version!: number
 }
 
 @Entity('comments')
@@ -70,4 +76,7 @@ export class CommentEntity {
 
     @Column({ type: 'integer' })
     createdAt!: number
+
+    @Column({ type: 'integer', default: 0 })
+    version!: number
 }
