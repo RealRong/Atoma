@@ -3,7 +3,7 @@ import { selectAtom } from 'jotai/utils'
 import { useMemo } from 'react'
 import { useAtomValue } from 'jotai'
 import { globalStore } from '../../core/BaseStore'
-import { IStore, StoreKey, RelationMap, Entity } from '../../core/types'
+import { IStore, StoreKey, RelationMap, Entity, WithRelations, RelationIncludeInput } from '../../core/types'
 import { useRelations } from './useRelations'
 import { resolveStoreRelations } from '../../core/storeAccessRegistry'
 
@@ -11,17 +11,17 @@ import { resolveStoreRelations } from '../../core/storeAccessRegistry'
  * React hook to subscribe to a single entity by ID
  * Uses selectAtom for fine-grained updates - only re-renders when this specific item changes
  */
-export function createUseValue<T extends Entity, Relations extends RelationMap<T> = {}>(
+export function createUseValue<T extends Entity, Relations = {}>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
     store: IStore<T, Relations>,
     jotaiStore?: ReturnType<typeof createStore>
 ) {
     const actualStore = jotaiStore || globalStore
 
-    return function useValue<Include extends Partial<Record<keyof Relations, any>> = {}>(
+    return function useValue<const Include extends RelationIncludeInput<Relations> = {}>(
         id?: StoreKey,
         options?: { include?: Include }
-    ): (Include extends {} ? (T & any) : T) | undefined {
+    ): (keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined) {
         const selectedAtom = useMemo(() => {
             if (!id) return atom(undefined)
 

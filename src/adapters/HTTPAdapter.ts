@@ -1007,7 +1007,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         if (!upsertIds.size && !deleteIds.size) return
 
         const fetched = upsertIds.size
-            ? await this.executors.bulkGet(Array.from(upsertIds))
+            ? await this.bulkGet(Array.from(upsertIds))
             : []
 
         const items = fetched.filter((i): i is T => i !== undefined)

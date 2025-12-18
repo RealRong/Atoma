@@ -3,19 +3,19 @@ import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { applyQuery, extractQueryFields, stableStringify } from '../../core/query'
 import { globalStore } from '../../core/BaseStore'
-import { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, RelationMap, Entity } from '../../core/types'
+import { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, RelationIncludeInput, RelationMap, Entity } from '../../core/types'
 import type { UseFindManyResult } from '../types'
 import { useRelations } from './useRelations'
 import { resolveStoreAccess, resolveStoreMatcher, resolveStoreRelations } from '../../core/storeAccessRegistry'
 
-export function createUseFindMany<T extends Entity, Relations extends RelationMap<T> = {}>(
+export function createUseFindMany<T extends Entity, Relations = {}>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
     store: IStore<T, Relations>,
     jotaiStore?: ReturnType<typeof createStore>
 ) {
     const actualStore = jotaiStore || globalStore
 
-    return function useFindMany<Include extends Partial<Record<keyof Relations, any>> = {}>(options?: FindManyOptions<T, Include> & { fetchPolicy?: FetchPolicy }): UseFindManyResult<T, Relations, Include> {
+    return function useFindMany<const Include extends RelationIncludeInput<Relations> = {}>(options?: FindManyOptions<T, Include> & { fetchPolicy?: FetchPolicy }): UseFindManyResult<T, Relations, Include> {
         const map = useAtomValue(objectMapAtom, { store: actualStore })
         const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'local-then-remote'
         const shouldUseLocal = fetchPolicy !== 'remote'
@@ -123,7 +123,7 @@ export function createUseFindMany<T extends Entity, Relations extends RelationMa
 
             run()
             return () => { cancelled = true }
-        // 说明：不依赖 localData，避免 local-then-remote 因本地缓存更新反复触发远程请求
+            // 说明：不依赖 localData，避免 local-then-remote 因本地缓存更新反复触发远程请求
         }, [queryKey, fetchPolicy, store])
 
         const refetch = () => {

@@ -60,6 +60,13 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             await runner.commitTransaction()
             return out
         } catch (err) {
+            const debug = typeof process !== 'undefined'
+                && process?.env
+                && (process.env.ATOMA_DEBUG_ERRORS === '1' || process.env.ATOMA_DEBUG_ERRORS === 'true')
+            if (debug) {
+                // eslint-disable-next-line no-console
+                console.error('[atoma] typeorm transaction failed', err)
+            }
             await runner.rollbackTransaction()
             throw err
         } finally {
@@ -142,7 +149,8 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
     async create(resource: string, data: any, options: WriteOptions = {}): Promise<QueryResultOne> {
         try {
             const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
-            const saved = await repo.save(data)
+            const input = this.pickKnownColumns(repo, data)
+            const saved = await repo.save(input)
             return { data: options.returning === false ? undefined : saved, transactionApplied: Boolean(this.manager) }
         } catch (err) {
             throw err
@@ -175,7 +183,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 if (id === undefined) throw new Error('delete requires id')
                 const current = await repo.findOne({ where: { [this.idField]: id } as any })
                 if (!current) {
-                    throw new Error('Not found')
+                    throwError('NOT_FOUND', 'Not found', { kind: 'validation', resource })
                 }
                 const currentPlain = this.toPlain(current)
                 const currentVersion = (currentPlain as any).version
@@ -220,7 +228,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             }
             const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
             if (!current) {
-                throw new Error('Not found')
+                throwError('NOT_FOUND', 'Not found', { kind: 'validation', resource })
             }
             // TypeORM 返回的是实体实例，Immer 需要可 draft 的 plain object
             const base = this.toPlain(current)
@@ -239,12 +247,15 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 }
             }
             const normalized = this.stripIdPrefix(item.patches, item.id)
-            const next = applyPatches(base, normalized)
+            let next = applyPatches(base, normalized)
             const baseVersion = (base as any).version
             if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion) && typeof baseVersion === 'number') {
-                ;(next as any).version = baseVersion + 1
+                if (next && typeof next === 'object' && !Array.isArray(next)) {
+                    next = { ...(next as any), version: baseVersion + 1 }
+                }
             }
-            const saved = await repo.save(next as any)
+            const input = this.pickKnownColumns(repo, next)
+            const saved = await repo.save(input as any)
             const returning = options.returning !== false
             const data = returning
                 ? (options.select ? await repo.findOne({
@@ -265,7 +276,8 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
         for (let i = 0; i < items.length; i++) {
             try {
-                const saved = await repo.save(items[i])
+                const input = this.pickKnownColumns(repo, items[i])
+                const saved = await repo.save(input)
                 if (options.returning !== false) data.push(saved)
             } catch (err) {
                 partialFailures.push({ index: i, error: this.toError(err) })
@@ -347,11 +359,12 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                     throw new Error('bulkPatch item missing id or patches')
                 }
                 const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
-                if (!current) throw new Error('Not found')
+                if (!current) throwError('NOT_FOUND', 'Not found', { kind: 'validation', resource })
                 const base = this.toPlain(current)
                 const normalized = this.stripIdPrefix(item.patches, item.id)
                 const next = applyPatches(base, normalized)
-                const saved = await repo.save(next as any)
+                const input = this.pickKnownColumns(repo, next)
+                const saved = await repo.save(input as any)
                 if (options.returning !== false) {
                     data.push(options.select
                         ? await repo.findOne({
@@ -586,6 +599,21 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
     private toPlain(obj: any) {
         // 简单且安全地去掉原型，确保 Immer 可 draft
         return obj ? JSON.parse(JSON.stringify(obj)) : obj
+    }
+
+    private pickKnownColumns(repo: any, value: any) {
+        const columns = repo?.metadata?.columns
+        if (!Array.isArray(columns) || !columns.length) return value
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+        const out: Record<string, any> = {}
+        for (const c of columns) {
+            const k = (c as any)?.propertyName
+            if (typeof k !== 'string' || !k) continue
+            if (Object.prototype.hasOwnProperty.call(value, k)) {
+                out[k] = (value as any)[k]
+            }
+        }
+        return out
     }
 
     private stripIdPrefix(patches: any[], id: any) {

@@ -127,10 +127,11 @@ export function createSyncService<Ctx>(args: {
             const acked: any[] = []
             const rejected: any[] = []
             let serverCursor: number | undefined
-            const txHost = args.config.adapter.orm.transaction
-            if (typeof txHost !== 'function') {
+            const txHostRaw = args.config.adapter.orm.transaction
+            if (typeof txHostRaw !== 'function') {
                 throw new Error('AtomaServerConfig.adapter.orm.transaction is required for /sync/push')
             }
+            const txHost = txHostRaw.bind(args.config.adapter.orm)
             const idempotencyTtlMs = args.config.sync?.push?.idempotencyTtlMs ?? 7 * 24 * 60 * 60 * 1000
 
             for (const op of request.ops) {
@@ -240,6 +241,22 @@ export function createSyncService<Ctx>(args: {
                     }
                     rejected.push(reject)
                 } catch (err: any) {
+                    const debug = typeof process !== 'undefined'
+                        && process?.env
+                        && (process.env.ATOMA_DEBUG_ERRORS === '1' || process.env.ATOMA_DEBUG_ERRORS === 'true')
+                    if (debug) {
+                        // eslint-disable-next-line no-console
+                        console.error('[atoma] /sync/push write failed', {
+                            traceId: runtime.traceId,
+                            requestId: runtime.requestId,
+                            idempotencyKey: op.idempotencyKey,
+                            resource: op.resource,
+                            kind: (op as any).kind,
+                            id: (op as any).id,
+                            baseVersion: (op as any).baseVersion,
+                            timestamp: (op as any).timestamp
+                        }, err)
+                    }
                     const standard = toStandardError(err, 'WRITE_FAILED')
                     const conflictVersion = (standard.details as any)?.currentVersion
                     const conflictValue = (standard.details as any)?.currentValue
@@ -256,4 +273,3 @@ export function createSyncService<Ctx>(args: {
         }
     }
 }
-

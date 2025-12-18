@@ -121,12 +121,26 @@ describe('AtomaTypeormAdapter', () => {
 
     it('patch 会应用 immer patches 并保存', async () => {
         class Post {
-            constructor(public id: number, public title: string, public body: string) {}
+            constructor(
+                public id: number,
+                public title: string,
+                public body: string,
+                public authorId: number,
+                public version: number
+            ) {}
         }
         const repo: any = {
-            findOne: vi.fn(async ({ where }: any) => new Post(where.id, 'old', 'b')),
+            findOne: vi.fn(async ({ where }: any) => new Post(where.id, 'old', 'b', 1, 0)),
             save: vi.fn(async (entity: any) => entity),
-            metadata: { columns: [{ propertyName: 'id' }, { propertyName: 'title' }, { propertyName: 'body' }] }
+            metadata: {
+                columns: [
+                    { propertyName: 'id' },
+                    { propertyName: 'title' },
+                    { propertyName: 'body' },
+                    { propertyName: 'authorId' },
+                    { propertyName: 'version' }
+                ]
+            }
         }
         const ds = {
             getRepository: () => repo,
@@ -143,8 +157,53 @@ describe('AtomaTypeormAdapter', () => {
         })
 
         expect(repo.findOne).toHaveBeenCalled()
-        expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ title: 'new' }))
+        expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ title: 'new', version: 0 }))
         expect(res.data).toMatchObject({ id: 1, title: 'new', body: 'bb' })
+    })
+
+    it('patch 会丢弃非列字段（例如 include 关系对象）', async () => {
+        const repo: any = {
+            findOne: vi.fn(async () => ({ id: 1, title: 'old', body: 'b', authorId: 1, version: 0 })),
+            save: vi.fn(async (entity: any) => entity),
+            metadata: {
+                columns: [
+                    { propertyName: 'id' },
+                    { propertyName: 'title' },
+                    { propertyName: 'body' },
+                    { propertyName: 'authorId' },
+                    { propertyName: 'version' }
+                ]
+            }
+        }
+        const ds = {
+            getRepository: () => repo,
+            getMetadata: () => ({})
+        } as unknown as DataSource
+
+        const adapter = new AtomaTypeormAdapter(ds)
+        await adapter.patch('posts', {
+            id: 1,
+            patches: [{
+                op: 'replace',
+                path: [1],
+                value: {
+                    id: 1,
+                    title: 'new',
+                    body: 'bb',
+                    authorId: 1,
+                    author: { id: 1, name: 'Alice' },
+                    comments: [],
+                    updatedAt: 123
+                }
+            }],
+            baseVersion: 0
+        })
+
+        const arg = repo.save.mock.calls[0][0]
+        expect(arg.author).toBeUndefined()
+        expect(arg.comments).toBeUndefined()
+        expect(arg.updatedAt).toBeUndefined()
+        expect(arg).toMatchObject({ id: 1, title: 'new', body: 'bb', authorId: 1, version: 1 })
     })
 
     it('bulkPatch 记录 partialFailures', async () => {

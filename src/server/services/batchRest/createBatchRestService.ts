@@ -10,23 +10,13 @@ import type { HandleResult } from '../../http/types'
 import { handleWithRuntime } from '../../engine/handleWithRuntime'
 import type { CreateRuntime, FormatTopLevelError } from '../../engine/types'
 import type { AuthzPolicy } from '../../policies/authzPolicy'
+import { fieldPolicyForResource } from '../../authz/fieldPolicyForResource'
+import { mergeForcedWhere } from '../../authz/mergeForcedWhere'
 import { validateWriteForOp } from './validateWriteForOp'
 import type { BatchRestService } from '../types'
 
 function resolveResource(op: BatchOp): string {
     return op.action === 'query' ? op.query.resource : (op as any).resource
-}
-
-function fieldPolicyForResource<Ctx>(config: AtomaServerConfig<Ctx>, resource: string) {
-    return config.authz?.perResource?.[resource]?.fieldPolicy ?? config.authz?.fieldPolicy
-}
-
-function mergeForcedWhere(params: any, forcedWhere: Record<string, any>) {
-    if (!forcedWhere || typeof forcedWhere !== 'object' || Array.isArray(forcedWhere)) return
-    const base = (params?.where && typeof params.where === 'object' && !Array.isArray(params.where))
-        ? params.where
-        : undefined
-    params.where = { ...(base ?? {}), ...forcedWhere }
 }
 
 export function createBatchRestService<Ctx>(args: {
@@ -170,4 +160,3 @@ export function createBatchRestService<Ctx>(args: {
         }
     }
 }
-

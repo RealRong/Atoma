@@ -42,13 +42,34 @@ export class OperationApplier {
                     // Ensure origin exists
                     if (!origin) return
 
-                    let newObj = Object.assign({}, origin, data, { updatedAt: Date.now() })
-                    if (event.transformData) {
-                        newObj = event.transformData(newObj as any) as any
-                    }
-                    if (!newObj) return
-                    draft.set(data.id, newObj as any)
-                    appliedData.push(newObj as T)
+                    const candidate = Object.assign({}, origin, data, { updatedAt: Date.now() })
+                    const next = event.transformData
+                        ? (event.transformData(candidate as any) as any)
+                        : candidate
+                    if (!next) return
+
+                    const nextObj = next as any
+                    const originObj = origin as unknown as WritableDraft<any>
+                    const keys = new Set<string>([
+                        ...Object.keys(originObj),
+                        ...Object.keys(nextObj)
+                    ])
+                    keys.forEach(key => {
+                        if (key === 'id') return
+                        const has = Object.prototype.hasOwnProperty.call(nextObj, key)
+                        if (!has) {
+                            if (Object.prototype.hasOwnProperty.call(originObj, key)) {
+                                delete originObj[key]
+                            }
+                            return
+                        }
+                        const nextVal = nextObj[key]
+                        if (originObj[key] !== nextVal) {
+                            originObj[key] = nextVal
+                        }
+                    })
+                    originObj.id = data.id
+                    appliedData.push(next as T)
                     operationTypes.push('update')
                     break
                 }
@@ -77,7 +98,7 @@ export class OperationApplier {
             inversePatches = inverse
         }) as Map<StoreKey, T>
 
-        const changedFields = this.collectChangedFields(operations, currentValue)
+        const changedFields = this.collectChangedFieldsFromPatches(patches)
 
         return {
             newValue,
@@ -90,24 +111,18 @@ export class OperationApplier {
         }
     }
 
-    private collectChangedFields<T extends Entity>(
-        events: StoreDispatchEvent<T>[],
-        currentMap: Map<StoreKey, T>
-    ): Set<string> {
+    private collectChangedFieldsFromPatches(patches: Patch[]): Set<string> {
         const fields = new Set<string>()
-        events.forEach(event => {
-            const { data, type } = event
-            if (type === 'update') {
-                const current = currentMap.get(data.id)
-                if (!current) return
-                Object.keys(data).forEach(key => {
-                    if (key === 'id') return
-                    if ((current as any)[key] !== (data as any)[key]) {
-                        fields.add(key)
-                    }
-                })
-            } else {
-                Object.keys(data || {}).forEach(k => fields.add(k))
+        patches.forEach(p => {
+            if (p.path.length >= 2) {
+                fields.add(String(p.path[1]))
+                return
+            }
+            if (p.op === 'add' || p.op === 'replace') {
+                fields.add('id')
+            }
+            if (p.op === 'remove') {
+                fields.add('deleted')
             }
         })
         return fields

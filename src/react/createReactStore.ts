@@ -1,4 +1,4 @@
-import type { FindManyOptions, IStore, RelationConfig, RelationMap, StoreKey, Entity, InferIncludeType } from '../core/types'
+import type { FindManyOptions, IStore, RelationConfig, RelationMap, StoreKey, Entity, RelationIncludeInput, WithRelations } from '../core/types'
 import type { UseFindManyResult } from './types'
 import type { CoreStore, CoreStoreConfig } from '../core/createCoreStore'
 import { createCoreStore } from '../core/createCoreStore'
@@ -10,40 +10,37 @@ import { createUseMultiple, UseMultipleOptions } from './hooks/useMultiple'
 
 export interface ReactStoreConfig<T extends Entity> extends CoreStoreConfig<T> { }
 
-export interface ReactStore<T extends Entity, Relations extends RelationMap<T> = {}> extends CoreStore<T, Relations> {
-    useValue: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
+export interface ReactStore<T extends Entity, Relations = {}> extends CoreStore<T, Relations> {
+    useValue: <const Include extends RelationIncludeInput<Relations> = {}>(
         id?: StoreKey,
         options?: { include?: Include }
-    ) => (keyof Include extends never ? T | undefined : any)
+    ) => (keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined)
 
-    useAll: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
+    useAll: <const Include extends RelationIncludeInput<Relations> = {}>(
         options?: { include?: Include }
-    ) => (keyof Include extends never ? T[] : any)
+    ) => (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[])
 
-    useFindMany: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
-        options?: FindManyOptions<T, Include> & {
-            fetchPolicy?: import('../core/types').FetchPolicy
-            include?: { [K in keyof Relations]?: InferIncludeType<Relations[K]> }
-        }
+    useFindMany: <const Include extends RelationIncludeInput<Relations> = {}>(
+        options?: FindManyOptions<T, Include> & { fetchPolicy?: import('../core/types').FetchPolicy }
     ) => UseFindManyResult<T, Relations, Include>
 
-    useMultiple: <Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
+    useMultiple: <const Include extends RelationIncludeInput<Relations> = {}>(
         ids: StoreKey[],
         options?: UseMultipleOptions<T, Relations> & { include?: Include }
-    ) => (keyof Include extends never ? T[] : any)
+    ) => (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[])
 
     withRelations: <const NewRelations extends Record<string, RelationConfig<any, any>>>(factory: () => NewRelations) => ReactStore<T, NewRelations>
 }
 
-export function createReactStore<T extends Entity, const Relations extends RelationMap<T>>(
+export function createReactStore<T extends Entity, const Relations>(
     config: ReactStoreConfig<T> & { relations: () => Relations }
 ): ReactStore<T, Relations>
 
-export function createReactStore<T extends Entity, const Relations extends RelationMap<T> = {}>(
+export function createReactStore<T extends Entity, const Relations = {}>(
     config: ReactStoreConfig<T> & { relations?: () => Relations }
 ): ReactStore<T, Relations>
 
-export function createReactStore<T extends Entity, Relations extends RelationMap<T> = {}>(
+export function createReactStore<T extends Entity, Relations = {}>(
     config: ReactStoreConfig<T> & { relations?: () => Relations }
 ): ReactStore<T, Relations> {
     const core = createCoreStore<T, Relations>(config as any) as unknown as CoreStore<T, Relations>
@@ -69,5 +66,3 @@ export function createReactStore<T extends Entity, Relations extends RelationMap
 
     return reactStore
 }
-
-export const createAtomaStore = createReactStore

@@ -2,29 +2,29 @@ import { PrimitiveAtom, createStore } from 'jotai'
 import { useAtomValue } from 'jotai'
 import { useMemo } from 'react'
 import { globalStore } from '../../core/BaseStore'
-import { Entity, IStore, InferIncludeType, OrderBy, RelationMap, StoreKey } from '../../core/types'
+import { Entity, IStore, RelationIncludeInput, RelationMap, StoreKey, WithRelations } from '../../core/types'
 import { useRelations } from './useRelations'
 import { resolveStoreRelations } from '../../core/storeAccessRegistry'
 
-export interface UseMultipleOptions<T, Relations extends RelationMap<T> = {}> {
+export interface UseMultipleOptions<T, Relations = {}> {
     limit?: number
     unique?: boolean
     selector?: (item: T) => any
-    include?: { [K in keyof Relations]?: InferIncludeType<Relations[K]> }
+    include?: RelationIncludeInput<Relations>
 }
 
 
-export function createUseMultiple<T extends Entity, Relations extends RelationMap<T> = {}>(
+export function createUseMultiple<T extends Entity, Relations = {}>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
     store: IStore<T, Relations>,
     jotaiStore?: ReturnType<typeof createStore>
 ) {
     const actualStore = jotaiStore || globalStore
 
-    return function useMultiple<Include extends { [K in keyof Relations]?: InferIncludeType<Relations[K]> } = {}>(
+    return function useMultiple<const Include extends RelationIncludeInput<Relations> = {}>(
         ids: StoreKey[] = [],
         options?: UseMultipleOptions<T, Relations> & { include?: Include }
-    ): T[] {
+    ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
         const map = useAtomValue(objectMapAtom, { store: actualStore })
         const { limit, unique = true, selector, include } = options || {}
 

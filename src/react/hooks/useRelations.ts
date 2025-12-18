@@ -17,7 +17,7 @@ export interface UseRelationsResult<T extends Entity> {
 export function useRelations<T extends Entity>(
     items: T[],
     include: IncludeOption | undefined,
-    relations: RelationMap<T> | undefined
+    relations: any | undefined
 ): UseRelationsResult<T> {
     const includeKey = useMemo(() => stableStringify(include), [include])
     const [data, setData] = useState<T[]>(items)

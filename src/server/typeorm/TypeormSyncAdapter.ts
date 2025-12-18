@@ -3,7 +3,9 @@ import type { AtomaChange, ISyncAdapter, IdempotencyResult } from '../sync/types
 import { throwError } from '../error'
 import { AtomaTypeormAdapter } from './TypeormAdapter'
 
-type TypeormExecutor = Pick<DataSource, 'createQueryBuilder'> | Pick<EntityManager, 'createQueryBuilder'>
+type TypeormExecutor =
+    | Pick<DataSource, 'createQueryBuilder' | 'query'>
+    | Pick<EntityManager, 'createQueryBuilder' | 'query'>
 
 type Options = {
     tables?: {
@@ -34,7 +36,7 @@ export class AtomaTypeormSyncAdapter implements ISyncAdapter {
 
     private resolveExecutor(tx?: unknown): TypeormExecutor {
         const e = tx as any
-        if (e && typeof e.createQueryBuilder === 'function') return e as TypeormExecutor
+        if (e && typeof e.createQueryBuilder === 'function' && typeof e.query === 'function') return e as TypeormExecutor
         return this.executor
     }
 
@@ -107,7 +109,7 @@ export class AtomaTypeormSyncAdapter implements ISyncAdapter {
             } as any)
             .execute()
 
-        const cursor = (() => {
+        let cursor = (() => {
             const fromMap = Array.isArray(inserted.generatedMaps) && inserted.generatedMaps[0]
                 ? (inserted.generatedMaps[0] as any).cursor
                 : undefined
@@ -126,8 +128,27 @@ export class AtomaTypeormSyncAdapter implements ISyncAdapter {
                 if (Number.isFinite(n)) return Math.floor(n)
             }
 
+            const raw = (inserted as any)?.raw
+            const rawCandidate = (raw && typeof raw === 'object' && !Array.isArray(raw))
+                ? ((raw as any).lastID ?? (raw as any).insertId ?? (raw as any).lastId ?? (raw as any).cursor)
+                : raw
+            if (typeof rawCandidate === 'number' && Number.isFinite(rawCandidate)) return rawCandidate
+            if (typeof rawCandidate === 'string' && rawCandidate) {
+                const n = Number(rawCandidate)
+                if (Number.isFinite(n)) return Math.floor(n)
+            }
+
             return NaN
         })()
+
+        if (!Number.isFinite(cursor)) {
+            try {
+                const rows = await executor.query('SELECT last_insert_rowid() as cursor')
+                const row = Array.isArray(rows) ? rows[0] : rows
+                const n = Number((row as any)?.cursor)
+                if (Number.isFinite(n)) cursor = Math.floor(n)
+            } catch {}
+        }
 
         if (!Number.isFinite(cursor)) {
             throwError('INTERNAL', 'Failed to read inserted cursor', { kind: 'internal' })

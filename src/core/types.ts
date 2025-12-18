@@ -1,5 +1,5 @@
 import { Atom, PrimitiveAtom } from 'jotai/vanilla'
-import { Patch } from 'immer'
+import type { Draft, Patch } from 'immer'
 import type { StoreContext } from './StoreContext'
 import type { DevtoolsBridge } from '../devtools/types'
 import type { Explain, InternalOperationContext } from '../observability/types'
@@ -224,7 +224,7 @@ export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
 export type FindManyResult<T> = { data: T[]; pageInfo?: PageInfo; explain?: Explain }
 
 // Relations include 专用（仅支持 Top-N 预览，不含分页）
-export type RelationIncludeOptions<T> = Pick<FindManyOptions<T>, 'limit' | 'orderBy' | 'include' | 'skipStore'> & {
+export type RelationIncludeOptions<T, Include extends Record<string, any> = Record<string, any>> = Pick<FindManyOptions<T, Include>, 'limit' | 'orderBy' | 'include' | 'skipStore'> & {
     /** live=true 订阅子 store 实时变化；false 则使用快照（默认 true） */
     live?: boolean
 }
@@ -303,28 +303,28 @@ export interface IndexDefinition<T> {
 // ============ Relations ============
 export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
 
-export interface BelongsToConfig<TSource, TTarget extends Entity> {
+export interface BelongsToConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
     type: 'belongsTo'
-    store: IStore<TTarget, any>
+    store: IStore<TTarget, TTargetRelations>
     foreignKey: KeySelector<TSource>
     primaryKey?: keyof TTarget & string
-    options?: RelationIncludeOptions<TTarget>
+    options?: RelationIncludeOptions<TTarget, Partial<{ [K in keyof TTargetRelations]: InferIncludeType<TTargetRelations[K]> }>>
 }
 
-export interface HasManyConfig<TSource, TTarget extends Entity> {
+export interface HasManyConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
     type: 'hasMany'
-    store: IStore<TTarget, any>
+    store: IStore<TTarget, TTargetRelations>
     primaryKey?: KeySelector<TSource>
     foreignKey: keyof TTarget & string
-    options?: RelationIncludeOptions<TTarget>
+    options?: RelationIncludeOptions<TTarget, Partial<{ [K in keyof TTargetRelations]: InferIncludeType<TTargetRelations[K]> }>>
 }
 
-export interface HasOneConfig<TSource, TTarget extends Entity> {
+export interface HasOneConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
     type: 'hasOne'
-    store: IStore<TTarget, any>
+    store: IStore<TTarget, TTargetRelations>
     primaryKey?: KeySelector<TSource>
     foreignKey: keyof TTarget & string
-    options?: RelationIncludeOptions<TTarget>
+    options?: RelationIncludeOptions<TTarget, Partial<{ [K in keyof TTargetRelations]: InferIncludeType<TTargetRelations[K]> }>>
 }
 
 export interface VariantsConfig<TSource> {
@@ -343,24 +343,24 @@ export type RelationConfig<TSource, TTarget extends Entity = any> =
     | HasOneConfig<TSource, TTarget>
     | VariantsConfig<TSource>
 
-export type RelationMap<T> = Record<string, RelationConfig<T, any>>
+export type RelationMap<T> = Readonly<Record<string, RelationConfig<T, any>>>
 
 // 根据关系类型推导 include 的取值类型
 export type InferIncludeType<R> =
-    R extends BelongsToConfig<any, infer TTarget> ? boolean | RelationIncludeOptions<TTarget>
-    : R extends HasManyConfig<any, infer TTarget> ? boolean | RelationIncludeOptions<TTarget>
-    : R extends HasOneConfig<any, infer TTarget> ? boolean | RelationIncludeOptions<TTarget>
+    R extends BelongsToConfig<any, infer TTarget, infer TR> ? boolean | RelationIncludeOptions<TTarget, Partial<{ [K in keyof TR]: InferIncludeType<TR[K]> }>>
+    : R extends HasManyConfig<any, infer TTarget, infer TR> ? boolean | RelationIncludeOptions<TTarget, Partial<{ [K in keyof TR]: InferIncludeType<TR[K]> }>>
+    : R extends HasOneConfig<any, infer TTarget, infer TR> ? boolean | RelationIncludeOptions<TTarget, Partial<{ [K in keyof TR]: InferIncludeType<TR[K]> }>>
     : never
 
 /**
  * Store interface - main API for CRUD operations
  */
-export interface IStore<T, Relations extends RelationMap<T> = {}> {
+export interface IStore<T, Relations = {}> {
     /** Add a new item */
     addOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
 
-    /** Update an existing item */
-    updateOne(item: PartialWithId<T>, options?: StoreOperationOptions): Promise<T>
+    /** Update an existing item (Immer recipe) */
+    updateOne(id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions): Promise<T>
 
     /** Delete an item by ID */
     deleteOneById(id: StoreKey, options?: StoreOperationOptions): Promise<boolean>
@@ -389,29 +389,62 @@ export interface IStore<T, Relations extends RelationMap<T> = {}> {
 }
 
 type InferTargetType<R> =
-    R extends BelongsToConfig<any, infer U> ? U
-    : R extends HasManyConfig<any, infer U> ? U
-    : R extends HasOneConfig<any, infer U> ? U
-    : R extends VariantsConfig<any> ? any
+    R extends BelongsToConfig<any, infer U, any> ? U
+    : R extends HasManyConfig<any, infer U, any> ? U
+    : R extends HasOneConfig<any, infer U, any> ? U
+    : R extends VariantsConfig<any> ? unknown
     : never
 
-type InferRelationResultType<R> =
-    R extends { type: 'hasMany' } ? InferTargetType<R>[]
-    : R extends { type: 'belongsTo' | 'hasOne' } ? InferTargetType<R> | null
-    : R extends { type: 'variants' } ? any | null
+type InferStoreRelations<R> =
+    R extends { store: IStore<any, infer TR> } ? TR : {}
+
+type InferIncludeForRelations<Relations> =
+    Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
+
+type ApplyIncludeToTarget<
+    TTarget,
+    TTargetRelations,
+    Opt
+> = Opt extends { include?: infer Nested }
+    ? Nested extends InferIncludeForRelations<TTargetRelations>
+    ? WithRelations<TTarget, TTargetRelations, Nested>
+    : WithRelations<TTarget, TTargetRelations, InferIncludeForRelations<TTargetRelations>>
+    : TTarget
+
+type InferRelationResultType<R, Opt> =
+    0 extends (1 & R) ? any :
+    R extends HasManyConfig<any, infer TTarget, any>
+    ? ApplyIncludeToTarget<TTarget, InferStoreRelations<R>, Opt>[]
+    : R extends BelongsToConfig<any, infer TTarget, any>
+    ? ApplyIncludeToTarget<TTarget, InferStoreRelations<R>, Opt> | null
+    : R extends HasOneConfig<any, infer TTarget, any>
+    ? ApplyIncludeToTarget<TTarget, InferStoreRelations<R>, Opt> | null
+    : R extends VariantsConfig<any> ? unknown | null
     : never
 
 export type WithRelations<
     T,
-    Relations extends RelationMap<T>,
-    Include extends Partial<Record<keyof Relations, boolean | RelationIncludeOptions<any>>>
+    Relations,
+    Include extends Record<string, any>
 > = T & {
     [K in keyof Include as Include[K] extends false | undefined ? never : K]: K extends keyof Relations
-        ? Include[K] extends true | object
-            ? InferRelationResultType<Relations[K]>
-            : never
-        : never
+    ? Include[K] extends true | object
+    ? InferRelationResultType<Relations[K], Include[K]>
+    : never
+    : unknown
 }
+
+/**
+ * Relations include 的入参形状：
+ * - 当 Relations 可枚举（有明确的 key union）时：强约束 key，并为每个 key 推导值类型
+ * - 当 Relations 不可得（空 / any / string 索引）时：允许任意 key，但不会把 any 泄漏到实体字段上（会在 WithRelations 里降级为 unknown）
+ */
+export type RelationIncludeInput<Relations> =
+    keyof Relations extends never
+    ? Partial<Record<string, boolean | RelationIncludeOptions<any, any>>>
+    : string extends keyof Relations
+    ? Partial<Record<string, boolean | RelationIncludeOptions<any, any>>>
+    : Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
 
 /**
  * Optimistic mode configuration
@@ -469,7 +502,7 @@ export type StoreAccess<T extends Entity = any> = {
     context: StoreContext
     matcher?: QueryMatcherOptions
     storeName?: string
-    relations?: () => RelationMap<any> | undefined
+    relations?: () => any | undefined
 
     transform?: (item: T) => T
     schema?: SchemaValidator<T>

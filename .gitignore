@@ -34,7 +34,7 @@ coverage/
 # Root markdown notes (keep primary docs tracked)
 /*.md
 !/README.md
-!/ARCHITECTURE.md
+# !/ARCHITECTURE.md
 !/HTTP_PROTOCOL.md
 # Unfinished Atoma docs
 atoma-docs

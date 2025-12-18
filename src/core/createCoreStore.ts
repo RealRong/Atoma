@@ -42,22 +42,22 @@ export interface CoreStoreConfig<T extends Entity> {
     debug?: DebugOptions
 }
 
-export interface CoreStore<T extends Entity, Relations extends RelationMap<T> = {}> extends IStore<T, Relations> {
+export interface CoreStore<T extends Entity, Relations = {}> extends IStore<T, Relations> {
     name: string
     getCachedOneById: (id: StoreKey) => T | undefined
     getCachedAll: () => T[]
     withRelations: <const NewRelations extends Record<string, RelationConfig<any, any>>>(factory: () => NewRelations) => CoreStore<T, NewRelations>
 }
 
-export function createCoreStore<T extends Entity, const Relations extends RelationMap<T>>(
+export function createCoreStore<T extends Entity, const Relations>(
     config: CoreStoreConfig<T> & { relations: () => Relations }
 ): CoreStore<T, Relations>
 
-export function createCoreStore<T extends Entity, const Relations extends RelationMap<T> = {}>(
+export function createCoreStore<T extends Entity, const Relations = {}>(
     config: CoreStoreConfig<T> & { relations?: () => Relations }
 ): CoreStore<T, Relations>
 
-export function createCoreStore<T extends Entity, Relations extends RelationMap<T> = {}>(
+export function createCoreStore<T extends Entity, Relations = {}>(
     config: CoreStoreConfig<T> & { relations?: () => Relations }
 ): CoreStore<T, Relations> {
     const { name, transformData } = config
@@ -152,7 +152,7 @@ export function createCoreStore<T extends Entity, Relations extends RelationMap<
         return Array.from(jotaiStore.get(objectMapAtom).values())
     }
 
-    const applyRelations = (factory?: () => RelationMap<T>) => {
+    const applyRelations = (factory?: () => any) => {
         if (!factory) return
         let cache: RelationMap<T> | undefined
         const getter = () => {

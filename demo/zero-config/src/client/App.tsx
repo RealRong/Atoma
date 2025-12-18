@@ -11,7 +11,7 @@ export function App() {
                 orderBy: { field: 'id', direction: 'asc' },
                 include: { author: true }
             }
-        } as const
+        }
     })
 
     const [title, setTitle] = useState('')
@@ -45,9 +45,8 @@ export function App() {
         const top3 = posts.slice(0, 3)
         await Promise.all(
             top3.map(p =>
-                PostsStore.updateOne({
-                    ...p,
-                    title: `${p.title} ⚡`
+                PostsStore.updateOne(p.id, (draft: any) => {
+                    draft.title = `${p.title} ⚡`
                 })
             )
         )
@@ -124,9 +123,20 @@ export function App() {
     )
 }
 
+// ... (inside PostCard)
 const PostCard = React.memo(function PostCard({ id }: { id: StoreKey }) {
-    const post = PostsStore.useValue(id)
+    const post = PostsStore.useValue(id, {
+        include: {
+            author: true,
+            comments: {
+                orderBy: { field: 'id', direction: 'asc' },
+                include: { author: true }
+            }
+        }
+    })
+
     const [editing, setEditing] = useState(false)
+
     const [title, setTitle] = useState(post?.title ?? '')
     const [body, setBody] = useState(post?.body ?? '')
     const [renderCount, setRenderCount] = useState(0)
@@ -137,7 +147,10 @@ const PostCard = React.memo(function PostCard({ id }: { id: StoreKey }) {
 
     if (!post) return null
     const save = async () => {
-        await PostsStore.updateOne({ ...post, title: title.trim() || post.title, body })
+        await PostsStore.updateOne(post.id, (draft: any) => {
+            draft.title = title.trim() || post.title
+            draft.body = body
+        })
         setEditing(false)
     }
 
@@ -186,7 +199,7 @@ const PostCard = React.memo(function PostCard({ id }: { id: StoreKey }) {
             <div style={styles.comments}>
                 <div style={styles.commentsTitle}>Comments</div>
                 <ul style={styles.commentList}>
-                    {post.comments?.map((c: any) => (
+                    {post.comments?.map(c => (
                         <li key={c.id} style={styles.commentItem}>
                             <strong>{c.author?.name}</strong>
                             <span style={styles.commentText}>{c.body}</span>

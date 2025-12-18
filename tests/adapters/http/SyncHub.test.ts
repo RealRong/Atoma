@@ -115,4 +115,41 @@ describe('SyncHub', () => {
 
         hub.stop()
     })
+
+    it('丢弃 cursor<=localCursor 的过期 changes（避免刚 push 又 writeback）', async () => {
+        const fetchFn = vi.fn(async () => {
+            return new Response(JSON.stringify({ nextCursor: 0, changes: [] }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            })
+        })
+        const hub = new SyncHub({
+            baseURL: 'http://example.local/hub-stale-filter',
+            endpoints: { pull: '/sync/pull', subscribe: '/sync/subscribe' },
+            mode: 'poll',
+            pollIntervalMs: 10_000,
+            pullLimit: 200,
+            fetchFn
+        })
+
+        const handler = vi.fn()
+        hub.register('todos', handler)
+        await flush()
+
+        await hub.advanceCursor(10)
+
+        await (hub as any).onIncoming(
+            [{ resource: 'todos', id: 1, kind: 'patch', cursor: 9 }],
+            9
+        )
+        expect(handler).not.toHaveBeenCalled()
+
+        await (hub as any).onIncoming(
+            [{ resource: 'todos', id: 2, kind: 'patch', cursor: 11 }],
+            11
+        )
+        expect(handler).toHaveBeenCalledTimes(1)
+
+        hub.stop()
+    })
 })

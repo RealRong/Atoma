@@ -67,7 +67,9 @@ describe('useFindMany local-then-remote 实时反映本地更新', () => {
         expect(result.current.data[0].title).toBe('Old Title')
 
         await act(async () => {
-            await localStore.updateOne({ id: 1, title: 'New Title' })
+            await localStore.updateOne(1, (draft: any) => {
+                draft.title = 'New Title'
+            })
         })
 
         await waitFor(() => {

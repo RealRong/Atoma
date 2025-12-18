@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createAtomaStore } from '../../src/react/createReactStore'
+import { createReactStore } from '../../src/react/createReactStore'
 import { belongsTo, hasMany } from '../../src/core/relations/builders'
 import type { Entity, FindManyOptions, IAdapter, StoreKey } from '../../src/core/types'
 
@@ -30,17 +30,17 @@ type User = { id: StoreKey; name: string }
 type Comment = { id: StoreKey; postId: StoreKey; authorId: StoreKey }
 type Post = { id: StoreKey; authorId: StoreKey }
 
-const UsersStore = createAtomaStore<User>({
+const UsersStore = createReactStore<User>({
     name: 'users',
     adapter: createMockAdapter<User>()
 })
 
-const CommentsStore = createAtomaStore<Comment>({
+const CommentsStore = createReactStore<Comment>({
     name: 'comments',
     adapter: createMockAdapter<Comment>()
 })
 
-const PostsStore = createAtomaStore<Post>({
+const PostsStore = createReactStore<Post>({
     name: 'posts',
     adapter: createMockAdapter<Post>(),
     relations: () => ({
@@ -72,7 +72,7 @@ const _badArgs: Parameters<typeof PostsStore.useFindMany>[0] = {
 
 // 链式 withRelations：显式泛型 + 事后配置 relations 也应推导键名
 type PostNoRel = { id: StoreKey; authorId: StoreKey }
-const PostsStoreBare = createAtomaStore<PostNoRel>({
+const PostsStoreBare = createReactStore<PostNoRel>({
     name: 'posts-bare',
     adapter: createMockAdapter<PostNoRel>()
 })

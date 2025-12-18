@@ -2,7 +2,7 @@ import { PrimitiveAtom, createStore } from 'jotai'
 import { useMemo } from 'react'
 import { useAtomValue } from 'jotai'
 import { globalStore } from '../../core/BaseStore'
-import { Entity, IStore, RelationMap, StoreKey } from '../../core/types'
+import { Entity, IStore, RelationMap, StoreKey, WithRelations, RelationIncludeInput } from '../../core/types'
 import { useRelations } from './useRelations'
 import { resolveStoreRelations } from '../../core/storeAccessRegistry'
 
@@ -10,16 +10,16 @@ import { resolveStoreRelations } from '../../core/storeAccessRegistry'
  * React hook to subscribe to entire collection
  * Returns all items as an array
  */
-export function createUseAll<T extends Entity, Relations extends RelationMap<T> = {}>(
+export function createUseAll<T extends Entity, Relations = {}>(
     objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
     store: IStore<T, Relations>,
     jotaiStore?: ReturnType<typeof createStore>
 ) {
     const actualStore = jotaiStore || globalStore
 
-    return function useAll<Include extends Partial<Record<keyof Relations, any>> = {}>(
+    return function useAll<const Include extends RelationIncludeInput<Relations> = {}>(
         options?: { include?: Include }
-    ): T[] {
+    ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
         const all = useAtomValue(objectMapAtom, { store: actualStore })
 
         const memoedArr = useMemo(() => {

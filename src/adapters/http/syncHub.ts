@@ -228,15 +228,26 @@ export class SyncHub {
     }
 
     private async onIncoming(changes: AtomaChange[], cursor: number) {
-        if (typeof cursor === 'number' && cursor > this.cursor) {
+        const prevCursor = this.cursor
+
+        // 丢弃过期事件：push ack 已推进 cursor 后仍可能收到旧 SSE（或 poll 重复）
+        if (typeof cursor === 'number' && cursor <= prevCursor) return
+
+        if (typeof cursor === 'number' && cursor > prevCursor) {
             this.cursor = cursor
             await this.cursorStorage.setCursor(this.cursor)
         }
 
         if (!changes.length) return
 
+        const filtered = prevCursor > 0
+            ? changes.filter(c => typeof c?.cursor !== 'number' || c.cursor > prevCursor)
+            : changes
+
+        if (!filtered.length) return
+
         const grouped = new Map<string, AtomaChange[]>()
-        for (const c of changes) {
+        for (const c of filtered) {
             if (!c || typeof c.resource !== 'string' || !c.resource) continue
             if (!grouped.has(c.resource)) grouped.set(c.resource, [])
             grouped.get(c.resource)!.push(c)

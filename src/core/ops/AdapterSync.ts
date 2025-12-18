@@ -35,26 +35,28 @@ type ApplySideEffects<T> = {
 
 const applyPatchesViaOperations = async <T extends Entity>(
     adapter: IAdapter<T>,
-    patches: Patch[],
-    _appliedData: T[],
-    _operationTypes: StoreDispatchEvent<T>['type'][],
+    _patches: Patch[],
+    appliedData: T[],
+    operationTypes: StoreDispatchEvent<T>['type'][],
     internalContext?: InternalOperationContext
 ): Promise<ApplySideEffects<T>> => {
     const createActions: T[] = []
     const putActions: T[] = []
     const deleteKeys: Array<string | number> = []
 
-    patches.forEach(patch => {
-        if (patch.op === 'add' || patch.op === 'replace') {
-            // Immer on Map: op 'add' => new key, 'replace' => existing key update
-            const value = patch.value as T
-            if (patch.op === 'add') {
-                createActions.push(value)
-            } else {
-                putActions.push(value)
-            }
-        } else if (patch.op === 'remove') {
-            deleteKeys.push(patch.path[0] as any)
+    operationTypes.forEach((type, idx) => {
+        const value = appliedData[idx]
+        if (!value) return
+        if (type === 'add') {
+            createActions.push(value)
+            return
+        }
+        if (type === 'update' || type === 'remove') {
+            putActions.push(value)
+            return
+        }
+        if (type === 'forceRemove') {
+            deleteKeys.push((value as any).id as any)
         }
     })
 

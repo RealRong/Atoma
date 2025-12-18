@@ -1,5 +1,7 @@
 import { BaseStore } from '../BaseStore'
-import type { Entity, PartialWithId, StoreOperationOptions } from '../types'
+import { produce } from 'immer'
+import type { Draft } from 'immer'
+import type { Entity, PartialWithId, StoreKey, StoreOperationOptions } from '../types'
 import { commitAtomMapUpdate } from './cacheWriter'
 import { runAfterSave } from './hooks'
 import { validateWithSchema } from './validation'
@@ -8,7 +10,7 @@ import { prepareForUpdate } from './writePipeline'
 
 export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
     const { jotaiStore, atom, adapter, context, indexManager, hooks, schema, transform } = runtime
-    return (obj: PartialWithId<T>, options?: StoreOperationOptions) => {
+    return (id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         return new Promise<T>((resolve, reject) => {
             const internalContext = resolveInternalOperationContext(runtime, options)
             const traceId = internalContext?.traceId
@@ -27,24 +29,26 @@ export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
                         resolve(updated)
                     },
                     onFail: (error) => {
-                        reject(error || new Error(`Failed to update item with id ${obj.id}`))
+                        reject(error || new Error(`Failed to update item with id ${id}`))
                     }
                 })
             }
 
             const updateFromBase = (base: PartialWithId<T>) => {
-                prepareForUpdate<T>(runtime, base, obj).then(dispatchUpdate).catch(reject)
+                const next = produce(base as any, (draft: Draft<T>) => recipe(draft)) as any
+                const patched = { ...(next as any), id } as PartialWithId<T>
+                prepareForUpdate<T>(runtime, base, patched).then(dispatchUpdate).catch(reject)
             }
 
-            const cached = jotaiStore.get(atom).get(obj.id) as T | undefined
+            const cached = jotaiStore.get(atom).get(id) as T | undefined
             if (cached) {
                 updateFromBase(cached as unknown as PartialWithId<T>)
                 return
             }
 
-            adapter.get(obj.id, internalContext).then(data => {
+            adapter.get(id, internalContext).then(data => {
                 if (!data) {
-                    reject(new Error(`Item with id ${obj.id} not found`))
+                    reject(new Error(`Item with id ${id} not found`))
                     return
                 }
 
