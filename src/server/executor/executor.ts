@@ -211,16 +211,9 @@ async function executeBulkCreate(
     const partialFailures: Array<{ index: number; error: any }> = []
 
     for (let i = 0; i < payload.length; i++) {
-        const raw = payload[i]
-        const wrapped = raw && typeof raw === 'object' && !Array.isArray(raw)
-            ? (raw as any)
-            : undefined
-        const itemData = (wrapped && wrapped.__atoma && typeof wrapped.__atoma === 'object' && (wrapped as any).data !== undefined)
-            ? (wrapped as any).data
-            : raw
-        const itemKey = (wrapped && wrapped.__atoma && typeof wrapped.__atoma === 'object')
-            ? (wrapped.__atoma as any).idempotencyKey
-            : undefined
+        const item = payload[i] as any
+        const itemData = item?.data
+        const itemKey = item?.meta?.idempotencyKey
 
         const res = await runItem(adapter, options, async ({ orm, tx }) => {
             return executeWriteItemWithSemantics({
@@ -267,7 +260,7 @@ async function executeBulkPatch(
 
     for (let i = 0; i < payload.length; i++) {
         const item = payload[i] as any
-        const itemKey = item && typeof item === 'object' && !Array.isArray(item) ? item.idempotencyKey : undefined
+        const itemKey = item?.meta?.idempotencyKey
 
         const res = await runItem(adapter, options, async ({ orm, tx }) => {
             return executeWriteItemWithSemantics({
@@ -317,8 +310,8 @@ async function executeBulkUpdateAsPatch(
 
     for (let i = 0; i < payload.length; i++) {
         const item = payload[i] as any
-        const itemKey = item && typeof item === 'object' && !Array.isArray(item) ? item.idempotencyKey : undefined
-        const baseVersion = (typeof item?.baseVersion === 'number' ? item.baseVersion : item?.clientVersion)
+        const itemKey = item?.meta?.idempotencyKey
+        const baseVersion = item?.baseVersion
         const full = (item?.data && typeof item.data === 'object') ? { ...item.data, id: item.id } : { id: item.id }
         const patches = [{ op: 'replace', path: [item.id], value: full }]
 
@@ -369,9 +362,9 @@ async function executeBulkDelete(
 
     for (let i = 0; i < payload.length; i++) {
         const raw = payload[i] as any
-        const id = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.id : raw
-        const baseVersion = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.baseVersion : undefined
-        const itemKey = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.idempotencyKey : undefined
+        const id = raw?.id
+        const baseVersion = raw?.baseVersion
+        const itemKey = raw?.meta?.idempotencyKey
 
         const res = await runItem(adapter, options, async ({ orm, tx }) => {
             return executeWriteItemWithSemantics({

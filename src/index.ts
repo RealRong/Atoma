@@ -17,6 +17,8 @@ export type {
     StoreOperationOptions,
     StoreReadOptions,
     PatchMetadata,
+    OperationContext,
+    OperationOrigin,
     QueueConfig,
     Entity,
     SchemaValidator,
@@ -69,10 +71,6 @@ export { belongsTo, hasMany, hasOne, variants } from './core/relations/builders'
 export { createDevtoolsBridge } from './devtools/bridge'
 export type { DevtoolsBridge, DevtoolsEvent, StoreSnapshot, IndexSnapshot, IndexQueryPlan, QueueItem, HistoryEntrySummary } from './devtools/types'
 export { enableGlobalDevtools, getGlobalDevtools, disableGlobalDevtools } from './devtools/global'
-
-// History
-export { HistoryManager, applyPatchesOnAtom } from './history'
-export type { HistoryRecord, HistoryManagerConfig } from './history'
 
 // Server（Fetch 风格管道）
 export {

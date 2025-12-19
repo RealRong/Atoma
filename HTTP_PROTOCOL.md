@@ -205,8 +205,22 @@ Batch 的关键约束：
 
 示例（bulkUpdate）：
 ```json
-{ "action": "bulkUpdate", "resource": "post", "payload": [{ "id": 1, "data": { "title": "x" } }] }
+{
+  "action": "bulkUpdate",
+  "resource": "post",
+  "payload": [{ "id": 1, "data": { "title": "x" }, "baseVersion": 0, "meta": { "idempotencyKey": "k1" } }]
+}
 ```
+
+写入 payload 约定（推荐/协议形态）：
+- `bulkCreate.payload[]`：`{ "data": <object>, "meta"?: { "idempotencyKey"?: "<string>" } }`
+- `bulkUpdate.payload[]`：`{ "id": <id>, "data": <object>, "baseVersion": <number>, "meta"?: { "idempotencyKey"?: "<string>" } }`
+- `bulkPatch.payload[]`：`{ "id": <id>, "patches": <patch[]>, "baseVersion": <number>, "timestamp"?: <number>, "meta"?: { "idempotencyKey"?: "<string>" } }`
+- `bulkDelete.payload[]`：`{ "id": <id>, "baseVersion": <number>, "meta"?: { "idempotencyKey"?: "<string>" } }`
+
+说明：
+- `meta` 是协议元信息容器（不属于业务数据，不会写入数据库）。
+- `baseVersion` 在除 create 外的写入中建议视为必填，用于乐观锁/冲突检测（缺失应返回 422）。
 
 ### 3.3 响应结构
 

@@ -1,7 +1,6 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import { bumpAtomVersion } from '../BaseStore'
-import { IndexSynchronizer } from '../indexes/IndexSynchronizer'
-import type { IndexManager } from '../indexes/IndexManager'
+import type { StoreIndexes } from '../indexes/StoreIndexes'
 import type { StoreContext } from '../StoreContext'
 import type { StoreKey } from '../types'
 
@@ -11,12 +10,11 @@ export function commitAtomMapUpdate<T>(params: {
     before: Map<StoreKey, T>
     after: Map<StoreKey, T>
     context: StoreContext
-    indexManager: IndexManager<T> | null
+    indexes: StoreIndexes<T> | null
 }) {
-    const { jotaiStore, atom, before, after, context, indexManager } = params
+    const { jotaiStore, atom, before, after, context, indexes } = params
 
     jotaiStore.set(atom, after)
-    if (indexManager) IndexSynchronizer.applyMapDiff(indexManager, before, after)
+    indexes?.applyMapDiff(before, after)
     bumpAtomVersion(atom, undefined, context)
 }
-

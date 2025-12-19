@@ -3,7 +3,7 @@ import type { Entity, PartialWithId, StoreKey, StoreOperationOptions } from '../
 import type { StoreRuntime } from './runtime'
 
 export function createDeleteOneById<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, resolveOperationTraceId } = runtime
+    const { jotaiStore, atom, adapter, context, resolveOperationTraceId, indexes } = runtime
     return (id: StoreKey, options?: StoreOperationOptions) => {
         return new Promise<boolean>((resolve, reject) => {
             const traceId = resolveOperationTraceId(options)
@@ -14,7 +14,9 @@ export function createDeleteOneById<T extends Entity>(runtime: StoreRuntime<T>) 
                 atom,
                 store: jotaiStore,
                 context,
+                indexes,
                 traceId,
+                opContext: options?.opContext,
                 onSuccess: () => {
                     resolve(true)
                 },

@@ -231,10 +231,10 @@ export function bucketKey(task: WriteTask) {
 export function buildWriteOp(opId: string, key: string, tasks: WriteTask[]) {
     const [action, resource] = key.split(':', 2)
     const payload = tasks.map(t => {
-        if (t.kind === 'create') return { __atoma: { idempotencyKey: t.idempotencyKey }, data: t.item }
-        if (t.kind === 'update') return t.item
-        if (t.kind === 'patch') return t.item
-        return t.item
+        if (t.kind === 'create') {
+            return { data: t.item, meta: { idempotencyKey: t.idempotencyKey } }
+        }
+        return t.item as any
     })
 
     return {

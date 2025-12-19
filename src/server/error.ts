@@ -1,29 +1,6 @@
-import type { StandardError } from './types'
+import type { ErrorKind, StandardError, StandardErrorDetails } from '../protocol/error'
 
-export type ErrorKind =
-    | 'field_policy'
-    | 'validation'
-    | 'access'
-    | 'limits'
-    | 'adapter'
-    | 'executor'
-    | 'conflict'
-    | 'internal'
-
-export type StandardErrorDetails = {
-    kind: ErrorKind
-    traceId?: string
-    requestId?: string
-    opId?: string
-    resource?: string
-    part?: 'where' | 'orderBy' | 'select' | string
-    field?: string
-    path?: string
-    queryIndex?: number
-    max?: number
-    actual?: number
-    [k: string]: any
-}
+export type { ErrorKind, StandardErrorDetails } from '../protocol/error'
 
 const ATOMA_ERROR_BRAND = Symbol.for('atoma.error')
 

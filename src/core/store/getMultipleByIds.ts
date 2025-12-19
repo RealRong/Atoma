@@ -4,7 +4,7 @@ import { commitAtomMapUpdate } from './cacheWriter'
 import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
 
 export function createGetMultipleByIds<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexManager, transform } = runtime
+    const { jotaiStore, atom, adapter, context, indexes, transform } = runtime
 
     return async (ids: StoreKey[], cache = true, options?: StoreReadOptions) => {
         const map = jotaiStore.get(atom) as Map<StoreKey, T>
@@ -30,7 +30,7 @@ export function createGetMultipleByIds<T extends Entity>(runtime: StoreRuntime<T
             if (cache && fetched.some(i => !map.has((i as any).id))) {
                 const before = jotaiStore.get(atom) as Map<StoreKey, T>
                 const after = BaseStore.bulkAdd(fetched as PartialWithId<T>[], before)
-                commitAtomMapUpdate({ jotaiStore, atom, before, after, context, indexManager })
+                commitAtomMapUpdate({ jotaiStore, atom, before, after, context, indexes })
             }
         }
 

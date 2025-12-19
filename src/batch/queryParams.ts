@@ -1,5 +1,5 @@
 import type { FindManyOptions } from '../core/types'
-import type { OrderByRule, Page, QueryParams } from '../server/types'
+import type { OrderByRule, Page, QueryParams } from '../protocol/batch/query'
 
 /**
  * Batch query params normalizer (client-side).

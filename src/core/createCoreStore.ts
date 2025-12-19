@@ -163,12 +163,13 @@ export function createCoreStore<T extends Entity, Relations = {}>(
             atom: objectMapAtom as any,
             jotaiStore,
             context,
+            adapter: resolvedAdapter as any,
             matcher: runtime.matcher,
             storeName: name,
             relations: getter as any,
             transform: runtime.transform as any,
             schema: runtime.schema as any,
-            indexManager: runtime.indexManager as any
+            indexes: runtime.indexes as any
         })
     }
 
@@ -200,12 +201,13 @@ export function createCoreStore<T extends Entity, Relations = {}>(
             atom: objectMapAtom,
             jotaiStore,
             context,
+            adapter: resolvedAdapter as any,
             matcher: runtime.matcher,
             storeName: name,
             relations: undefined,
             transform: runtime.transform as any,
             schema: runtime.schema as any,
-            indexManager: runtime.indexManager as any
+            indexes: runtime.indexes as any
         })
     }
 

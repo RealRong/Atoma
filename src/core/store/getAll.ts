@@ -4,7 +4,7 @@ import { commitAtomMapUpdate } from './cacheWriter'
 import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
 
 export function createGetAll<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexManager, transform } = runtime
+    const { jotaiStore, atom, adapter, context, indexes, transform } = runtime
 
     return async (filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions) => {
         const existingMap = jotaiStore.get(atom) as Map<StoreKey, T>
@@ -23,7 +23,7 @@ export function createGetAll<T extends Entity>(runtime: StoreRuntime<T>) {
 
         const withRemovals = BaseStore.bulkRemove(toRemove, existingMap)
         const next = BaseStore.bulkAdd(itemsToCache as PartialWithId<T>[], withRemovals)
-        commitAtomMapUpdate({ jotaiStore, atom, before: existingMap, after: next, context, indexManager })
+        commitAtomMapUpdate({ jotaiStore, atom, before: existingMap, after: next, context, indexes })
 
         return arr
     }

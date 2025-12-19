@@ -108,7 +108,7 @@ describe('createAtomaServer', () => {
                 opId: 'r1',
                 action: 'bulkCreate',
                 resource: 'post',
-                payload: [{ title: 'hi' }]
+                payload: [{ data: { title: 'hi' } }]
             }]
         }))
 
@@ -133,7 +133,7 @@ describe('createAtomaServer', () => {
                 opId: 'b1',
                 action: 'bulkCreate',
                 resource: 'post',
-                payload: [{}, {}, {}]
+                payload: [{ data: {} }, { data: {} }, { data: {} }]
             }]
         }))
 
@@ -152,7 +152,7 @@ describe('createAtomaServer', () => {
                 opId: 'p1',
                 action: 'bulkPatch',
                 resource: 'post',
-                payload: [{ id: 1, patches: [{ op: 'replace', path: ['title'], value: 'x' }] }]
+                payload: [{ id: 1, patches: [{ op: 'replace', path: ['title'], value: 'x' }], baseVersion: 0 }]
             }]
         }))
 
@@ -178,7 +178,7 @@ describe('createAtomaServer', () => {
                     opId: 'c1',
                     action: 'bulkCreate',
                     resource: 'post',
-                    payload: [{ title: 'hi' }]
+                    payload: [{ data: { title: 'hi' } }]
                 }
             ]
         }))

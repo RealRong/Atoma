@@ -50,8 +50,8 @@ describe('BatchEngine maxQueueLength（per-lane）', () => {
             maxQueueLength: { write: 1 }
         })
 
-        const first = engine.enqueueUpdate('post', { id: 1, data: { title: 'a' } })
-        const second = engine.enqueueUpdate('post', { id: 2, data: { title: 'b' } })
+        const first = engine.enqueueUpdate('post', { id: 1, data: { title: 'a' }, baseVersion: 0 })
+        const second = engine.enqueueUpdate('post', { id: 2, data: { title: 'b' }, baseVersion: 0 })
 
         await expect(second).rejects.toThrow('BatchEngine queue overflow')
         expect(fetchFn).toHaveBeenCalledTimes(0)
@@ -60,4 +60,3 @@ describe('BatchEngine maxQueueLength（per-lane）', () => {
         await expect(first).rejects.toThrow('BatchEngine disposed')
     })
 })
-

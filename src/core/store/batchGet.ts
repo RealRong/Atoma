@@ -11,7 +11,7 @@ type GetOneTask<T> = {
 }
 
 export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, transform, context, indexManager } = runtime
+    const { jotaiStore, atom, adapter, transform, context, indexes } = runtime
 
     let batchGetOneTaskQueue: GetOneTask<T>[] = []
     let batchFetchOneTaskQueue: GetOneTask<T>[] = []
@@ -60,7 +60,7 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
 
         const before = jotaiStore.get(atom)
         const after = BaseStore.bulkAdd(items as PartialWithId<T>[], before)
-        commitAtomMapUpdate({ jotaiStore, atom, before, after, context, indexManager })
+        commitAtomMapUpdate({ jotaiStore, atom, before, after, context, indexes })
     }
 
     const processFetchOneTaskQueue = async () => {

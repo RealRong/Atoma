@@ -1,6 +1,10 @@
+import type { StandardError } from '../error/types'
+
 export const SYNC_SSE_EVENT_CHANGES = 'changes'
 
 export type ChangeKind = 'upsert' | 'delete'
+
+export type AtomaPatchOp = 'add' | 'replace' | 'remove'
 
 export type AtomaChange = {
     cursor: number
@@ -12,7 +16,7 @@ export type AtomaChange = {
 }
 
 export type AtomaPatch = {
-    op: string
+    op: AtomaPatchOp
     path: Array<string | number>
     value?: unknown
 }
@@ -63,7 +67,7 @@ export type SyncPushAck = {
 
 export type SyncPushReject = {
     idempotencyKey: string
-    error: unknown
+    error: StandardError
     currentValue?: unknown
     currentVersion?: number
 }
@@ -83,4 +87,3 @@ export type SyncSubscribeEvent = {
     cursor: number
     changes: AtomaChange[]
 }
-

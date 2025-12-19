@@ -5,6 +5,7 @@ node_modules/
 dist/
 tsconfig.tsbuildinfo
 docs
+.tmp
 
 # Environment variables
 .env

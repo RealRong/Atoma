@@ -118,32 +118,64 @@ export interface PatchMetadata {
 }
 
 /**
+ * OperationContext：一次写入/一次动作的上下文载体（面向上层语义）
+ * - scope 用于分区（history/batch/devtools 等）
+ * - origin 用于区分来源（决定是否进入 history）
+ * - actionId 用于将多个写入聚合为一次“用户动作”（撤销单位）
+ */
+export type OperationOrigin = 'user' | 'history' | 'sync' | 'system'
+
+export type OperationContext = Readonly<{
+    scope: string
+    actionId?: string
+    origin: OperationOrigin
+    label?: string
+    timestamp?: number
+    traceId?: string
+}>
+
+/**
  * Dispatch event for queue processing
  */
 export type StoreDispatchEvent<T extends Entity> = {
     atom: PrimitiveAtom<Map<StoreKey, T>>
-    data: PartialWithId<T>
     adapter: IAdapter<T>
     store: JotaiStore // Jotai store instance
     context: StoreContext // StoreContext for per-store dependencies (avoids circular import)
+    indexes?: any
     traceId?: string
+    opContext?: OperationContext
     onFail?: (error?: Error) => void  // Accept error object for rejection
 } & (
         | {
             type: 'add'
+            data: PartialWithId<T>
             onSuccess?: (o: T) => void
         }
         | {
             type: 'update'
+            data: PartialWithId<T>
             transformData?: (o: T) => T | undefined
             onSuccess?: (o: T) => void
         }
         | {
             type: 'remove'
+            data: PartialWithId<T>
             onSuccess?: () => void
         }
         | {
             type: 'forceRemove'
+            data: PartialWithId<T>
+            onSuccess?: () => void
+        }
+        | {
+            /**
+             * Patch-based mutation (用于 history undo/redo 或其他高级场景)
+             * - 需要 adapter.applyPatches 支持；否则会尝试降级为 bulkPut/bulkDelete（仅支持 Map 顶层 add/replace/remove）。
+             */
+            type: 'patches'
+            patches: Patch[]
+            inversePatches: Patch[]
             onSuccess?: () => void
         }
     )
@@ -154,6 +186,11 @@ export type StoreDispatchEvent<T extends Entity> = {
 export interface StoreOperationOptions {
     force?: boolean
     traceId?: string
+    /**
+     * 操作上下文（上层语义：scope/origin/actionId）
+     * - 若未提供，core 会在 dispatch 阶段补齐默认值（scope='default', origin='user'）
+     */
+    opContext?: OperationContext
 }
 
 /**
@@ -183,7 +220,7 @@ export type OrderBy<T> =
 
 export type FetchPolicy = 'local' | 'remote' | 'local-then-remote'
 
-export type PageInfo = { cursor?: string; hasNext?: boolean; total?: number }
+export type PageInfo = import('../protocol/batch/pagination').PageInfo
 
 export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
     where?: WhereOperator<T>
@@ -500,11 +537,12 @@ export type StoreAccess<T extends Entity = any> = {
     atom: PrimitiveAtom<Map<StoreKey, T>>
     jotaiStore: JotaiStore
     context: StoreContext
+    adapter?: IAdapter<T>
     matcher?: QueryMatcherOptions
     storeName?: string
     relations?: () => any | undefined
 
     transform?: (item: T) => T
     schema?: SchemaValidator<T>
-    indexManager?: any
+    indexes?: any
 }

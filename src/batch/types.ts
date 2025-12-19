@@ -1,5 +1,6 @@
 import type { FindManyOptions, PageInfo, StoreKey } from '../core/types'
 import type { DebugEmitter } from '../observability/debug'
+import type { AtomaPatch } from '../protocol/sync'
 
 export type FetchFn = typeof fetch
 
@@ -34,7 +35,7 @@ export type CreateTask<T> = {
 export type UpdateTask<T> = {
     kind: 'update'
     resource: string
-    item: { id: StoreKey; data: T; clientVersion?: any; idempotencyKey?: string }
+    item: { id: StoreKey; data: T; baseVersion: number; meta?: { idempotencyKey?: string } }
     deferred: Deferred<void>
     traceId?: string
     debugEmitter?: DebugEmitter
@@ -43,7 +44,7 @@ export type UpdateTask<T> = {
 export type PatchTask = {
     kind: 'patch'
     resource: string
-    item: { id: StoreKey; patches: any[]; baseVersion?: number; timestamp?: number; idempotencyKey?: string }
+    item: { id: StoreKey; patches: AtomaPatch[]; baseVersion: number; timestamp?: number; meta?: { idempotencyKey?: string } }
     deferred: Deferred<void>
     traceId?: string
     debugEmitter?: DebugEmitter
@@ -52,7 +53,7 @@ export type PatchTask = {
 export type DeleteTask = {
     kind: 'delete'
     resource: string
-    item: { id: StoreKey; baseVersion?: number; idempotencyKey?: string }
+    item: { id: StoreKey; baseVersion: number; meta?: { idempotencyKey?: string } }
     deferred: Deferred<void>
     traceId?: string
     debugEmitter?: DebugEmitter

@@ -10,6 +10,7 @@ import {
 } from './types'
 import { getIdGenerator } from './idGenerator'
 import type { StoreContext } from './StoreContext'
+import { normalizeOperationContext } from './operationContext'
 
 // Enable Map/Set drafting for Immer (required for Map-based atom state)
 enableMapSet()
@@ -39,47 +40,79 @@ const handleQueue = (context: StoreContext, queueMap?: Map<PrimitiveAtom<any>, S
     const mode = context.queueConfig.mode || 'optimistic'
 
     Array.from(atomQueues.entries()).forEach(([atom, operations]) => {
-        const eventContext = operations[0].context
-        const store = operations[0].store
-        const { adapter } = operations[0]
-        const applyResult = eventContext.operationApplier.apply(operations, store.get(atom))
-        const sharedTraceId = (() => {
-            const ids = operations
-                .map(op => op.traceId)
-                .filter((v): v is string => typeof v === 'string' && Boolean(v))
-            if (!ids.length) return undefined
-            const uniq = new Set(ids)
-            return uniq.size === 1 ? ids[0] : undefined
-        })()
+        const segmentKey = (op: StoreDispatchEvent<any>) => {
+            const c = op.opContext
+            return `${c?.scope ?? 'default'}|${c?.origin ?? 'user'}|${c?.actionId ?? ''}`
+        }
 
-        // Map callbacks to payloads (if any)
-        const callbacks = operations.map((op, idx) => {
-            const payload = applyResult.appliedData[idx]
-            return {
-                onSuccess: () => {
-                    if (op.type === 'add' || op.type === 'update') {
-                        return op.onSuccess?.(payload ?? (op.data as any))
-                    }
-                    return op.onSuccess?.()
-                },
-                onFail: op.onFail
+        const segments: StoreDispatchEvent<any>[][] = []
+        let current: StoreDispatchEvent<any>[] = []
+        let currentKey: string | undefined
+
+        operations.forEach((op) => {
+            const key = segmentKey(op)
+            if (!current.length) {
+                current = [op]
+                currentKey = key
+                return
             }
+            if (key === currentKey) {
+                current.push(op)
+                return
+            }
+            segments.push(current)
+            current = [op]
+            currentKey = key
         })
+        if (current.length) segments.push(current)
 
-        eventContext.adapterSync.syncAtom({
-            adapter,
-            applyResult,
-            atom,
-            callbacks,
-            store,
-            versionTracker: eventContext.versionTracker,
-            historyRecorder: eventContext.historyRecorder,
-            indexRegistry: eventContext.indexRegistry,
-            mode,
-            traceId: sharedTraceId,
-            debug: eventContext.debug,
-            debugSink: eventContext.debugSink,
-            storeName: eventContext.storeName
+        segments.forEach((ops) => {
+            const eventContext = ops[0].context
+            const store = ops[0].store
+            const { adapter } = ops[0]
+            const applyResult = eventContext.operationApplier.apply(ops, store.get(atom))
+
+            const sharedTraceId = (() => {
+                const ids = ops
+                    .map(op => op.traceId)
+                    .filter((v): v is string => typeof v === 'string' && Boolean(v))
+                if (!ids.length) return undefined
+                const uniq = new Set(ids)
+                return uniq.size === 1 ? ids[0] : undefined
+            })()
+
+            const opContext = ops[0].opContext
+
+            // Map callbacks to payloads (if any)
+            const callbacks = ops.map((op, idx) => {
+                const payload = applyResult.appliedData[idx]
+                return {
+                    onSuccess: () => {
+                        if (op.type === 'add' || op.type === 'update') {
+                            return op.onSuccess?.(payload ?? (op.data as any))
+                        }
+                        return op.onSuccess?.()
+                    },
+                    onFail: op.onFail
+                }
+            })
+
+            eventContext.adapterSync.syncAtom({
+                adapter,
+                applyResult,
+                atom,
+                callbacks,
+                store,
+                versionTracker: eventContext.versionTracker,
+                operationRecorder: eventContext.operationRecorder,
+                indexes: (ops[0] as any).indexes ?? null,
+                mode,
+                traceId: sharedTraceId,
+                debug: eventContext.debug,
+                debugSink: eventContext.debugSink,
+                storeName: eventContext.storeName,
+                opContext
+            })
         })
     })
 }
@@ -138,15 +171,19 @@ export const BaseStore = {
      */
     dispatch<T extends import('./types').Entity>(event: StoreDispatchEvent<T>) {
         const context = event.context
+        const normalized = {
+            ...event,
+            opContext: normalizeOperationContext(event.opContext, { traceId: event.traceId })
+        } as StoreDispatchEvent<T>
 
         if (!context.queueConfig.enabled) {
             const directQueue = new Map<PrimitiveAtom<any>, StoreDispatchEvent<any>[]>()
-            directQueue.set(event.atom, [event])
+            directQueue.set(normalized.atom, [normalized])
             handleQueue(context, directQueue)
             return
         }
 
-        context.queueManager.enqueue(event)
+        context.queueManager.enqueue(normalized)
         Promise.resolve().then(() => handleQueue(context))
     },
 

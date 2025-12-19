@@ -10,8 +10,8 @@ import type {
     InferIncludeType
 } from '../core/types'
 import { belongsTo as coreBelongsTo, hasMany as coreHasMany, hasOne as coreHasOne } from '../core/relations/builders'
-import type { ReactStore, ReactStoreConfig } from './createReactStore'
-import { createReactStore } from './createReactStore'
+import type { ReactStore, ReactStoreConfig } from '../react/createReactStore'
+import { createReactStore } from '../react/createReactStore'
 import type { AtomaClientContext, InferRelationsFromStoreOverride } from './createAtomaClient'
 
 type IncludeForRelations<Relations> =
@@ -243,3 +243,4 @@ export function createAtomaStore<
         relations: relationsFactory as any
     })
 }
+

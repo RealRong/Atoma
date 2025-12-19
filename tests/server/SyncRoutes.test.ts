@@ -331,7 +331,7 @@ describe('/sync/*', () => {
                     payload: [{
                         id: 1,
                         baseVersion: 0,
-                        idempotencyKey: 'b1',
+                        meta: { idempotencyKey: 'b1' },
                         patches: [{ op: 'replace', path: ['title'], value: 'b' }]
                     }]
                 }]
@@ -354,7 +354,7 @@ describe('/sync/*', () => {
                     payload: [{
                         id: 1,
                         baseVersion: 0,
-                        idempotencyKey: 'b1',
+                        meta: { idempotencyKey: 'b1' },
                         patches: [{ op: 'replace', path: ['title'], value: 'b' }]
                     }]
                 }]

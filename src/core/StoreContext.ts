@@ -1,12 +1,12 @@
 import { AtomVersionTracker } from './state/AtomVersionTracker'
 import { QueueManager } from './state/QueueManager'
-import { HistoryRecorder } from './history/HistoryRecorder'
 import { OperationApplier } from './ops/OperationApplier'
 import { AdapterSync } from './ops/AdapterSync'
 import { QueueConfig } from './types'
-import { IndexRegistry, globalIndexRegistry } from './indexes/IndexRegistry'
 import type { DebugOptions } from '../observability/types'
 import type { DebugEvent } from '../observability/types'
+import type { OperationRecorder } from './ops/OperationRecorder'
+import { NoopOperationRecorder } from './ops/OperationRecorder'
 
 /**
  * Per-store context holding dependencies
@@ -15,10 +15,9 @@ import type { DebugEvent } from '../observability/types'
 export interface StoreContext {
     versionTracker: AtomVersionTracker
     queueManager: QueueManager
-    historyRecorder: HistoryRecorder
+    operationRecorder: OperationRecorder
     operationApplier: OperationApplier
     adapterSync: AdapterSync
-    indexRegistry: IndexRegistry
     queueConfig: QueueConfig
     debug?: DebugOptions
     debugSink?: (e: DebugEvent) => void
@@ -27,7 +26,7 @@ export interface StoreContext {
 
 export function createStoreContext(
     queueConfigOverride?: Partial<QueueConfig>,
-    options?: { debug?: DebugOptions; debugSink?: (e: DebugEvent) => void; storeName?: string }
+    options?: { debug?: DebugOptions; debugSink?: (e: DebugEvent) => void; storeName?: string; operationRecorder?: OperationRecorder }
 ): StoreContext {
     const queueConfig: QueueConfig = {
         enabled: true,
@@ -38,10 +37,9 @@ export function createStoreContext(
     return {
         versionTracker: new AtomVersionTracker(),
         queueManager: new QueueManager(),
-        historyRecorder: new HistoryRecorder(),
+        operationRecorder: options?.operationRecorder ?? new NoopOperationRecorder(),
         operationApplier: new OperationApplier(),
         adapterSync: new AdapterSync(),
-        indexRegistry: globalIndexRegistry,
         queueConfig,
         debug: options?.debug,
         debugSink: options?.debugSink,

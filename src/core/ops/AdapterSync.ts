@@ -2,11 +2,10 @@ import { PrimitiveAtom } from 'jotai/vanilla'
 import { applyPatches, Patch } from 'immer'
 import isEqual from 'lodash/isEqual'
 import { ApplyResult } from './OperationApplier'
-import { IAdapter, PatchMetadata, Entity, StoreDispatchEvent } from '../types'
+import { IAdapter, PatchMetadata, Entity, StoreDispatchEvent, type OperationContext } from '../types'
 import { AtomVersionTracker } from '../state/AtomVersionTracker'
-import { HistoryRecorder } from '../history/HistoryRecorder'
-import type { IndexRegistry } from '../indexes/IndexRegistry'
-import { IndexSynchronizer } from '../indexes/IndexSynchronizer'
+import type { OperationRecorder } from './OperationRecorder'
+import type { StoreIndexes } from '../indexes/StoreIndexes'
 import type { DebugOptions } from '../../observability/types'
 import { createDebugEmitter } from '../../observability/debug'
 import type { InternalOperationContext } from '../../observability/types'
@@ -20,13 +19,14 @@ interface SyncParams<T extends Entity> {
     callbacks: CallbackEntry[]
     store: any
     versionTracker: AtomVersionTracker
-    historyRecorder: HistoryRecorder
-    indexRegistry?: IndexRegistry
+    operationRecorder: OperationRecorder
+    indexes?: StoreIndexes<T> | null
     mode: 'optimistic' | 'strict'
     traceId?: string
     debug?: DebugOptions
     debugSink?: (e: import('../../observability/types').DebugEvent) => void
     storeName?: string
+    opContext?: OperationContext
 }
 
 type ApplySideEffects<T> = {
@@ -40,6 +40,34 @@ const applyPatchesViaOperations = async <T extends Entity>(
     operationTypes: StoreDispatchEvent<T>['type'][],
     internalContext?: InternalOperationContext
 ): Promise<ApplySideEffects<T>> => {
+    if (operationTypes.length === 1 && operationTypes[0] === 'patches') {
+        const putActions: T[] = []
+        const deleteKeys: Array<string | number> = []
+
+        _patches.forEach(p => {
+            if (p.path.length !== 1) return
+            const id = p.path[0] as any
+            if (p.op === 'remove') {
+                deleteKeys.push(id)
+                return
+            }
+            if (p.op === 'add' || p.op === 'replace') {
+                const val = p.value as any
+                if (val && typeof val === 'object') {
+                    putActions.push(val as T)
+                }
+            }
+        })
+
+        if (putActions.length) {
+            await adapter.bulkPut(putActions, internalContext)
+        }
+        if (deleteKeys.length) {
+            await adapter.bulkDelete(deleteKeys, internalContext)
+        }
+        return { createdResults: undefined }
+    }
+
     const createActions: T[] = []
     const putActions: T[] = []
     const deleteKeys: Array<string | number> = []
@@ -97,10 +125,10 @@ function mapsEqual(a: Map<any, any>, b: Map<any, any>) {
 
 export class AdapterSync {
     async syncAtom<T extends Entity>(params: SyncParams<T>): Promise<void> {
-        const { adapter, applyResult, atom, callbacks, store, versionTracker, historyRecorder, indexRegistry, mode } = params
+        const { adapter, applyResult, atom, callbacks, store, versionTracker, operationRecorder, indexes, mode } = params
         const { newValue, patches, inversePatches, changedFields } = applyResult
         const originalValue = store.get(atom)
-        const indexManager = indexRegistry?.get(atom as any)
+        const activeIndexes = indexes ?? null
 
         const traceId = params.traceId
         const emitter = createDebugEmitter({
@@ -129,9 +157,7 @@ export class AdapterSync {
         if (mode === 'optimistic') {
             store.set(atom, newValue)
             versionTracker.bump(atom, changedFields)
-            if (indexManager) {
-                IndexSynchronizer.applyPatches(indexManager, originalValue, newValue, patches)
-            }
+            activeIndexes?.applyPatches(originalValue, newValue, patches)
         }
 
         let sideEffects: ApplySideEffects<T> | undefined
@@ -183,9 +209,7 @@ export class AdapterSync {
                 if (!mapsEqual(current, next)) {
                     store.set(atom, next)
                     versionTracker.bump(atom, new Set(['id']))
-                    if (indexManager) {
-                        IndexSynchronizer.applyMapDiff(indexManager, current as any, next as any)
-                    }
+                    activeIndexes?.applyMapDiff(current as any, next as any)
                 }
             }
 
@@ -211,9 +235,7 @@ export class AdapterSync {
                 if (!mapsEqual(currentValue, latest)) {
                     store.set(atom, latest)
                     versionTracker.bump(atom, changedFields)
-                    if (indexManager) {
-                        IndexSynchronizer.applyMapDiff(indexManager, currentValue as any, latest as any)
-                    }
+                    activeIndexes?.applyMapDiff(currentValue as any, latest as any)
                 }
             } else {
                 // 乐观模式已写入 temp，若有 server 返回则替换为最终 ID
@@ -223,18 +245,23 @@ export class AdapterSync {
             // 成功确认后统一触发 onSuccess（无论乐观或严格），优先携带服务端实体
             callbacks.forEach(({ onSuccess }, idx) => setTimeout(() => onSuccess?.(applyResult.appliedData[idx]), 0))
 
-            // Record history only on success
-            historyRecorder.record({ patches, inversePatches, atom, adapter })
+            // 记录成功写入（由上层 recorder 决定是否入 history）
+            if (params.storeName && params.opContext) {
+                operationRecorder.record({
+                    storeName: params.storeName,
+                    opContext: params.opContext,
+                    patches,
+                    inversePatches
+                })
+            }
         } catch (error) {
             adapter.onError?.(error as Error, 'applyPatches')
 
             if (mode === 'optimistic') {
                 // rollback 乐观写入
                 store.set(atom, originalValue)
-                if (indexManager) {
-                    // 对称回滚：以 inversePatches 驱动索引恢复
-                    IndexSynchronizer.applyPatches(indexManager, newValue, originalValue, inversePatches)
-                }
+                // 对称回滚：以 inversePatches 驱动索引恢复
+                activeIndexes?.applyPatches(newValue, originalValue, inversePatches)
             }
             emit('mutation:rollback', { reason: 'adapter_error' })
             const err = error instanceof Error ? error : new Error(String(error))

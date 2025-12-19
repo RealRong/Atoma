@@ -1,5 +1,5 @@
 import { applyQuery } from '../../query'
-import type { IndexManager } from '../../indexes/IndexManager'
+import type { StoreIndexes } from '../../indexes/StoreIndexes'
 import type { QueryMatcherOptions } from '../../query/QueryMatcher'
 import type { FindManyOptions, Entity, StoreKey } from '../../types'
 import type { Explain } from '../../../observability/types'
@@ -8,15 +8,15 @@ import { summarizeFindManyParams } from './paramsSummary'
 export function evaluateWithIndexes<T extends Entity>(params: {
     mapRef: Map<StoreKey, T>
     options?: FindManyOptions<T>
-    indexManager: IndexManager<T> | null
+    indexes: StoreIndexes<T> | null
     matcher?: QueryMatcherOptions
     emit: (type: string, payload: any) => void
     explain?: Explain
 }) {
-    const { mapRef, options, indexManager, matcher, emit, explain } = params
+    const { mapRef, options, indexes, matcher, emit, explain } = params
 
-    const candidateRes = indexManager ? indexManager.collectCandidates(options?.where) : { kind: 'unsupported' as const }
-    const plan = indexManager?.getLastQueryPlan()
+    const candidateRes = indexes ? indexes.collectCandidates(options?.where) : { kind: 'unsupported' as const }
+    const plan = indexes?.getLastQueryPlan()
 
     emit('query:index', {
         params: { whereFields: summarizeFindManyParams(options).whereFields },
@@ -56,4 +56,3 @@ export function evaluateWithIndexes<T extends Entity>(params: {
 
     return out
 }
-

@@ -65,7 +65,7 @@ describe('BatchEngine dispose（abort + 全部 reject）', () => {
 
         const engine = new BatchEngine({ fetchFn, endpoint: '/batch' })
 
-        const p = engine.enqueueUpdate('post', { id: 1, data: { title: 'a' } })
+        const p = engine.enqueueUpdate('post', { id: 1, data: { title: 'a' }, baseVersion: 0 })
         await waitFor(() => fetchFn.mock.calls.length === 1)
 
         engine.dispose()

@@ -351,7 +351,7 @@ export const HTTP_STATUS_VECTORS: ProtocolVector[] = [
         incoming: {
             method: 'POST',
             url: 'http://localhost/batch',
-            body: { ops: [{ opId: 'p1', action: 'bulkPatch', resource: 'post', payload: [{ id: 1, patches: [] }] }] }
+            body: { ops: [{ opId: 'p1', action: 'bulkPatch', resource: 'post', payload: [{ id: 1, patches: [], baseVersion: 0 }] }] }
         },
         adapter: { isResourceAllowed: true, findMany: [{ data: [] }] },
         expect: {
@@ -365,7 +365,7 @@ export const HTTP_STATUS_VECTORS: ProtocolVector[] = [
         incoming: {
             method: 'POST',
             url: 'http://localhost/batch',
-            body: { ops: [{ opId: 'c1', action: 'bulkCreate', resource: 'post', payload: [{ big: 'x'.repeat(200) }] }] }
+            body: { ops: [{ opId: 'c1', action: 'bulkCreate', resource: 'post', payload: [{ data: { big: 'x'.repeat(200) } }] }] }
         },
         handler: { guardOptions: { maxPayloadBytes: 10 } },
         adapter: { isResourceAllowed: true, findMany: [{ data: [] }] },

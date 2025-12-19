@@ -40,28 +40,39 @@ export class QueueManager {
      *          any + delete -> delete
      */
     private coalesceByID<T extends Entity>(events: StoreDispatchEvent<T>[]): StoreDispatchEvent<T>[] {
-        const byId = new Map<StoreKey, StoreDispatchEvent<T>>()
+        // Patch-based operations（例如 history undo/redo）不参与 coalesce，避免破坏顺序/语义
+        if (events.some(e => e.type === 'patches')) {
+            return events
+        }
+
+        const byKey = new Map<string, StoreDispatchEvent<T>>()
 
         events.forEach(event => {
+            if (event.type === 'patches') return
             const id = event.data.id
-            const existing = byId.get(id)
+            const actionId = event.opContext?.actionId ?? ''
+            const key = `${actionId}|${String(id)}`
+            const existing = byKey.get(key)
 
             if (!existing) {
-                byId.set(id, event)
+                byKey.set(key, event)
             } else {
                 // Merge this event with existing
-                byId.set(id, this.mergeEvents(existing, event))
+                byKey.set(key, this.mergeEvents(existing as any, event as any))
             }
         })
 
-        return Array.from(byId.values())
+        return Array.from(byKey.values())
     }
 
     /**
      * Merge two events for the same ID
      * Priority: delete > update > add
      */
-    private mergeEvents<T extends Entity>(prev: StoreDispatchEvent<T>, next: StoreDispatchEvent<T>): StoreDispatchEvent<T> {
+    private mergeEvents<T extends Entity>(
+        prev: Exclude<StoreDispatchEvent<T>, { type: 'patches' }>,
+        next: Exclude<StoreDispatchEvent<T>, { type: 'patches' }>
+    ): StoreDispatchEvent<T> {
         // Delete always wins
         if (next.type === 'remove' || next.type === 'forceRemove') {
             return {

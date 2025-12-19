@@ -4,7 +4,7 @@ import { createStoreContext } from '../StoreContext'
 import type { StoreContext } from '../StoreContext'
 import type { DevtoolsBridge } from '../../devtools/types'
 import { getGlobalDevtools, registerGlobalIndex } from '../../devtools/global'
-import { IndexManager } from '../indexes/IndexManager'
+import { StoreIndexes } from '../indexes/StoreIndexes'
 import type { IndexDefinition, IAdapter, JotaiStore, StoreConfig, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../types'
 import type { QueryMatcherOptions } from '../query/QueryMatcher'
 import { createTraceId, createRequestIdSequencer } from '../../observability/trace'
@@ -17,7 +17,7 @@ export type StoreRuntime<T extends Entity> = {
     jotaiStore: JotaiStore
     context: StoreContext
     storeName: string
-    indexManager: IndexManager<T> | null
+    indexes: StoreIndexes<T> | null
     matcher?: QueryMatcherOptions
     hooks: StoreConfig<T>['hooks']
     schema: StoreConfig<T>['schema']
@@ -58,14 +58,11 @@ export function createStoreRuntime<T extends Entity>(params: {
 
     const resolveOperationTraceId = createOperationTraceIdResolver(context)
 
-    const indexManager = config?.indexes && config.indexes.length ? new IndexManager<T>(config.indexes) : null
-    if (indexManager) {
-        context.indexRegistry.register(atom, indexManager)
-    }
+    const indexes = config?.indexes && config.indexes.length ? new StoreIndexes<T>(config.indexes) : null
 
     const matcher = buildQueryMatcherOptions(config?.indexes)
-    const stopIndexDevtools = registerIndexManagerSnapshot({
-        indexManager,
+    const stopIndexDevtools = registerStoreIndexesSnapshot({
+        indexes,
         devtools: config?.devtools,
         storeName
     })
@@ -80,7 +77,7 @@ export function createStoreRuntime<T extends Entity>(params: {
         jotaiStore,
         context,
         storeName,
-        indexManager,
+        indexes,
         matcher,
         hooks: config?.hooks,
         schema: config?.schema,
@@ -131,17 +128,17 @@ export function buildQueryMatcherOptions<T>(indexes?: Array<IndexDefinition<T>>)
     return Object.keys(fields).length ? { fields } : undefined
 }
 
-export function registerIndexManagerSnapshot<T>(params: {
-    indexManager: IndexManager<T> | null
+export function registerStoreIndexesSnapshot<T>(params: {
+    indexes: StoreIndexes<T> | null
     devtools?: DevtoolsBridge
     storeName?: string
 }) {
-    const { indexManager, devtools, storeName } = params
-    if (!indexManager) return undefined
+    const { indexes, devtools, storeName } = params
+    if (!indexes) return undefined
 
     const name = storeName || 'store'
     const snapshot = () => {
-        const indexes = indexManager.getIndexSnapshots().map(s => ({
+        const list = indexes.getIndexSnapshots().map(s => ({
             field: s.field,
             type: s.type,
             dirty: s.dirty,
@@ -152,7 +149,7 @@ export function registerIndexManagerSnapshot<T>(params: {
             minSetSize: s.minSetSize
         }))
 
-        return { name, indexes, lastQuery: indexManager.getLastQueryPlan() }
+        return { name, indexes: list, lastQuery: indexes.getLastQueryPlan() }
     }
 
     return devtools?.registerIndexManager?.({ name, snapshot }) || registerGlobalIndex({ name, snapshot })

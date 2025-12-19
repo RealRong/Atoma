@@ -5,24 +5,11 @@ export type { UseFindManyResult } from './types'
 
 export { createUseValue, createUseAll, createUseFindMany, createUseMultiple, useFuzzySearch } from './hooks'
 
-export { defineEntities } from './createAtomaClient'
-export type { AtomaClient, AtomaClientContext, AtomaStoresConfig, DefineClientConfig, StoresDefinition, EntitiesDefinition } from './createAtomaClient'
+export { defineEntities } from '../client/createAtomaClient'
+export type { AtomaClient, AtomaScopedClient, AtomaAction, AtomaClientContext, AtomaStoresConfig, DefineClientConfig, StoresDefinition, EntitiesDefinition } from '../client/createAtomaClient'
 
-export { createAtomaStore } from './createAtomaStore'
-export type { CreateAtomaStoreOptions, RelationsDsl } from './createAtomaStore'
+export { createAtomaStore } from '../client/createAtomaStore'
+export type { CreateAtomaStoreOptions, RelationsDsl } from '../client/createAtomaStore'
 
-export {
-    Store,
-    setDefaultAdapterFactory,
-    registerStore,
-    clearStoreCache,
-    preloadStores,
-    getLoadedStores,
-    getStoreConfig
-} from './registry'
-
-export type {
-    StoreRegistry,
-    RegistryStoreConfig,
-    AdapterFactory
-} from '../registry/types'
+export { AtomaContextProvider, useScopedClient } from './AtomaContext'
+export type { AtomaContextProviderProps } from './AtomaContext'

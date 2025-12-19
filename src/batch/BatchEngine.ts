@@ -7,6 +7,7 @@ import { drainQueryLane } from './queryLane'
 import { sendBatchRequest } from './transport'
 import type { Deferred, QueryEnvelope, QueryTask, WriteTask } from './types'
 import { bucketKey, drainWriteLane } from './writeLane'
+import type { AtomaPatch } from '../protocol/sync'
 
 type FetchFn = typeof fetch
 
@@ -205,7 +206,7 @@ export class BatchEngine {
 
     enqueueUpdate<T>(
         resource: string,
-        item: { id: StoreKey; data: T; clientVersion?: any; idempotencyKey?: string },
+        item: { id: StoreKey; data: T; baseVersion: number; meta?: { idempotencyKey?: string } },
         internalContext?: InternalOperationContext
     ): Promise<void> {
         return new Promise((resolve, reject) => {
@@ -222,7 +223,12 @@ export class BatchEngine {
                 resource,
                 item: {
                     ...item,
-                    idempotencyKey: (typeof item.idempotencyKey === 'string' && item.idempotencyKey) ? item.idempotencyKey : this.createIdempotencyKey()
+                    meta: {
+                        ...(item.meta && typeof item.meta === 'object' && !Array.isArray(item.meta) ? item.meta : {}),
+                        idempotencyKey: (typeof item.meta?.idempotencyKey === 'string' && item.meta.idempotencyKey)
+                            ? item.meta.idempotencyKey
+                            : this.createIdempotencyKey()
+                    }
                 },
                 deferred: { resolve, reject },
                 traceId: internalContext?.traceId,
@@ -233,7 +239,7 @@ export class BatchEngine {
 
     enqueuePatch(
         resource: string,
-        item: { id: StoreKey; patches: any[]; baseVersion?: number; timestamp?: number; idempotencyKey?: string },
+        item: { id: StoreKey; patches: AtomaPatch[]; baseVersion: number; timestamp?: number; meta?: { idempotencyKey?: string } },
         internalContext?: InternalOperationContext
     ): Promise<void> {
         return new Promise((resolve, reject) => {
@@ -250,7 +256,12 @@ export class BatchEngine {
                 resource,
                 item: {
                     ...item,
-                    idempotencyKey: (typeof item.idempotencyKey === 'string' && item.idempotencyKey) ? item.idempotencyKey : this.createIdempotencyKey()
+                    meta: {
+                        ...(item.meta && typeof item.meta === 'object' && !Array.isArray(item.meta) ? item.meta : {}),
+                        idempotencyKey: (typeof item.meta?.idempotencyKey === 'string' && item.meta.idempotencyKey)
+                            ? item.meta.idempotencyKey
+                            : this.createIdempotencyKey()
+                    }
                 },
                 deferred: { resolve, reject },
                 traceId: internalContext?.traceId,
@@ -259,7 +270,7 @@ export class BatchEngine {
         })
     }
 
-    enqueueDelete(resource: string, item: { id: StoreKey; baseVersion: number; idempotencyKey?: string }, internalContext?: InternalOperationContext): Promise<void> {
+    enqueueDelete(resource: string, item: { id: StoreKey; baseVersion: number; meta?: { idempotencyKey?: string } }, internalContext?: InternalOperationContext): Promise<void> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -274,7 +285,12 @@ export class BatchEngine {
                 resource,
                 item: {
                     ...item,
-                    idempotencyKey: (typeof item.idempotencyKey === 'string' && item.idempotencyKey) ? item.idempotencyKey : this.createIdempotencyKey()
+                    meta: {
+                        ...(item.meta && typeof item.meta === 'object' && !Array.isArray(item.meta) ? item.meta : {}),
+                        idempotencyKey: (typeof item.meta?.idempotencyKey === 'string' && item.meta.idempotencyKey)
+                            ? item.meta.idempotencyKey
+                            : this.createIdempotencyKey()
+                    }
                 },
                 deferred: { resolve, reject },
                 traceId: internalContext?.traceId,

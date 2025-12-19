@@ -20,9 +20,7 @@ export async function validateWriteForOp<Ctx>(args: {
     if (op.action === 'bulkCreate') {
         const items = Array.isArray((op as any).payload) ? (op as any).payload : []
         await Promise.all(items.map(async (item: any) => {
-            const normalized = (item && typeof item === 'object' && !Array.isArray(item) && (item as any).__atoma && typeof (item as any).__atoma === 'object' && (item as any).data !== undefined)
-                ? (item as any).data
-                : item
+            const normalized = item?.data
             const summary = summarizeCreateItem(normalized)
             await authz.validateWrite({
                 resource,
@@ -77,11 +75,11 @@ export async function validateWriteForOp<Ctx>(args: {
     if (op.action === 'bulkDelete') {
         const items = Array.isArray((op as any).payload) ? (op as any).payload : []
         await Promise.all(items.map(async (raw: any) => {
-            const id = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? (raw as any).id : raw
+            const id = raw?.id
             await authz.validateWrite({
                 resource,
                 op,
-                item: raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : { id },
+                item: raw,
                 changedFields: [],
                 getCurrent: makeGetCurrent(id),
                 route,
@@ -90,4 +88,3 @@ export async function validateWriteForOp<Ctx>(args: {
         }))
     }
 }
-

@@ -20,7 +20,7 @@ import type { InternalOperationContext } from '../observability/types'
 import type { StoreAccess } from '../core/types'
 import { commitAtomMapUpdate } from '../core/store/cacheWriter'
 import { validateWithSchema } from '../core/store/validation'
-import type { IndexManager } from '../core/indexes/IndexManager'
+import type { StoreIndexes } from '../core/indexes/StoreIndexes'
 import { getSyncHub, SyncHub } from './http/syncHub'
 import type { AtomaChange } from '../protocol/sync'
 import type { SyncQueuedOperation } from './http/syncOfflineQueue'
@@ -1058,7 +1058,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             before,
             after,
             context: access.context,
-            indexManager: (access.indexManager as IndexManager<T>) ?? null
+            indexes: (access.indexes as StoreIndexes<T>) ?? null
         })
     }
 
@@ -1269,7 +1269,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             before,
             after,
             context: access.context,
-            indexManager: (access.indexManager as IndexManager<T>) ?? null
+            indexes: (access.indexes as StoreIndexes<T>) ?? null
         })
     }
 

@@ -38,8 +38,8 @@ describe('BatchEngine write batching（op-list 协议）', () => {
         const engine = new BatchEngine({ fetchFn, endpoint: '/batch' })
 
         await Promise.all([
-            engine.enqueueUpdate('post', { id: 1, data: { title: 'a' } }),
-            engine.enqueueUpdate('post', { id: 2, data: { title: 'b' } })
+            engine.enqueueUpdate('post', { id: 1, data: { title: 'a' }, baseVersion: 0 }),
+            engine.enqueueUpdate('post', { id: 2, data: { title: 'b' }, baseVersion: 0 })
         ])
 
         expect(fetchFn).toHaveBeenCalledTimes(1)
@@ -55,8 +55,8 @@ describe('BatchEngine write batching（op-list 协议）', () => {
         const engine = new BatchEngine({ fetchFn, endpoint: '/batch', maxBatchSize: 1 })
 
         await Promise.all([
-            engine.enqueueUpdate('post', { id: 1, data: { title: 'a' } }),
-            engine.enqueueUpdate('post', { id: 2, data: { title: 'b' } })
+            engine.enqueueUpdate('post', { id: 1, data: { title: 'a' }, baseVersion: 0 }),
+            engine.enqueueUpdate('post', { id: 2, data: { title: 'b' }, baseVersion: 0 })
         ])
 
         expect(fetchFn).toHaveBeenCalledTimes(1)
@@ -75,8 +75,8 @@ describe('BatchEngine write batching（op-list 协议）', () => {
         }))
         const engine = new BatchEngine({ fetchFn, endpoint: '/batch' })
 
-        const first = engine.enqueueUpdate('post', { id: 1, data: { title: 'ok' } })
-        const second = engine.enqueueUpdate('post', { id: 2, data: { title: 'bad' } })
+        const first = engine.enqueueUpdate('post', { id: 1, data: { title: 'ok' }, baseVersion: 0 })
+        const second = engine.enqueueUpdate('post', { id: 2, data: { title: 'bad' }, baseVersion: 0 })
 
         await expect(first).resolves.toBeUndefined()
         await expect(second).rejects.toMatchObject({ code: 'FAIL' })

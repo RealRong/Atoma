@@ -3,9 +3,42 @@ export {
     REQUEST_ID_HEADER
 } from './trace'
 
+export { Protocol } from './Protocol'
+
 export {
     SYNC_SSE_EVENT_CHANGES
 } from './sync'
+
+export type {
+    Action,
+    WriteOptions,
+    WriteItemMeta,
+    BulkCreateItem,
+    BulkUpdateItem,
+    BulkPatchItem,
+    BulkDeleteItem,
+    BatchOp,
+    BatchRequest,
+    BatchResult,
+    BatchResponse
+} from './batch'
+
+export type {
+    PageInfo
+} from './batch/pagination'
+
+export type {
+    OrderByRule,
+    CursorToken,
+    Page,
+    QueryParams
+} from './batch/query'
+
+export type {
+    ErrorKind,
+    StandardErrorDetails,
+    StandardError
+} from './error'
 
 export type {
     AtomaChange,
@@ -19,4 +52,3 @@ export type {
     SyncPullResponse,
     SyncSubscribeEvent
 } from './sync'
-

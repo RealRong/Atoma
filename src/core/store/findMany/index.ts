@@ -11,7 +11,7 @@ import { applyQuery } from '../../query'
 import { type StoreRuntime, resolveInternalOperationContext } from '../runtime'
 
 export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexManager, matcher, transform } = runtime
+    const { jotaiStore, atom, adapter, context, indexes, matcher, transform } = runtime
 
     const preserveReference = (incoming: T): T => {
         const existing = jotaiStore.get(atom).get((incoming as any).id)
@@ -57,7 +57,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
         const localData = evaluateWithIndexes({
             mapRef: map,
             options,
-            indexManager,
+            indexes,
             matcher,
             emit,
             explain
@@ -118,7 +118,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
                     before: existingMap,
                     after: next,
                     context,
-                    indexManager
+                    indexes
                 })
 
                 emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
@@ -187,7 +187,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
                 before: existingMap,
                 after: next,
                 context,
-                indexManager
+                indexes
             })
 
             emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
@@ -196,7 +196,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
                     data: evaluateWithIndexes({
                         mapRef: jotaiStore.get(atom),
                         options,
-                        indexManager,
+                        indexes,
                         matcher,
                         emit,
                         explain

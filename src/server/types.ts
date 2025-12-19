@@ -1,31 +1,7 @@
-import type { PageInfo } from '../core/types'
 import type { AtomaError } from './error'
-
-export type OrderByRule = { field: string; direction: 'asc' | 'desc' }
-
-export type CursorToken = string
-
-export type Page =
-    | {
-        mode: 'offset'
-        limit: number
-        offset?: number
-        /** 是否返回 total；默认 true（offset 分页通常需要 total） */
-        includeTotal?: boolean
-    }
-    | {
-        mode: 'cursor'
-        limit: number
-        after?: CursorToken
-        before?: CursorToken
-    }
-
-export interface QueryParams {
-    where?: Record<string, any>
-    orderBy?: OrderByRule[]
-    page?: Page
-    select?: Record<string, boolean>
-}
+import type { PageInfo } from '../protocol/batch/pagination'
+import type { OrderByRule, CursorToken, Page, QueryParams } from '../protocol/batch/query'
+import type { WriteOptions } from '../protocol/batch/types'
 
 export interface QueryResult<T = any> {
     data: T[]
@@ -58,80 +34,6 @@ export type OrmTransactionArgs = {
     tx: OrmTransactionContext
 }
 
-export type Action =
-    | 'query'
-    | 'bulkCreate'
-    | 'bulkUpdate'
-    | 'bulkPatch'
-    | 'bulkDelete'
-
-export interface WriteOptions {
-    select?: Record<string, boolean>
-    returning?: boolean
-    idempotencyKey?: string
-    clientVersion?: number
-    merge?: boolean
-    conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
-}
-
-export type BatchOp =
-    | {
-        opId: string
-        action: 'query'
-        query: {
-            resource: string
-            params: QueryParams
-        }
-    }
-    | {
-        opId: string
-        action: 'bulkCreate'
-        resource: string
-        payload: any[]
-        options?: WriteOptions
-    }
-    | {
-        opId: string
-        action: 'bulkUpdate'
-        resource: string
-        payload: Array<{ id: any; data: any; clientVersion?: number; idempotencyKey?: string; baseVersion?: number }>
-        options?: WriteOptions
-    }
-    | {
-        opId: string
-        action: 'bulkPatch'
-        resource: string
-        payload: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number; idempotencyKey?: string }>
-        options?: WriteOptions
-    }
-    | {
-        opId: string
-        action: 'bulkDelete'
-        resource: string
-        payload: any[]
-        options?: WriteOptions
-    }
-
-export interface BatchRequest {
-    ops: BatchOp[]
-    traceId?: string
-    requestId?: string
-}
-
-export interface BatchResult<T = any> {
-    opId: string
-    ok: boolean
-    data?: T[]
-    pageInfo?: PageInfo
-    transactionApplied?: boolean
-    partialFailures?: Array<{ index: number; error: StandardError }>
-    error?: StandardError
-}
-
-export interface BatchResponse<T = any> {
-    results: BatchResult<T>[]
-}
-
 export interface IOrmAdapter {
     findMany(resource: string, params: QueryParams): Promise<QueryResult>
     batchFindMany?(requests: Array<{ resource: string; params: QueryParams }>): Promise<QueryResult[]>
@@ -145,7 +47,7 @@ export interface IOrmAdapter {
     ): Promise<QueryResultOne>
     delete?(resource: string, whereOrId: any, options?: WriteOptions): Promise<QueryResultOne>
     bulkCreate?(resource: string, items: any[], options?: WriteOptions): Promise<QueryResultMany>
-    bulkUpdate?(resource: string, items: Array<{ id: any; data: any; clientVersion?: number }>, options?: WriteOptions): Promise<QueryResultMany>
+    bulkUpdate?(resource: string, items: Array<{ id: any; data: any; baseVersion?: number }>, options?: WriteOptions): Promise<QueryResultMany>
     bulkPatch?(
         resource: string,
         items: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number }>,
@@ -161,8 +63,14 @@ export interface OrmAdapterOptions {
     defaultOrderBy?: OrderByRule[]
 }
 
-export type StandardError = {
-    code: string
-    message: string
-    details?: any
-}
+export type { StandardError } from '../protocol/error'
+
+export type { OrderByRule, CursorToken, Page, QueryParams } from '../protocol/batch/query'
+export type {
+    Action,
+    WriteOptions,
+    BatchOp,
+    BatchRequest,
+    BatchResult,
+    BatchResponse
+} from '../protocol/batch'

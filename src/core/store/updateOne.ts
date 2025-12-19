@@ -9,7 +9,7 @@ import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
 import { prepareForUpdate } from './writePipeline'
 
 export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexManager, hooks, schema, transform } = runtime
+    const { jotaiStore, atom, adapter, context, indexes, hooks, schema, transform } = runtime
     return (id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         return new Promise<T>((resolve, reject) => {
             const internalContext = resolveInternalOperationContext(runtime, options)
@@ -23,7 +23,9 @@ export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
                     data: validObj,
                     store: jotaiStore,
                     context,
+                    indexes,
                     traceId,
+                    opContext: options?.opContext,
                     onSuccess: async updated => {
                         await runAfterSave(hooks, validObj, 'update')
                         resolve(updated)
@@ -57,7 +59,7 @@ export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
                     .then(validFetched => {
                         const before = jotaiStore.get(atom)
                         const after = BaseStore.add(validFetched as PartialWithId<T>, before)
-                        commitAtomMapUpdate({ jotaiStore, atom, before, after, context, indexManager })
+                        commitAtomMapUpdate({ jotaiStore, atom, before, after, context, indexes })
                         updateFromBase(validFetched as unknown as PartialWithId<T>)
                     })
                     .catch(err => reject(err))
