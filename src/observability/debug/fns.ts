@@ -1,7 +1,7 @@
-import type { DebugEmitter, DebugEvent, DebugOptions } from './types'
-import { shouldSampleTrace } from './sampling'
+import type { DebugConfig, DebugEvent, EmitFn } from '../types'
+import { shouldSampleTrace } from '../sampling'
 
-export type { DebugEmitter } from './types'
+type LegacyDebugEmitter = { traceId: string; emit: EmitFn }
 
 const summarizeValue = (value: unknown): unknown => {
     if (value === null) return null
@@ -18,14 +18,14 @@ const summarizeValue = (value: unknown): unknown => {
     return { type: 'unknown' }
 }
 
-const SEQ_MAP = Symbol.for('atoma.debug.seqByTraceId')
+const SEQ_BY_DEBUG = new WeakMap<object, Map<string, number>>()
 
 export function createDebugEmitter(args: {
-    debug?: DebugOptions
+    debug?: DebugConfig
     traceId?: string
     store: string
     sink?: (e: DebugEvent) => void
-}): DebugEmitter | undefined {
+}): LegacyDebugEmitter | undefined {
     const debug = args.debug
     const traceId = args.traceId
     const sink = args.sink
@@ -35,15 +35,11 @@ export function createDebugEmitter(args: {
     if (!shouldSampleTrace(traceId, sampleRate)) return undefined
 
     const seqByTraceId: Map<string, number> = (() => {
-        const anyDebug = debug as any
-        const existing = anyDebug?.[SEQ_MAP]
-        if (existing instanceof Map) return existing
+        const key = debug as unknown as object
+        const existing = SEQ_BY_DEBUG.get(key)
+        if (existing) return existing
         const next = new Map<string, number>()
-        try {
-            anyDebug[SEQ_MAP] = next
-        } catch {
-            // ignore
-        }
+        SEQ_BY_DEBUG.set(key, next)
         return next
     })()
 
@@ -58,7 +54,7 @@ export function createDebugEmitter(args: {
         return next
     }
 
-    const emit: DebugEmitter['emit'] = (type, payload, meta) => {
+    const emit: LegacyDebugEmitter['emit'] = (type, payload, meta) => {
         const safePayload = (() => {
             const redacted = debug.redact ? debug.redact(payload) : payload
             if (debug.includePayload) return redacted
@@ -74,7 +70,7 @@ export function createDebugEmitter(args: {
             opId: meta?.opId,
             sequence,
             timestamp: new Date().toISOString(),
-            store: args.store,
+            scope: args.store,
             spanId: `s_${sequence}`,
             parentSpanId: meta?.parentSpanId,
             payload: safePayload

@@ -15,4 +15,3 @@ export function utf8ByteLength(input: string): number {
     // Fallback approximation (UTF-16 code units)
     return input.length * 2
 }
-

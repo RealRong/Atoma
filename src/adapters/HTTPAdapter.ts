@@ -16,7 +16,7 @@ import type { QueuedOperation } from './http/offlineQueue'
 import type { QuerySerializerConfig } from './http/query'
 import { BatchEngine } from '../batch'
 import { createRequestIdSequencer } from '../observability/trace'
-import type { InternalOperationContext } from '../observability/types'
+import type { ObservabilityContext } from '../observability/types'
 import type { StoreAccess } from '../core/types'
 import { commitAtomMapUpdate } from '../core/store/cacheWriter'
 import { validateWithSchema } from '../core/store/validation'
@@ -507,7 +507,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         this.storeAccess = undefined
     }
 
-    async put(key: StoreKey, value: T, internalContext?: InternalOperationContext): Promise<void> {
+    async put(key: StoreKey, value: T, internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.sync?.enabled === true) {
             const op = this.buildSyncPutOp(key, value)
             const res = await this.orchestrator.pushOrQueueSyncOps([op], { traceId: internalContext?.traceId })
@@ -542,6 +542,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const trace = (typeof traceId === 'string' && traceId)
             ? { traceId, requestId: this.requestIdSequencer.next(traceId) }
             : undefined
+        const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
         const payload = (value && typeof value === 'object')
             ? ({ ...(value as any), baseVersion } as any)
             : value
@@ -551,12 +552,12 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 key,
                 payload,
                 trace ? { [TRACE_ID_HEADER]: trace.traceId, [REQUEST_ID_HEADER]: trace.requestId } : undefined,
-                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+                ctx
             )
         )
     }
 
-    async bulkPut(items: T[], internalContext?: InternalOperationContext): Promise<void> {
+    async bulkPut(items: T[], internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.sync?.enabled === true) {
             const ops = items.map(item => this.buildSyncPutOp((item as any).id, item))
             const res = await this.orchestrator.pushOrQueueSyncOps(ops, { traceId: internalContext?.traceId })
@@ -572,7 +573,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         await Promise.all(items.map(item => this.put((item as any).id, item, internalContext)))
     }
 
-    async bulkCreate(items: T[], internalContext?: InternalOperationContext): Promise<T[] | void> {
+    async bulkCreate(items: T[], internalContext?: ObservabilityContext): Promise<T[] | void> {
         if (this.batchEngine) {
             const created = await Promise.all(items.map(item => {
                 return this.batchEngine!.enqueueCreate(
@@ -589,17 +590,18 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             const trace = (typeof traceId === 'string' && traceId)
                 ? { traceId, requestId: this.requestIdSequencer.next(traceId) }
                 : undefined
+            const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
             return await this.client.bulkCreate(
                 items,
                 trace ? { [TRACE_ID_HEADER]: trace.traceId, [REQUEST_ID_HEADER]: trace.requestId } : undefined,
-                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+                ctx
             )
         }
 
         await this.executors.bulkPut(items, internalContext)
     }
 
-    async delete(key: StoreKey, internalContext?: InternalOperationContext): Promise<void> {
+    async delete(key: StoreKey, internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.sync?.enabled === true) {
             const op = this.buildSyncDeleteOp(key)
             const res = await this.orchestrator.pushOrQueueSyncOps([op], { traceId: internalContext?.traceId })
@@ -621,18 +623,19 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const trace = (typeof traceId === 'string' && traceId)
             ? { traceId, requestId: this.requestIdSequencer.next(traceId) }
             : undefined
+        const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
         await this.orchestrator.handleWithOfflineFallback(
             { type: 'delete', key },
             () => this.client.delete(
                 key,
                 { baseVersion },
                 trace ? { [TRACE_ID_HEADER]: trace.traceId, [REQUEST_ID_HEADER]: trace.requestId } : undefined,
-                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+                ctx
             )
         )
     }
 
-    async bulkDelete(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<void> {
+    async bulkDelete(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.sync?.enabled === true) {
             const ops = keys.map(k => this.buildSyncDeleteOp(k))
             const res = await this.orchestrator.pushOrQueueSyncOps(ops, { traceId: internalContext?.traceId })
@@ -644,7 +647,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         await Promise.all(keys.map(k => this.delete(k, internalContext)))
     }
 
-    async get(key: StoreKey, internalContext?: InternalOperationContext): Promise<T | undefined> {
+    async get(key: StoreKey, internalContext?: ObservabilityContext): Promise<T | undefined> {
         if (this.batchEngine) {
             const params: FindManyOptions<T> = {
                 where: { id: key } as any,
@@ -669,7 +672,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         return this.executors.get(key, internalContext)
     }
 
-    async bulkGet(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<(T | undefined)[]> {
+    async bulkGet(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<(T | undefined)[]> {
         if (!keys.length) return []
 
         // 若启用 batch，则将 bulkGet 转为一次批量 query（where in），否则回退并发 GET
@@ -704,7 +707,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         return this.executors.bulkGet(keys, internalContext)
     }
 
-    async getAll(filter?: (item: T) => boolean, internalContext?: InternalOperationContext): Promise<T[]> {
+    async getAll(filter?: (item: T) => boolean, internalContext?: ObservabilityContext): Promise<T[]> {
         if (this.batchEngine) {
             try {
                 const result = await this.batchEngine.enqueueQuery<T>(
@@ -725,7 +728,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
 
     async findMany(
         options?: FindManyOptions<T>,
-        internalContext?: InternalOperationContext
+        internalContext?: ObservabilityContext
     ): Promise<{ data: T[]; pageInfo?: PageInfo }> {
         if (this.batchEngine) {
             return this.batchEngine.enqueueQuery(
@@ -741,7 +744,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     async applyPatches(
         patches: Patch[],
         metadata: PatchMetadata,
-        internalContext?: InternalOperationContext
+        internalContext?: ObservabilityContext
     ): Promise<{ created?: T[] } | void> {
         if (this.config.sync?.enabled === true) {
             return this.applyPatchesViaSync(patches, metadata, internalContext)
@@ -787,11 +790,12 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 return
             }
             const trace = nextTraceHeaders()
+            const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
             tasks.push(this.client.create(
                 id,
                 value,
                 trace?.headers,
-                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+                ctx
             ).then((res: any) => {
                 if (res && typeof res === 'object' && (res as any).id !== undefined) {
                     createdResults.push(res as T)
@@ -813,6 +817,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 return
             }
             const trace = nextTraceHeaders()
+            const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
             const baseVersion = this.resolveLocalBaseVersion(id)
             tasks.push(this.orchestrator.handleWithOfflineFallback(
                 { type: 'delete', key: id },
@@ -820,7 +825,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                     id,
                     { baseVersion },
                     trace?.headers,
-                    trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+                    ctx
                 )
             ))
         }
@@ -843,12 +848,13 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                 return
             }
             const trace = nextTraceHeaders()
+            const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
             tasks.push(this.client.patch(
                 id,
                 itemPatches,
                 { ...metadata, baseVersion },
                 trace?.headers,
-                trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+                ctx
             ))
         }
 
@@ -882,6 +888,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             }
 
             const trace = nextTraceHeaders()
+            const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
             const baseVersion = this.resolveLocalBaseVersion(id, next)
             const payload = (next && typeof next === 'object') ? ({ ...(next as any), baseVersion } as any) : next
             tasks.push(this.orchestrator.handleWithOfflineFallback(
@@ -890,7 +897,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                     id,
                     payload,
                     trace?.headers,
-                    trace && internalContext?.emitter ? { emitter: internalContext.emitter, requestId: trace.requestId } : undefined
+                    ctx
                 )
             ))
         }
@@ -1106,7 +1113,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     private async applyPatchesViaSync(
         patches: Patch[],
         metadata: PatchMetadata,
-        internalContext?: InternalOperationContext
+        internalContext?: ObservabilityContext
     ): Promise<{ created?: T[] } | void> {
         const patchesByItemId = new Map<StoreKey, Patch[]>()
         patches.forEach(patch => {
@@ -1186,7 +1193,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     private async handleSyncRejected(
         rejected: any[],
         originalOps: SyncQueuedOperation[],
-        internalContext?: InternalOperationContext
+        internalContext?: ObservabilityContext
     ) {
         if (!rejected || !rejected.length) return
         const byKey = new Map<string, SyncQueuedOperation>()

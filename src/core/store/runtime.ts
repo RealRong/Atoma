@@ -7,9 +7,9 @@ import { getGlobalDevtools, registerGlobalIndex } from '../../devtools/global'
 import { StoreIndexes } from '../indexes/StoreIndexes'
 import type { IndexDefinition, IAdapter, JotaiStore, StoreConfig, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../types'
 import type { QueryMatcherOptions } from '../query/QueryMatcher'
-import { createTraceId, createRequestIdSequencer } from '../../observability/trace'
-import { createDebugEmitter } from '../../observability/debug'
-import type { DebugEvent, InternalOperationContext } from '../../observability/types'
+import { Observability } from '../../observability'
+import type { ObservabilityContext, ObservabilityRuntime } from '../../observability'
+import type { DebugEvent } from '../../observability/types'
 
 export type StoreRuntime<T extends Entity> = {
     atom: PrimitiveAtom<Map<StoreKey, T>>
@@ -17,13 +17,13 @@ export type StoreRuntime<T extends Entity> = {
     jotaiStore: JotaiStore
     context: StoreContext
     storeName: string
+    observability: ObservabilityRuntime
     indexes: StoreIndexes<T> | null
     matcher?: QueryMatcherOptions
     hooks: StoreConfig<T>['hooks']
     schema: StoreConfig<T>['schema']
     idGenerator: StoreConfig<T>['idGenerator']
     transform: (item: T) => T
-    resolveOperationTraceId: (options?: StoreOperationOptions | StoreReadOptions) => string | undefined
     stopIndexDevtools?: () => void
 }
 
@@ -56,8 +56,6 @@ export function createStoreRuntime<T extends Entity>(params: {
 
     const storeName = context.storeName || config?.storeName || adapter.name || 'store'
 
-    const resolveOperationTraceId = createOperationTraceIdResolver(context)
-
     const indexes = config?.indexes && config.indexes.length ? new StoreIndexes<T>(config.indexes) : null
 
     const matcher = buildQueryMatcherOptions(config?.indexes)
@@ -71,38 +69,38 @@ export function createStoreRuntime<T extends Entity>(params: {
         return config?.transformData ? config.transformData(item) : item
     }
 
+    const observability = Observability.runtime.create({
+        scope: storeName,
+        debug: context.debug,
+        onEvent: context.debugSink
+    })
+
     return {
         atom,
         adapter,
         jotaiStore,
         context,
         storeName,
+        observability,
         indexes,
         matcher,
         hooks: config?.hooks,
         schema: config?.schema,
         idGenerator: config?.idGenerator,
         transform,
-        resolveOperationTraceId,
         stopIndexDevtools
     }
 }
 
-export function createOperationTraceIdResolver(context: StoreContext) {
-    return (options?: StoreOperationOptions | StoreReadOptions) => {
-        const explicit = options?.traceId
-        if (typeof explicit === 'string' && explicit) return explicit
-
-        const explain = (options as any)?.explain === true
-        if (explain) return createTraceId()
-
-        const debug = context.debug as any
-        const enabled = Boolean(debug?.enabled && context.debugSink)
-        const sampleRate = typeof debug?.sampleRate === 'number' ? debug.sampleRate : 0
-        if (!enabled || sampleRate <= 0) return undefined
-
-        return createTraceId()
-    }
+export function resolveObservabilityContext<T extends Entity>(
+    runtime: StoreRuntime<T>,
+    options?: StoreOperationOptions | StoreReadOptions | { traceId?: string; explain?: boolean }
+): ObservabilityContext {
+    const anyOptions = options as any
+    return runtime.observability.createContext({
+        traceId: typeof anyOptions?.traceId === 'string' && anyOptions.traceId ? anyOptions.traceId : undefined,
+        explain: anyOptions?.explain === true
+    })
 }
 
 export function buildQueryMatcherOptions<T>(indexes?: Array<IndexDefinition<T>>): QueryMatcherOptions | undefined {
@@ -153,27 +151,4 @@ export function registerStoreIndexesSnapshot<T>(params: {
     }
 
     return devtools?.registerIndexManager?.({ name, snapshot }) || registerGlobalIndex({ name, snapshot })
-}
-
-export function resolveInternalOperationContext<T extends Entity>(
-    runtime: StoreRuntime<T>,
-    options?: StoreOperationOptions | StoreReadOptions
-): InternalOperationContext | undefined {
-    const { context, storeName, resolveOperationTraceId } = runtime
-    const traceId = resolveOperationTraceId(options)
-
-    if (typeof traceId !== 'string' || !traceId) return undefined
-
-    const emitter = createDebugEmitter({
-        debug: context.debug,
-        traceId,
-        store: storeName,
-        sink: context.debugSink
-    })
-
-    return {
-        traceId,
-        store: storeName,
-        emitter
-    }
 }

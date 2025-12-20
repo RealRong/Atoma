@@ -1,5 +1,5 @@
 import type { FindManyOptions, PageInfo, StoreKey } from '../core/types'
-import type { DebugEmitter } from '../observability/debug'
+import type { ObservabilityContext } from '../observability/types'
 import type { AtomaPatch } from '../protocol/sync'
 
 export type FetchFn = typeof fetch
@@ -16,8 +16,7 @@ export type QueryTask<T> = {
     opId: string
     resource: string
     params: FindManyOptions<T> | undefined
-    traceId?: string
-    debugEmitter?: DebugEmitter
+    ctx?: ObservabilityContext
     fallback: () => Promise<any>
     deferred: Deferred<QueryEnvelope<T>>
 }
@@ -28,8 +27,7 @@ export type CreateTask<T> = {
     item: T
     idempotencyKey: string
     deferred: Deferred<any>
-    traceId?: string
-    debugEmitter?: DebugEmitter
+    ctx?: ObservabilityContext
 }
 
 export type UpdateTask<T> = {
@@ -37,8 +35,7 @@ export type UpdateTask<T> = {
     resource: string
     item: { id: StoreKey; data: T; baseVersion: number; meta?: { idempotencyKey?: string } }
     deferred: Deferred<void>
-    traceId?: string
-    debugEmitter?: DebugEmitter
+    ctx?: ObservabilityContext
 }
 
 export type PatchTask = {
@@ -46,8 +43,7 @@ export type PatchTask = {
     resource: string
     item: { id: StoreKey; patches: AtomaPatch[]; baseVersion: number; timestamp?: number; meta?: { idempotencyKey?: string } }
     deferred: Deferred<void>
-    traceId?: string
-    debugEmitter?: DebugEmitter
+    ctx?: ObservabilityContext
 }
 
 export type DeleteTask = {
@@ -55,8 +51,7 @@ export type DeleteTask = {
     resource: string
     item: { id: StoreKey; baseVersion: number; meta?: { idempotencyKey?: string } }
     deferred: Deferred<void>
-    traceId?: string
-    debugEmitter?: DebugEmitter
+    ctx?: ObservabilityContext
 }
 
 export type WriteTask = CreateTask<any> | UpdateTask<any> | PatchTask | DeleteTask

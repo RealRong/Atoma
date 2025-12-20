@@ -1,16 +1,16 @@
 import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
 import { commitAtomMapUpdate } from './cacheWriter'
-import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
+import { type StoreRuntime, resolveObservabilityContext } from './runtime'
 
 export function createGetAll<T extends Entity>(runtime: StoreRuntime<T>) {
     const { jotaiStore, atom, adapter, context, indexes, transform } = runtime
 
     return async (filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions) => {
         const existingMap = jotaiStore.get(atom) as Map<StoreKey, T>
-        const internalContext = resolveInternalOperationContext(runtime, options)
+        const observabilityContext = resolveObservabilityContext(runtime, options)
 
-        let arr = await adapter.getAll(filter, internalContext)
+        let arr = await adapter.getAll(filter, observabilityContext)
         arr = arr.map(transform)
 
         const incomingIds = new Set(arr.map(i => (i as any).id as StoreKey))

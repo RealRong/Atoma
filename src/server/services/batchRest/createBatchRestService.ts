@@ -71,7 +71,7 @@ export function createBatchRestService<Ctx>(args: {
                 createRuntime: args.createRuntime,
                 formatTopLevelError: args.formatTopLevelError,
                 run: async (runtime, phase) => {
-                    const { traceId, requestId, ctx: userCtx, emitter } = runtime
+                    const { traceId, requestId, ctx: userCtx } = runtime
 
                     const request = validateAndNormalizeRequest(parsed.request) as BatchRequest
                     if (traceId) (request as any).traceId = traceId
@@ -148,7 +148,7 @@ export function createBatchRestService<Ctx>(args: {
                             idempotencyTtlMs: args.config.sync?.push?.idempotencyTtlMs ?? 7 * 24 * 60 * 60 * 1000
                         }
                     )
-                    emitter?.emit('server:response', { ok: true }, { requestId })
+                    runtime.observabilityContext.emit('server:response', { ok: true })
 
                     if (parsed.route.kind === 'rest') {
                         return toRestResponse(parsed.route, request, response)

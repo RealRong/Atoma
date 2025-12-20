@@ -15,4 +15,3 @@ export function shouldSampleTrace(traceId: string, sampleRate: number): boolean 
     const v = fnv1a32(traceId) / 0xffffffff
     return v < sampleRate
 }
-

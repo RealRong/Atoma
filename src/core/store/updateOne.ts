@@ -5,15 +5,15 @@ import type { Entity, PartialWithId, StoreKey, StoreOperationOptions } from '../
 import { commitAtomMapUpdate } from './cacheWriter'
 import { runAfterSave } from './hooks'
 import { validateWithSchema } from './validation'
-import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
+import { type StoreRuntime, resolveObservabilityContext } from './runtime'
 import { prepareForUpdate } from './writePipeline'
 
 export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
     const { jotaiStore, atom, adapter, context, indexes, hooks, schema, transform } = runtime
     return (id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         return new Promise<T>((resolve, reject) => {
-            const internalContext = resolveInternalOperationContext(runtime, options)
-            const traceId = internalContext?.traceId
+            const observabilityContext = resolveObservabilityContext(runtime, options)
+            const traceId = observabilityContext.traceId
 
             const dispatchUpdate = (validObj: PartialWithId<T>) => {
                 BaseStore.dispatch({
@@ -25,6 +25,7 @@ export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
                     context,
                     indexes,
                     traceId,
+                    observabilityContext,
                     opContext: options?.opContext,
                     onSuccess: async updated => {
                         await runAfterSave(hooks, validObj, 'update')
@@ -48,7 +49,7 @@ export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
                 return
             }
 
-            adapter.get(id, internalContext).then(data => {
+            adapter.get(id, observabilityContext).then(data => {
                 if (!data) {
                     reject(new Error(`Item with id ${id} not found`))
                     return

@@ -3,7 +3,7 @@ import { Patch } from 'immer'
 import { ETagManager } from './etagManager'
 import { makeUrl, sendJson, sendDelete, sendDeleteJson, sendPutJson, RequestSender, resolveEndpoint } from './request'
 import type { VersionConfig } from '../HTTPAdapter'
-import type { DebugEmitter } from '../../observability/debug'
+import type { ObservabilityContext } from '../../observability/types'
 import { utf8ByteLength } from '../../observability/utf8'
 
 export interface ClientConfig {
@@ -43,7 +43,7 @@ export class HTTPClient<T> {
         key: StoreKey,
         value: T,
         extraHeaders?: Record<string, string>,
-        debug?: { emitter: DebugEmitter; requestId?: string }
+        ctx?: ObservabilityContext
     ): Promise<void> {
         const endpoint = resolveEndpoint(this.config.endpoints.update, key)
         const url = makeUrl(this.config.baseURL, endpoint)
@@ -51,22 +51,23 @@ export class HTTPClient<T> {
 
         this.etagManager.attachVersion(headers, this.config.version, value, key)
 
-        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(value)) : undefined
-        const startedAt = debug ? Date.now() : 0
-        debug?.emitter.emit('adapter:request', {
+        const shouldEmit = Boolean(ctx?.active)
+        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(value)) : undefined
+        const startedAt = shouldEmit ? Date.now() : 0
+        ctx?.emit('adapter:request', {
             method: 'PUT',
             endpoint,
             attempt: 1,
             payloadBytes
-        }, { requestId: debug.requestId })
+        })
 
         const response = await sendPutJson(this.sender, url, value, headers)
 
-        debug?.emitter.emit('adapter:response', {
+        ctx?.emit('adapter:response', {
             ok: response.ok,
             status: response.status,
-            durationMs: Date.now() - startedAt
-        }, { requestId: debug.requestId })
+            durationMs: shouldEmit ? (Date.now() - startedAt) : undefined
+        })
 
         if (response.status === 409) {
             await this.conflictHandler.handle(response, key, value)
@@ -83,7 +84,7 @@ export class HTTPClient<T> {
         _key: StoreKey,
         value: T,
         extraHeaders?: Record<string, string>,
-        debug?: { emitter: DebugEmitter; requestId?: string }
+        ctx?: ObservabilityContext
     ): Promise<T | undefined> {
         const endpoint = resolveEndpoint(this.config.endpoints.create)
         const url = makeUrl(this.config.baseURL, endpoint)
@@ -91,22 +92,23 @@ export class HTTPClient<T> {
 
         this.etagManager.attachVersion(headers, this.config.version, value, undefined as any)
 
-        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(value)) : undefined
-        const startedAt = debug ? Date.now() : 0
-        debug?.emitter.emit('adapter:request', {
+        const shouldEmit = Boolean(ctx?.active)
+        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(value)) : undefined
+        const startedAt = shouldEmit ? Date.now() : 0
+        ctx?.emit('adapter:request', {
             method: 'POST',
             endpoint,
             attempt: 1,
             payloadBytes
-        }, { requestId: debug.requestId })
+        })
 
         const response = await sendJson(this.sender, url, value, headers)
 
-        debug?.emitter.emit('adapter:response', {
+        ctx?.emit('adapter:response', {
             ok: response.ok,
             status: response.status,
-            durationMs: Date.now() - startedAt
-        }, { requestId: debug.requestId })
+            durationMs: shouldEmit ? (Date.now() - startedAt) : undefined
+        })
 
         const etag = this.etagManager.extractFromResponse(response)
         if (etag) {
@@ -134,14 +136,14 @@ export class HTTPClient<T> {
     async delete(
         key: StoreKey,
         metaOrHeaders?: { baseVersion: number; idempotencyKey?: string } | Record<string, string>,
-        extraHeadersOrDebug?: Record<string, string> | { emitter: DebugEmitter; requestId?: string },
-        debugMaybe?: { emitter: DebugEmitter; requestId?: string }
+        extraHeadersOrCtx?: Record<string, string> | ObservabilityContext,
+        ctxMaybe?: ObservabilityContext
     ): Promise<void> {
         const meta = (metaOrHeaders && typeof metaOrHeaders === 'object' && !Array.isArray(metaOrHeaders) && typeof (metaOrHeaders as any).baseVersion === 'number')
             ? (metaOrHeaders as any)
             : undefined
-        const extraHeaders = meta ? (extraHeadersOrDebug as any) : (metaOrHeaders as any)
-        const debug = meta ? debugMaybe : (extraHeadersOrDebug as any)
+        const extraHeaders = meta ? (extraHeadersOrCtx as any) : (metaOrHeaders as any)
+        const ctx = meta ? ctxMaybe : (extraHeadersOrCtx as any)
 
         const endpoint = resolveEndpoint(this.config.endpoints.delete, key)
         const url = makeUrl(this.config.baseURL, endpoint)
@@ -149,23 +151,24 @@ export class HTTPClient<T> {
 
         this.etagManager.attachVersion(headers, this.config.version, undefined, key)
 
-        const startedAt = debug ? Date.now() : 0
-        debug?.emitter.emit('adapter:request', {
+        const shouldEmit = Boolean(ctx?.active)
+        const startedAt = shouldEmit ? Date.now() : 0
+        ctx?.emit('adapter:request', {
             method: 'DELETE',
             endpoint,
             attempt: 1,
             payloadBytes: 0
-        }, { requestId: debug.requestId })
+        })
 
         const response = meta
             ? await sendDeleteJson(this.sender, url, { baseVersion: meta.baseVersion, idempotencyKey: meta.idempotencyKey }, headers)
             : await sendDelete(this.sender, url, headers)
 
-        debug?.emitter.emit('adapter:response', {
+        ctx?.emit('adapter:response', {
             ok: response.ok,
             status: response.status,
-            durationMs: Date.now() - startedAt
-        }, { requestId: debug.requestId })
+            durationMs: shouldEmit ? (Date.now() - startedAt) : undefined
+        })
 
         if (response.status === 409 || !response.ok) {
             const body = await (async () => {
@@ -189,7 +192,7 @@ export class HTTPClient<T> {
         patches: Patch[],
         metadata: PatchMetadata,
         extraHeaders?: Record<string, string>,
-        debug?: { emitter: DebugEmitter; requestId?: string }
+        ctx?: ObservabilityContext
     ): Promise<void> {
         const patchEndpoint = this.config.endpoints.patch || this.config.endpoints.update
         const endpoint = resolveEndpoint(patchEndpoint, id)
@@ -203,14 +206,15 @@ export class HTTPClient<T> {
             baseVersion: metadata.baseVersion,
             timestamp: metadata.timestamp
         }
-        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(body)) : undefined
-        const startedAt = debug ? Date.now() : 0
-        debug?.emitter.emit('adapter:request', {
+        const shouldEmit = Boolean(ctx?.active)
+        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const startedAt = shouldEmit ? Date.now() : 0
+        ctx?.emit('adapter:request', {
             method: 'POST',
             endpoint,
             attempt: 1,
             payloadBytes
-        }, { requestId: debug.requestId })
+        })
 
         const response = await sendJson(
             this.sender,
@@ -219,11 +223,11 @@ export class HTTPClient<T> {
             headers
         )
 
-        debug?.emitter.emit('adapter:response', {
+        ctx?.emit('adapter:response', {
             ok: response.ok,
             status: response.status,
-            durationMs: Date.now() - startedAt
-        }, { requestId: debug.requestId })
+            durationMs: shouldEmit ? (Date.now() - startedAt) : undefined
+        })
 
         if (response.status === 409) {
             const conflict = await response.json()
@@ -239,27 +243,28 @@ export class HTTPClient<T> {
     async bulkUpdate(
         items: T[],
         extraHeaders?: Record<string, string>,
-        debug?: { emitter: DebugEmitter; requestId?: string }
+        ctx?: ObservabilityContext
     ): Promise<void> {
         if (!this.config.endpoints.bulkUpdate) return
         const endpoint = resolveEndpoint(this.config.endpoints.bulkUpdate)
         const url = makeUrl(this.config.baseURL, endpoint)
         const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
         const body = { items }
-        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(body)) : undefined
-        const startedAt = debug ? Date.now() : 0
-        debug?.emitter.emit('adapter:request', {
+        const shouldEmit = Boolean(ctx?.active)
+        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const startedAt = shouldEmit ? Date.now() : 0
+        ctx?.emit('adapter:request', {
             method: 'POST',
             endpoint,
             attempt: 1,
             payloadBytes
-        }, { requestId: debug.requestId })
+        })
         const response = await sendJson(this.sender, url, body, headers)
-        debug?.emitter.emit('adapter:response', {
+        ctx?.emit('adapter:response', {
             ok: response.ok,
             status: response.status,
-            durationMs: Date.now() - startedAt
-        }, { requestId: debug.requestId })
+            durationMs: shouldEmit ? (Date.now() - startedAt) : undefined
+        })
         if (!response.ok) {
             throw new Error(`Bulk update failed: ${response.status}`)
         }
@@ -268,27 +273,28 @@ export class HTTPClient<T> {
     async bulkCreate(
         items: T[],
         extraHeaders?: Record<string, string>,
-        debug?: { emitter: DebugEmitter; requestId?: string }
+        ctx?: ObservabilityContext
     ): Promise<T[] | undefined> {
         if (!this.config.endpoints.bulkCreate) return
         const endpoint = resolveEndpoint(this.config.endpoints.bulkCreate)
         const url = makeUrl(this.config.baseURL, endpoint)
         const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
         const body = { items }
-        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(body)) : undefined
-        const startedAt = debug ? Date.now() : 0
-        debug?.emitter.emit('adapter:request', {
+        const shouldEmit = Boolean(ctx?.active)
+        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const startedAt = shouldEmit ? Date.now() : 0
+        ctx?.emit('adapter:request', {
             method: 'POST',
             endpoint,
             attempt: 1,
             payloadBytes
-        }, { requestId: debug.requestId })
+        })
         const response = await sendJson(this.sender, url, body, headers)
-        debug?.emitter.emit('adapter:response', {
+        ctx?.emit('adapter:response', {
             ok: response.ok,
             status: response.status,
-            durationMs: Date.now() - startedAt
-        }, { requestId: debug.requestId })
+            durationMs: shouldEmit ? (Date.now() - startedAt) : undefined
+        })
         if (!response.ok) {
             throw new Error(`Bulk create failed: ${response.status}`)
         }
@@ -309,27 +315,28 @@ export class HTTPClient<T> {
     async bulkDelete(
         keys: StoreKey[],
         extraHeaders?: Record<string, string>,
-        debug?: { emitter: DebugEmitter; requestId?: string }
+        ctx?: ObservabilityContext
     ): Promise<void> {
         if (!this.config.endpoints.bulkDelete) return
         const endpoint = resolveEndpoint(this.config.endpoints.bulkDelete)
         const url = makeUrl(this.config.baseURL, endpoint)
         const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
         const body = { ids: keys }
-        const payloadBytes = debug ? utf8ByteLength(JSON.stringify(body)) : undefined
-        const startedAt = debug ? Date.now() : 0
-        debug?.emitter.emit('adapter:request', {
+        const shouldEmit = Boolean(ctx?.active)
+        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const startedAt = shouldEmit ? Date.now() : 0
+        ctx?.emit('adapter:request', {
             method: 'POST',
             endpoint,
             attempt: 1,
             payloadBytes
-        }, { requestId: debug.requestId })
+        })
         const response = await sendJson(this.sender, url, body, headers)
-        debug?.emitter.emit('adapter:response', {
+        ctx?.emit('adapter:response', {
             ok: response.ok,
             status: response.status,
-            durationMs: Date.now() - startedAt
-        }, { requestId: debug.requestId })
+            durationMs: shouldEmit ? (Date.now() - startedAt) : undefined
+        })
         if (!response.ok) {
             throw new Error(`Bulk delete failed: ${response.status}`)
         }

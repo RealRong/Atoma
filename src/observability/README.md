@@ -6,30 +6,32 @@ If you want the long-term “optimal architecture” (no hidden carrier, explici
 
 ## Public surface vs internal wiring
 
-- The package root (`src/index.ts`) re-exports **types only**: `TraceContext`, `Explain`, `DebugOptions`, `DebugEvent`.
-- `DebugEmitter` and `InternalOperationContext` are intended for **internal module wiring** (core/adapters/batch/server) and are not part of the stable public API surface.
+- The package root (`src/index.ts`) re-exports **types only**: `TraceContext`, `Explain`, `DebugConfig`, `DebugEvent`.
+- Inside the repo, the internal pipeline only passes `ObservabilityContext` and calls `ctx.emit(...)` (callers only consume).
 
 ## What’s in `src/observability/`
 
-- `types.ts`
-  - Public-ish data types: `TraceContext`, `DebugOptions`, `DebugEvent`, `Explain`
-  - Internal-only wiring type: `InternalOperationContext` (explicit context passed across core/adapter/batch/server)
-- `trace.ts`
-  - `createTraceId()` – generates a trace id
-  - `deriveRequestId(traceId, seq)` and `createRequestIdSequencer()` – stable, per-trace request id series
-- `sampling.ts`
-  - `shouldSampleTrace(traceId, sampleRate)` – deterministic sampling (same traceId → same decision)
-- `debug.ts`
-  - `createDebugEmitter({ debug, traceId, store, sink })` – emits `DebugEvent` into a store-provided sink with safety defaults
-- `utf8.ts`
+- `Observability.ts`
+  - Aggregated entry: `Observability.trace|sampling|utf8|runtime`
+- `types/*`
+  - Main data types: `TraceContext`, `DebugConfig`, `DebugEvent`, `Explain`, `ObservabilityContext`
+- `trace/*`
+  - pure helpers for traceId/requestId
+- `sampling/*`
+  - deterministic sampling
+- `utf8/*`
   - `utf8ByteLength()` – optional byte-size estimation for request payloads (used only when debug is enabled)
+- `runtime/*`
+  - `ObservabilityRuntime` – the only wiring entry (ctx creation/reuse, sequences, LRU, safe emit)
+- `debug/*`
+  - legacy low-level implementation (no longer used directly in this repo)
 
 ## Core concepts
 
 - `traceId`: correlates one logical user action / store API call chain across layers.
 - `requestId`: correlates one concrete network request (often derived from `traceId` + sequence).
 - `opId`: correlates a single op inside a batch request (query/write).
-- `store`: isolates events when multiple stores exist in the same process.
+- `scope`: isolates events when multiple stores exist in the same process.
 - `DebugEvent.sequence`: monotonically increasing per `traceId` (stable ordering even if timestamps collide).
 - `DebugEvent.spanId` / `parentSpanId`: optional hierarchy for visualizing phases (current default spanId is `s_${sequence}`).
 
@@ -42,7 +44,7 @@ At the public API level, users typically enable debug via `createCoreStore({ deb
 - If `debug.enabled` is false, **no emitter is created** and all callsites are effectively no-ops.
 - If `debug.sampleRate` is `0` (default), the store will usually **avoid allocating a traceId**, keeping overhead near zero.
 
-Note: Atoma intentionally keeps `DebugOptions` as pure data. The actual event sink is owned by the store layer (typically forwarding into a `DevtoolsBridge`).
+Note: Atoma intentionally keeps `DebugConfig` as pure data. The actual event sink is owned by the wiring layer (typically forwarding into a `DevtoolsBridge`).
 
 ### 2) Store decides whether to allocate a `traceId`
 
@@ -55,30 +57,24 @@ For read paths like `findMany`:
 
 For write paths, the store uses a similar rule (explicit `traceId` wins; otherwise allocate only when sampled).
 
-### 3) Store creates a `DebugEmitter` (sampling + payload safety lives here)
+### 3) Runtime creates an `ObservabilityContext` (sampling + payload safety lives here)
 
-`createDebugEmitter()` returns `undefined` unless all of these are true:
+`Observability.runtime.create(...).createContext(...)` always returns an object:
 
-- `debug.enabled === true`
-- a store-provided `sink` is present
-- `traceId` is a non-empty string
-- `shouldSampleTrace(traceId, sampleRate)` returns true
+- when `ctx.active === false`, `ctx.emit(...)` is a no-op (near-zero overhead)
+- when `ctx.active === true`, `ctx.emit(...)` wraps and forwards `DebugEvent` into `onEvent`
 
 When emitting:
 
-- `DebugEvent` is wrapped with required metadata: `schemaVersion`, `timestamp`, `store`, `sequence`, `spanId`, etc.
+- `DebugEvent` is wrapped with required metadata: `schemaVersion`, `timestamp`, `scope`, `sequence`, `spanId`, etc.
 - Payload is safe by default:
   - `includePayload: false` → payload is summarized (lengths, key counts, etc.)
   - optional `redact(value)` runs before summarization / inclusion
 - Sink failures are swallowed (debug must not break business logic).
 
-### 4) Internal propagation: `InternalOperationContext`
+### 4) Internal propagation: `ObservabilityContext`
 
-Inside the repository, the internal pipeline uses an explicit context:
-
-`InternalOperationContext = { traceId, store, requestId?, opId?, emitter? }`
-
-Core and adapters **consume** this context; only the store layer should **create** the emitter (per the optimal architecture doc).
+Inside the repository, every module (except wiring) only receives and forwards `ObservabilityContext`, and only calls `ctx.emit(...)`.
 
 ### 5) Engine emits structured events at key points
 

@@ -1,7 +1,7 @@
 import type { FindManyOptions, StoreKey } from '../core/types'
 import { createRequestIdSequencer } from '../observability/trace'
 import type { RequestIdSequencer } from '../observability/trace'
-import type { InternalOperationContext } from '../observability/types'
+import type { ObservabilityContext } from '../observability/types'
 import { isWriteQueueFull, normalizeMaxBatchSize, normalizeMaxQueueLength, normalizeMaxQueryOpsPerRequest } from './config'
 import { drainQueryLane } from './queryLane'
 import { sendBatchRequest } from './transport'
@@ -131,7 +131,7 @@ export class BatchEngine {
         resource: string,
         params: FindManyOptions<T> | undefined,
         fallback: () => Promise<any>,
-        internalContext?: InternalOperationContext
+        internalContext?: ObservabilityContext
     ): Promise<QueryEnvelope<T>> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
@@ -161,8 +161,7 @@ export class BatchEngine {
                 opId,
                 resource,
                 params,
-                traceId: typeof internalContext?.traceId === 'string' && internalContext.traceId ? internalContext.traceId : undefined,
-                debugEmitter: internalContext?.emitter,
+                ctx: internalContext,
                 fallback,
                 deferred: { resolve, reject }
             })
@@ -182,7 +181,7 @@ export class BatchEngine {
      * - Tasks are bucketed by `bucketKey(task)` to build bulk ops and avoid starvation.
      * - The lane is scheduled via `signalWriteLane()`.
      */
-    enqueueCreate<T>(resource: string, item: T, internalContext?: InternalOperationContext): Promise<any> {
+    enqueueCreate<T>(resource: string, item: T, internalContext?: ObservabilityContext): Promise<any> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -198,8 +197,7 @@ export class BatchEngine {
                 item,
                 idempotencyKey: this.createIdempotencyKey(),
                 deferred: { resolve, reject },
-                traceId: internalContext?.traceId,
-                debugEmitter: internalContext?.emitter
+                ctx: internalContext
             })
         })
     }
@@ -207,7 +205,7 @@ export class BatchEngine {
     enqueueUpdate<T>(
         resource: string,
         item: { id: StoreKey; data: T; baseVersion: number; meta?: { idempotencyKey?: string } },
-        internalContext?: InternalOperationContext
+        internalContext?: ObservabilityContext
     ): Promise<void> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
@@ -231,8 +229,7 @@ export class BatchEngine {
                     }
                 },
                 deferred: { resolve, reject },
-                traceId: internalContext?.traceId,
-                debugEmitter: internalContext?.emitter
+                ctx: internalContext
             })
         })
     }
@@ -240,7 +237,7 @@ export class BatchEngine {
     enqueuePatch(
         resource: string,
         item: { id: StoreKey; patches: AtomaPatch[]; baseVersion: number; timestamp?: number; meta?: { idempotencyKey?: string } },
-        internalContext?: InternalOperationContext
+        internalContext?: ObservabilityContext
     ): Promise<void> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
@@ -264,13 +261,12 @@ export class BatchEngine {
                     }
                 },
                 deferred: { resolve, reject },
-                traceId: internalContext?.traceId,
-                debugEmitter: internalContext?.emitter
+                ctx: internalContext
             })
         })
     }
 
-    enqueueDelete(resource: string, item: { id: StoreKey; baseVersion: number; meta?: { idempotencyKey?: string } }, internalContext?: InternalOperationContext): Promise<void> {
+    enqueueDelete(resource: string, item: { id: StoreKey; baseVersion: number; meta?: { idempotencyKey?: string } }, internalContext?: ObservabilityContext): Promise<void> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -293,8 +289,7 @@ export class BatchEngine {
                     }
                 },
                 deferred: { resolve, reject },
-                traceId: internalContext?.traceId,
-                debugEmitter: internalContext?.emitter
+                ctx: internalContext
             })
         })
     }

@@ -1,13 +1,13 @@
 import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
 import { commitAtomMapUpdate } from './cacheWriter'
-import { type StoreRuntime, resolveInternalOperationContext } from './runtime'
-import type { InternalOperationContext } from '../../observability/types'
+import { type StoreRuntime, resolveObservabilityContext } from './runtime'
+import type { ObservabilityContext } from '../../observability/types'
 
 type GetOneTask<T> = {
     id: StoreKey
     resolve: (value: T | undefined) => void
-    internalContext?: InternalOperationContext
+    observabilityContext: ObservabilityContext
 }
 
 export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
@@ -23,17 +23,17 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
         batchGetOneTaskQueue = []
 
         const groups = (() => {
-            const byTrace = new Map<string, { internalContext?: InternalOperationContext; tasks: GetOneTask<T>[] }>()
+            const byTrace = new Map<string, { observabilityContext: ObservabilityContext; tasks: GetOneTask<T>[] }>()
             const NO_TRACE = '__no_trace__'
 
             sliced.forEach(task => {
-                const key = task.internalContext?.traceId ?? NO_TRACE
+                const key = task.observabilityContext.traceId ?? NO_TRACE
                 const cur = byTrace.get(key)
                 if (cur) {
                     cur.tasks.push(task)
                     return
                 }
-                byTrace.set(key, { internalContext: task.internalContext, tasks: [task] })
+                byTrace.set(key, { observabilityContext: task.observabilityContext, tasks: [task] })
             })
 
             return Array.from(byTrace.values())
@@ -44,7 +44,7 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
 
         for (const group of groups) {
             const ids = Array.from(new Set(group.tasks.map(i => i.id)).values())
-            let fetched = (await adapter.bulkGet(ids, group.internalContext)).filter((i): i is T => i !== undefined)
+            let fetched = (await adapter.bulkGet(ids, group.observabilityContext)).filter((i): i is T => i !== undefined)
             fetched = fetched.map(transform)
 
             fetched.forEach(item => {
@@ -70,17 +70,17 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
         batchFetchOneTaskQueue = []
 
         const groups = (() => {
-            const byTrace = new Map<string, { internalContext?: InternalOperationContext; tasks: GetOneTask<T>[] }>()
+            const byTrace = new Map<string, { observabilityContext: ObservabilityContext; tasks: GetOneTask<T>[] }>()
             const NO_TRACE = '__no_trace__'
 
             sliced.forEach(task => {
-                const key = task.internalContext?.traceId ?? NO_TRACE
+                const key = task.observabilityContext.traceId ?? NO_TRACE
                 const cur = byTrace.get(key)
                 if (cur) {
                     cur.tasks.push(task)
                     return
                 }
-                byTrace.set(key, { internalContext: task.internalContext, tasks: [task] })
+                byTrace.set(key, { observabilityContext: task.observabilityContext, tasks: [task] })
             })
 
             return Array.from(byTrace.values())
@@ -90,7 +90,7 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
 
         for (const group of groups) {
             const ids = Array.from(new Set(group.tasks.map(i => i.id)).values())
-            let items = (await adapter.bulkGet(ids, group.internalContext)).filter((i): i is T => i !== undefined)
+            let items = (await adapter.bulkGet(ids, group.observabilityContext)).filter((i): i is T => i !== undefined)
             items = items.map(transform)
 
             items.forEach(item => {
@@ -106,11 +106,11 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
 
 
     const handleGetOne = (id: StoreKey, resolve: (v: T | undefined) => void, options?: StoreReadOptions) => {
-        const internalContext = resolveInternalOperationContext(runtime, options)
+        const observabilityContext = resolveObservabilityContext(runtime, options)
         if (batchGetOneTaskQueue.length) {
-            batchGetOneTaskQueue.push({ resolve, id, internalContext })
+            batchGetOneTaskQueue.push({ resolve, id, observabilityContext })
         } else {
-            batchGetOneTaskQueue = [{ resolve, id, internalContext }]
+            batchGetOneTaskQueue = [{ resolve, id, observabilityContext }]
             Promise.resolve().then(() => {
                 processGetOneTaskQueue()
             })
@@ -118,11 +118,11 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
     }
 
     const handleFetchOne = (id: StoreKey, resolve: (v: T | undefined) => void, options?: StoreReadOptions) => {
-        const internalContext = resolveInternalOperationContext(runtime, options)
+        const observabilityContext = resolveObservabilityContext(runtime, options)
         if (batchFetchOneTaskQueue.length) {
-            batchFetchOneTaskQueue.push({ resolve, id, internalContext })
+            batchFetchOneTaskQueue.push({ resolve, id, observabilityContext })
         } else {
-            batchFetchOneTaskQueue = [{ resolve, id, internalContext }]
+            batchFetchOneTaskQueue = [{ resolve, id, observabilityContext }]
             Promise.resolve().then(() => {
                 processFetchOneTaskQueue()
             })

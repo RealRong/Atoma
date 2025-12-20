@@ -11,6 +11,7 @@ import {
 import { getIdGenerator } from './idGenerator'
 import type { StoreContext } from './StoreContext'
 import { normalizeOperationContext } from './operationContext'
+import type { ObservabilityContext } from '../observability/types'
 
 // Enable Map/Set drafting for Immer (required for Map-based atom state)
 enableMapSet()
@@ -29,6 +30,16 @@ export const bumpAtomVersion = (
     context: StoreContext
 ) => {
     context.versionTracker.bump(atom, fields ?? new Set())
+}
+
+const createNoopObservabilityContext = (traceId?: string): ObservabilityContext => {
+    const ctx: ObservabilityContext = {
+        active: false,
+        traceId: typeof traceId === 'string' && traceId ? traceId : undefined,
+        emit: () => { },
+        with: () => ctx
+    }
+    return ctx
 }
 
 /**
@@ -72,13 +83,13 @@ const handleQueue = (context: StoreContext, queueMap?: Map<PrimitiveAtom<any>, S
             const { adapter } = ops[0]
             const applyResult = eventContext.operationApplier.apply(ops, store.get(atom))
 
-            const sharedTraceId = (() => {
-                const ids = ops
-                    .map(op => op.traceId)
-                    .filter((v): v is string => typeof v === 'string' && Boolean(v))
-                if (!ids.length) return undefined
-                const uniq = new Set(ids)
-                return uniq.size === 1 ? ids[0] : undefined
+            const sharedObservabilityContext = (() => {
+                const first = ops[0].observabilityContext
+                if (!first) return undefined
+                for (let i = 1; i < ops.length; i++) {
+                    if (ops[i].observabilityContext !== first) return undefined
+                }
+                return first
             })()
 
             const opContext = ops[0].opContext
@@ -107,9 +118,7 @@ const handleQueue = (context: StoreContext, queueMap?: Map<PrimitiveAtom<any>, S
                 operationRecorder: eventContext.operationRecorder,
                 indexes: (ops[0] as any).indexes ?? null,
                 mode,
-                traceId: sharedTraceId,
-                debug: eventContext.debug,
-                debugSink: eventContext.debugSink,
+                observabilityContext: sharedObservabilityContext ?? ops[0].observabilityContext!,
                 storeName: eventContext.storeName,
                 opContext
             })
@@ -173,6 +182,7 @@ export const BaseStore = {
         const context = event.context
         const normalized = {
             ...event,
+            observabilityContext: event.observabilityContext ?? createNoopObservabilityContext(event.traceId),
             opContext: normalizeOperationContext(event.opContext, { traceId: event.traceId })
         } as StoreDispatchEvent<T>
 

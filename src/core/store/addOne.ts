@@ -1,15 +1,16 @@
 import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId, StoreOperationOptions } from '../types'
 import { runAfterSave } from './hooks'
-import type { StoreRuntime } from './runtime'
+import { type StoreRuntime, resolveObservabilityContext } from './runtime'
 import { prepareForAdd } from './writePipeline'
 
 export function createAddOne<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, hooks, resolveOperationTraceId, indexes } = runtime
+    const { jotaiStore, atom, adapter, context, hooks, indexes } = runtime
     return (obj: Partial<T>, options?: StoreOperationOptions) => {
         return new Promise<T>((resolve, reject) => {
             prepareForAdd<T>(runtime, obj).then(validObj => {
-                const traceId = resolveOperationTraceId(options)
+                const observabilityContext = resolveObservabilityContext(runtime, options)
+                const traceId = observabilityContext.traceId
                 BaseStore.dispatch<T>({
                     type: 'add',
                     data: validObj as PartialWithId<T>,
@@ -19,6 +20,7 @@ export function createAddOne<T extends Entity>(runtime: StoreRuntime<T>) {
                     context,
                     indexes,
                     traceId,
+                    observabilityContext,
                     opContext: options?.opContext,
                     onSuccess: async o => {
                         await runAfterSave(hooks, validObj, 'add')

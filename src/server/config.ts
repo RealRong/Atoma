@@ -1,4 +1,4 @@
-import type { DebugEvent, DebugOptions } from '../observability/types'
+import type { DebugConfig, DebugEvent } from '../observability/types'
 import type { RequestIdSequencer } from '../observability/trace'
 import type { AtomaServerLogger } from './logger'
 import type { IOrmAdapter } from './types'
@@ -55,7 +55,7 @@ export type AtomaServerTraceConfig = {
 }
 
 export type AtomaServerDebugConfig = {
-    options?: DebugOptions
+    options?: DebugConfig
     sink?: (e: DebugEvent) => void
     store?: string
 }

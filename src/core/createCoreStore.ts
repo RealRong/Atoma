@@ -14,7 +14,7 @@ import { globalStore } from './BaseStore'
 import { createStoreContext } from './StoreContext'
 import type { JotaiStore } from './types'
 import { getDefaultAdapterFactory } from './defaultAdapterFactory'
-import type { DebugOptions } from '../observability/types'
+import type { DebugConfig } from '../observability/types'
 import type { DebugEvent } from '../observability/types'
 import type {
     Entity,
@@ -39,7 +39,7 @@ export interface CoreStoreConfig<T extends Entity> {
     indexes?: Array<IndexDefinition<T>>
     queue?: Partial<import('./types').QueueConfig>
     devtools?: DevtoolsBridge
-    debug?: DebugOptions
+    debug?: DebugConfig
 }
 
 export interface CoreStore<T extends Entity, Relations = {}> extends IStore<T, Relations> {
@@ -61,7 +61,7 @@ export function createCoreStore<T extends Entity, Relations = {}>(
     config: CoreStoreConfig<T> & { relations?: () => Relations }
 ): CoreStore<T, Relations> {
     const { name, transformData } = config
-    const resolvedDebug: DebugOptions | undefined = config.debug
+    const resolvedDebug: DebugConfig | undefined = config.debug
     const debugSink: ((e: DebugEvent) => void) | undefined = resolvedDebug?.enabled
         ? (e) => {
             const bridge = config.devtools ?? getGlobalDevtools()

@@ -1,4 +1,3 @@
-import type { DebugEmitter } from '../observability/debug'
 import { utf8ByteLength } from '../observability/utf8'
 import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../protocol/trace'
 import { emitAdapterEvent } from './adapterEvents'
@@ -42,7 +41,7 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
             const distinct = new Set<string>()
             let hasMissing = false
             batch.forEach(t => {
-                const id = typeof t.traceId === 'string' && t.traceId ? t.traceId : undefined
+                const id = typeof t.ctx?.traceId === 'string' && t.ctx.traceId ? t.ctx.traceId : undefined
                 if (id) distinct.add(id)
                 else hasMissing = true
             })
@@ -52,18 +51,21 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
         })()
         const commonTraceId = traceState.commonTraceId
         const requestId = commonTraceId ? engine.nextRequestId(commonTraceId) : undefined
-        const debugEmitters = (() => {
-            const byEmitter = new Map<DebugEmitter, { opCount: number }>()
+        const ctxTargets = (() => {
+            const byCtx = new Map<any, { opCount: number }>()
             batch.forEach(t => {
-                const e = t.debugEmitter
-                if (!e) return
-                const cur = byEmitter.get(e) ?? { opCount: 0 }
+                const ctx = t.ctx
+                if (!ctx) return
+                const cur = byCtx.get(ctx) ?? { opCount: 0 }
                 cur.opCount++
-                byEmitter.set(e, cur)
+                byCtx.set(ctx, cur)
             })
-            return Array.from(byEmitter.entries()).map(([emitter, meta]) => ({ emitter, ...meta }))
+            return Array.from(byCtx.entries()).map(([baseCtx, meta]) => ({
+                ctx: requestId ? baseCtx.with({ requestId }) : baseCtx,
+                ...meta
+            }))
         })()
-        const shouldEmitAdapterEvents = debugEmitters.length > 0
+        const shouldEmitAdapterEvents = ctxTargets.some(t => Boolean(t.ctx?.active))
 
         let startedAt: number | undefined
         try {
@@ -82,9 +84,8 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
 
             const payloadBytes = shouldEmitAdapterEvents ? utf8ByteLength(JSON.stringify(payload)) : undefined
             emitAdapterEvent({
-                emitters: debugEmitters,
+                targets: ctxTargets,
                 type: 'adapter:request',
-                meta: { requestId },
                 payloadFor: ({ opCount }) => ({
                     lane: 'query',
                     method: 'POST',
@@ -104,9 +105,8 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
             })
             const durationMs = Date.now() - startedAt
             emitAdapterEvent({
-                emitters: debugEmitters,
+                targets: ctxTargets,
                 type: 'adapter:response',
-                meta: { requestId },
                 payloadFor: ({ opCount }) => ({
                     lane: 'query',
                     ok: true,
@@ -135,9 +135,8 @@ export async function drainQueryLane(engine: QueryLaneEngine) {
             }
         } catch (error: any) {
             emitAdapterEvent({
-                emitters: debugEmitters,
+                targets: ctxTargets,
                 type: 'adapter:response',
-                meta: { requestId },
                 payloadFor: ({ opCount }) => ({
                     lane: 'query',
                     ok: false,
@@ -174,11 +173,11 @@ function takeQueryBatch(queue: Array<QueryTask<any>>, maxOps: number) {
         return typeof traceId === 'string' && traceId ? traceId : undefined
     }
 
-    const firstKey = normalizeTraceId(queue[0]?.traceId)
+    const firstKey = normalizeTraceId(queue[0]?.ctx?.traceId)
     let takeCount = 0
     for (let i = 0; i < queue.length && takeCount < max; i++) {
         const task = queue[i]
-        const key = normalizeTraceId(task.traceId)
+        const key = normalizeTraceId(task.ctx?.traceId)
         if (key !== firstKey) break
         takeCount++
     }

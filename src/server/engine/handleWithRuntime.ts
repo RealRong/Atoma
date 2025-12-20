@@ -35,7 +35,7 @@ export async function handleWithRuntime<Ctx>(args: {
 
     try {
         if (runtime.hooks?.onRequest) await runtime.hooks.onRequest({ ...runtime.hookArgs, incoming: args.incoming })
-        runtime.emitter?.emit('server:request', { method: args.method, pathname: args.pathname }, { requestId: runtime.requestId })
+        runtime.observabilityContext.emit('server:request', { method: args.method, pathname: args.pathname })
 
         let didValidated = false
         let didAuthorized = false
@@ -47,7 +47,7 @@ export async function handleWithRuntime<Ctx>(args: {
                 if (runtime.hooks?.onValidated) {
                     await runtime.hooks.onValidated({ ...runtime.hookArgs, request })
                 }
-                runtime.emitter?.emit('server:validated', event ?? {}, { requestId: runtime.requestId })
+                runtime.observabilityContext.emit('server:validated', event ?? {})
             },
             authorized: async ({ event } = {}) => {
                 if (didAuthorized) return
@@ -55,7 +55,7 @@ export async function handleWithRuntime<Ctx>(args: {
                 if (runtime.hooks?.onAuthorized) {
                     await runtime.hooks.onAuthorized(runtime.hookArgs)
                 }
-                runtime.emitter?.emit('server:authorized', event ?? {}, { requestId: runtime.requestId })
+                runtime.observabilityContext.emit('server:authorized', event ?? {})
             }
         }
 
@@ -64,7 +64,7 @@ export async function handleWithRuntime<Ctx>(args: {
         if (runtime.hooks?.onResponse) await runtime.hooks.onResponse({ ...runtime.hookArgs, status: result.status })
         return result
     } catch (err: any) {
-        runtime.emitter?.emit('server:error', { message: err?.message }, { requestId: runtime.requestId })
+        runtime.observabilityContext.emit('server:error', { message: err?.message })
         if (runtime.hooks?.onError) await runtime.hooks.onError({ ...runtime.hookArgs, error: err })
 
         const formatted = args.formatTopLevelError({

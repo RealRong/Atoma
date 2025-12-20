@@ -8,7 +8,7 @@ import { evaluateWithIndexes } from './localEvaluate'
 import { normalizeFindManyResult } from './normalize'
 import { summarizeFindManyParams } from './paramsSummary'
 import { applyQuery } from '../../query'
-import { type StoreRuntime, resolveInternalOperationContext } from '../runtime'
+import { type StoreRuntime, resolveObservabilityContext } from '../runtime'
 
 export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
     const { jotaiStore, atom, adapter, context, indexes, matcher, transform } = runtime
@@ -30,9 +30,8 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
         const explainEnabled = options?.explain === true
         const cachePolicy = resolveCachePolicy(options)
 
-        const internalContext = resolveInternalOperationContext(runtime, options)
-        const traceId = internalContext?.traceId
-        const emitter = internalContext?.emitter
+        const observabilityContext = resolveObservabilityContext(runtime, options)
+        const traceId = observabilityContext.traceId
 
         const optionsForAdapter = options
             ? ({ ...options, traceId: undefined, explain: undefined } as any as FindManyOptions<T>)
@@ -42,9 +41,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
             ? { schemaVersion: 1, traceId: traceId || createTraceId() }
             : undefined
 
-        const emit = (type: string, payload: any) => emitter?.emit(type, payload)
-
-        const operationContext = internalContext
+        const emit = (type: string, payload: any) => observabilityContext.emit(type as any, payload)
 
         const withExplain = (out: any, extra?: any) => {
             if (!explainEnabled) return out
@@ -76,7 +73,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
         if (typeof adapter.findMany === 'function') {
             try {
                 const startedAt = Date.now()
-                const raw = await adapter.findMany(optionsForAdapter, operationContext)
+                const raw = await adapter.findMany(optionsForAdapter, observabilityContext)
                 const durationMs = Date.now() - startedAt
                 const normalized = normalizeFindManyResult<T>(raw)
                 const { data, pageInfo, explain: adapterExplain } = normalized
@@ -147,7 +144,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
         try {
             const adapterFilter = typeof options?.where === 'function' ? options.where : undefined
 
-            let remote = await adapter.getAll(adapterFilter as any, operationContext)
+            let remote = await adapter.getAll(adapterFilter as any, observabilityContext)
             remote = remote.map(item => transform(item))
 
             if (cachePolicy.effectiveSkipStore) {

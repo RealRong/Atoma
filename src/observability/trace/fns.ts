@@ -1,3 +1,5 @@
+import type { RequestIdSequencer } from './types'
+
 const randomIdFallback = () => {
     return `${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
@@ -12,10 +14,6 @@ export function createTraceId(): string {
 export function deriveRequestId(traceId: string, seq: number): string {
     const safeSeq = Number.isFinite(seq) && seq > 0 ? Math.floor(seq) : 1
     return `r_${traceId}_${safeSeq}`
-}
-
-export type RequestIdSequencer = {
-    next: (traceId: string) => string
 }
 
 export function createRequestIdSequencer(options?: { maxTraces?: number }): RequestIdSequencer {

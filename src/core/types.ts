@@ -2,7 +2,7 @@ import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
 import type { StoreContext } from './StoreContext'
 import type { DevtoolsBridge } from '../devtools/types'
-import type { Explain, InternalOperationContext } from '../observability/types'
+import type { Explain, ObservabilityContext } from '../observability/types'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
 
 /**
@@ -69,29 +69,29 @@ export interface IAdapter<T extends Entity> {
     /**  
      * Persistence operations
      */
-    put(key: StoreKey, value: T, internalContext?: InternalOperationContext): Promise<void>
-    bulkPut(items: T[], internalContext?: InternalOperationContext): Promise<void>
-    bulkCreate?(items: T[], internalContext?: InternalOperationContext): Promise<T[] | void>
-    delete(key: StoreKey, internalContext?: InternalOperationContext): Promise<void>
-    bulkDelete(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<void>
+    put(key: StoreKey, value: T, internalContext?: ObservabilityContext): Promise<void>
+    bulkPut(items: T[], internalContext?: ObservabilityContext): Promise<void>
+    bulkCreate?(items: T[], internalContext?: ObservabilityContext): Promise<T[] | void>
+    delete(key: StoreKey, internalContext?: ObservabilityContext): Promise<void>
+    bulkDelete(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<void>
 
     /**
      * Retrieval operations
      */
-    get(key: StoreKey, internalContext?: InternalOperationContext): Promise<T | undefined>
-    bulkGet(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<(T | undefined)[]>
-    getAll(filter?: (item: T) => boolean, internalContext?: InternalOperationContext): Promise<T[]>
+    get(key: StoreKey, internalContext?: ObservabilityContext): Promise<T | undefined>
+    bulkGet(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<(T | undefined)[]>
+    getAll(filter?: (item: T) => boolean, internalContext?: ObservabilityContext): Promise<T[]>
 
     /** Query operations (optional) */
     findMany?(
         options?: FindManyOptions<T>,
-        internalContext?: InternalOperationContext
+        internalContext?: ObservabilityContext
     ): Promise<{ data: T[]; pageInfo?: PageInfo; explain?: unknown }>
 
     /**
      * Patch-based update (optional, falls back to put) 
      */
-    applyPatches?(patches: Patch[], metadata: PatchMetadata, internalContext?: InternalOperationContext): Promise<void | { created?: any[] }>
+    applyPatches?(patches: Patch[], metadata: PatchMetadata, internalContext?: ObservabilityContext): Promise<void | { created?: any[] }>
 
     /**
      * Lifecycle hooks
@@ -144,6 +144,7 @@ export type StoreDispatchEvent<T extends Entity> = {
     context: StoreContext // StoreContext for per-store dependencies (avoids circular import)
     indexes?: any
     traceId?: string
+    observabilityContext?: ObservabilityContext
     opContext?: OperationContext
     onFail?: (error?: Error) => void  // Accept error object for rejection
 } & (
@@ -321,7 +322,7 @@ export interface StoreConfig<T> {
     storeName?: string
 
     /** 可观测性/诊断（默认关闭） */
-    debug?: import('../observability/types').DebugOptions
+    debug?: import('../observability/types').DebugConfig
 }
 
 export type IndexType = 'number' | 'date' | 'string' | 'substring' | 'text'

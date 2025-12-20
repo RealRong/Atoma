@@ -6,9 +6,7 @@ import { IAdapter, PatchMetadata, Entity, StoreDispatchEvent, type OperationCont
 import { AtomVersionTracker } from '../state/AtomVersionTracker'
 import type { OperationRecorder } from './OperationRecorder'
 import type { StoreIndexes } from '../indexes/StoreIndexes'
-import type { DebugOptions } from '../../observability/types'
-import { createDebugEmitter } from '../../observability/debug'
-import type { InternalOperationContext } from '../../observability/types'
+import type { ObservabilityContext } from '../../observability/types'
 
 type CallbackEntry = { onSuccess?: (...args: any[]) => void, onFail?: (error?: Error) => void }
 
@@ -22,9 +20,7 @@ interface SyncParams<T extends Entity> {
     operationRecorder: OperationRecorder
     indexes?: StoreIndexes<T> | null
     mode: 'optimistic' | 'strict'
-    traceId?: string
-    debug?: DebugOptions
-    debugSink?: (e: import('../../observability/types').DebugEvent) => void
+    observabilityContext: ObservabilityContext
     storeName?: string
     opContext?: OperationContext
 }
@@ -38,7 +34,7 @@ const applyPatchesViaOperations = async <T extends Entity>(
     _patches: Patch[],
     appliedData: T[],
     operationTypes: StoreDispatchEvent<T>['type'][],
-    internalContext?: InternalOperationContext
+    internalContext?: ObservabilityContext
 ): Promise<ApplySideEffects<T>> => {
     if (operationTypes.length === 1 && operationTypes[0] === 'patches') {
         const putActions: T[] = []
@@ -130,14 +126,9 @@ export class AdapterSync {
         const originalValue = store.get(atom)
         const activeIndexes = indexes ?? null
 
-        const traceId = params.traceId
-        const emitter = createDebugEmitter({
-            debug: params.debug,
-            traceId,
-            store: params.storeName ?? adapter.name,
-            sink: params.debugSink
-        })
-        const emit = (type: string, payload: any) => emitter?.emit(type, payload)
+        const ctx = params.observabilityContext
+        const traceId = ctx.traceId
+        const emit = (type: string, payload: any) => ctx.emit(type as any, payload)
 
         const metadata: PatchMetadata = {
             atom,
@@ -164,23 +155,17 @@ export class AdapterSync {
 
         try {
             if (adapter.applyPatches) {
-                const internalContext = (typeof traceId === 'string' && traceId)
-                    ? { traceId, store: params.storeName ?? adapter.name, emitter }
-                    : undefined
-                const res = await adapter.applyPatches(patches, metadata, internalContext)
+                const res = await adapter.applyPatches(patches, metadata, ctx)
                 if (res && typeof res === 'object' && Array.isArray((res as any).created)) {
                     sideEffects = { createdResults: (res as any).created as T[] }
                 }
             } else {
-                const internalContext = (typeof traceId === 'string' && traceId)
-                    ? { traceId, store: params.storeName ?? adapter.name, emitter }
-                    : undefined
                 sideEffects = await applyPatchesViaOperations(
                     adapter,
                     patches,
                     applyResult.appliedData,
                     applyResult.operationTypes,
-                    internalContext
+                    ctx
                 )
             }
 

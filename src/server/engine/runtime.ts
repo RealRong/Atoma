@@ -1,7 +1,8 @@
-import { createDebugEmitter } from '../../observability/debug'
+import { Observability } from '../../observability'
 import type { RequestIdSequencer } from '../../observability/trace'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import { createNoopLogger } from '../logger'
+import type { ObservabilityContext } from '../../observability/types'
 
 function createDefaultRequestId() {
     const cryptoAny = globalThis.crypto as any
@@ -22,6 +23,7 @@ export function createRuntimeFactory<Ctx>(args: {
     const debugSink = config.observability?.debug?.sink
     const createTraceIdFn = config.observability?.trace?.createTraceId
     const hooks = config.observability?.hooks
+    const observability = Observability.runtime.create({ scope: debugStore, debug: debugOptions, onEvent: debugSink })
 
     return async function createRuntime(runtimeArgs: {
         incoming: any
@@ -29,11 +31,14 @@ export function createRuntimeFactory<Ctx>(args: {
         initialTraceId?: string
         initialRequestId?: string
     }) {
-        const traceId = (() => {
+        const initialTraceId = (() => {
             if (typeof runtimeArgs.initialTraceId === 'string' && runtimeArgs.initialTraceId) return runtimeArgs.initialTraceId
             if (typeof createTraceIdFn === 'function') return createTraceIdFn()
             return undefined
         })()
+
+        const baseCtx = observability.createContext({ traceId: initialTraceId })
+        const traceId = baseCtx.traceId
 
         const requestId = (() => {
             if (typeof runtimeArgs.initialRequestId === 'string' && runtimeArgs.initialRequestId) return runtimeArgs.initialRequestId
@@ -54,14 +59,9 @@ export function createRuntimeFactory<Ctx>(args: {
             : (undefined as any as Ctx)
 
         const hookArgs = { route: runtimeArgs.route, ctx, traceId, requestId }
-        const emitter = createDebugEmitter({
-            debug: debugOptions,
-            traceId,
-            store: debugStore,
-            sink: debugSink
-        })
+        const observabilityContext = baseCtx.with({ requestId })
 
-        return { traceId, requestId, logger, ctx, hookArgs, emitter, hooks }
+        return { traceId, requestId, logger, ctx, hookArgs, observabilityContext, hooks }
     }
 }
 
@@ -76,6 +76,6 @@ export type ServerRuntime<Ctx> = {
         traceId?: string
         requestId: string
     }
-    emitter?: { emit: (...args: any[]) => any }
+    observabilityContext: ObservabilityContext
     hooks?: any
 }

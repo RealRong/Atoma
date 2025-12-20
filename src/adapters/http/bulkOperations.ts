@@ -1,6 +1,6 @@
 import pLimit from 'p-limit'
 import { StoreKey } from '../../core/types'
-import type { InternalOperationContext } from '../../observability/types'
+import type { ObservabilityContext } from '../../observability/types'
 
 export interface BulkOperationConfig {
     bulkCreate?: string | (() => string)
@@ -16,8 +16,8 @@ export interface BulkOperationConfig {
     batchSize?: number
 }
 
-export type SinglePutHandler<T> = (item: T, internalContext?: InternalOperationContext) => Promise<void>
-export type SingleDeleteHandler = (key: StoreKey, internalContext?: InternalOperationContext) => Promise<void>
+export type SinglePutHandler<T> = (item: T, internalContext?: ObservabilityContext) => Promise<void>
+export type SingleDeleteHandler = (key: StoreKey, internalContext?: ObservabilityContext) => Promise<void>
 
 export class BulkOperationHandler<T> {
     constructor(
@@ -28,7 +28,7 @@ export class BulkOperationHandler<T> {
         }
     ) { }
 
-    async runFallbackPut(items: T[], internalContext?: InternalOperationContext): Promise<void> {
+    async runFallbackPut(items: T[], internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.fallback === 'error') {
             throw new Error('Bulk update not supported and fallback is disabled')
         }
@@ -47,7 +47,7 @@ export class BulkOperationHandler<T> {
         })
     }
 
-    async runFallbackDelete(keys: StoreKey[], internalContext?: InternalOperationContext): Promise<void> {
+    async runFallbackDelete(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.fallback === 'error') {
             throw new Error('Bulk delete not supported and fallback is disabled')
         }

@@ -1,4 +1,3 @@
-import type { DebugEmitter } from '../observability/debug'
 import { utf8ByteLength } from '../observability/utf8'
 import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../protocol/trace'
 import { emitAdapterEvent } from './adapterEvents'
@@ -70,7 +69,7 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
             let hasMissing = false
             for (const slice of slicesByOpId.values()) {
                 slice.forEach(t => {
-                    const id = typeof t.traceId === 'string' && t.traceId ? t.traceId : undefined
+                    const id = typeof t.ctx?.traceId === 'string' && t.ctx.traceId ? t.ctx.traceId : undefined
                     if (id) distinct.add(id)
                     else hasMissing = true
                 })
@@ -81,25 +80,25 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
         })()
         const commonTraceId = traceState.commonTraceId
         const requestId = commonTraceId ? engine.nextRequestId(commonTraceId) : undefined
-        const debugEmitters = (() => {
-            const byEmitter = new Map<DebugEmitter, { taskCount: number; opIds: Set<string> }>()
+        const ctxTargets = (() => {
+            const byCtx = new Map<any, { taskCount: number; opIds: Set<string> }>()
             for (const [opId, slice] of slicesByOpId.entries()) {
                 slice.forEach(t => {
-                    const e = t.debugEmitter
-                    if (!e) return
-                    const cur = byEmitter.get(e) ?? { taskCount: 0, opIds: new Set<string>() }
+                    const ctx = t.ctx
+                    if (!ctx) return
+                    const cur = byCtx.get(ctx) ?? { taskCount: 0, opIds: new Set<string>() }
                     cur.taskCount++
                     cur.opIds.add(opId)
-                    byEmitter.set(e, cur)
+                    byCtx.set(ctx, cur)
                 })
             }
-            return Array.from(byEmitter.entries()).map(([emitter, meta]) => ({
-                emitter,
+            return Array.from(byCtx.entries()).map(([ctx, meta]) => ({
+                ctx: requestId ? ctx.with({ requestId }) : ctx,
                 taskCount: meta.taskCount,
                 opCount: meta.opIds.size
             }))
         })()
-        const shouldEmitAdapterEvents = debugEmitters.length > 0
+        const shouldEmitAdapterEvents = ctxTargets.some(t => Boolean(t.ctx?.active))
 
         engine.writeInFlight++
         for (const slice of slicesByOpId.values()) {
@@ -116,9 +115,8 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
             }
             const payloadBytes = shouldEmitAdapterEvents ? utf8ByteLength(JSON.stringify(payload)) : undefined
             emitAdapterEvent({
-                emitters: debugEmitters,
+                targets: ctxTargets,
                 type: 'adapter:request',
-                meta: { requestId },
                 payloadFor: ({ opCount, taskCount }) => ({
                     lane: 'write',
                     method: 'POST',
@@ -139,9 +137,8 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
             })
             const durationMs = Date.now() - startedAt
             emitAdapterEvent({
-                emitters: debugEmitters,
+                targets: ctxTargets,
                 type: 'adapter:response',
-                meta: { requestId },
                 payloadFor: ({ opCount, taskCount }) => ({
                     lane: 'write',
                     ok: true,
@@ -186,9 +183,8 @@ export async function drainWriteLane(engine: WriteLaneEngine) {
             }
         } catch (error: any) {
             emitAdapterEvent({
-                emitters: debugEmitters,
+                targets: ctxTargets,
                 type: 'adapter:response',
-                meta: { requestId },
                 payloadFor: ({ opCount, taskCount }) => ({
                     lane: 'write',
                     ok: false,

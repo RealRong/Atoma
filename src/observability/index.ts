@@ -1,4 +1,3 @@
-export type { TraceContext, Explain, DebugOptions, DebugEvent } from './types'
-export { createTraceId, deriveRequestId, createRequestIdSequencer } from './trace'
-export type { RequestIdSequencer } from './trace'
-export { shouldSampleTrace } from './sampling'
+export { Observability } from './Observability'
+export type { TraceContext, Explain, DebugConfig, DebugEvent, ObservabilityContext } from './types'
+export type { ObservabilityRuntime, ObservabilityRuntimeApi, ObservabilityRuntimeCreateArgs, ObservabilityCreateContextArgs } from './runtime'

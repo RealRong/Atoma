@@ -1,0 +1,1 @@
+export { shouldSampleTrace } from './fns'

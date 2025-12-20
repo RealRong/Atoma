@@ -6,30 +6,32 @@
 
 ## 对外 API vs 内部链路
 
-- 包根入口（`src/index.ts`）目前只对外导出**类型**：`TraceContext`、`Explain`、`DebugOptions`、`DebugEvent`。
-- `DebugEmitter` 与 `InternalOperationContext` 主要用于**仓库内部链路编织**（core/adapters/batch/server），不应被视为稳定的对外 API。
+- 包根入口（`src/index.ts`）目前只对外导出**类型**：`TraceContext`、`Explain`、`DebugConfig`、`DebugEvent`。
+- 仓库内部链路统一只透传 `ObservabilityContext` 并调用 `ctx.emit(...)`（调用方只消费）。
 
 ## `src/observability/` 里有什么
 
-- `types.ts`
-  - 主要数据类型：`TraceContext`、`DebugOptions`、`DebugEvent`、`Explain`
-  - 内部链路用类型：`InternalOperationContext`（在 core/adapter/batch/server 间显式传递）
-- `trace.ts`
-  - `createTraceId()`：生成 traceId
-  - `deriveRequestId(traceId, seq)` / `createRequestIdSequencer()`：为同一 traceId 生成稳定的 requestId 序列
-- `sampling.ts`
-  - `shouldSampleTrace(traceId, sampleRate)`：确定性采样（同一 traceId 恒定命中/不命中）
-- `debug.ts`
-  - `createDebugEmitter({ debug, traceId, store, sink })`：把事件封装成 `DebugEvent` 并投递给 store 层提供的 sink（默认安全）
-- `utf8.ts`
+- `Observability.ts`
+  - 聚合入口：`Observability.trace|sampling|utf8|runtime`
+- `types/*`
+  - 主要数据类型：`TraceContext`、`DebugConfig`、`DebugEvent`、`Explain`、`ObservabilityContext`
+- `trace/*`
+  - traceId/requestId 相关纯函数
+- `sampling/*`
+  - 确定性采样
+- `utf8/*`
   - `utf8ByteLength()`：用于估算 payload 字节数（通常仅在 debug 生效时才会计算）
+- `runtime/*`
+  - `ObservabilityRuntime`：唯一编织入口（创建/复用 ctx、序列号、LRU、默认安全 emit）
+- `debug/*`
+  - legacy 低层实现（当前仓库不再直接使用）
 
 ## 关键概念
 
 - `traceId`：把一次“用户动作/一次 store 调用链”在 core/adapter/batch/server 间串起来。
 - `requestId`：把一次具体网络请求串起来（一般由 `traceId + 序号` 派生）。
 - `opId`：batch 请求中的单个 op（query/write）的标识。
-- `store`：多 store 并存时做隔离，避免事件串台。
+- `scope`：多 store/多域并存时做隔离，避免事件串台。
 - `DebugEvent.sequence`：同一 `traceId` 内单调递增，用于稳定排序（比仅靠 timestamp 更可靠）。
 - `DebugEvent.spanId` / `parentSpanId`：可选层级关系（当前默认 spanId 为 `s_${sequence}`）。
 
@@ -42,7 +44,7 @@
 - `debug.enabled` 关闭时：**不会创建 emitter**，所有埋点点位都会变成近似 0 成本的空操作。
 - `debug.sampleRate` 默认为 `0`：store 通常会**避免分配 traceId**，降低默认开销。
 
-补充：Atoma 刻意让 `DebugOptions` 保持“纯数据”。事件最终投递到哪里由 store 层决定（通常转发到 `DevtoolsBridge`）。
+补充：Atoma 刻意让 `DebugConfig` 保持“纯数据”。事件最终投递到哪里由 wiring 层决定（通常转发到 `DevtoolsBridge`）。
 
 ### 2）Store 决定是否分配 `traceId`
 
@@ -55,30 +57,24 @@
 
 写入链路同理：显式 `traceId` 优先；否则只在采样命中时才分配。
 
-### 3）Store 创建 `DebugEmitter`（采样/脱敏/默认安全在这里收敛）
+### 3）Runtime 创建 `ObservabilityContext`（采样/脱敏/默认安全在这里收敛）
 
-`createDebugEmitter()` 只有在满足以下条件时才返回 emitter：
+`Observability.runtime.create(...).createContext(...)` 永远返回一个对象：
 
-- `debug.enabled === true`
-- store 层提供的 `sink` 存在
-- `traceId` 是非空字符串
-- `shouldSampleTrace(traceId, sampleRate)` 命中
+- `ctx.active === false` 时：`ctx.emit(...)` 为 no-op（近似零开销）
+- `ctx.active === true` 时：`ctx.emit(...)` 会封装 `DebugEvent` 并投递给 `onEvent`
 
 发射事件时：
 
-- 统一封装 `DebugEvent` 的 envelope：`schemaVersion`、`timestamp`、`store`、`sequence`、`spanId` 等。
+- 统一封装 `DebugEvent` 的 envelope：`schemaVersion`、`timestamp`、`scope`、`sequence`、`spanId` 等。
 - payload 默认安全：
   - `includePayload: false`（默认）→ 只输出摘要（长度、字段数等）
   - 可选 `redact(value)` 先脱敏，再决定摘要/输出
 - sink 的异常会被吞掉（观测不允许影响业务路径）。
 
-### 4）内部上下文传播：`InternalOperationContext`
+### 4）内部上下文传播：`ObservabilityContext`
 
-仓库内部建议（并在多处实现）使用显式 context：
-
-`InternalOperationContext = { traceId, store, requestId?, opId?, emitter? }`
-
-core/adapter/batch 只**消费** context；emitter 应由 store 统一**创建与管理**（与最优架构文档一致）。
+仓库内部约定：除 wiring 层外，所有模块只接收并透传 `ObservabilityContext`，只调用 `ctx.emit(...)`。
 
 ### 5）引擎在关键阶段发结构化事件
 
