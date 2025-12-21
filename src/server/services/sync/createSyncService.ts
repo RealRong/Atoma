@@ -16,6 +16,70 @@ export function createSyncService<Ctx>(args: {
     authz: AuthzPolicy<Ctx>
     limits: LimitPolicy<Ctx>
 }): SyncService<Ctx> {
+    const makeSubscribeStream = (mode: 'legacy' | 'vnext') => {
+        return async function* stream(args2: {
+            incoming: any
+            startCursor: number
+            route: AtomaServerRoute
+            runtime: ServerRuntime<Ctx>
+            heartbeatMs: number
+            retryMs: number
+            maxHoldMs: number
+        }) {
+            let cursor = args2.startCursor
+            let lastBeat = Date.now()
+
+            yield `retry: ${args2.retryMs}\n\n`
+
+            const allowCache = new Map<string, boolean>()
+
+            while (true) {
+                if (args2.incoming?.signal?.aborted === true) return
+
+                const now = Date.now()
+                if (now - lastBeat >= args2.heartbeatMs) {
+                    lastBeat = now
+                    yield `:hb\n\n`
+                }
+
+                const changes = await args.config.adapter.sync!.waitForChanges(cursor, args2.maxHoldMs)
+                if (!changes.length) continue
+
+                const filtered = await args.authz.filterChanges({
+                    changes,
+                    route: args2.route,
+                    runtime: args2.runtime,
+                    allowCache
+                })
+
+                const nextCursor = changes[changes.length - 1].cursor
+                cursor = nextCursor
+
+                if (!filtered.length) continue
+
+                yield `event: changes\n`
+                if (mode === 'legacy') {
+                    yield `data: ${JSON.stringify({ cursor: nextCursor, changes: filtered })}\n\n`
+                    continue
+                }
+
+                yield `data: ${JSON.stringify({
+                    nextCursor: String(nextCursor),
+                    changes: filtered.map((c: any) => ({
+                        resource: c.resource,
+                        entityId: c.id,
+                        kind: c.kind,
+                        version: c.serverVersion,
+                        changedAtMs: c.changedAt
+                    }))
+                })}\n\n`
+            }
+        }
+    }
+
+    const legacySubscribeStream = makeSubscribeStream('legacy')
+    const vnextSubscribeStream = makeSubscribeStream('vnext')
+
     return {
         pull: async ({ urlObj, method, route, runtime, phase }) => {
             if (method !== 'GET') {
@@ -66,44 +130,55 @@ export function createSyncService<Ctx>(args: {
                 connection: 'keep-alive'
             }
 
-            const allowCache = new Map<string, boolean>()
+            return {
+                status: 200,
+                headers,
+                body: legacySubscribeStream({
+                    incoming,
+                    startCursor,
+                    route,
+                    runtime,
+                    heartbeatMs,
+                    retryMs,
+                    maxHoldMs
+                })
+            }
+        },
 
-            async function* stream() {
-                let cursor = startCursor
-                let lastBeat = Date.now()
-
-                yield `retry: ${retryMs}\n\n`
-
-                while (true) {
-                    if (incoming?.signal?.aborted === true) return
-
-                    const now = Date.now()
-                    if (now - lastBeat >= heartbeatMs) {
-                        lastBeat = now
-                        yield `:hb\n\n`
-                    }
-
-                    const changes = await args.config.adapter.sync!.waitForChanges(cursor, maxHoldMs)
-                    if (!changes.length) continue
-
-                    const filtered = await args.authz.filterChanges({
-                        changes,
-                        route,
-                        runtime,
-                        allowCache
-                    })
-
-                    const nextCursor = changes[changes.length - 1].cursor
-                    cursor = nextCursor
-
-                    if (!filtered.length) continue
-
-                    yield `event: changes\n`
-                    yield `data: ${JSON.stringify({ cursor: nextCursor, changes: filtered })}\n\n`
-                }
+        subscribeVNext: async ({ incoming, urlObj, method, route, runtime, phase }) => {
+            if (method !== 'GET') {
+                throwError('METHOD_NOT_ALLOWED', 'GET required', { kind: 'validation', traceId: runtime.traceId, requestId: runtime.requestId })
             }
 
-            return { status: 200, headers, body: stream() }
+            const { cursor: startCursor } = validateSyncSubscribeQuery({
+                cursor: urlObj.searchParams.get('cursor')
+            })
+
+            await phase.validated({ request: { cursor: startCursor }, event: { cursor: startCursor } })
+
+            const heartbeatMs = args.config.sync?.subscribe?.heartbeatMs ?? 15000
+            const retryMs = args.config.sync?.subscribe?.retryMs ?? 2000
+            const maxHoldMs = args.config.sync?.subscribe?.maxHoldMs ?? 30000
+
+            const headers = {
+                'content-type': 'text/event-stream; charset=utf-8',
+                'cache-control': 'no-cache, no-transform',
+                connection: 'keep-alive'
+            }
+
+            return {
+                status: 200,
+                headers,
+                body: vnextSubscribeStream({
+                    incoming,
+                    startCursor,
+                    route,
+                    runtime,
+                    heartbeatMs,
+                    retryMs,
+                    maxHoldMs
+                })
+            }
         },
 
         preparePush: async ({ incoming, traceIdHeaderValue, requestIdHeaderValue }) => {

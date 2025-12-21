@@ -1,11 +1,10 @@
 import pLimit from 'p-limit'
-import { normalizeFindManyResponse, buildQueryParams } from './query'
+import { buildQueryParams } from './query'
 import { makeUrl, resolveEndpoint } from './request'
-import type { HTTPAdapterConfig } from '../HTTPAdapter'
+import type { HTTPAdapterConfig } from './config/types'
 import { BulkOperationHandler } from './bulkOperations'
 import { ETagManager } from './etagManager'
 import type { HTTPClient } from './client'
-import type { SyncOrchestrator } from './syncOrchestrator'
 import type { StoreKey, FindManyOptions, PageInfo, Entity } from '../../core/types'
 import type { ObservabilityContext } from '#observability'
 import { createHttpJsonPipeline } from './transport/pipeline'
@@ -26,9 +25,8 @@ type Deps<T extends Entity> = {
     client: HTTPClient<T>
     bulkOps: BulkOperationHandler<T>
     etagManager: ETagManager
-    fetchWithRetry: (input: RequestInfo, init?: RequestInit) => Promise<Response>
+    fetchWithRetry: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
     getHeaders: () => Promise<Record<string, string>>
-    orchestrator: SyncOrchestrator<T>
     onError: (error: Error, operation: string) => void
 }
 
@@ -40,7 +38,6 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
         etagManager,
         fetchWithRetry,
         getHeaders,
-        orchestrator,
         onError
     } = deps
     const endpoints = config.endpoints!
@@ -56,25 +53,19 @@ export function createOperationExecutors<T extends Entity>(deps: Deps<T>): Opera
     })
 
     const put = async (key: StoreKey, value: T, context?: ObservabilityContext) => {
-        await orchestrator.handleWithOfflineFallback(
-            { type: 'put', key, value },
-            () => client.put(
-                key,
-                value,
-                undefined,
-                context
-            )
+        await client.put(
+            key,
+            value,
+            undefined,
+            context
         )
     }
 
     const del = async (key: StoreKey, context?: ObservabilityContext) => {
-        await orchestrator.handleWithOfflineFallback(
-            { type: 'delete', key },
-            () => client.delete(
-                key,
-                undefined,
-                context
-            )
+        await client.delete(
+            key,
+            undefined,
+            context
         )
     }
 

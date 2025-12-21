@@ -1,5 +1,13 @@
 import { StoreKey } from '../../core/types'
-import { QueuedOperation } from './offlineQueue'
+
+export interface QueuedOperation {
+    id: string
+    type: 'put' | 'delete'
+    key?: StoreKey
+    value?: any
+    timestamp: number
+    retryCount?: number
+}
 
 export interface HTTPAdapterEvents {
     onSyncStart?: (pending: number) => void

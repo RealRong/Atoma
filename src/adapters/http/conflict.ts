@@ -1,6 +1,6 @@
 import { Patch } from 'immer'
 import { PatchMetadata, StoreKey } from '../../core/types'
-import type { HTTPAdapterConfig } from '../HTTPAdapter'
+import type { HTTPAdapterConfig } from './config/types'
 
 export type ConflictResolution = 'last-write-wins' | 'server-wins' | 'manual'
 
@@ -13,7 +13,7 @@ type ConflictConfig<T> = {
         metadata?: PatchMetadata
     }) => Promise<'accept-server' | 'retry-local' | 'ignore'> | 'accept-server' | 'retry-local' | 'ignore'
     onResolved?: (serverValue: any, key: StoreKey) => void
-    version?: import('../HTTPAdapter').VersionConfig
+    version?: import('./config/types').VersionConfig
     onEtagExtracted?: (key: StoreKey, etag: string) => void
 }
 
@@ -45,6 +45,19 @@ function mergeVersion<T>(
     return { value: nextValue as T, etag }
 }
 
+function unwrapConflictPayload(serverPayload: any): any {
+    if (!serverPayload || typeof serverPayload !== 'object') return serverPayload
+    const p: any = serverPayload
+    const details = p?.error && typeof p.error === 'object' ? (p.error as any).details : undefined
+    if (!details || typeof details !== 'object') return serverPayload
+    return {
+        ...p,
+        ...details,
+        currentValue: (details as any).currentValue ?? p.currentValue,
+        currentVersion: (details as any).currentVersion ?? p.currentVersion
+    }
+}
+
 export async function resolveConflict<T>(
     response: Response,
     key: StoreKey,
@@ -65,15 +78,17 @@ export async function resolveConflict<T>(
             }
         })())
 
+    const conflictPayload = unwrapConflictPayload(serverPayload)
+
     if (config.onConflict) {
         const decision = await config.onConflict({
             key,
             local: localValue,
-            server: serverPayload,
+            server: conflictPayload,
             metadata
         })
         if (decision === 'retry-local') {
-            const { value, etag } = mergeVersion(localValue as T, serverPayload, headerEtag, config.version)
+            const { value, etag } = mergeVersion(localValue as T, conflictPayload, headerEtag, config.version)
             if (etag) {
                 config.onEtagExtracted?.(key, etag)
             }
@@ -88,20 +103,20 @@ export async function resolveConflict<T>(
     switch (config.resolution) {
         case 'last-write-wins': {
             const localUpdatedAt = (localValue as any)?.updatedAt ?? metadata?.timestamp
-            const serverUpdatedAt = serverPayload?.currentValue?.updatedAt ?? serverPayload?.updatedAt
+            const serverUpdatedAt = conflictPayload?.currentValue?.updatedAt ?? conflictPayload?.updatedAt
             if (localUpdatedAt && serverUpdatedAt && localUpdatedAt > serverUpdatedAt) {
-                const { value, etag } = mergeVersion(localValue as T, serverPayload, headerEtag, config.version)
+                const { value, etag } = mergeVersion(localValue as T, conflictPayload, headerEtag, config.version)
                 if (etag) {
                     config.onEtagExtracted?.(key, etag)
                 }
                 await sendPut(key, value)
             } else {
-                config.onResolved?.(serverPayload, key)
+                config.onResolved?.(conflictPayload, key)
             }
             break
         }
         case 'server-wins':
-            config.onResolved?.(serverPayload, key)
+            config.onResolved?.(conflictPayload, key)
             break
         case 'manual':
         default:

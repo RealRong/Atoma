@@ -9,19 +9,16 @@ import { createServerServices } from './services/createServerServices'
 import { createDefaultRoutesPlugin } from './plugins/defaultRoutesPlugin'
 
 const DEFAULT_BATCH_PATH = '/batch'
+const DEFAULT_OPS_PATH = '/ops'
 const DEFAULT_SYNC_PUSH_PATH = '/sync/push'
 const DEFAULT_SYNC_PULL_PATH = '/sync/pull'
 const DEFAULT_SYNC_SUBSCRIBE_PATH = '/sync/subscribe'
+const DEFAULT_SYNC_SUBSCRIBE_VNEXT_PATH = '/sync/subscribe-vnext'
 
 function notFound(): HandleResult {
     return {
         status: 404,
-        body: {
-            error: {
-                code: 'NOT_FOUND',
-                message: 'No route matched'
-            }
-        }
+        body: Protocol.http.compose.error(Protocol.error.create('NOT_FOUND', 'No route matched'))
     }
 }
 
@@ -43,11 +40,13 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
 
     const restEnabled = config.routing?.rest?.enabled ?? true
     const batchPath = config.routing?.batch?.path ?? DEFAULT_BATCH_PATH
+    const opsPath = config.routing?.ops?.path ?? DEFAULT_OPS_PATH
     const basePath = config.routing?.basePath
 
     const syncPushPath = config.routing?.sync?.pushPath ?? DEFAULT_SYNC_PUSH_PATH
     const syncPullPath = config.routing?.sync?.pullPath ?? DEFAULT_SYNC_PULL_PATH
     const syncSubscribePath = config.routing?.sync?.subscribePath ?? DEFAULT_SYNC_SUBSCRIBE_PATH
+    const syncSubscribeVNextPath = DEFAULT_SYNC_SUBSCRIBE_VNEXT_PATH
 
     const formatTopLevelError = createTopLevelErrorFormatter(config)
     const createRuntime = createRuntimeFactory({ config })
@@ -72,11 +71,13 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
         services,
         routing: {
             batchPath,
+            opsPath,
             restEnabled,
             syncEnabled,
             syncPushPath,
             syncPullPath,
-            syncSubscribePath
+            syncSubscribePath,
+            syncSubscribeVNextPath
         }
     } as const
 

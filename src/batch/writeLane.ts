@@ -1,4 +1,3 @@
-import { Protocol } from '#protocol'
 import {
     buildWriteLaneRequestContext,
     clampInt,
@@ -7,16 +6,16 @@ import {
     isWriteQueueFull,
     normalizeMaxBatchSize,
     normalizeMaxOpsPerRequest,
-    sendBatchWithAdapterEvents,
+    sendOpsWithAdapterEvents,
     toError
 } from './internal'
-import type { Action, BatchOp, BatchRequest, BulkCreateItem, BulkDeleteItem, BulkPatchItem, BulkUpdateItem } from '#protocol'
 import type { StoreKey } from '../core/types'
 import type { ObservabilityContext } from '#observability'
-import type { AtomaPatch } from '#protocol'
+import type { AtomaPatch, VNextJsonPatch } from '#protocol'
 import type { WriteTask } from './types'
+import type { OpsRequest } from './internal'
 
-type SendFn = (payload: BatchRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
+type SendFn = (payload: OpsRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
 
 type WriteLaneDeps = {
     endpoint: () => string
@@ -163,12 +162,16 @@ export class WriteLane {
             const controller = createAbortController()
             if (controller) this.inFlightControllers.add(controller)
             try {
-                const payload: BatchRequest = Protocol.batch.compose.request({
-                    ops,
-                    traceId: requestContext.commonTraceId,
-                    requestId: requestContext.requestId
-                })
-                const response = await sendBatchWithAdapterEvents({
+                const payload: OpsRequest = {
+                    meta: {
+                        v: 1,
+                        ...(requestContext.commonTraceId ? { traceId: requestContext.commonTraceId } : {}),
+                        ...(requestContext.requestId ? { requestId: requestContext.requestId } : {}),
+                        clientTimeMs: Date.now()
+                    },
+                    ops
+                }
+                const response = await sendOpsWithAdapterEvents({
                     lane: 'write',
                     endpoint: this.deps.endpoint(),
                     payload,
@@ -188,29 +191,29 @@ export class WriteLane {
                     const res = resultMap.get(opId)
 
                     if (!res || res.ok === false || res.error) {
-                        const err = res?.error ?? new Error('Batch write failed')
+                        const err = res?.error ?? new Error('Ops write failed')
                         this.deps.config().onError?.(toError(err), { lane: 'write', opId })
                         slice.forEach(t => t.deferred.reject(err))
                         continue
                     }
 
-                    const failures = new Set<number>()
-                    for (const f of res.partialFailures ?? []) {
-                        failures.add(f.index)
-                    }
+                    const itemResults = indexWriteItemResults(res.data)
 
                     slice.forEach((task, index) => {
-                        if (failures.has(index)) {
-                            const failure = res.partialFailures?.find(f => f.index === index)
-                            task.deferred.reject(failure?.error ?? new Error('Partial failure'))
+                        const item = itemResults.get(index)
+                        if (!item || item.ok !== true) {
+                            const err = item && item.ok === false
+                                ? item.error
+                                : new Error('Missing write item result')
+                            task.deferred.reject(err)
                             return
                         }
 
-                        const payloadData = Array.isArray(res.data) ? res.data[index] : undefined
                         if (task.kind === 'create') {
-                            task.deferred.resolve(payloadData)
+                            task.deferred.resolve(item.data)
                             return
                         }
+
                         task.deferred.resolve(undefined)
                     })
                 }
@@ -234,7 +237,15 @@ export class WriteLane {
     }
 
     private takeWriteOps(maxOps: number, maxItems: number) {
-        const ops: BatchOp[] = []
+        const ops: Array<{
+            opId: string
+            kind: 'write'
+            write: {
+                resource: string
+                action: WriteAction
+                items: Array<Record<string, unknown>>
+            }
+        }> = []
         const slicesByOpId = new Map<string, WriteTask[]>()
 
         while (ops.length < maxOps && this.writeReady.length) {
@@ -348,55 +359,151 @@ function hasPendingBuckets(map: Map<string, WriteTask[]>) {
 
 function bucketKey(task: WriteTask) {
     const action =
-        task.kind === 'create' ? 'bulkCreate'
-            : task.kind === 'update' ? 'bulkUpdate'
-                : task.kind === 'patch' ? 'bulkPatch'
-                    : 'bulkDelete'
+        task.kind === 'create' ? 'create'
+            : task.kind === 'update' ? 'update'
+                : task.kind === 'patch' ? 'patch'
+                    : 'delete'
     return `${action}:${task.resource}`
 }
 
-function isWriteAction(value: unknown): value is Exclude<Action, 'query'> {
-    return value === 'bulkCreate'
-        || value === 'bulkUpdate'
-        || value === 'bulkPatch'
-        || value === 'bulkDelete'
+type WriteAction = 'create' | 'update' | 'patch' | 'delete'
+
+function isWriteAction(value: unknown): value is WriteAction {
+    return value === 'create'
+        || value === 'update'
+        || value === 'patch'
+        || value === 'delete'
 }
 
-function buildWriteOp(opId: string, key: string, tasks: WriteTask[]): BatchOp | undefined {
+function buildWriteOp(opId: string, key: string, tasks: WriteTask[]) {
     const [rawAction, resource] = key.split(':', 2)
     if (!isWriteAction(rawAction) || !resource) return undefined
 
-    if (rawAction === 'bulkCreate') {
-        const payload: BulkCreateItem[] = []
-        for (const t of tasks) {
+    if (rawAction === 'create') {
+        const items = tasks.map(t => {
             if (t.kind !== 'create') return undefined
-            payload.push({ data: t.item, meta: { idempotencyKey: t.idempotencyKey } })
+            return {
+                value: t.item,
+                meta: buildItemMeta({ idempotencyKey: t.idempotencyKey })
+            }
+        }).filter(Boolean) as Array<Record<string, unknown>>
+
+        return {
+            opId,
+            kind: 'write' as const,
+            write: { resource, action: 'create', items }
         }
-        return Protocol.batch.compose.op.bulkCreate({ opId, resource, payload })
     }
 
-    if (rawAction === 'bulkUpdate') {
-        const payload: BulkUpdateItem[] = []
-        for (const t of tasks) {
+    if (rawAction === 'update') {
+        const items = tasks.map(t => {
             if (t.kind !== 'update') return undefined
-            payload.push(t.item)
+            return {
+                entityId: t.item.id,
+                baseVersion: t.item.baseVersion,
+                value: t.item.data,
+                meta: buildItemMeta(t.item.meta)
+            }
+        }).filter(Boolean) as Array<Record<string, unknown>>
+
+        return {
+            opId,
+            kind: 'write' as const,
+            write: { resource, action: 'update', items }
         }
-        return Protocol.batch.compose.op.bulkUpdate({ opId, resource, payload })
     }
 
-    if (rawAction === 'bulkPatch') {
-        const payload: BulkPatchItem[] = []
-        for (const t of tasks) {
+    if (rawAction === 'patch') {
+        const items = tasks.map(t => {
             if (t.kind !== 'patch') return undefined
-            payload.push(t.item)
+            return {
+                entityId: t.item.id,
+                baseVersion: t.item.baseVersion,
+                patch: toJsonPatchList(t.item.patches),
+                meta: buildItemMeta(t.item.meta, t.item.timestamp)
+            }
+        }).filter(Boolean) as Array<Record<string, unknown>>
+
+        return {
+            opId,
+            kind: 'write' as const,
+            write: { resource, action: 'patch', items }
         }
-        return Protocol.batch.compose.op.bulkPatch({ opId, resource, payload })
     }
 
-    const payload: BulkDeleteItem[] = []
-    for (const t of tasks) {
+    const items = tasks.map(t => {
         if (t.kind !== 'delete') return undefined
-        payload.push(t.item)
+        return {
+            entityId: t.item.id,
+            baseVersion: t.item.baseVersion,
+            meta: buildItemMeta(t.item.meta)
+        }
+    }).filter(Boolean) as Array<Record<string, unknown>>
+
+    return {
+        opId,
+        kind: 'write' as const,
+        write: { resource, action: 'delete', items }
     }
-    return Protocol.batch.compose.op.bulkDelete({ opId, resource, payload })
+}
+
+function buildItemMeta(
+    meta?: { idempotencyKey?: string },
+    clientTimeMs?: number
+) {
+    const out: { idempotencyKey?: string; clientTimeMs?: number } = {}
+    if (meta?.idempotencyKey) out.idempotencyKey = meta.idempotencyKey
+    if (typeof clientTimeMs === 'number') out.clientTimeMs = clientTimeMs
+    return Object.keys(out).length ? out : undefined
+}
+
+function escapeJsonPointerSegment(value: string) {
+    return value.replace(/~/g, '~0').replace(/\//g, '~1')
+}
+
+function toJsonPointer(path: Array<string | number>) {
+    if (!path.length) return ''
+    return `/${path.map(seg => escapeJsonPointerSegment(String(seg))).join('/')}`
+}
+
+function toJsonPatchList(patches: AtomaPatch[]): VNextJsonPatch[] {
+    return patches.map(p => {
+        const out: VNextJsonPatch = {
+            op: p.op,
+            path: toJsonPointer(p.path)
+        }
+        if (p.op === 'add' || p.op === 'replace') {
+            out.value = p.value
+        }
+        return out
+    })
+}
+
+type WriteItemResult = {
+    index: number
+    ok: true
+    entityId: unknown
+    version: unknown
+    data?: unknown
+} | {
+    index: number
+    ok: false
+    error: unknown
+    current?: { value?: unknown; version?: unknown }
+}
+
+function readWriteItemResults(data: unknown): WriteItemResult[] {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return []
+    const results = Reflect.get(data, 'results')
+    return Array.isArray(results) ? (results as WriteItemResult[]) : []
+}
+
+function indexWriteItemResults(data: unknown): Map<number, WriteItemResult> {
+    const out = new Map<number, WriteItemResult>()
+    for (const item of readWriteItemResults(data)) {
+        if (typeof item.index === 'number' && Number.isFinite(item.index)) {
+            out.set(item.index, item)
+        }
+    }
+    return out
 }

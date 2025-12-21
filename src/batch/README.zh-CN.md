@@ -1,6 +1,6 @@
 # Atoma Batch（客户端批处理）
 
-本目录实现 Atoma 的**客户端批处理引擎**（BatchEngine），主要被适配器（最常见是 HTTPAdapter）用来把大量小操作合并为更少的 `POST /batch` 请求。
+本目录实现 Atoma 的**客户端批处理引擎**（BatchEngine），主要被适配器（最常见是 HTTPAdapter）用来把大量小操作合并为更少的 `POST /ops` 请求。
 
 ## 能力概览
 
@@ -60,7 +60,7 @@
 
 - 选出一批 task（query lane：按 FIFO 连续段、同一 traceKey；write lane：按 bucket 轮转切片）
 - 构造 payload
-- 通过内部 transport（`internal.ts`）发送 `POST /batch`
+- 通过内部 transport（`internal.ts`）发送 `POST /ops`
 - 把服务端 results 映射回每个 task 的 promise
 
 ### 4）trace/requestId 与请求头规则
@@ -68,11 +68,11 @@
 为了保持 trace 语义干净，一个 batch request 只有在满足“**该请求内所有任务都带相同且非空的 traceId**”时，才会写入：
 
 - 请求头：`x-atoma-trace-id` / `x-atoma-request-id`
-- payload root：`traceId` / `requestId`
+- payload `meta`：`traceId` / `requestId`
 
 若该请求内存在混用（不同 traceId，或 trace + no-trace 混用）：
 
-- 不会写入 trace 相关 header/payload 字段
+- 不会写入 trace 相关 header/payload meta 字段
 - debug 事件会标记 `mixedTrace: true`
 
 ### 5）adapter 事件（adapter:request / adapter:response）

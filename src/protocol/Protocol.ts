@@ -4,6 +4,7 @@ import { http } from './http'
 import { rest } from './rest'
 import { sync } from './sync'
 import { trace } from './trace'
+import { vnext } from './vnext'
 
 export const Protocol = {
     batch,
@@ -12,5 +13,6 @@ export const Protocol = {
     sync,
     trace,
     error,
+    vnext,
     collab: {}
 } as const

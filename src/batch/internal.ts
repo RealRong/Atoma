@@ -1,7 +1,7 @@
 import { Observability } from '#observability'
 import type { ObservabilityContext, AtomaDebugEventMap, DebugEmitMeta } from '#observability'
 import { Protocol } from '#protocol'
-import type { BatchRequest, BatchResult, PageInfo } from '#protocol'
+import type { PageInfo } from '#protocol'
 import type { FetchFn, QueryEnvelope, WriteTask } from './types'
 
 // ============================================================================
@@ -129,12 +129,38 @@ export function createCoalescedScheduler(args: {
     return { schedule, cancel, dispose }
 }
 
-type SendFn = (payload: BatchRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
+export type OpsMeta = {
+    v: number
+    deviceId?: string
+    traceId?: string
+    requestId?: string
+    clientTimeMs?: number
+}
 
-export async function sendBatchWithAdapterEvents(args: {
+export type OpsRequest = {
+    meta: OpsMeta
+    ops: unknown[]
+}
+
+export type OpsResult =
+    | { opId: string; ok: true; data: unknown }
+    | { opId: string; ok: false; error: unknown }
+
+type SendFn = (payload: OpsRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
+
+export function mapOpsResults(results: unknown): Map<string, OpsResult> {
+    const map = new Map<string, OpsResult>()
+    if (!Array.isArray(results)) return map
+    results.forEach((r: any) => {
+        if (r && typeof r.opId === 'string') map.set(r.opId, r as OpsResult)
+    })
+    return map
+}
+
+export async function sendOpsWithAdapterEvents(args: {
     lane: 'query' | 'write'
     endpoint: string
-    payload: BatchRequest
+    payload: OpsRequest
     send: SendFn
     controller?: AbortController
     ctxTargets: Array<{ ctx: ObservabilityContext; opCount?: number; taskCount?: number }>
@@ -162,8 +188,8 @@ export async function sendBatchWithAdapterEvents(args: {
 
     let startedAt: number | undefined
     try {
-        const traceId = typeof args.payload.traceId === 'string' && args.payload.traceId ? args.payload.traceId : undefined
-        const requestId = typeof args.payload.requestId === 'string' && args.payload.requestId ? args.payload.requestId : undefined
+        const traceId = typeof args.payload.meta?.traceId === 'string' && args.payload.meta.traceId ? args.payload.meta.traceId : undefined
+        const requestId = typeof args.payload.meta?.requestId === 'string' && args.payload.meta.requestId ? args.payload.meta.requestId : undefined
 
         startedAt = Date.now()
         const response = await args.send(args.payload, args.controller?.signal, {
@@ -171,6 +197,15 @@ export async function sendBatchWithAdapterEvents(args: {
             ...(requestId ? { [Protocol.trace.headers.REQUEST_ID_HEADER]: requestId } : {})
         })
         const durationMs = Date.now() - startedAt
+
+        const envelope = parseStandardEnvelopeFromJson<unknown>(response.json)
+
+        if (envelope.ok === false || envelope.error) {
+            const err = new Error((envelope.error as any)?.message ?? 'Ops request failed')
+            ;(err as any).status = response.status
+            ;(err as any).envelope = envelope
+            throw err
+        }
 
         emitAdapterEvent({
             targets: args.ctxTargets,
@@ -187,10 +222,10 @@ export async function sendBatchWithAdapterEvents(args: {
             })
         })
 
-        const results = response.json && typeof response.json === 'object'
-            ? Reflect.get(response.json, 'results')
+        const results = envelope.data && typeof envelope.data === 'object'
+            ? Reflect.get(envelope.data as any, 'results')
             : undefined
-        const resultMap = Protocol.batch.result.mapResults(results)
+        const resultMap = mapOpsResults(results)
 
         return { status: response.status, durationMs, resultMap }
     } catch (error: unknown) {
@@ -407,19 +442,52 @@ export async function sendBatchRequest(
         signal
     })
 
-    if (!response.ok) {
-        throw Object.assign(
-            new Error(`Batch request failed: ${response.status} ${response.statusText}`),
-            { status: response.status }
-        )
-    }
+    const status = typeof (response as any)?.status === 'number' ? (response as any).status : 0
+    const json = await (response as any).json?.().catch?.(() => null) ?? await (async () => {
+        try {
+            return await (response as any).json()
+        } catch {
+            return null
+        }
+    })()
 
-    return { json: await response.json(), status: response.status }
+    return { json, status }
 }
 
 // ============================================================================
 // Protocol Helpers
 // ============================================================================
+
+type StandardEnvelopeLike<T> = {
+    ok: boolean
+    data?: T
+    error?: unknown
+    meta?: unknown
+    pageInfo?: PageInfo
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseStandardEnvelopeFromJson<T = unknown>(json: unknown): StandardEnvelopeLike<T> {
+    if (isRecord(json) && typeof (json as any).ok === 'boolean') {
+        const ok = (json as any).ok === true
+        if (!ok) {
+            const errorRaw = (json as any).error
+            const error = isRecord(errorRaw) ? errorRaw : { code: 'INTERNAL', message: 'Request failed' }
+            return { ok: false, error, meta: (json as any).meta }
+        }
+        return {
+            ok: true,
+            data: (json as any).data as T,
+            meta: (json as any).meta,
+            pageInfo: (json as any).pageInfo as any
+        }
+    }
+
+    return { ok: true, data: json as any }
+}
 
 function isPageInfo(value: unknown): value is PageInfo {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -433,10 +501,15 @@ function isPageInfo(value: unknown): value is PageInfo {
     return true
 }
 
-export function normalizeQueryEnvelope(res: BatchResult): QueryEnvelope<any> {
-    const data = Array.isArray(res.data) ? res.data : []
-    if (!res.pageInfo) return { data }
-    return { data, pageInfo: res.pageInfo }
+export function normalizeQueryResultData(data: unknown): QueryEnvelope<any> {
+    if (Array.isArray(data)) return { data }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return { data: [] }
+    const items = Reflect.get(data, 'items')
+    const pageInfo = Reflect.get(data, 'pageInfo')
+    return {
+        data: Array.isArray(items) ? items : [],
+        ...(isPageInfo(pageInfo) ? { pageInfo } : {})
+    }
 }
 
 export function normalizeQueryFallback(res: unknown): QueryEnvelope<any> {

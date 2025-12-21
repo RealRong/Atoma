@@ -7,11 +7,13 @@ export type ServerPluginSetupArgs<Ctx> = {
     services: AtomaServerServices<Ctx>
     routing: {
         batchPath: string
+        opsPath: string
         restEnabled: boolean
         syncEnabled: boolean
         syncPushPath: string
         syncPullPath: string
         syncSubscribePath: string
+        syncSubscribeVNextPath: string
     }
 }
 
@@ -24,4 +26,3 @@ export type ServerPlugin<Ctx> = {
     name: string
     setup: (args: ServerPluginSetupArgs<Ctx>) => ServerPluginSetup
 }
-

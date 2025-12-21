@@ -51,3 +51,27 @@ export type {
     SyncPullResponse,
     SyncSubscribeEvent
 } from './sync'
+
+export type {
+    EntityId as VNextEntityId,
+    Cursor as VNextCursor,
+    Version as VNextVersion,
+    Meta as VNextMeta,
+    ErrorKind as VNextErrorKind,
+    StandardErrorDetails as VNextStandardErrorDetails,
+    StandardError as VNextStandardError,
+    Envelope as VNextEnvelope,
+    JsonPatch as VNextJsonPatch,
+    Change as VNextChange,
+    ChangeBatch as VNextChangeBatch,
+    Operation as VNextOperation,
+    OperationResult as VNextOperationResult,
+    OpsRequest as VNextOpsRequest,
+    OpsResponseData as VNextOpsResponseData,
+    WriteAction as VNextWriteAction,
+    WriteItem as VNextWriteItem,
+    WriteItemResult as VNextWriteItemResult,
+    WriteResultData as VNextWriteResultData,
+    QueryResultData as VNextQueryResultData
+} from './vnext'
+

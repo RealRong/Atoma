@@ -1,11 +1,10 @@
 import type { PageInfo } from '../batch/pagination'
+import type { StandardError } from '../error/types'
 
 export type StandardEnvelope<T> = {
-    data: T | T[]
+    ok: boolean
+    data?: T | T[] | null
     pageInfo?: PageInfo
-    message?: string
-    code?: string | number
-    isError?: boolean
+    error?: StandardError
     meta?: unknown
 }
-

@@ -7,6 +7,7 @@ import type { ServerPlugin } from './engine/plugins'
 
 export type AtomaServerRoute =
     | { kind: 'batch' }
+    | { kind: 'ops' }
     | { kind: 'rest'; method: string; resource: string; id?: string }
     | { kind: 'sync'; name: 'push' | 'pull' | 'subscribe' }
 
@@ -90,6 +91,7 @@ export type AtomaServerConfig<Ctx = unknown> = {
         basePath?: string
         rest?: { enabled?: boolean }
         batch?: { path?: string }
+        ops?: { path?: string }
         sync?: {
             enabled?: boolean
             pushPath?: string

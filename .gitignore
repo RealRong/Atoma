@@ -37,6 +37,9 @@ coverage/
 !/README.md
 # !/ARCHITECTURE.md
 !/HTTP_PROTOCOL.md
+!/HTTP_ADAPTER_REFACTORING_PLAN.zh-CN.md
+!/SYNC_ENGINE_DESIGN.zh-CN.md
+!/ATOMA_PROTOCOL_VNEXT.zh-CN.md
 # Unfinished Atoma docs
 atoma-docs
 todo_docs

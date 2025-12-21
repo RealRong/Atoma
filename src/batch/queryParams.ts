@@ -23,7 +23,7 @@ import type { OrderByRule, Page, QueryParams } from '#protocol'
  * - It does not forward unknown/extra fields (e.g. `include`, `cache`, `traceId`, etc).
  *
  * Where it's used:
- * - `src/batch/queryLane.ts` calls this right before sending `POST /batch` to the Atoma server.
+ * - `src/batch/queryLane.ts` calls this right before sending `POST /ops` to the Atoma server.
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)

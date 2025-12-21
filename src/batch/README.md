@@ -1,6 +1,6 @@
 # Atoma Batch (client-side batching)
 
-This folder implements Atoma’s **client-side batching engine** used by adapters (most commonly the HTTP adapter) to coalesce many small operations into fewer `POST /batch` requests.
+This folder implements Atoma’s **client-side batching engine** used by adapters (most commonly the HTTP adapter) to coalesce many small operations into fewer `POST /ops` requests.
 
 ## What it provides
 
@@ -24,15 +24,15 @@ This folder implements Atoma’s **client-side batching engine** used by adapter
   - Public surface: `enqueueQuery`, `enqueueCreate/update/patch/delete`, `dispose`.
   - Owns scheduling (microtask/timer), lifecycle, and shared resources (abort controllers).
 - `queryLane.ts`
-  - Drains query tasks and sends batch query requests.
+  - Drains query tasks and sends ops query requests.
   - Maintains FIFO batching boundaries and avoids mixing traced/untraced tasks in a single request.
 - `writeLane.ts`
-  - Drains bucketed write tasks, builds bulk ops, and sends batch write requests.
+  - Drains bucketed write tasks, builds write ops, and sends ops write requests.
   - Uses round-robin across buckets for fairness.
 - `queryParams.ts`
-  - Translates `FindManyOptions<T>` into server `QueryParams` (Batch protocol requires `params.page`).
+  - Translates `FindManyOptions<T>` into server `QueryParams` (ops protocol requires `params.page`).
 - `internal.ts`
-  - Internal helpers (config normalization, small utils, transport `sendBatchRequest`, adapter debug events fan-out, and query envelope normalization).
+  - Internal helpers (config normalization, small utils, transport `sendBatchRequest`, adapter debug events fan-out, and query result normalization).
 
 ## How it runs (end-to-end)
 
@@ -60,16 +60,16 @@ Each drain iteration:
 
 - selects a batch of tasks (query lane: FIFO contiguous group by `traceId` key; write lane: round-robin bucket slices),
 - builds a request payload,
-- sends `POST /batch` via internal transport (`internal.ts`),
+- sends `POST /ops` via internal transport (`internal.ts`),
 - maps server results back to individual task promises.
 
 ### 4) Trace/request header rules
 
-For protocol cleanliness, a batch request includes `traceId`/`requestId` (payload + headers) **only when all tasks in that request have the same non-empty `traceId`**.
+For protocol cleanliness, a batch request includes `traceId`/`requestId` (payload `meta` + headers) **only when all tasks in that request have the same non-empty `traceId`**.
 
 - If tasks are mixed (different traceIds or traced + untraced), the request is treated as “no common trace”:
   - no `x-atoma-trace-id` header
-  - no `traceId`/`requestId` fields on the payload root
+  - no `traceId`/`requestId` fields in `payload.meta`
   - debug events set `mixedTrace: true`
 
 ### 5) Debug events (adapter:request/adapter:response)

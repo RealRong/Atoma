@@ -1,4 +1,3 @@
-import { Protocol } from '#protocol'
 import {
     buildQueryLaneRequestContext,
     clampInt,
@@ -6,18 +5,18 @@ import {
     createAbortController,
     normalizeMaxQueueLength,
     normalizeMaxQueryOpsPerRequest,
-    normalizeQueryEnvelope,
+    normalizeQueryResultData,
     normalizeQueryFallback,
-    sendBatchWithAdapterEvents,
+    sendOpsWithAdapterEvents,
     toError
 } from './internal'
 import { normalizeAtomaServerQueryParams } from './queryParams'
-import type { BatchOp, BatchRequest } from '#protocol'
 import type { FindManyOptions } from '../core/types'
 import type { ObservabilityContext } from '#observability'
 import type { QueryEnvelope, QueryTask } from './types'
+import type { OpsRequest } from './internal'
 
-type SendFn = (payload: BatchRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
+type SendFn = (payload: OpsRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
 
 type QueryLaneDeps = {
     endpoint: () => string
@@ -115,19 +114,24 @@ export class QueryLane {
             const ctxTargets = requestContext.ctxTargets
 
             try {
-                const ops: BatchOp[] = batch.map(t => {
-                    return Protocol.batch.compose.op.query({
-                        opId: t.opId,
+                const ops = batch.map(t => ({
+                    opId: t.opId,
+                    kind: 'query' as const,
+                    query: {
                         resource: t.resource,
                         params: normalizeAtomaServerQueryParams(t.params)
-                    })
-                })
-                const payload: BatchRequest = Protocol.batch.compose.request({
-                    ops,
-                    traceId: requestContext.commonTraceId,
-                    requestId: requestContext.requestId
-                })
-                const response = await sendBatchWithAdapterEvents({
+                    }
+                }))
+                const payload: OpsRequest = {
+                    meta: {
+                        v: 1,
+                        ...(requestContext.commonTraceId ? { traceId: requestContext.commonTraceId } : {}),
+                        ...(requestContext.requestId ? { requestId: requestContext.requestId } : {}),
+                        clientTimeMs: Date.now()
+                    },
+                    ops
+                }
+                const response = await sendOpsWithAdapterEvents({
                     lane: 'query',
                     endpoint: this.deps.endpoint(),
                     payload,
@@ -149,7 +153,7 @@ export class QueryLane {
                         await runQueryFallback(task, res?.error, () => this.disposed, this.disposedError)
                         continue
                     }
-                    task.deferred.resolve(normalizeQueryEnvelope(res))
+                    task.deferred.resolve(normalizeQueryResultData(res.data))
                 }
             } catch (error: unknown) {
                 this.deps.config().onError?.(toError(error), { lane: 'query' })

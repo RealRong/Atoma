@@ -14,6 +14,7 @@ import { fieldPolicyForResource } from '../../authz/fieldPolicyForResource'
 import { mergeForcedWhere } from '../../authz/mergeForcedWhere'
 import { validateWriteForOp } from './validateWriteForOp'
 import type { BatchRestService } from '../types'
+import { Protocol } from '#protocol'
 
 function resolveResource(op: BatchOp): string {
     return op.action === 'query' ? op.query.resource : (op as any).resource
@@ -47,11 +48,11 @@ export function createBatchRestService<Ctx>(args: {
             if (parsed.ok === 'pass') {
                 return {
                     status: 404,
-                    body: { error: { code: 'NOT_FOUND', message: 'No route matched' } }
+                    body: Protocol.http.compose.error(Protocol.error.create('NOT_FOUND', 'No route matched'))
                 }
             }
             if (parsed.ok === false) {
-                return { status: parsed.httpStatus, body: { error: parsed.error } }
+                return { status: parsed.httpStatus, body: Protocol.http.compose.error(parsed.error) }
             }
 
             const route: AtomaServerRoute = parsed.route.kind === 'batch'

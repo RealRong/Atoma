@@ -4,6 +4,7 @@ import { createAuthzPolicy } from '../policies/authzPolicy'
 import { createLimitPolicy } from '../policies/limitPolicy'
 import { createBatchRestService } from './batchRest/createBatchRestService'
 import { createSyncService } from './sync/createSyncService'
+import { createOpsService } from './ops/createOpsService'
 
 export function createServerServices<Ctx>(args: {
     config: AtomaServerConfig<Ctx>
@@ -35,7 +36,12 @@ export function createServerServices<Ctx>(args: {
             config: args.config,
             authz,
             limits
+        }),
+        ops: createOpsService({
+            config: args.config,
+            authz,
+            limits,
+            syncEnabled: args.routing.syncEnabled
         })
     }
 }
-

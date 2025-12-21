@@ -1,15 +1,16 @@
 import type { FindManyOptions, StoreKey } from '../core/types'
 import type { ObservabilityContext } from '#observability'
+import type { OpsRequest } from './internal'
 import { sendBatchRequest } from './internal'
 import { QueryLane } from './queryLane'
 import type { QueryEnvelope } from './types'
 import { WriteLane } from './writeLane'
-import type { AtomaPatch, BatchRequest } from '#protocol'
+import type { AtomaPatch } from '#protocol'
 
 type FetchFn = typeof fetch
 
 export interface BatchEngineConfig {
-    /** Batch endpoint path (default: `/batch`, aligned with atoma/server default batchPath) */
+    /** Ops endpoint path (default: `/ops`, aligned with atoma/server default opsPath) */
     endpoint?: string
     /** Custom headers (can be async, e.g. for tokens) */
     headers?: () => Promise<Record<string, string>> | Record<string, string>
@@ -72,7 +73,7 @@ export class BatchEngine {
     private readonly writeLane: WriteLane
 
     constructor(private readonly config: BatchEngineConfig = {}) {
-        this.endpoint = (config.endpoint || '/batch').replace(/\/$/, '')
+        this.endpoint = (config.endpoint || '/ops').replace(/\/$/, '')
         this.fetcher = config.fetchFn ?? fetch
 
         this.queryLane = new QueryLane({
@@ -132,7 +133,7 @@ export class BatchEngine {
         this.writeLane.dispose()
     }
 
-    private async send(payload: BatchRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) {
+    private async send(payload: OpsRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) {
         return await sendBatchRequest(this.fetcher, this.endpoint, this.config.headers, payload, signal, extraHeaders)
     }
 
