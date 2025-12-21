@@ -1,7 +1,7 @@
 import { makeUrl } from './request'
 import { createSyncCursorStorage } from './syncCursor'
-import { SYNC_SSE_EVENT_CHANGES } from '../../protocol/sync'
-import type { AtomaChange, SyncSubscribeEvent } from '../../protocol/sync'
+import { SYNC_SSE_EVENT_CHANGES } from '#protocol'
+import type { AtomaChange, SyncSubscribeEvent } from '#protocol'
 
 type Handler = (changes: AtomaChange[]) => void | Promise<void>
 

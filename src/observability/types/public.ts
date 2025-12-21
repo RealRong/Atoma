@@ -29,8 +29,8 @@ export type Explain = {
 
 export type DebugConfig = {
     enabled?: boolean
-    sampleRate?: number
-    includePayload?: boolean
+    sample?: number
+    payload?: boolean
     redact?: (value: unknown) => unknown
 }
 

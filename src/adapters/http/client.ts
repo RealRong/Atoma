@@ -3,8 +3,8 @@ import { Patch } from 'immer'
 import { ETagManager } from './etagManager'
 import { makeUrl, sendJson, sendDelete, sendDeleteJson, sendPutJson, RequestSender, resolveEndpoint } from './request'
 import type { VersionConfig } from '../HTTPAdapter'
-import type { ObservabilityContext } from '../../observability/types'
-import { utf8ByteLength } from '../../observability/utf8'
+import type { ObservabilityContext } from '#observability'
+import { Observability } from '#observability'
 
 export interface ClientConfig {
     baseURL: string
@@ -52,7 +52,7 @@ export class HTTPClient<T> {
         this.etagManager.attachVersion(headers, this.config.version, value, key)
 
         const shouldEmit = Boolean(ctx?.active)
-        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(value)) : undefined
+        const payloadBytes = shouldEmit ? Observability.utf8.byteLength(JSON.stringify(value)) : undefined
         const startedAt = shouldEmit ? Date.now() : 0
         ctx?.emit('adapter:request', {
             method: 'PUT',
@@ -93,7 +93,7 @@ export class HTTPClient<T> {
         this.etagManager.attachVersion(headers, this.config.version, value, undefined as any)
 
         const shouldEmit = Boolean(ctx?.active)
-        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(value)) : undefined
+        const payloadBytes = shouldEmit ? Observability.utf8.byteLength(JSON.stringify(value)) : undefined
         const startedAt = shouldEmit ? Date.now() : 0
         ctx?.emit('adapter:request', {
             method: 'POST',
@@ -207,7 +207,7 @@ export class HTTPClient<T> {
             timestamp: metadata.timestamp
         }
         const shouldEmit = Boolean(ctx?.active)
-        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const payloadBytes = shouldEmit ? Observability.utf8.byteLength(JSON.stringify(body)) : undefined
         const startedAt = shouldEmit ? Date.now() : 0
         ctx?.emit('adapter:request', {
             method: 'POST',
@@ -251,7 +251,7 @@ export class HTTPClient<T> {
         const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
         const body = { items }
         const shouldEmit = Boolean(ctx?.active)
-        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const payloadBytes = shouldEmit ? Observability.utf8.byteLength(JSON.stringify(body)) : undefined
         const startedAt = shouldEmit ? Date.now() : 0
         ctx?.emit('adapter:request', {
             method: 'POST',
@@ -281,7 +281,7 @@ export class HTTPClient<T> {
         const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
         const body = { items }
         const shouldEmit = Boolean(ctx?.active)
-        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const payloadBytes = shouldEmit ? Observability.utf8.byteLength(JSON.stringify(body)) : undefined
         const startedAt = shouldEmit ? Date.now() : 0
         ctx?.emit('adapter:request', {
             method: 'POST',
@@ -323,7 +323,7 @@ export class HTTPClient<T> {
         const headers = { ...(await this.getHeaders()), ...(extraHeaders || {}) }
         const body = { ids: keys }
         const shouldEmit = Boolean(ctx?.active)
-        const payloadBytes = shouldEmit ? utf8ByteLength(JSON.stringify(body)) : undefined
+        const payloadBytes = shouldEmit ? Observability.utf8.byteLength(JSON.stringify(body)) : undefined
         const startedAt = shouldEmit ? Date.now() : 0
         ctx?.emit('adapter:request', {
             method: 'POST',

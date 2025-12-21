@@ -7,9 +7,8 @@ import { getGlobalDevtools, registerGlobalIndex } from '../../devtools/global'
 import { StoreIndexes } from '../indexes/StoreIndexes'
 import type { IndexDefinition, IAdapter, JotaiStore, StoreConfig, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../types'
 import type { QueryMatcherOptions } from '../query/QueryMatcher'
-import { Observability } from '../../observability'
-import type { ObservabilityContext, ObservabilityRuntime } from '../../observability'
-import type { DebugEvent } from '../../observability/types'
+import { Observability } from '#observability'
+import type { DebugEvent, ObservabilityContext, ObservabilityRuntime } from '#observability'
 
 export type StoreRuntime<T extends Entity> = {
     atom: PrimitiveAtom<Map<StoreKey, T>>

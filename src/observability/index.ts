@@ -1,3 +1,14 @@
 export { Observability } from './Observability'
-export type { TraceContext, Explain, DebugConfig, DebugEvent, ObservabilityContext } from './types'
+export type {
+    TraceContext,
+    Explain,
+    DebugConfig,
+    DebugEvent,
+    ObservabilityContext,
+    AtomaDebugEventMap,
+    DebugEmitMeta,
+    EmitFn,
+    FindManyParamsSummary
+} from './types'
+export type { RequestSequencer } from './trace'
 export type { ObservabilityRuntime, ObservabilityRuntimeApi, ObservabilityRuntimeCreateArgs, ObservabilityCreateContextArgs } from './runtime'

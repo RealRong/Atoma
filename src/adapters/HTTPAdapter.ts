@@ -2,7 +2,6 @@ import { Patch } from 'immer'
 import { FindManyOptions, IAdapter, PatchMetadata, StoreKey, PageInfo, Entity } from '../core/types'
 import type { DevtoolsBridge } from '../devtools/types'
 import { getGlobalDevtools } from '../devtools/global'
-import { calculateBackoff } from './http/retry'
 import { applyPatches } from 'immer'
 import { resolveConflict } from './http/conflict'
 import { makeUrl, RequestSender, resolveEndpoint } from './http/request'
@@ -14,27 +13,23 @@ import { SyncOrchestrator } from './http/syncOrchestrator'
 import { createOperationExecutors, OperationExecutors } from './http/operationExecutors'
 import type { QueuedOperation } from './http/offlineQueue'
 import type { QuerySerializerConfig } from './http/query'
-import { BatchEngine } from '../batch'
-import { createRequestIdSequencer } from '../observability/trace'
-import type { ObservabilityContext } from '../observability/types'
+import { BatchEngine, Batch } from '#batch'
+import { Observability } from '#observability'
+import type { ObservabilityContext } from '#observability'
 import type { StoreAccess } from '../core/types'
 import { commitAtomMapUpdate } from '../core/store/cacheWriter'
 import { validateWithSchema } from '../core/store/validation'
 import type { StoreIndexes } from '../core/indexes/StoreIndexes'
 import { getSyncHub, SyncHub } from './http/syncHub'
-import type { AtomaChange } from '../protocol/sync'
+import type { AtomaChange } from '#protocol'
+import type { StandardEnvelope } from '#protocol'
 import type { SyncQueuedOperation } from './http/syncOfflineQueue'
-import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../protocol/trace'
+import { Protocol } from '#protocol'
+import { fetchWithRetry } from './http/transport/retry'
 
 // ===== Config Interfaces =====
 
-export interface RetryConfig {
-    maxAttempts?: number
-    backoff?: 'exponential' | 'linear'
-    initialDelay?: number
-    maxElapsedMs?: number
-    jitter?: boolean
-}
+export type { RetryConfig } from './http/transport/retry'
 
 export interface ConflictConfig<T> {
     resolution?: 'last-write-wins' | 'server-wins' | 'manual'
@@ -248,36 +243,6 @@ export interface HTTPAdapterConfig<T> {
 }
 
 /**
- * Standard Envelope for Atoma internals
- * All responses are normalized to this structure
- */
-export interface StandardEnvelope<T> {
-    /** The actual data payload (single item or array) */
-    data: T | T[]
-
-    /** Optional pagination info */
-    pageInfo?: {
-        total?: number
-        hasNext?: boolean
-        nextCursor?: string
-        prevCursor?: string
-        [key: string]: any
-    }
-
-    /** User-facing message (e.g. for toasts) */
-    message?: string
-
-    /** Error code or status code */
-    code?: string | number
-
-    /** Whether this response should be treated as an error */
-    isError?: boolean
-
-    /** Any other metadata to pass to onMeta */
-    meta?: any
-}
-
-/**
  * Pure function to map backend response to StandardEnvelope
  */
 export type ResponseParser<T, Raw = any> = (response: Response, data: Raw) => Promise<StandardEnvelope<T>> | StandardEnvelope<T>
@@ -307,7 +272,6 @@ type ParsedBatchConfig = {
 export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     public readonly name: string
     private readonly queueStorageKey: string
-    private readonly maxRetryElapsedMs: number
     private etagManager: ETagManager
     private bulkOps: BulkOperationHandler<T>
     private eventEmitter: HTTPEventEmitter
@@ -318,7 +282,6 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     private batchEngine?: BatchEngine
     private resourceNameForBatch: string
     private usePatchForUpdate: boolean
-    private readonly requestIdSequencer = createRequestIdSequencer()
     private storeAccess?: StoreAccess<T>
     private syncHub?: SyncHub
     private syncHandler?: (changes: AtomaChange[]) => void
@@ -428,7 +391,6 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         )
 
         this.eventEmitter = new HTTPEventEmitter(config.events)
-        this.maxRetryElapsedMs = config.retry?.maxElapsedMs ?? 30000
         this.serializerConfig = config.querySerializer
         this.orchestrator = new SyncOrchestrator(config, {
             queueStorageKey: this.queueStorageKey,
@@ -436,7 +398,6 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             client: this.client,
             fetchWithRetry: this.fetchWithRetry.bind(this),
             getHeaders: this.getHeaders.bind(this),
-            requestIdSequencer: this.requestIdSequencer,
             retry: config.retry,
             devtools: config.devtools ?? getGlobalDevtools(),
             onSyncPushResult: async (res, ops) => {
@@ -455,7 +416,6 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             etagManager: this.etagManager,
             fetchWithRetry: this.fetchWithRetry.bind(this),
             getHeaders: this.getHeaders.bind(this),
-            requestIdSequencer: this.requestIdSequencer,
             orchestrator: this.orchestrator,
             onError: this.onError.bind(this)
         })
@@ -463,13 +423,12 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         if (batchConfig.enabled) {
             const endpointPath = batchConfig.endpoint ?? '/batch'
             const batchEndpoint = makeUrl(this.config.baseURL, endpointPath)
-            this.batchEngine = new BatchEngine({
+            this.batchEngine = Batch.create({
                 endpoint: batchEndpoint,
                 maxBatchSize: batchConfig.maxBatchSize,
                 flushIntervalMs: batchConfig.flushIntervalMs,
                 headers: this.getHeaders.bind(this),
                 fetchFn: this.fetchWithRetry.bind(this),
-                requestIdSequencer: this.requestIdSequencer,
                 onError: (error, payload) => {
                     this.onError(error, 'batch')
                     if (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
@@ -510,7 +469,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     async put(key: StoreKey, value: T, internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.sync?.enabled === true) {
             const op = this.buildSyncPutOp(key, value)
-            const res = await this.orchestrator.pushOrQueueSyncOps([op], { traceId: internalContext?.traceId })
+            const res = await this.orchestrator.pushOrQueueSyncOps([op], internalContext)
             if (!res) return
             await this.handleSyncRejected(res.rejected, [op], internalContext)
             await this.applyAckedVersions(res.acked.map(a => ({
@@ -539,10 +498,14 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         }
         const baseVersion = this.resolveLocalBaseVersion(key, value)
         const traceId = internalContext?.traceId
-        const trace = (typeof traceId === 'string' && traceId)
-            ? { traceId, requestId: this.requestIdSequencer.next(traceId) }
+        const requestId = (typeof traceId === 'string' && traceId) ? internalContext?.requestId() : undefined
+        const traceHeaders = (typeof traceId === 'string' && traceId)
+            ? {
+                [Protocol.trace.headers.TRACE_ID_HEADER]: traceId,
+                ...(requestId ? { [Protocol.trace.headers.REQUEST_ID_HEADER]: requestId } : {})
+            }
             : undefined
-        const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
+        const ctx = requestId && internalContext ? internalContext.with({ requestId }) : internalContext
         const payload = (value && typeof value === 'object')
             ? ({ ...(value as any), baseVersion } as any)
             : value
@@ -551,7 +514,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
             () => this.client.put(
                 key,
                 payload,
-                trace ? { [TRACE_ID_HEADER]: trace.traceId, [REQUEST_ID_HEADER]: trace.requestId } : undefined,
+                traceHeaders,
                 ctx
             )
         )
@@ -560,7 +523,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     async bulkPut(items: T[], internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.sync?.enabled === true) {
             const ops = items.map(item => this.buildSyncPutOp((item as any).id, item))
-            const res = await this.orchestrator.pushOrQueueSyncOps(ops, { traceId: internalContext?.traceId })
+            const res = await this.orchestrator.pushOrQueueSyncOps(ops, internalContext)
             if (!res) return
             await this.handleSyncRejected(res.rejected, ops, internalContext)
             await this.applyAckedVersions(res.acked.map(a => ({
@@ -587,13 +550,17 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
 
         if (this.config.endpoints!.bulkCreate) {
             const traceId = internalContext?.traceId
-            const trace = (typeof traceId === 'string' && traceId)
-                ? { traceId, requestId: this.requestIdSequencer.next(traceId) }
+            const requestId = (typeof traceId === 'string' && traceId) ? internalContext?.requestId() : undefined
+            const traceHeaders = (typeof traceId === 'string' && traceId)
+                ? {
+                    [Protocol.trace.headers.TRACE_ID_HEADER]: traceId,
+                    ...(requestId ? { [Protocol.trace.headers.REQUEST_ID_HEADER]: requestId } : {})
+                }
                 : undefined
-            const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
+            const ctx = requestId && internalContext ? internalContext.with({ requestId }) : internalContext
             return await this.client.bulkCreate(
                 items,
-                trace ? { [TRACE_ID_HEADER]: trace.traceId, [REQUEST_ID_HEADER]: trace.requestId } : undefined,
+                traceHeaders,
                 ctx
             )
         }
@@ -604,7 +571,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     async delete(key: StoreKey, internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.sync?.enabled === true) {
             const op = this.buildSyncDeleteOp(key)
-            const res = await this.orchestrator.pushOrQueueSyncOps([op], { traceId: internalContext?.traceId })
+            const res = await this.orchestrator.pushOrQueueSyncOps([op], internalContext)
             if (!res) return
             await this.handleSyncRejected(res.rejected, [op], internalContext)
             return
@@ -620,16 +587,20 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         }
         const baseVersion = this.resolveLocalBaseVersion(key)
         const traceId = internalContext?.traceId
-        const trace = (typeof traceId === 'string' && traceId)
-            ? { traceId, requestId: this.requestIdSequencer.next(traceId) }
+        const requestId = (typeof traceId === 'string' && traceId) ? internalContext?.requestId() : undefined
+        const traceHeaders = (typeof traceId === 'string' && traceId)
+            ? {
+                [Protocol.trace.headers.TRACE_ID_HEADER]: traceId,
+                ...(requestId ? { [Protocol.trace.headers.REQUEST_ID_HEADER]: requestId } : {})
+            }
             : undefined
-        const ctx = trace && internalContext ? internalContext.with({ requestId: trace.requestId }) : internalContext
+        const ctx = requestId && internalContext ? internalContext.with({ requestId }) : internalContext
         await this.orchestrator.handleWithOfflineFallback(
             { type: 'delete', key },
             () => this.client.delete(
                 key,
                 { baseVersion },
-                trace ? { [TRACE_ID_HEADER]: trace.traceId, [REQUEST_ID_HEADER]: trace.requestId } : undefined,
+                traceHeaders,
                 ctx
             )
         )
@@ -638,7 +609,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
     async bulkDelete(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<void> {
         if (this.config.sync?.enabled === true) {
             const ops = keys.map(k => this.buildSyncDeleteOp(k))
-            const res = await this.orchestrator.pushOrQueueSyncOps(ops, { traceId: internalContext?.traceId })
+            const res = await this.orchestrator.pushOrQueueSyncOps(ops, internalContext)
             if (!res) return
             await this.handleSyncRejected(res.rejected, ops, internalContext)
             return
@@ -754,13 +725,13 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
         const nextTraceHeaders = () => {
             const traceId = metadata.traceId
             if (typeof traceId !== 'string' || !traceId) return undefined
-            const requestId = this.requestIdSequencer.next(traceId)
+            const requestId = (internalContext?.traceId === traceId) ? internalContext?.requestId() : undefined
             return {
                 traceId,
                 requestId,
                 headers: {
-                    [TRACE_ID_HEADER]: traceId,
-                    [REQUEST_ID_HEADER]: requestId
+                    [Protocol.trace.headers.TRACE_ID_HEADER]: traceId,
+                    ...(requestId ? { [Protocol.trace.headers.REQUEST_ID_HEADER]: requestId } : {})
                 }
             }
         }
@@ -1162,7 +1133,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
 
         const res = await this.orchestrator.pushOrQueueSyncOps(
             ops,
-            { traceId: internalContext?.traceId }
+            internalContext
         )
 
         if (!res) return
@@ -1238,7 +1209,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                             baseVersion: currentVersion,
                             timestamp: Date.now()
                         } as any
-                        await this.orchestrator.pushOrQueueSyncOps([retry], { traceId: internalContext?.traceId })
+                        await this.orchestrator.pushOrQueueSyncOps([retry], internalContext)
                     }
 
                     if (op.kind === 'delete') {
@@ -1248,7 +1219,7 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
                             baseVersion: currentVersion,
                             timestamp: Date.now()
                         } as any
-                        await this.orchestrator.pushOrQueueSyncOps([retry], { traceId: internalContext?.traceId })
+                        await this.orchestrator.pushOrQueueSyncOps([retry], internalContext)
                     }
                 }
             }
@@ -1297,47 +1268,9 @@ export class HTTPAdapter<T extends Entity> implements IAdapter<T> {
      */
     private async fetchWithRetry(
         input: RequestInfo | URL,
-        init?: RequestInit,
-        attemptNumber = 1,
-        startedAt = Date.now()
+        init?: RequestInit
     ): Promise<Response> {
-        try {
-            const response = await fetch(input, init)
-
-            // Don't retry client errors (4xx except 409)
-            if (response.status >= 400 && response.status < 500 && response.status !== 409) {
-                return response
-            }
-
-            // Retry server errors (5xx)
-            if (response.status >= 500) {
-                throw new Error(`Server error: ${response.status}`)
-            }
-
-            return response
-        } catch (error) {
-            const maxAttempts = this.config.retry?.maxAttempts ?? 3
-
-            if (attemptNumber >= maxAttempts) {
-                throw error
-            }
-
-            const elapsed = Date.now() - startedAt
-            if (elapsed >= this.maxRetryElapsedMs) {
-                throw error
-            }
-
-            // Calculate backoff delay
-            const backoff = this.config.retry?.backoff ?? 'exponential'
-            const initialDelay = this.config.retry?.initialDelay ?? 1000
-            const delay = calculateBackoff(backoff, initialDelay, attemptNumber, this.config.retry?.jitter === true)
-
-            console.log(`Retry attempt ${attemptNumber}/${maxAttempts} after ${delay}ms`)
-
-            await new Promise(resolve => setTimeout(resolve, delay))
-
-            return this.fetchWithRetry(input, init, attemptNumber + 1, startedAt)
-        }
+        return fetchWithRetry(fetch, input, init, this.config.retry)
     }
 
     /**

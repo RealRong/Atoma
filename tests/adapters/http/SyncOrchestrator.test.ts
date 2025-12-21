@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { SyncOrchestrator } from '../../../src/adapters/http/syncOrchestrator'
 import { HTTPEventEmitter } from '../../../src/adapters/http/eventEmitter'
 import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../../../src/protocol/trace'
+import { Observability } from '../../../src/observability'
 
 type Entity = { id: any }
 
@@ -83,11 +84,11 @@ describe('SyncOrchestrator', () => {
                     })
                 },
                 getHeaders: async () => ({}),
-                requestIdSequencer: { next: (traceId: string) => `r_${traceId}_1` },
                 devtools: { registerQueue: () => true } as any
             }
         )
 
+        const ctx = Observability.runtime.create({ scope: 'test' }).createContext({ traceId: 't_abc' })
         await orchestrator.pushOrQueueSyncOps(
             [{
                 idempotencyKey: 'k2',
@@ -98,7 +99,7 @@ describe('SyncOrchestrator', () => {
                 timestamp: 1,
                 patches: []
             } as any],
-            { traceId: 't_abc' }
+            ctx
         )
 
         const init = seen[0]
@@ -110,4 +111,3 @@ describe('SyncOrchestrator', () => {
         expect(parsed?.requestId).toBe('r_t_abc_1')
     })
 })
-

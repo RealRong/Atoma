@@ -1,221 +1,352 @@
-import { utf8ByteLength } from '../observability/utf8'
-import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../protocol/trace'
-import { emitAdapterEvent } from './adapterEvents'
-import { normalizeMaxBatchSize, normalizeMaxOpsPerRequest } from './config'
-import { mapResults } from './protocol'
-import type { Deferred, WriteTask } from './types'
-import { clampInt, createAbortController, toError } from './utils'
+import { Protocol } from '#protocol'
+import {
+    buildWriteLaneRequestContext,
+    clampInt,
+    createCoalescedScheduler,
+    createAbortController,
+    isWriteQueueFull,
+    normalizeMaxBatchSize,
+    normalizeMaxOpsPerRequest,
+    sendBatchWithAdapterEvents,
+    toError
+} from './internal'
+import type { Action, BatchOp, BatchRequest, BulkCreateItem, BulkDeleteItem, BulkPatchItem, BulkUpdateItem } from '#protocol'
+import type { StoreKey } from '../core/types'
+import type { ObservabilityContext } from '#observability'
+import type { AtomaPatch } from '#protocol'
+import type { WriteTask } from './types'
 
-type SendFn = (payload: any, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: any; status: number }>
+type SendFn = (payload: BatchRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
 
-export type WriteLaneEngine = {
-    disposed: boolean
-    disposedError: Error
-    endpoint: string
-    config: any
-    inFlightControllers: Set<AbortController>
-    inFlightTasks: Set<{ deferred: Deferred<any> }>
-    writeBuckets: Map<string, WriteTask[]>
-    writeReady: string[]
-    writeReadySet: Set<string>
-    writeInFlight: number
-    writePendingCount: number
+type WriteLaneDeps = {
+    endpoint: () => string
+    config: () => {
+        flushIntervalMs?: number
+        writeMaxInFlight?: number
+        maxQueueLength?: number | { query?: number; write?: number }
+        maxBatchSize?: number
+        maxOpsPerRequest?: number
+        onError?: (error: Error, context: unknown) => void
+    }
     send: SendFn
     nextOpId: (prefix: 'q' | 'w') => string
-    nextRequestId: (traceId: string) => string
-    signalWriteLane: () => void
 }
 
-export async function drainWriteLane(engine: WriteLaneEngine) {
-    const maxInFlight = clampInt(engine.config.writeMaxInFlight ?? 1, 1, 64)
-    const maxItems = normalizeMaxBatchSize(engine.config)
-    const maxOps = normalizeMaxOpsPerRequest(engine.config)
+export class WriteLane {
+    private disposed = false
+    private readonly disposedError = new Error('BatchEngine disposed')
+    private readonly queueOverflowError = new Error('BatchEngine queue overflow')
 
-    while (!engine.disposed && engine.writeInFlight < maxInFlight && engine.writeReady.length) {
-        const ops: any[] = []
+    private seq = 0
+
+    private readonly writeBuckets = new Map<string, WriteTask[]>()
+    private readonly writeReady: string[] = []
+    private readonly writeReadySet = new Set<string>()
+    private writeInFlight = 0
+    private writePendingCount = 0
+
+    private readonly inFlightControllers = new Set<AbortController>()
+    private readonly inFlightTasks = new Set<WriteTask>()
+
+    private readonly scheduler: ReturnType<typeof createCoalescedScheduler>
+
+    constructor(private readonly deps: WriteLaneDeps) {
+        this.scheduler = createCoalescedScheduler({
+            getDelayMs: () => this.deps.config().flushIntervalMs ?? 0,
+            run: () => this.drain()
+        })
+    }
+
+    enqueueCreate<T>(resource: string, item: T, internalContext?: ObservabilityContext): Promise<any> {
+        return this.enqueueWriteTask<any>(({ resolve, reject }) => ({
+                kind: 'create',
+                resource,
+                item,
+                idempotencyKey: this.createIdempotencyKey(),
+                deferred: { resolve: value => resolve(value), reject },
+                ctx: internalContext
+            }))
+    }
+
+    enqueueUpdate<T>(
+        resource: string,
+        item: { id: StoreKey; data: T; baseVersion: number; meta?: { idempotencyKey?: string } },
+        internalContext?: ObservabilityContext
+    ): Promise<void> {
+        return this.enqueueWriteTask<void>(({ resolve, reject }) => ({
+                kind: 'update',
+                resource,
+                item: this.withIdempotencyKey(item),
+                deferred: { resolve: () => resolve(), reject },
+                ctx: internalContext
+            }))
+    }
+
+    enqueuePatch(
+        resource: string,
+        item: { id: StoreKey; patches: AtomaPatch[]; baseVersion: number; timestamp?: number; meta?: { idempotencyKey?: string } },
+        internalContext?: ObservabilityContext
+    ): Promise<void> {
+        return this.enqueueWriteTask<void>(({ resolve, reject }) => ({
+                kind: 'patch',
+                resource,
+                item: this.withIdempotencyKey(item),
+                deferred: { resolve: () => resolve(), reject },
+                ctx: internalContext
+            }))
+    }
+
+    enqueueDelete(
+        resource: string,
+        item: { id: StoreKey; baseVersion: number; meta?: { idempotencyKey?: string } },
+        internalContext?: ObservabilityContext
+    ): Promise<void> {
+        return this.enqueueWriteTask<void>(({ resolve, reject }) => ({
+                kind: 'delete',
+                resource,
+                item: this.withIdempotencyKey(item),
+                deferred: { resolve: () => resolve(), reject },
+                ctx: internalContext
+            }))
+    }
+
+    private enqueueWriteTask<T>(build: (deferred: { resolve: (value: T | PromiseLike<T>) => void; reject: (reason?: unknown) => void }) => WriteTask): Promise<T> {
+        return new Promise<T>((resolve, reject) => {
+            if (this.disposed) {
+                reject(this.disposedError)
+                return
+            }
+            if (isWriteQueueFull(this.deps.config(), this.writePendingCount)) {
+                reject(this.queueOverflowError)
+                return
+            }
+            const task = build({ resolve, reject })
+            this.pushWriteTask(task)
+        })
+    }
+
+    private withIdempotencyKey<T extends { meta?: { idempotencyKey?: string } }>(item: T): T {
+        const baseMeta = (item.meta && typeof item.meta === 'object' && !Array.isArray(item.meta)) ? item.meta : {}
+        const idempotencyKey = (typeof item.meta?.idempotencyKey === 'string' && item.meta.idempotencyKey)
+            ? item.meta.idempotencyKey
+            : this.createIdempotencyKey()
+
+        return {
+            ...item,
+            meta: {
+                ...baseMeta,
+                idempotencyKey
+            }
+        }
+    }
+
+    async drain() {
+        const config = this.deps.config()
+        const maxInFlight = clampInt(config.writeMaxInFlight ?? 1, 1, 64)
+        const maxItems = normalizeMaxBatchSize(config)
+        const maxOps = normalizeMaxOpsPerRequest(config)
+
+        while (!this.disposed && this.writeInFlight < maxInFlight && this.writeReady.length) {
+            const take = this.takeWriteOps(maxOps, maxItems)
+            const ops = take.ops
+            const slicesByOpId = take.slicesByOpId
+
+            if (!ops.length) break
+
+            const requestContext = buildWriteLaneRequestContext(slicesByOpId)
+            const ctxTargets = requestContext.ctxTargets
+
+            this.writeInFlight++
+            for (const slice of slicesByOpId.values()) {
+                slice.forEach(t => this.inFlightTasks.add(t))
+            }
+            const controller = createAbortController()
+            if (controller) this.inFlightControllers.add(controller)
+            try {
+                const payload: BatchRequest = Protocol.batch.compose.request({
+                    ops,
+                    traceId: requestContext.commonTraceId,
+                    requestId: requestContext.requestId
+                })
+                const response = await sendBatchWithAdapterEvents({
+                    lane: 'write',
+                    endpoint: this.deps.endpoint(),
+                    payload,
+                    send: this.deps.send,
+                    controller,
+                    ctxTargets,
+                    totalOpCount: ops.length,
+                    mixedTrace: requestContext.mixedTrace
+                })
+                const resultMap = response.resultMap
+
+                for (const [opId, slice] of slicesByOpId.entries()) {
+                    if (this.disposed) {
+                        slice.forEach(t => t.deferred.reject(this.disposedError))
+                        continue
+                    }
+                    const res = resultMap.get(opId)
+
+                    if (!res || res.ok === false || res.error) {
+                        const err = res?.error ?? new Error('Batch write failed')
+                        this.deps.config().onError?.(toError(err), { lane: 'write', opId })
+                        slice.forEach(t => t.deferred.reject(err))
+                        continue
+                    }
+
+                    const failures = new Set<number>()
+                    for (const f of res.partialFailures ?? []) {
+                        failures.add(f.index)
+                    }
+
+                    slice.forEach((task, index) => {
+                        if (failures.has(index)) {
+                            const failure = res.partialFailures?.find(f => f.index === index)
+                            task.deferred.reject(failure?.error ?? new Error('Partial failure'))
+                            return
+                        }
+
+                        const payloadData = Array.isArray(res.data) ? res.data[index] : undefined
+                        if (task.kind === 'create') {
+                            task.deferred.resolve(payloadData)
+                            return
+                        }
+                        task.deferred.resolve(undefined)
+                    })
+                }
+            } catch (error: unknown) {
+                this.deps.config().onError?.(toError(error), { lane: 'write', opCount: ops.length })
+                for (const slice of slicesByOpId.values()) {
+                    slice.forEach(t => t.deferred.reject(this.disposed ? this.disposedError : error))
+                }
+            } finally {
+                if (controller) this.inFlightControllers.delete(controller)
+                for (const slice of slicesByOpId.values()) {
+                    slice.forEach(t => this.inFlightTasks.delete(t))
+                }
+                this.writeInFlight--
+            }
+        }
+
+        if (!this.disposed && (this.writeReady.length || hasPendingBuckets(this.writeBuckets))) {
+            this.signal()
+        }
+    }
+
+    private takeWriteOps(maxOps: number, maxItems: number) {
+        const ops: BatchOp[] = []
         const slicesByOpId = new Map<string, WriteTask[]>()
 
-        while (ops.length < maxOps && engine.writeReady.length) {
-            // round-robin：取队首 bucketKey
-            const key = engine.writeReady.shift()!
-            engine.writeReadySet.delete(key)
+        while (ops.length < maxOps && this.writeReady.length) {
+            const key = this.writeReady.shift()!
+            this.writeReadySet.delete(key)
 
-            const tasks = engine.writeBuckets.get(key)
+            const tasks = this.writeBuckets.get(key)
             if (!tasks || !tasks.length) {
-                engine.writeBuckets.delete(key)
+                this.writeBuckets.delete(key)
                 continue
             }
 
-            // 每次从该 bucket 取一段，最多 maxItems
             const slice = tasks.splice(0, maxItems === Infinity ? tasks.length : maxItems)
-            engine.writePendingCount -= slice.length
+            this.writePendingCount -= slice.length
             if (!tasks.length) {
-                engine.writeBuckets.delete(key)
+                this.writeBuckets.delete(key)
             } else {
-                // bucket 仍有剩余，放回队尾保持公平
-                engine.writeReady.push(key)
-                engine.writeReadySet.add(key)
+                this.writeReady.push(key)
+                this.writeReadySet.add(key)
             }
 
-            const opId = engine.nextOpId('w')
-            ops.push(buildWriteOp(opId, key, slice))
+            const opId = this.deps.nextOpId('w')
+            const op = buildWriteOp(opId, key, slice)
+            if (!op) continue
+            ops.push(op)
             slicesByOpId.set(opId, slice)
         }
 
-        if (!ops.length) break
-
-        const traceState = (() => {
-            const distinct = new Set<string>()
-            let hasMissing = false
-            for (const slice of slicesByOpId.values()) {
-                slice.forEach(t => {
-                    const id = typeof t.ctx?.traceId === 'string' && t.ctx.traceId ? t.ctx.traceId : undefined
-                    if (id) distinct.add(id)
-                    else hasMissing = true
-                })
-            }
-            const commonTraceId = (!hasMissing && distinct.size === 1) ? Array.from(distinct)[0] : undefined
-            const mixedTrace = distinct.size > 1 || (hasMissing && distinct.size > 0)
-            return { commonTraceId, mixedTrace }
-        })()
-        const commonTraceId = traceState.commonTraceId
-        const requestId = commonTraceId ? engine.nextRequestId(commonTraceId) : undefined
-        const ctxTargets = (() => {
-            const byCtx = new Map<any, { taskCount: number; opIds: Set<string> }>()
-            for (const [opId, slice] of slicesByOpId.entries()) {
-                slice.forEach(t => {
-                    const ctx = t.ctx
-                    if (!ctx) return
-                    const cur = byCtx.get(ctx) ?? { taskCount: 0, opIds: new Set<string>() }
-                    cur.taskCount++
-                    cur.opIds.add(opId)
-                    byCtx.set(ctx, cur)
-                })
-            }
-            return Array.from(byCtx.entries()).map(([ctx, meta]) => ({
-                ctx: requestId ? ctx.with({ requestId }) : ctx,
-                taskCount: meta.taskCount,
-                opCount: meta.opIds.size
-            }))
-        })()
-        const shouldEmitAdapterEvents = ctxTargets.some(t => Boolean(t.ctx?.active))
-
-        engine.writeInFlight++
-        for (const slice of slicesByOpId.values()) {
-            slice.forEach(t => engine.inFlightTasks.add(t as any))
-        }
-        const controller = createAbortController()
-        if (controller) engine.inFlightControllers.add(controller)
-        let startedAt: number | undefined
-        try {
-            const payload = {
-                ...(commonTraceId ? { traceId: commonTraceId } : {}),
-                ...(requestId ? { requestId } : {}),
-                ops
-            }
-            const payloadBytes = shouldEmitAdapterEvents ? utf8ByteLength(JSON.stringify(payload)) : undefined
-            emitAdapterEvent({
-                targets: ctxTargets,
-                type: 'adapter:request',
-                payloadFor: ({ opCount, taskCount }) => ({
-                    lane: 'write',
-                    method: 'POST',
-                    endpoint: engine.endpoint,
-                    attempt: 1,
-                    payloadBytes,
-                    opCount,
-                    taskCount,
-                    totalOpCount: ops.length,
-                    mixedTrace: traceState.mixedTrace
-                })
-            })
-
-            startedAt = Date.now()
-            const response = await engine.send(payload, controller?.signal, {
-                ...(commonTraceId ? { [TRACE_ID_HEADER]: commonTraceId } : {}),
-                ...(requestId ? { [REQUEST_ID_HEADER]: requestId } : {})
-            })
-            const durationMs = Date.now() - startedAt
-            emitAdapterEvent({
-                targets: ctxTargets,
-                type: 'adapter:response',
-                payloadFor: ({ opCount, taskCount }) => ({
-                    lane: 'write',
-                    ok: true,
-                    status: response.status,
-                    durationMs,
-                    opCount,
-                    taskCount,
-                    totalOpCount: ops.length,
-                    mixedTrace: traceState.mixedTrace
-                })
-            })
-
-            const resultMap = mapResults(response.json?.results)
-
-            for (const [opId, slice] of slicesByOpId.entries()) {
-                if (engine.disposed) {
-                    slice.forEach(t => t.deferred.reject(engine.disposedError))
-                    continue
-                }
-                const res = resultMap.get(opId)
-
-                if (!res || res.ok === false || res.error) {
-                    const err = res?.error ?? new Error('Batch write failed')
-                    engine.config.onError?.(toError(err), { lane: 'write', opId })
-                    slice.forEach(t => t.deferred.reject(err))
-                    continue
-                }
-
-                const failures = new Set<number>()
-                res.partialFailures?.forEach((f: any) => failures.add(f.index))
-
-                slice.forEach((task, index) => {
-                    if (failures.has(index)) {
-                        const failure = res.partialFailures?.find((f: any) => f.index === index)
-                        task.deferred.reject(failure?.error ?? new Error('Partial failure'))
-                        return
-                    }
-
-                    const payloadData = Array.isArray(res.data) ? res.data[index] : undefined
-                    task.deferred.resolve(payloadData as any)
-                })
-            }
-        } catch (error: any) {
-            emitAdapterEvent({
-                targets: ctxTargets,
-                type: 'adapter:response',
-                payloadFor: ({ opCount, taskCount }) => ({
-                    lane: 'write',
-                    ok: false,
-                    status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
-                    durationMs: typeof startedAt === 'number' ? (Date.now() - startedAt) : undefined,
-                    opCount,
-                    taskCount,
-                    totalOpCount: ops.length,
-                    mixedTrace: traceState.mixedTrace
-                })
-            })
-            engine.config.onError?.(toError(error), { lane: 'write', opCount: ops.length })
-            // request 级失败：对本次已摘出的 items 全部 reject（write 策略不做 fallback）
-            for (const slice of slicesByOpId.values()) {
-                slice.forEach(t => t.deferred.reject(engine.disposed ? engine.disposedError : error))
-            }
-        } finally {
-            if (controller) engine.inFlightControllers.delete(controller)
-            for (const slice of slicesByOpId.values()) {
-                slice.forEach(t => engine.inFlightTasks.delete(t as any))
-            }
-            engine.writeInFlight--
-        }
+        return { ops, slicesByOpId }
     }
 
-    if (!engine.disposed && (engine.writeReady.length || hasPendingBuckets(engine.writeBuckets))) {
-        engine.signalWriteLane()
+    dispose() {
+        if (this.disposed) return
+        this.disposed = true
+        this.scheduler.dispose()
+
+        for (const controller of this.inFlightControllers.values()) {
+            try {
+                controller.abort()
+            } catch {
+                // ignore
+            }
+        }
+        this.inFlightControllers.clear()
+
+        for (const tasks of this.writeBuckets.values()) {
+            tasks.forEach(t => t.deferred.reject(this.disposedError))
+        }
+        this.writeBuckets.clear()
+        this.writeReady.length = 0
+        this.writeReadySet.clear()
+        this.writePendingCount = 0
+
+        for (const task of this.inFlightTasks.values()) {
+            task.deferred.reject(this.disposedError)
+        }
+        this.inFlightTasks.clear()
+    }
+
+    private pushWriteTask(task: WriteTask) {
+        const key = bucketKey(task)
+        const list = this.writeBuckets.get(key) ?? []
+        list.push(task)
+        this.writeBuckets.set(key, list)
+        this.writePendingCount++
+
+        if (!this.writeReadySet.has(key)) {
+            this.writeReady.push(key)
+            this.writeReadySet.add(key)
+        }
+
+        this.signal()
+    }
+
+    private signal() {
+        if (this.disposed) return
+
+        const max = normalizeMaxBatchSize(this.deps.config())
+        let immediate = false
+        if (max !== Infinity) {
+            for (const tasks of this.writeBuckets.values()) {
+                if (tasks.length >= max) {
+                    immediate = true
+                    break
+                }
+            }
+        }
+
+        this.scheduler.schedule(immediate)
+    }
+
+    private createIdempotencyKey(): string {
+        if (typeof crypto !== 'undefined') {
+            const randomUUID = Reflect.get(crypto, 'randomUUID')
+            if (typeof randomUUID === 'function') {
+                const uuid = randomUUID.call(crypto)
+                if (typeof uuid === 'string' && uuid) return `b_${uuid}`
+            }
+        }
+        this.seq += 1
+        return `b_${Date.now()}_${this.seq}`
     }
 }
 
-export function bucketKey(task: WriteTask) {
+function hasPendingBuckets(map: Map<string, WriteTask[]>) {
+    for (const tasks of map.values()) {
+        if (tasks.length) return true
+    }
+    return false
+}
+
+function bucketKey(task: WriteTask) {
     const action =
         task.kind === 'create' ? 'bulkCreate'
             : task.kind === 'update' ? 'bulkUpdate'
@@ -224,26 +355,48 @@ export function bucketKey(task: WriteTask) {
     return `${action}:${task.resource}`
 }
 
-export function buildWriteOp(opId: string, key: string, tasks: WriteTask[]) {
-    const [action, resource] = key.split(':', 2)
-    const payload = tasks.map(t => {
-        if (t.kind === 'create') {
-            return { data: t.item, meta: { idempotencyKey: t.idempotencyKey } }
-        }
-        return t.item as any
-    })
-
-    return {
-        opId,
-        action,
-        resource,
-        payload
-    }
+function isWriteAction(value: unknown): value is Exclude<Action, 'query'> {
+    return value === 'bulkCreate'
+        || value === 'bulkUpdate'
+        || value === 'bulkPatch'
+        || value === 'bulkDelete'
 }
 
-export function hasPendingBuckets(map: Map<string, WriteTask[]>) {
-    for (const tasks of map.values()) {
-        if (tasks.length) return true
+function buildWriteOp(opId: string, key: string, tasks: WriteTask[]): BatchOp | undefined {
+    const [rawAction, resource] = key.split(':', 2)
+    if (!isWriteAction(rawAction) || !resource) return undefined
+
+    if (rawAction === 'bulkCreate') {
+        const payload: BulkCreateItem[] = []
+        for (const t of tasks) {
+            if (t.kind !== 'create') return undefined
+            payload.push({ data: t.item, meta: { idempotencyKey: t.idempotencyKey } })
+        }
+        return Protocol.batch.compose.op.bulkCreate({ opId, resource, payload })
     }
-    return false
+
+    if (rawAction === 'bulkUpdate') {
+        const payload: BulkUpdateItem[] = []
+        for (const t of tasks) {
+            if (t.kind !== 'update') return undefined
+            payload.push(t.item)
+        }
+        return Protocol.batch.compose.op.bulkUpdate({ opId, resource, payload })
+    }
+
+    if (rawAction === 'bulkPatch') {
+        const payload: BulkPatchItem[] = []
+        for (const t of tasks) {
+            if (t.kind !== 'patch') return undefined
+            payload.push(t.item)
+        }
+        return Protocol.batch.compose.op.bulkPatch({ opId, resource, payload })
+    }
+
+    const payload: BulkDeleteItem[] = []
+    for (const t of tasks) {
+        if (t.kind !== 'delete') return undefined
+        payload.push(t.item)
+    }
+    return Protocol.batch.compose.op.bulkDelete({ opId, resource, payload })
 }

@@ -13,7 +13,6 @@ export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
     return (id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         return new Promise<T>((resolve, reject) => {
             const observabilityContext = resolveObservabilityContext(runtime, options)
-            const traceId = observabilityContext.traceId
 
             const dispatchUpdate = (validObj: PartialWithId<T>) => {
                 BaseStore.dispatch({
@@ -24,7 +23,6 @@ export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
                     store: jotaiStore,
                     context,
                     indexes,
-                    traceId,
                     observabilityContext,
                     opContext: options?.opContext,
                     onSuccess: async updated => {

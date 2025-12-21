@@ -1,2 +1,2 @@
-export { createTraceId, deriveRequestId, createRequestIdSequencer } from './fns'
-export type { RequestIdSequencer } from './types'
+export { createId, requestId, createRequestSequencer } from './fns'
+export type { RequestSequencer } from './types'

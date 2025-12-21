@@ -66,7 +66,7 @@ describe('read APIs 只在 I/O 时 emit adapter:*', () => {
                 store: jotaiStore,
                 storeName: 'items',
                 devtools,
-                debug: { enabled: true, sampleRate: 1 }
+                debug: { enabled: true, sample: 1 }
             }
         })
 
@@ -100,7 +100,7 @@ describe('read APIs 只在 I/O 时 emit adapter:*', () => {
                 store: jotaiStore,
                 storeName: 'items',
                 devtools,
-                debug: { enabled: true, sampleRate: 1 }
+                debug: { enabled: true, sample: 1 }
             }
         })
 
@@ -137,7 +137,7 @@ describe('read APIs 只在 I/O 时 emit adapter:*', () => {
                 store: jotaiStore,
                 storeName: 'items',
                 devtools,
-                debug: { enabled: true, sampleRate: 1 }
+                debug: { enabled: true, sample: 1 }
             }
         })
 
@@ -169,7 +169,7 @@ describe('read APIs 只在 I/O 时 emit adapter:*', () => {
                 store: jotaiStore,
                 storeName: 'items',
                 devtools,
-                debug: { enabled: true, sampleRate: 1 }
+                debug: { enabled: true, sample: 1 }
             }
         })
 
@@ -204,7 +204,7 @@ describe('read APIs 只在 I/O 时 emit adapter:*', () => {
                 store: jotaiStore,
                 storeName: 'items',
                 devtools,
-                debug: { enabled: true, sampleRate: 1 }
+                debug: { enabled: true, sample: 1 }
             }
         })
 
@@ -218,4 +218,3 @@ describe('read APIs 只在 I/O 时 emit adapter:*', () => {
         expect(adapterEvents.every(e => e.traceId === 't_io')).toBe(true)
     })
 })
-

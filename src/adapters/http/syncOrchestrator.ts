@@ -8,12 +8,11 @@ import type { DevtoolsBridge } from '../../devtools/types'
 import { registerGlobalQueue } from '../../devtools/global'
 import type { StoreKey, Entity } from '../../core/types'
 import { SyncOfflineQueue, type SyncQueuedOperation } from './syncOfflineQueue'
-import type { SyncPushOp, SyncPushResponse } from '../../protocol/sync'
+import { Protocol, type SyncPushOp, type SyncPushResponse } from '#protocol'
 import { makeUrl } from './request'
 import { createSyncCursorStorage } from './syncCursor'
 import type { SyncHub } from './syncHub'
-import type { RequestIdSequencer } from '../../observability/trace'
-import { REQUEST_ID_HEADER, TRACE_ID_HEADER } from '../../protocol/trace'
+import type { ObservabilityContext } from '#observability'
 
 type OpKind = 'put' | 'delete'
 
@@ -42,7 +41,6 @@ export class SyncOrchestrator<T extends Entity> {
             client: HTTPClient<T>
             fetchWithRetry: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
             getHeaders: () => Promise<Record<string, string>>
-            requestIdSequencer?: RequestIdSequencer
             retry?: RetryConfig
             devtools?: DevtoolsBridge
             onSyncPushResult?: (res: SyncPushResponse, ops: SyncQueuedOperation[]) => Promise<void>
@@ -239,7 +237,7 @@ export class SyncOrchestrator<T extends Entity> {
 
     async pushOrQueueSyncOps(
         ops: SyncQueuedOperation[],
-        meta?: { traceId?: string; requestId?: string }
+        context?: ObservabilityContext
     ): Promise<SyncPushResponse | undefined> {
         if (this.config.sync?.enabled !== true) return undefined
         if (!ops.length) return undefined
@@ -253,7 +251,7 @@ export class SyncOrchestrator<T extends Entity> {
         }
 
         try {
-            const res = await this.pushSyncOps(ops, meta)
+            const res = await this.pushSyncOps(ops, context)
             return res
         } catch (error) {
             if (offlineEnabled && this.isNetworkError(error)) {
@@ -311,7 +309,7 @@ export class SyncOrchestrator<T extends Entity> {
 
     private async pushSyncOps(
         ops: SyncQueuedOperation[],
-        meta?: { traceId?: string; requestId?: string }
+        context?: ObservabilityContext
     ): Promise<SyncPushResponse> {
         const pushPath = this.config.sync?.endpoints?.push ?? '/sync/push'
         const url = makeUrl(this.config.baseURL, pushPath)
@@ -319,12 +317,12 @@ export class SyncOrchestrator<T extends Entity> {
 
         const deviceId = await this.cursorStorage.getOrCreateDeviceId()
 
-        const traceId = meta?.traceId
-        const requestId = meta?.requestId ?? (traceId ? this.deps.requestIdSequencer?.next(traceId) : undefined)
+        const traceId = context?.traceId
+        const requestId = traceId ? context?.requestId() : undefined
         const traceHeaders = traceId
             ? {
-                [TRACE_ID_HEADER]: traceId,
-                ...(requestId ? { [REQUEST_ID_HEADER]: requestId } : {})
+                [Protocol.trace.headers.TRACE_ID_HEADER]: traceId,
+                ...(requestId ? { [Protocol.trace.headers.REQUEST_ID_HEADER]: requestId } : {})
             }
             : {}
 
@@ -347,8 +345,8 @@ export class SyncOrchestrator<T extends Entity> {
                 ? String((json as any).error.message)
                 : `Sync push failed: ${res.status}`
             const err = new Error(msg)
-            ;(err as any).status = res.status
-            ;(err as any).body = json
+                ; (err as any).status = res.status
+                ; (err as any).body = json
             throw err
         }
 

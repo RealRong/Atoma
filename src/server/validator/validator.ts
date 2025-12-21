@@ -1,6 +1,6 @@
 import type { BatchRequest } from '../types'
 import { throwError } from '../error'
-import { Protocol } from '../../protocol'
+import { Protocol } from '#protocol'
 
 export function validateAndNormalizeRequest(body: any): BatchRequest {
     const res = Protocol.batch.validate.request(body)

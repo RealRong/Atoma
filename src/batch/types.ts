@@ -1,15 +1,19 @@
 import type { FindManyOptions, PageInfo, StoreKey } from '../core/types'
-import type { ObservabilityContext } from '../observability/types'
-import type { AtomaPatch } from '../protocol/sync'
+import type { ObservabilityContext } from '#observability'
+import type { AtomaPatch } from '#protocol'
 
 export type FetchFn = typeof fetch
 
 export type Deferred<T> = {
-    resolve: (value: T) => void
-    reject: (reason?: any) => void
+    resolve: (value: T extends void ? undefined : T) => void
+    reject: (reason?: unknown) => void
 }
 
 export type QueryEnvelope<T> = { data: T[]; pageInfo?: PageInfo }
+
+export type InFlightTask = {
+    deferred: { reject: (reason?: unknown) => void }
+}
 
 export type QueryTask<T> = {
     kind: 'query'
@@ -55,12 +59,3 @@ export type DeleteTask = {
 }
 
 export type WriteTask = CreateTask<any> | UpdateTask<any> | PatchTask | DeleteTask
-
-export type BatchOpResult = {
-    opId: string
-    ok: boolean
-    data?: any[]
-    pageInfo?: PageInfo
-    partialFailures?: Array<{ index: number; error: any }>
-    error?: any
-}

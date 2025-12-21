@@ -2,7 +2,7 @@ import { readJsonBodyWithLimit, byteLengthUtf8 } from '../http/body'
 import { throwError } from '../error'
 import type { AtomaServerConfig } from '../config'
 import type { BatchRequest } from '../types'
-import type { SyncPushRequest } from '../../protocol/sync'
+import type { SyncPushRequest } from '#protocol'
 
 export type LimitMeta = {
     traceId?: string
@@ -98,4 +98,3 @@ export function createLimitPolicy<Ctx>(config: AtomaServerConfig<Ctx>): LimitPol
         }
     }
 }
-

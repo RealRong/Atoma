@@ -20,11 +20,9 @@ If you want the long-term “optimal architecture” (no hidden carrier, explici
 - `sampling/*`
   - deterministic sampling
 - `utf8/*`
-  - `utf8ByteLength()` – optional byte-size estimation for request payloads (used only when debug is enabled)
+  - `byteLength()` – optional byte-size estimation for request payloads (used only when debug is enabled)
 - `runtime/*`
   - `ObservabilityRuntime` – the only wiring entry (ctx creation/reuse, sequences, LRU, safe emit)
-- `debug/*`
-  - legacy low-level implementation (no longer used directly in this repo)
 
 ## Core concepts
 
@@ -42,7 +40,7 @@ If you want the long-term “optimal architecture” (no hidden carrier, explici
 At the public API level, users typically enable debug via `createCoreStore({ debug: ... })`.
 
 - If `debug.enabled` is false, **no emitter is created** and all callsites are effectively no-ops.
-- If `debug.sampleRate` is `0` (default), the store will usually **avoid allocating a traceId**, keeping overhead near zero.
+- If `debug.sample` is `0` (default), the store will usually **avoid allocating a traceId**, keeping overhead near zero.
 
 Note: Atoma intentionally keeps `DebugConfig` as pure data. The actual event sink is owned by the wiring layer (typically forwarding into a `DevtoolsBridge`).
 
@@ -53,7 +51,7 @@ For read paths like `findMany`:
 - If caller passes `options.traceId`, it’s used as-is.
 - Otherwise, Atoma allocates a trace only when it’s useful:
   - `options.explain === true`, or
-  - debug is enabled and `sampleRate > 0`
+  - debug is enabled and `sample > 0`
 
 For write paths, the store uses a similar rule (explicit `traceId` wins; otherwise allocate only when sampled).
 
@@ -68,7 +66,7 @@ When emitting:
 
 - `DebugEvent` is wrapped with required metadata: `schemaVersion`, `timestamp`, `scope`, `sequence`, `spanId`, etc.
 - Payload is safe by default:
-  - `includePayload: false` → payload is summarized (lengths, key counts, etc.)
+  - `payload: false` → payload is summarized (lengths, key counts, etc.)
   - optional `redact(value)` runs before summarization / inclusion
 - Sink failures are swallowed (debug must not break business logic).
 
@@ -102,7 +100,7 @@ Consumers (Devtools UI, logs, remote collectors) should group by `store + traceI
 
 ## Explain vs Debug Events
 
-- **Debug events**: a stream of timeline evidence (`DebugEvent[]`), shipped to `debug.sink`.
+- **Debug events**: a stream of timeline evidence (`DebugEvent[]`), shipped to `debug.onEvent`.
 - **Explain**: a copy/paste friendly diagnostic artifact attached to `findMany` results when `options.explain === true`.
 
 Today, explain contains deterministic, JSON-serializable fields (index/finalize/cacheWrite/adapter/errors…). The `Explain.events` field exists in the type but is not automatically populated by core; if you want it, implement a sink that buffers events per trace and attaches them at the boundary you control.
@@ -125,8 +123,8 @@ const store = createCoreStore({
     devtools,
     debug: {
         enabled: true,
-        sampleRate: 1,
-        includePayload: false,
+        sample: 1,
+        payload: false,
         redact: (v) => v
     }
 })
@@ -141,7 +139,7 @@ console.log(res.explain)
 - HTTP adapters and `BatchEngine` typically propagate:
   - `x-atoma-trace-id`
   - `x-atoma-request-id`
-- `requestId` is derived from `traceId` using a per-instance sequencer (`createRequestIdSequencer()`), which avoids process-global mutable state and supports SSR/concurrency.
+- `requestId` is derived via `ctx.requestId()` (the runtime maintains a per-trace sequence), which avoids process-global mutable state and supports SSR/concurrency.
 
 ## Further reading
 

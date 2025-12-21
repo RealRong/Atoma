@@ -20,11 +20,9 @@
 - `sampling/*`
   - 确定性采样
 - `utf8/*`
-  - `utf8ByteLength()`：用于估算 payload 字节数（通常仅在 debug 生效时才会计算）
+  - `byteLength()`：用于估算 payload 字节数（通常仅在 debug 生效时才会计算）
 - `runtime/*`
   - `ObservabilityRuntime`：唯一编织入口（创建/复用 ctx、序列号、LRU、默认安全 emit）
-- `debug/*`
-  - legacy 低层实现（当前仓库不再直接使用）
 
 ## 关键概念
 
@@ -42,7 +40,7 @@
 典型入口是 `createCoreStore({ debug: ... })`：
 
 - `debug.enabled` 关闭时：**不会创建 emitter**，所有埋点点位都会变成近似 0 成本的空操作。
-- `debug.sampleRate` 默认为 `0`：store 通常会**避免分配 traceId**，降低默认开销。
+- `debug.sample` 默认为 `0`：store 通常会**避免分配 traceId**，降低默认开销。
 
 补充：Atoma 刻意让 `DebugConfig` 保持“纯数据”。事件最终投递到哪里由 wiring 层决定（通常转发到 `DevtoolsBridge`）。
 
@@ -53,7 +51,7 @@
 - 若调用方传了 `options.traceId`，直接沿用。
 - 否则只在“确实需要时”分配：
   - `options.explain === true`，或
-  - debug 开启且 `sampleRate > 0`
+  - debug 开启且 `sample > 0`
 
 写入链路同理：显式 `traceId` 优先；否则只在采样命中时才分配。
 
@@ -68,7 +66,7 @@
 
 - 统一封装 `DebugEvent` 的 envelope：`schemaVersion`、`timestamp`、`scope`、`sequence`、`spanId` 等。
 - payload 默认安全：
-  - `includePayload: false`（默认）→ 只输出摘要（长度、字段数等）
+  - `payload: false`（默认）→ 只输出摘要（长度、字段数等）
   - 可选 `redact(value)` 先脱敏，再决定摘要/输出
 - sink 的异常会被吞掉（观测不允许影响业务路径）。
 
@@ -102,7 +100,7 @@ store 层会把 `DebugEvent` 转换/转发为 devtools 事件：
 
 ## Explain vs Debug 事件流
 
-- **Debug 事件流**：时间线证据（`DebugEvent[]`），通过 `debug.sink` 流出。
+- **Debug 事件流**：时间线证据（`DebugEvent[]`），通过 `debug.onEvent` 流出。
 - **Explain**：可复制粘贴的诊断快照；当 `findMany({ explain: true })` 时挂在返回值上。
 
 目前 explain 主要包含可 JSON 序列化的结构化信息（index/finalize/cacheWrite/adapter/errors…）。类型里虽然有 `Explain.events`，但 core 并不会自动把事件流塞进去；如需把事件也附到 explain，需要在你控制的边界处用 sink 按 trace 缓存并注入。
@@ -125,8 +123,8 @@ const store = createCoreStore({
     devtools,
     debug: {
         enabled: true,
-        sampleRate: 1,
-        includePayload: false,
+        sample: 1,
+        payload: false,
         redact: (v) => v
     }
 })
@@ -141,7 +139,7 @@ console.log(res.explain)
 - HTTP adapter 与 `BatchEngine` 通常会透传：
   - `x-atoma-trace-id`
   - `x-atoma-request-id`
-- `requestId` 通常通过 `createRequestIdSequencer()` 在实例内按 trace 生成序列，避免进程级全局可变状态，更适合 SSR/并发场景。
+- `requestId` 通常通过 `ctx.requestId()`（runtime 内部维护 per-trace 序列）在实例内按 trace 生成序列，避免进程级全局可变状态，更适合 SSR/并发场景。
 
 ## 延伸阅读
 

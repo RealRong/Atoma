@@ -1,4 +1,4 @@
-export function utf8ByteLength(input: string): number {
+export function byteLength(input: string): number {
     if (typeof input !== 'string') return 0
 
     const anyGlobal = globalThis as any

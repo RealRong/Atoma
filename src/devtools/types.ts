@@ -1,5 +1,5 @@
 import type { IndexDefinition } from '../core/types'
-import type { DebugEvent } from '../observability/types'
+import type { DebugEvent } from '#observability'
 
 export type StoreSnapshot = {
     name: string

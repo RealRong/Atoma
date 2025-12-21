@@ -1,8 +1,7 @@
-import { Observability } from '../../observability'
-import type { RequestIdSequencer } from '../../observability/trace'
+import { Observability } from '#observability'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import { createNoopLogger } from '../logger'
-import type { ObservabilityContext } from '../../observability/types'
+import type { ObservabilityContext } from '#observability'
 
 function createDefaultRequestId() {
     const cryptoAny = globalThis.crypto as any
@@ -13,17 +12,16 @@ function createDefaultRequestId() {
 
 export function createRuntimeFactory<Ctx>(args: {
     config: AtomaServerConfig<Ctx>
-    requestIdSequencer: RequestIdSequencer
 }) {
-    const { config, requestIdSequencer } = args
+    const { config } = args
 
     const loggerBase = config.observability?.logger ?? createNoopLogger()
-    const debugStore = config.observability?.debug?.store ?? 'atoma/server'
-    const debugOptions = config.observability?.debug?.options
-    const debugSink = config.observability?.debug?.sink
-    const createTraceIdFn = config.observability?.trace?.createTraceId
+    const debugScope = config.observability?.debug?.scope ?? 'atoma/server'
+    const debugConfig = config.observability?.debug?.debug
+    const debugOnEvent = config.observability?.debug?.onEvent
+    const createIdFn = config.observability?.trace?.createId
     const hooks = config.observability?.hooks
-    const observability = Observability.runtime.create({ scope: debugStore, debug: debugOptions, onEvent: debugSink })
+    const observability = Observability.runtime.create({ scope: debugScope, debug: debugConfig, onEvent: debugOnEvent })
 
     return async function createRuntime(runtimeArgs: {
         incoming: any
@@ -33,7 +31,7 @@ export function createRuntimeFactory<Ctx>(args: {
     }) {
         const initialTraceId = (() => {
             if (typeof runtimeArgs.initialTraceId === 'string' && runtimeArgs.initialTraceId) return runtimeArgs.initialTraceId
-            if (typeof createTraceIdFn === 'function') return createTraceIdFn()
+            if (typeof createIdFn === 'function') return createIdFn()
             return undefined
         })()
 
@@ -42,7 +40,7 @@ export function createRuntimeFactory<Ctx>(args: {
 
         const requestId = (() => {
             if (typeof runtimeArgs.initialRequestId === 'string' && runtimeArgs.initialRequestId) return runtimeArgs.initialRequestId
-            if (traceId) return requestIdSequencer.next(traceId)
+            if (traceId) return baseCtx.requestId() ?? createDefaultRequestId()
             return createDefaultRequestId()
         })()
 

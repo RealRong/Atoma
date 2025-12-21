@@ -1,15 +1,14 @@
 import type { BatchRequest } from '../types'
 import type { IncomingHttp, ParsedOk, ParsedOutcome, ParserOptions } from './types'
-import { Protocol } from '../../protocol'
-import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../../protocol/trace'
+import { Protocol } from '#protocol'
 
 const DEFAULT_BATCH_PATH = '/batch'
 
 export async function parseHttp(incoming: IncomingHttp, options: ParserOptions = {}): Promise<ParsedOutcome> {
     const batchPath = options.batchPath ?? DEFAULT_BATCH_PATH
     const enableRest = options.enableRest ?? true
-    const traceIdHeaderName = options.traceIdHeader ?? TRACE_ID_HEADER
-    const requestIdHeaderName = options.requestIdHeader ?? REQUEST_ID_HEADER
+    const traceIdHeaderName = options.traceIdHeader ?? Protocol.trace.headers.TRACE_ID_HEADER
+    const requestIdHeaderName = options.requestIdHeader ?? Protocol.trace.headers.REQUEST_ID_HEADER
 
     const parsed = await Protocol.rest.parse.request(incoming, {
         batchPath,

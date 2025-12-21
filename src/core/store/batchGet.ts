@@ -2,7 +2,7 @@ import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
 import { commitAtomMapUpdate } from './cacheWriter'
 import { type StoreRuntime, resolveObservabilityContext } from './runtime'
-import type { ObservabilityContext } from '../../observability/types'
+import type { ObservabilityContext } from '#observability'
 
 type GetOneTask<T> = {
     id: StoreKey

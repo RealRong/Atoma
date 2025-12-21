@@ -1,5 +1,5 @@
 import type { FindManyOptions } from '../core/types'
-import type { OrderByRule, Page, QueryParams } from '../protocol/batch/query'
+import type { OrderByRule, Page, QueryParams } from '#protocol'
 
 /**
  * Batch query params normalizer (client-side).
@@ -69,15 +69,15 @@ export function normalizeAtomaServerQueryParams<T>(input: FindManyOptions<T> | u
 
     const out: QueryParams = {}
 
-    const whereInput = i?.where as unknown
+    const whereInput: unknown = i?.where
     if (isPlainObject(whereInput)) {
         out.where = { ...whereInput }
     }
 
-    const orderBy = normalizeOrderBy(i?.orderBy as unknown)
+    const orderBy = normalizeOrderBy(i?.orderBy)
     if (orderBy) out.orderBy = orderBy
 
-    const select = normalizeSelect(i?.fields as unknown)
+    const select = normalizeSelect(i?.fields)
     if (select) out.select = select
 
     const limit = typeof i?.limit === 'number' ? i.limit : 50

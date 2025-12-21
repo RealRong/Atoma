@@ -1,3 +1,3 @@
-export type RequestIdSequencer = {
+export type RequestSequencer = {
     next: (traceId: string) => string
 }

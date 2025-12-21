@@ -1,6 +1,6 @@
 import pLimit from 'p-limit'
 import { StoreKey } from '../../core/types'
-import type { ObservabilityContext } from '../../observability/types'
+import type { ObservabilityContext } from '#observability'
 
 export interface BulkOperationConfig {
     bulkCreate?: string | (() => string)

@@ -29,14 +29,10 @@
 - `writeLane.ts`
   - drain bucket 化的写任务，构造 bulk op 并发送 batch write 请求。
   - 采用 round-robin 遍历 bucket，避免单个热点 bucket 饿死其他 bucket。
-- `transport.ts`
-  - `sendBatchRequest(fetcher, endpoint, headers, payload, signal, extraHeaders)`：JSON `POST`。
 - `queryParams.ts`
   - 把 `FindManyOptions<T>` 翻译为服务端 Batch 协议需要的 `QueryParams`（要求 `params.page`）。
-- `protocol.ts`
-  - 解析服务端 results，并把 envelope 归一化为 `{ data, pageInfo }`。
-- `adapterEvents.ts`
-  - 小工具函数：把 `adapter:*` 事件按 emitter 做 fan-out，减少重复代码。
+- `internal.ts`
+  - 内部辅助：配置归一化、小工具、transport（`sendBatchRequest`）、adapter 事件 fan-out、query envelope 归一化等。
 
 ## 运行流程（端到端）
 
@@ -64,7 +60,7 @@
 
 - 选出一批 task（query lane：按 FIFO 连续段、同一 traceKey；write lane：按 bucket 轮转切片）
 - 构造 payload
-- 通过 `transport.ts` 发送 `POST /batch`
+- 通过内部 transport（`internal.ts`）发送 `POST /batch`
 - 把服务端 results 映射回每个 task 的 promise
 
 ### 4）trace/requestId 与请求头规则
@@ -95,4 +91,3 @@
 - 追求低延迟：保持 `flushIntervalMs = 0`（默认）。
 - 追求更高合批率：设置较小的 `flushIntervalMs`（例如 5–20ms），并调 `maxOpsPerRequest` / `maxBatchSize`。
 - 追求严格背压：为 `maxQueueLength`（尤其 write lane）设置上限，防止内存增长。
-

@@ -1,6 +1,6 @@
 import { BaseStore } from '../../BaseStore'
-import { createTraceId } from '../../../observability/trace'
-import type { Explain } from '../../../observability/types'
+import { Observability } from '#observability'
+import type { Explain } from '#observability'
 import type { Entity, FindManyOptions, FindManyResult, PartialWithId, StoreKey } from '../../types'
 import { commitAtomMapUpdate } from '../cacheWriter'
 import { resolveCachePolicy } from './cachePolicy'
@@ -38,7 +38,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
             : options
 
         const explain: Explain | undefined = explainEnabled
-            ? { schemaVersion: 1, traceId: traceId || createTraceId() }
+            ? { schemaVersion: 1, traceId: traceId || Observability.trace.createId() }
             : undefined
 
         const emit = (type: string, payload: any) => observabilityContext.emit(type as any, payload)

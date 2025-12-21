@@ -6,7 +6,7 @@ import { IAdapter, PatchMetadata, Entity, StoreDispatchEvent, type OperationCont
 import { AtomVersionTracker } from '../state/AtomVersionTracker'
 import type { OperationRecorder } from './OperationRecorder'
 import type { StoreIndexes } from '../indexes/StoreIndexes'
-import type { ObservabilityContext } from '../../observability/types'
+import type { ObservabilityContext } from '#observability'
 
 type CallbackEntry = { onSuccess?: (...args: any[]) => void, onFail?: (error?: Error) => void }
 

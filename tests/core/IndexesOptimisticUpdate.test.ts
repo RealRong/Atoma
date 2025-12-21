@@ -49,6 +49,7 @@ describe('StoreIndexes optimistic sync', () => {
         })
 
         const findMany = createFindMany<TestItem>(runtime)
+        const observabilityContext = runtime.observability.createContext()
 
         BaseStore.dispatch<TestItem>({
             type: 'add',
@@ -57,6 +58,7 @@ describe('StoreIndexes optimistic sync', () => {
             store,
             context: runtime.context,
             indexes: runtime.indexes,
+            observabilityContext,
             data: { id: '1', age: 10 }
         } as any)
 
@@ -69,6 +71,7 @@ describe('StoreIndexes optimistic sync', () => {
             store,
             context: runtime.context,
             indexes: runtime.indexes,
+            observabilityContext,
             data: { id: '1', age: 11 }
         } as any)
 
@@ -83,4 +86,3 @@ describe('StoreIndexes optimistic sync', () => {
         apply.resolve()
     })
 })
-

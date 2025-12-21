@@ -1,1 +1,1 @@
-export { utf8ByteLength } from './fns'
+export { byteLength } from './fns'

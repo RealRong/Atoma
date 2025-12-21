@@ -1,6 +1,6 @@
-import type { ErrorKind, StandardError, StandardErrorDetails } from '../protocol/error'
+import type { ErrorKind, StandardError, StandardErrorDetails } from '#protocol'
 
-export type { ErrorKind, StandardErrorDetails } from '../protocol/error'
+export type { ErrorKind, StandardErrorDetails } from '#protocol'
 
 const ATOMA_ERROR_BRAND = Symbol.for('atoma.error')
 

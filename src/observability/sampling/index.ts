@@ -1,1 +1,1 @@
-export { shouldSampleTrace } from './fns'
+export { isSampled } from './fns'

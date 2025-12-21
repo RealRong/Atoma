@@ -1,1 +1,0 @@
-export { createDebugEmitter } from './fns'

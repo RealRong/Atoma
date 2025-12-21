@@ -1,5 +1,4 @@
-import type { DebugConfig, DebugEvent } from '../observability/types'
-import type { RequestIdSequencer } from '../observability/trace'
+import type { DebugConfig, DebugEvent } from '#observability'
 import type { AtomaServerLogger } from './logger'
 import type { IOrmAdapter } from './types'
 import type { ISyncAdapter } from './sync/types'
@@ -50,14 +49,13 @@ export type AtomaAuthzHooks<Ctx> = {
 export type AtomaServerTraceConfig = {
     traceIdHeader?: string
     requestIdHeader?: string
-    requestIdSequencer?: RequestIdSequencer
-    createTraceId?: () => string
+    createId?: () => string
 }
 
 export type AtomaServerDebugConfig = {
-    options?: DebugConfig
-    sink?: (e: DebugEvent) => void
-    store?: string
+    scope?: string
+    debug?: DebugConfig
+    onEvent?: (e: DebugEvent) => void
 }
 
 export type AtomaErrorFormatterArgs<Ctx> = {

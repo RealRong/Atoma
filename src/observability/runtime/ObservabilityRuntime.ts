@@ -1,7 +1,7 @@
 import type { DebugConfig, DebugEvent, ObservabilityContext } from '../types'
 import type { DebugEmitMeta } from '../types'
-import { shouldSampleTrace } from '../sampling'
-import { createTraceId, deriveRequestId } from '../trace'
+import { isSampled } from '../sampling'
+import { createId, requestId } from '../trace'
 import type { ObservabilityCreateContextArgs, ObservabilityRuntimeApi, ObservabilityRuntimeCreateArgs } from './types'
 
 type TraceSlot = {
@@ -16,6 +16,7 @@ const NOOP_EMIT: ObservabilityContext['emit'] = () => {}
 const NOOP_CONTEXT: ObservabilityContext = {
     active: false,
     traceId: undefined,
+    requestId: () => undefined,
     emit: NOOP_EMIT,
     with: () => NOOP_CONTEXT
 }
@@ -56,10 +57,10 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
     }
 
     requestId(traceId: string): string {
-        if (typeof traceId !== 'string' || !traceId) return deriveRequestId('t_missing', 1)
+        if (typeof traceId !== 'string' || !traceId) return requestId('t_missing', 1)
         const slot = this.getTraceSlot(traceId)
         slot.requestSeq += 1
-        return deriveRequestId(traceId, slot.requestSeq)
+        return requestId(traceId, slot.requestSeq)
     }
 
     createContext(args?: ObservabilityCreateContextArgs): ObservabilityContext {
@@ -68,18 +69,18 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
 
         const debug = this.debug
         const debugEnabled = Boolean(debug?.enabled && this.onEvent)
-        const sampleRate = typeof debug?.sampleRate === 'number' ? debug.sampleRate : 0
+        const sample = typeof debug?.sample === 'number' ? debug.sample : 0
 
         const shouldAllocateTraceId = Boolean(
             provided ||
             explain ||
-            (debugEnabled && Number.isFinite(sampleRate) && sampleRate > 0)
+            (debugEnabled && Number.isFinite(sample) && sample > 0)
         )
 
-        const traceId = provided || (shouldAllocateTraceId ? createTraceId() : undefined)
+        const traceId = provided || (shouldAllocateTraceId ? createId() : undefined)
         if (!traceId) return NOOP_CONTEXT
 
-        const active = Boolean(debugEnabled && shouldSampleTrace(traceId, sampleRate))
+        const active = Boolean(debugEnabled && isSampled(traceId, sample))
         const slot = this.getTraceSlot(traceId)
 
         if (active) {
@@ -127,6 +128,7 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
             const ctx: ObservabilityContext = {
                 active: false,
                 traceId,
+                requestId: () => this.requestId(traceId),
                 emit: NOOP_EMIT,
                 with: () => ctx
             }
@@ -141,6 +143,7 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
             const ctx: ObservabilityContext = {
                 active: true,
                 traceId,
+                requestId: () => this.requestId(traceId),
                 emit,
                 with: (nextMeta) => {
                     if (!hasAnyMeta(nextMeta)) return ctx
@@ -180,7 +183,7 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
 
         const safePayload = (() => {
             const redacted = debug.redact ? debug.redact(args.data) : args.data
-            if (debug.includePayload) return redacted
+            if (debug.payload) return redacted
             return summarizeValue(redacted)
         })()
 

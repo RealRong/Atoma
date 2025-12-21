@@ -1,13 +1,12 @@
-export {
-    TRACE_ID_HEADER,
-    REQUEST_ID_HEADER
-} from './trace'
-
 export { Protocol } from './Protocol'
 
 export {
     SYNC_SSE_EVENT_CHANGES
 } from './sync'
+
+export type {
+    StandardEnvelope
+} from './http'
 
 export type {
     Action,

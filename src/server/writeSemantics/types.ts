@@ -1,4 +1,4 @@
-import type { ChangeKind } from '../../protocol/sync'
+import type { ChangeKind } from '#protocol'
 import type { StandardError } from '../types'
 
 export type WriteKind = 'create' | 'patch' | 'delete'
@@ -19,4 +19,3 @@ export type StoredWriteReplay =
         currentValue?: unknown
         currentVersion?: number
     }
-

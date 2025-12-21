@@ -1,7 +1,5 @@
 import type { AtomaError } from './error'
-import type { PageInfo } from '../protocol/batch/pagination'
-import type { OrderByRule, CursorToken, Page, QueryParams } from '../protocol/batch/query'
-import type { WriteOptions } from '../protocol/batch/types'
+import type { CursorToken, OrderByRule, Page, PageInfo, QueryParams, WriteOptions } from '#protocol'
 
 export interface QueryResult<T = any> {
     data: T[]
@@ -63,9 +61,9 @@ export interface OrmAdapterOptions {
     defaultOrderBy?: OrderByRule[]
 }
 
-export type { StandardError } from '../protocol/error'
+export type { StandardError } from '#protocol'
 
-export type { OrderByRule, CursorToken, Page, QueryParams } from '../protocol/batch/query'
+export type { OrderByRule, CursorToken, Page, QueryParams } from '#protocol'
 export type {
     Action,
     WriteOptions,
@@ -73,4 +71,4 @@ export type {
     BatchRequest,
     BatchResult,
     BatchResponse
-} from '../protocol/batch'
+} from '#protocol'

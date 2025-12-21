@@ -7,7 +7,6 @@ export function createDeleteOneById<T extends Entity>(runtime: StoreRuntime<T>) 
     return (id: StoreKey, options?: StoreOperationOptions) => {
         return new Promise<boolean>((resolve, reject) => {
             const observabilityContext = resolveObservabilityContext(runtime, options)
-            const traceId = observabilityContext.traceId
             BaseStore.dispatch({
                 type: options?.force ? 'forceRemove' : 'remove',
                 data: { id } as PartialWithId<T>,
@@ -16,7 +15,6 @@ export function createDeleteOneById<T extends Entity>(runtime: StoreRuntime<T>) 
                 store: jotaiStore,
                 context,
                 indexes,
-                traceId,
                 observabilityContext,
                 opContext: options?.opContext,
                 onSuccess: () => {

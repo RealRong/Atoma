@@ -10,7 +10,6 @@ export function createAddOne<T extends Entity>(runtime: StoreRuntime<T>) {
         return new Promise<T>((resolve, reject) => {
             prepareForAdd<T>(runtime, obj).then(validObj => {
                 const observabilityContext = resolveObservabilityContext(runtime, options)
-                const traceId = observabilityContext.traceId
                 BaseStore.dispatch<T>({
                     type: 'add',
                     data: validObj as PartialWithId<T>,
@@ -19,7 +18,6 @@ export function createAddOne<T extends Entity>(runtime: StoreRuntime<T>) {
                     store: jotaiStore,
                     context,
                     indexes,
-                    traceId,
                     observabilityContext,
                     opContext: options?.opContext,
                     onSuccess: async o => {

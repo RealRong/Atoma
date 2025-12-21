@@ -35,8 +35,7 @@ export function withMeta(req: BatchRequest, m: { traceId?: string; requestId?: s
     }
 }
 
-export const op = {
-    query: (args: { opId: string; resource: string; params: QueryParams }): Extract<BatchOp, { action: 'query' }> => {
+function query(args: { opId: string; resource: string; params: QueryParams }): Extract<BatchOp, { action: 'query' }> {
         const page = args.params?.page ?? { mode: 'offset', limit: 50, includeTotal: true }
         return {
             opId: args.opId,
@@ -49,45 +48,52 @@ export const op = {
                 }
             }
         }
-    },
+}
 
-    bulkCreate: <T = any>(args: { opId: string; resource: string; payload: Array<BulkCreateItem<T>>; options?: WriteOptions }) => {
+function bulkCreate<T = any>(args: { opId: string; resource: string; payload: Array<BulkCreateItem<T>>; options?: WriteOptions }): Extract<BatchOp, { action: 'bulkCreate' }> {
         return {
             opId: args.opId,
             action: 'bulkCreate',
             resource: args.resource,
-            payload: args.payload as any,
+            payload: args.payload,
             ...(args.options ? { options: args.options } : {})
-        } as Extract<BatchOp, { action: 'bulkCreate' }>
-    },
+        }
+}
 
-    bulkUpdate: <T = any>(args: { opId: string; resource: string; payload: Array<BulkUpdateItem<T>>; options?: WriteOptions }) => {
+function bulkUpdate<T = any>(args: { opId: string; resource: string; payload: Array<BulkUpdateItem<T>>; options?: WriteOptions }): Extract<BatchOp, { action: 'bulkUpdate' }> {
         return {
             opId: args.opId,
             action: 'bulkUpdate',
             resource: args.resource,
-            payload: args.payload as any,
+            payload: args.payload,
             ...(args.options ? { options: args.options } : {})
-        } as Extract<BatchOp, { action: 'bulkUpdate' }>
-    },
+        }
+}
 
-    bulkPatch: (args: { opId: string; resource: string; payload: Array<BulkPatchItem>; options?: WriteOptions }) => {
+function bulkPatch(args: { opId: string; resource: string; payload: Array<BulkPatchItem>; options?: WriteOptions }): Extract<BatchOp, { action: 'bulkPatch' }> {
         return {
             opId: args.opId,
             action: 'bulkPatch',
             resource: args.resource,
-            payload: args.payload as any,
+            payload: args.payload,
             ...(args.options ? { options: args.options } : {})
-        } as Extract<BatchOp, { action: 'bulkPatch' }>
-    },
+        }
+}
 
-    bulkDelete: (args: { opId: string; resource: string; payload: Array<BulkDeleteItem>; options?: WriteOptions }) => {
+function bulkDelete(args: { opId: string; resource: string; payload: Array<BulkDeleteItem>; options?: WriteOptions }): Extract<BatchOp, { action: 'bulkDelete' }> {
         return {
             opId: args.opId,
             action: 'bulkDelete',
             resource: args.resource,
-            payload: args.payload as any,
+            payload: args.payload,
             ...(args.options ? { options: args.options } : {})
-        } as Extract<BatchOp, { action: 'bulkDelete' }>
-    }
-} as const
+        }
+}
+
+export const op = {
+    query,
+    bulkCreate,
+    bulkUpdate,
+    bulkPatch,
+    bulkDelete
+}

@@ -31,16 +31,16 @@ const API_BASE = '/api'
 
 export const client = defineEntities<Entities>().defineStores({
     users: {
-        debug: { enabled: true, sampleRate: 1 }
+        debug: { enabled: true, sample: 1 }
     },
     comments: {
-        debug: { enabled: true, sampleRate: 1 },
+        debug: { enabled: true, sample: 1 },
         relations: {
             author: { type: 'belongsTo', to: 'users', foreignKey: 'authorId' }
         }
     },
     posts: {
-        debug: { enabled: true, sampleRate: 1 },
+        debug: { enabled: true, sample: 1 },
         relations: {
             author: { type: 'belongsTo', to: 'users', foreignKey: 'authorId' },
             comments: { type: 'hasMany', to: 'comments', foreignKey: 'postId' }

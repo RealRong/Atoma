@@ -2,7 +2,7 @@ import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
 import type { StoreContext } from './StoreContext'
 import type { DevtoolsBridge } from '../devtools/types'
-import type { Explain, ObservabilityContext } from '../observability/types'
+import type { Explain, ObservabilityContext } from '#observability'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
 
 /**
@@ -143,8 +143,7 @@ export type StoreDispatchEvent<T extends Entity> = {
     store: JotaiStore // Jotai store instance
     context: StoreContext // StoreContext for per-store dependencies (avoids circular import)
     indexes?: any
-    traceId?: string
-    observabilityContext?: ObservabilityContext
+    observabilityContext: ObservabilityContext
     opContext?: OperationContext
     onFail?: (error?: Error) => void  // Accept error object for rejection
 } & (
@@ -322,7 +321,7 @@ export interface StoreConfig<T> {
     storeName?: string
 
     /** 可观测性/诊断（默认关闭） */
-    debug?: import('../observability/types').DebugConfig
+    debug?: import('#observability').DebugConfig
 }
 
 export type IndexType = 'number' | 'date' | 'string' | 'substring' | 'text'
@@ -542,6 +541,7 @@ export type StoreAccess<T extends Entity = any> = {
     matcher?: QueryMatcherOptions
     storeName?: string
     relations?: () => any | undefined
+    createObservabilityContext?: (args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
 
     transform?: (item: T) => T
     schema?: SchemaValidator<T>

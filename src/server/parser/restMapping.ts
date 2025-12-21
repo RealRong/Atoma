@@ -1,1 +1,2 @@
-export { restMapping } from '../../protocol/rest/mapping'
+import { Protocol } from '#protocol'
+export const restMapping = Protocol.rest.mapping.restMapping

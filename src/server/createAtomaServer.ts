@@ -1,5 +1,4 @@
-import { createRequestIdSequencer } from '../observability/trace'
-import { TRACE_ID_HEADER, REQUEST_ID_HEADER } from '../protocol/trace'
+import { Protocol } from '#protocol'
 import { allowOnlyFields } from './authz/helpers'
 import type { AtomaServerConfig } from './config'
 import type { HandleResult } from './http/types'
@@ -39,9 +38,8 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
         throw new Error('AtomaServerConfig.adapter.orm.transaction is required when sync is enabled')
     }
 
-    const traceHeader = config.observability?.trace?.traceIdHeader ?? TRACE_ID_HEADER
-    const requestHeader = config.observability?.trace?.requestIdHeader ?? REQUEST_ID_HEADER
-    const requestIdSequencer = config.observability?.trace?.requestIdSequencer ?? createRequestIdSequencer()
+    const traceHeader = config.observability?.trace?.traceIdHeader ?? Protocol.trace.headers.TRACE_ID_HEADER
+    const requestHeader = config.observability?.trace?.requestIdHeader ?? Protocol.trace.headers.REQUEST_ID_HEADER
 
     const restEnabled = config.routing?.rest?.enabled ?? true
     const batchPath = config.routing?.batch?.path ?? DEFAULT_BATCH_PATH
@@ -52,7 +50,7 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
     const syncSubscribePath = config.routing?.sync?.subscribePath ?? DEFAULT_SYNC_SUBSCRIBE_PATH
 
     const formatTopLevelError = createTopLevelErrorFormatter(config)
-    const createRuntime = createRuntimeFactory({ config, requestIdSequencer })
+    const createRuntime = createRuntimeFactory({ config })
     const services = createServerServices({
         config,
         runtime: { createRuntime, formatTopLevelError },

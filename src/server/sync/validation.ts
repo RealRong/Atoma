@@ -1,5 +1,5 @@
 import { throwError } from '../error'
-import { Protocol } from '../../protocol'
+import { Protocol } from '#protocol'
 
 export type {
     SyncPushOp,
@@ -7,7 +7,7 @@ export type {
     SyncPushAck,
     SyncPushReject,
     SyncPushResponse
-} from '../../protocol/sync'
+} from '#protocol'
 
 export function validateSyncPullQuery(args: { cursor: any; limit: any; defaultLimit: number; maxLimit: number }) {
     const res = Protocol.sync.validate.pullQuery(args)

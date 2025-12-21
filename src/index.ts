@@ -46,8 +46,7 @@ export type {
 export { createStore } from './core/createCoreStore'
 
 // Observability
-export type { TraceContext, Explain } from './observability'
-export type { DebugEvent } from './observability/types'
+export type { TraceContext, Explain, DebugConfig, DebugEvent } from '#observability'
 
 // Core utilities
 export { BaseStore, globalStore } from './core/BaseStore'

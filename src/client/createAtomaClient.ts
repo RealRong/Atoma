@@ -19,6 +19,7 @@ import { BaseStore } from '../core/BaseStore'
 import type { Patch } from 'immer'
 import { createActionId } from '../core/operationContext'
 import type { OperationRecorder } from '../core/ops/OperationRecorder'
+import type { ObservabilityContext } from '#observability'
 
 export type InferRelationsFromStoreOverride<
     Entities extends Record<string, Entity>,
@@ -239,6 +240,10 @@ const defineStoresInternal = <
                     throw new Error(`[Atoma] history: 未找到 adapter（store="${storeName}"）`)
                 }
 
+                const observabilityContext: ObservabilityContext = access.createObservabilityContext
+                    ? access.createObservabilityContext({ traceId: opContext.traceId })
+                    : (() => { throw new Error(`[Atoma] history: 未找到 createObservabilityContext（store="${storeName}"）`) })()
+
                 await new Promise<void>((resolve, reject) => {
                     BaseStore.dispatch({
                         type: 'patches',
@@ -249,6 +254,7 @@ const defineStoresInternal = <
                         store: access.jotaiStore as any,
                         context: access.context as any,
                         indexes: access.indexes as any,
+                        observabilityContext,
                         opContext,
                         onSuccess: () => resolve(),
                         onFail: (error?: Error) => reject(error ?? new Error('[Atoma] history: patches 写入失败'))

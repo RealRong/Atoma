@@ -29,14 +29,10 @@ This folder implements Atoma’s **client-side batching engine** used by adapter
 - `writeLane.ts`
   - Drains bucketed write tasks, builds bulk ops, and sends batch write requests.
   - Uses round-robin across buckets for fairness.
-- `transport.ts`
-  - `sendBatchRequest(fetcher, endpoint, headers, payload, signal, extraHeaders)`; JSON `POST`.
 - `queryParams.ts`
   - Translates `FindManyOptions<T>` into server `QueryParams` (Batch protocol requires `params.page`).
-- `protocol.ts`
-  - Parses server results and normalizes envelopes.
-- `adapterEvents.ts`
-  - Small helper to fan-out `adapter:*` debug events to multiple emitters consistently.
+- `internal.ts`
+  - Internal helpers (config normalization, small utils, transport `sendBatchRequest`, adapter debug events fan-out, and query envelope normalization).
 
 ## How it runs (end-to-end)
 
@@ -64,7 +60,7 @@ Each drain iteration:
 
 - selects a batch of tasks (query lane: FIFO contiguous group by `traceId` key; write lane: round-robin bucket slices),
 - builds a request payload,
-- sends `POST /batch` via `transport.ts`,
+- sends `POST /batch` via internal transport (`internal.ts`),
 - maps server results back to individual task promises.
 
 ### 4) Trace/request header rules
@@ -92,4 +88,3 @@ Design choice:
 - If you want minimal latency: keep `flushIntervalMs` at `0` (default).
 - If you want higher batching efficiency: set a small `flushIntervalMs` (e.g. 5–20ms) and tune `maxOpsPerRequest` / `maxBatchSize`.
 - If you want strict backpressure: set `maxQueueLength` (especially for write lane) to protect memory.
-

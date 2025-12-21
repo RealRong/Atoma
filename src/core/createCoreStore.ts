@@ -14,8 +14,7 @@ import { globalStore } from './BaseStore'
 import { createStoreContext } from './StoreContext'
 import type { JotaiStore } from './types'
 import { getDefaultAdapterFactory } from './defaultAdapterFactory'
-import type { DebugConfig } from '../observability/types'
-import type { DebugEvent } from '../observability/types'
+import type { DebugConfig, DebugEvent } from '#observability'
 import type {
     Entity,
     IAdapter,
@@ -167,6 +166,7 @@ export function createCoreStore<T extends Entity, Relations = {}>(
             matcher: runtime.matcher,
             storeName: name,
             relations: getter as any,
+            createObservabilityContext: runtime.observability.createContext.bind(runtime.observability),
             transform: runtime.transform as any,
             schema: runtime.schema as any,
             indexes: runtime.indexes as any
@@ -205,6 +205,7 @@ export function createCoreStore<T extends Entity, Relations = {}>(
             matcher: runtime.matcher,
             storeName: name,
             relations: undefined,
+            createObservabilityContext: runtime.observability.createContext.bind(runtime.observability),
             transform: runtime.transform as any,
             schema: runtime.schema as any,
             indexes: runtime.indexes as any

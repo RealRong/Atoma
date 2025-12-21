@@ -1,5 +1,17 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "#observability": [
+        "src/observability/index.ts"
+      ],
+      "#protocol": [
+        "src/protocol/index.ts"
+      ],
+      "#batch": [
+        "src/batch/index.ts"
+      ]
+    },
     "outDir": "./dist",
     "rootDir": "./src",
     "declaration": true,

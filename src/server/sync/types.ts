@@ -1,6 +1,6 @@
-import type { AtomaChange } from '../../protocol/sync'
+import type { AtomaChange } from '#protocol'
 
-export type { AtomaChange, ChangeKind } from '../../protocol/sync'
+export type { AtomaChange, ChangeKind } from '#protocol'
 
 export type IdempotencyHit = {
     hit: true

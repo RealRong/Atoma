@@ -36,6 +36,12 @@
             ],
             "typeorm": [
                 "./node_modules/typeorm"
+            ],
+            "#observability": [
+                "../../src/observability/index.ts"
+            ],
+            "#protocol": [
+                "../../src/protocol/index.ts"
             ]
         }
     },

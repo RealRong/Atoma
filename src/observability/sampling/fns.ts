@@ -7,7 +7,7 @@ const fnv1a32 = (input: string) => {
     return hash >>> 0
 }
 
-export function shouldSampleTrace(traceId: string, sampleRate: number): boolean {
+export function isSampled(traceId: string, sampleRate: number): boolean {
     if (!traceId) return false
     if (!Number.isFinite(sampleRate)) return false
     if (sampleRate <= 0) return false

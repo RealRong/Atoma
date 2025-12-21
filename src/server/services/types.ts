@@ -1,4 +1,4 @@
-import type { SyncPushRequest } from '../../protocol/sync'
+import type { SyncPushRequest } from '#protocol'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import type { PhaseReporter } from '../engine/types'
 import type { ServerRuntime } from '../engine/runtime'
@@ -68,4 +68,3 @@ export type AtomaServerServices<Ctx> = {
     batchRest: BatchRestService<Ctx>
     sync: SyncService<Ctx>
 }
-

@@ -36,6 +36,20 @@
             "import": "./dist/server/prisma.mjs"
         }
     },
+    "imports": {
+        "#observability": {
+            "types": "./dist/observability/index.d.mts",
+            "import": "./dist/observability/index.mjs"
+        },
+        "#protocol": {
+            "types": "./dist/protocol/index.d.mts",
+            "import": "./dist/protocol/index.mjs"
+        },
+        "#batch": {
+            "types": "./dist/batch/index.d.mts",
+            "import": "./dist/batch/index.mjs"
+        }
+    },
     "files": [
         "dist",
         "src",

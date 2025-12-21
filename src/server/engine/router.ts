@@ -1,5 +1,5 @@
 import { stripBasePath } from '../http/url'
-import { getHeader } from '../http/headers'
+import { Protocol } from '#protocol'
 import type { HandleResult } from '../http/types'
 
 export type RouteContext = {
@@ -42,8 +42,8 @@ export function createRouter(args: {
         const pathname = urlObj.pathname
         const method = (incoming?.method || '').toUpperCase()
 
-        const traceIdHeaderValue = getHeader(incoming?.headers, traceHeader)
-        const requestIdHeaderValue = getHeader(incoming?.headers, requestHeader)
+        const traceIdHeaderValue = Protocol.trace.parse.getHeader(incoming?.headers, traceHeader)
+        const requestIdHeaderValue = Protocol.trace.parse.getHeader(incoming?.headers, requestHeader)
 
         const ctx: RouteContext = {
             incoming,

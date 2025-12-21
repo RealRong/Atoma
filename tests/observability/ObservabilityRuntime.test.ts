@@ -14,11 +14,11 @@ describe('ObservabilityRuntime (9.2.3)', () => {
         expect(onEvent).toHaveBeenCalledTimes(0)
     })
 
-    it('debug 开启 + sampleRate=1：自动分配 traceId，emit 产出 DebugEvent（默认 payload 摘要）', () => {
+    it('debug 开启 + sample=1：自动分配 traceId，emit 产出 DebugEvent（默认 payload 摘要）', () => {
         const events: any[] = []
         const runtime = Observability.runtime.create({
             scope: 'todos',
-            debug: { enabled: true, sampleRate: 1 },
+            debug: { enabled: true, sample: 1 },
             onEvent: (e) => events.push(e)
         })
 
@@ -35,11 +35,11 @@ describe('ObservabilityRuntime (9.2.3)', () => {
         expect(events[0].payload?.type).toBe('object')
     })
 
-    it('includePayload=true：payload 原样保留（redact 后）', () => {
+    it('payload=true：payload 原样保留（redact 后）', () => {
         const events: any[] = []
         const runtime = Observability.runtime.create({
             scope: 'todos',
-            debug: { enabled: true, sampleRate: 1, includePayload: true, redact: (v) => ({ redacted: true, v }) },
+            debug: { enabled: true, sample: 1, payload: true, redact: (v) => ({ redacted: true, v }) },
             onEvent: (e) => events.push(e)
         })
 
@@ -57,7 +57,7 @@ describe('ObservabilityRuntime (9.2.3)', () => {
         const events: any[] = []
         const runtime = Observability.runtime.create({
             scope: 'todos',
-            debug: { enabled: true, sampleRate: 1, includePayload: true },
+            debug: { enabled: true, sample: 1, payload: true },
             onEvent: (e) => events.push(e)
         })
 
