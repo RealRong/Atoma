@@ -1,8 +1,25 @@
 import type { ErrorKind, StandardError, StandardErrorDetails } from '#protocol'
+import { Protocol } from '#protocol'
 
-export type { ErrorKind, StandardErrorDetails } from '#protocol'
+export type { ErrorKind } from '#protocol'
 
 const ATOMA_ERROR_BRAND = Symbol.for('atoma.error')
+
+export type AtomaErrorDetails = {
+    kind: ErrorKind
+    traceId?: string
+    requestId?: string
+    opId?: string
+    resource?: string
+    part?: string
+    field?: string
+    path?: string
+    max?: number
+    actual?: number
+    currentValue?: unknown
+    currentVersion?: number
+    [k: string]: any
+}
 
 function byteLengthUtf8(input: string) {
     if (typeof Buffer !== 'undefined') return Buffer.byteLength(input, 'utf8')
@@ -12,10 +29,10 @@ function byteLengthUtf8(input: string) {
 
 export class AtomaError extends Error {
     readonly code: string
-    readonly details?: StandardErrorDetails
+    readonly details?: AtomaErrorDetails
     readonly [ATOMA_ERROR_BRAND] = true
 
-    constructor(code: string, message: string, details?: StandardErrorDetails) {
+    constructor(code: string, message: string, details?: AtomaErrorDetails) {
         super(message)
         this.name = 'AtomaError'
         this.code = code
@@ -27,35 +44,29 @@ export function isAtomaError(value: unknown): value is AtomaError {
     return Boolean(value && typeof value === 'object' && (value as any)[ATOMA_ERROR_BRAND] === true)
 }
 
-export function createError(code: string, message: string, details?: StandardErrorDetails): AtomaError {
+export function createError(code: string, message: string, details?: AtomaErrorDetails): AtomaError {
     return new AtomaError(code, message, details)
 }
 
-export function throwError(code: string, message: string, details?: StandardErrorDetails): never {
+export function throwError(code: string, message: string, details?: AtomaErrorDetails): never {
     throw createError(code, message, details)
 }
 
-export function sanitizeDetails(details: unknown): StandardErrorDetails | undefined {
+export function sanitizeDetails(details: unknown): AtomaErrorDetails | undefined {
     if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
 
-    // Enforce "kind" existence and whitelist. If missing/invalid, drop details to avoid leaking.
     const kind = (details as any).kind
-    if (kind !== 'field_policy'
-        && kind !== 'validation'
-        && kind !== 'access'
+    if (kind !== 'validation'
+        && kind !== 'auth'
         && kind !== 'limits'
-        && kind !== 'adapter'
-        && kind !== 'executor'
         && kind !== 'conflict'
+        && kind !== 'not_found'
+        && kind !== 'adapter'
         && kind !== 'internal'
     ) {
         return undefined
     }
 
-    // Deep-clone into a JSON-safe plain object with size limit.
-    // - removes functions/symbols
-    // - breaks cycles
-    // - truncates long strings
     const maxBytes = 8 * 1024
     const maxDepth = 8
     const maxString = 1024
@@ -70,11 +81,7 @@ export function sanitizeDetails(details: unknown): StandardErrorDetails | undefi
         if (t === 'undefined') return undefined
         if (t === 'function' || t === 'symbol' || t === 'bigint') return undefined
 
-        if (value instanceof Error) {
-            // Never serialize raw Error objects.
-            return undefined
-        }
-
+        if (value instanceof Error) return undefined
         if (depth >= maxDepth) return undefined
 
         if (Array.isArray(value)) {
@@ -108,10 +115,9 @@ export function sanitizeDetails(details: unknown): StandardErrorDetails | undefi
     try {
         const json = JSON.stringify(normalized)
         if (byteLengthUtf8(json) > maxBytes) {
-            // Hard truncate: keep kind + a marker.
-            return { kind, truncated: true } as StandardErrorDetails
+            return { kind, truncated: true } as AtomaErrorDetails
         }
-        return normalized as StandardErrorDetails
+        return normalized as AtomaErrorDetails
     } catch {
         return undefined
     }
@@ -120,17 +126,22 @@ export function sanitizeDetails(details: unknown): StandardErrorDetails | undefi
 export function toStandardError(reason: unknown, fallbackCode: string = 'INTERNAL'): StandardError {
     if (isAtomaError(reason)) {
         const details = sanitizeDetails(reason.details)
-        return details
-            ? { code: reason.code, message: reason.message, details }
-            : { code: reason.code, message: reason.message }
+        const kind = details?.kind ?? Protocol.error.inferKindFromCode(reason.code)
+        if (!details) {
+            return { code: reason.code, message: reason.message, kind }
+        }
+        const { kind: _kind, ...rest } = details
+        const outDetails = Object.keys(rest).length ? (rest as unknown as StandardErrorDetails) : undefined
+        return {
+            code: reason.code,
+            message: reason.message,
+            kind,
+            ...(outDetails ? { details: outDetails } : {})
+        }
     }
 
-    // Do not leak raw exceptions or unknown objects.
-    return {
-        code: fallbackCode,
-        message: 'Internal error',
-        details: { kind: 'internal' }
-    }
+    // Allow already-normalized StandardError to pass through (e.g. from adapter layer).
+    return Protocol.error.wrap(reason, { code: fallbackCode, message: 'Internal error', kind: 'internal' })
 }
 
 export function errorStatus(error: Pick<StandardError, 'code'>) {
@@ -164,3 +175,4 @@ export function errorStatus(error: Pick<StandardError, 'code'>) {
             return 500
     }
 }
+

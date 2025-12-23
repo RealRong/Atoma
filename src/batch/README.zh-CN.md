@@ -5,8 +5,8 @@
 ## 能力概览
 
 - **两条独立 lane**
-  - **Query lane**：批处理读/查询（如 `findMany`）。
-  - **Write lane**：批处理写入（create/update/patch/delete），并按 bucket 做公平调度。
+  - **Query lane**：批处理 QueryOp。
+  - **Write lane**：批处理 WriteOp。
 - **合并式 flush（coalesced flush）**
   - 默认用 microtask 同 tick 合并。
   - 可通过 `flushIntervalMs` 延迟 flush，提高合批率。
@@ -21,18 +21,17 @@
 ## 主要模块
 
 - `BatchEngine.ts`
-  - 对外入口：`enqueueQuery`、`enqueueCreate/update/patch/delete`、`dispose`。
+  - 对外入口：`enqueueOp` / `enqueueOps`、`dispose`。
   - 负责调度（microtask/timer）、生命周期与共享资源（AbortController）。
 - `queryLane.ts`
-  - drain query task 并发送 batch query 请求。
+  - drain QueryOp 任务并发送 `POST /ops`。
   - 保持 FIFO 边界，并避免把“有 trace/无 trace”的任务混到同一个请求里。
 - `writeLane.ts`
-  - drain bucket 化的写任务，构造 bulk op 并发送 batch write 请求。
-  - 采用 round-robin 遍历 bucket，避免单个热点 bucket 饿死其他 bucket。
+  - drain WriteOp 任务并发送 `POST /ops`。
 - `queryParams.ts`
   - 把 `FindManyOptions<T>` 翻译为服务端 Batch 协议需要的 `QueryParams`（要求 `params.page`）。
 - `internal.ts`
-  - 内部辅助：配置归一化、小工具、transport（`sendBatchRequest`）、adapter 事件 fan-out、query envelope 归一化等。
+  - 内部辅助：配置归一化、小工具、transport（`sendBatchRequest`）、adapter 事件 fan-out 等。
 
 ## 运行流程（端到端）
 
@@ -40,8 +39,8 @@
 
 启用 batch 的适配器会创建 `BatchEngine`，然后调用：
 
-- `enqueueQuery(resource, params, fallback, internalContext?)`
-- `enqueueCreate/update/patch/delete(..., internalContext?)`
+- `enqueueOp(op, internalContext?)`
+- `enqueueOps(ops, internalContext?)`
 
 其中 `internalContext` 是内部可观测性上下文；若包含 `traceId` 与 `emitter`，会被复制到 task 上用于后续埋点与归因。
 
@@ -52,13 +51,13 @@
 - 每条 lane 各自维护 `*Scheduled` 和可选 `*Timer`。
 - 默认：同一 tick 的多次 enqueue 会合并到一次 microtask flush。
 - `flushIntervalMs > 0`：允许延迟 flush，提高合批率。
-- 当达到阈值（例如队列/桶达到上限）时，会把“等待中的 timer flush”升级为“立即 microtask flush”。
+- 当达到阈值（例如队列达到上限）时，会把“等待中的 timer flush”升级为“立即 microtask flush”。
 
 ### 3）drain 为 HTTP 请求
 
 每次 drain 会：
 
-- 选出一批 task（query lane：按 FIFO 连续段、同一 traceKey；write lane：按 bucket 轮转切片）
+- 选出一批 task（query/write 各自 FIFO）
 - 构造 payload
 - 通过内部 transport（`internal.ts`）发送 `POST /ops`
 - 把服务端 results 映射回每个 task 的 promise

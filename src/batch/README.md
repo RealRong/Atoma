@@ -5,8 +5,8 @@ This folder implements Atoma’s **client-side batching engine** used by adapter
 ## What it provides
 
 - **Two independent lanes**
-  - **Query lane**: batches read/query ops (e.g. `findMany`) into fewer requests.
-  - **Write lane**: batches mutations (create/update/patch/delete) into bucketed bulk ops with fairness.
+  - **Query lane**: batches `QueryOp`.
+  - **Write lane**: batches `WriteOp`.
 - **Coalesced flushing**
   - Flush in a microtask by default (same-tick coalescing).
   - Optional `flushIntervalMs` to delay flushing for better batching.
@@ -21,18 +21,17 @@ This folder implements Atoma’s **client-side batching engine** used by adapter
 ## Key modules
 
 - `BatchEngine.ts`
-  - Public surface: `enqueueQuery`, `enqueueCreate/update/patch/delete`, `dispose`.
+  - Public surface: `enqueueOp` / `enqueueOps`, `dispose`.
   - Owns scheduling (microtask/timer), lifecycle, and shared resources (abort controllers).
 - `queryLane.ts`
-  - Drains query tasks and sends ops query requests.
+  - Drains QueryOp tasks and sends `POST /ops`.
   - Maintains FIFO batching boundaries and avoids mixing traced/untraced tasks in a single request.
 - `writeLane.ts`
-  - Drains bucketed write tasks, builds write ops, and sends ops write requests.
-  - Uses round-robin across buckets for fairness.
+  - Drains WriteOp tasks and sends `POST /ops`.
 - `queryParams.ts`
   - Translates `FindManyOptions<T>` into server `QueryParams` (ops protocol requires `params.page`).
 - `internal.ts`
-  - Internal helpers (config normalization, small utils, transport `sendBatchRequest`, adapter debug events fan-out, and query result normalization).
+  - Internal helpers (config normalization, small utils, transport `sendBatchRequest`, adapter debug events fan-out).
 
 ## How it runs (end-to-end)
 
@@ -40,8 +39,8 @@ This folder implements Atoma’s **client-side batching engine** used by adapter
 
 An adapter that enables batching will create a `BatchEngine` and call:
 
-- `enqueueQuery(resource, params, fallback, internalContext?)`
-- `enqueueCreate/update/patch/delete(..., internalContext?)`
+- `enqueueOp(op, internalContext?)`
+- `enqueueOps(ops, internalContext?)`
 
 `internalContext` is an internal observability wiring object. If it contains `traceId` and `emitter`, those are copied onto tasks.
 
@@ -52,13 +51,13 @@ An adapter that enables batching will create a `BatchEngine` and call:
 - Each lane has its own `*Scheduled` flag and optional `*Timer`.
 - By default, enqueues coalesce into a single microtask flush.
 - If `flushIntervalMs > 0`, flushing can be delayed to increase batch size.
-- If a lane hits a threshold (e.g. queue reaches cap, bucket reaches size), it “upgrades” a pending timer flush into an immediate microtask flush.
+- If a lane hits a threshold (e.g. queue reaches cap), it “upgrades” a pending timer flush into an immediate microtask flush.
 
 ### 3) Draining into HTTP requests
 
 Each drain iteration:
 
-- selects a batch of tasks (query lane: FIFO contiguous group by `traceId` key; write lane: round-robin bucket slices),
+- selects a batch of tasks (query/write FIFO),
 - builds a request payload,
 - sends `POST /ops` via internal transport (`internal.ts`),
 - maps server results back to individual task promises.

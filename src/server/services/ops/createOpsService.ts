@@ -4,6 +4,7 @@ import type { AtomaServerConfig, AtomaServerRoute } from '../../config'
 import type { OpsService } from '../types'
 import type { AuthzPolicy } from '../../policies/authzPolicy'
 import type { LimitPolicy } from '../../policies/limitPolicy'
+import type { ServerRuntime } from '../../engine/runtime'
 import { throwError, toStandardError } from '../../error'
 import { fieldPolicyForResource } from '../../authz/fieldPolicyForResource'
 import { mergeForcedWhere } from '../../authz/mergeForcedWhere'
@@ -11,7 +12,8 @@ import { enforceQueryFieldPolicy, resolveFieldPolicy } from '../../guard/fieldPo
 import { Protocol } from '#protocol'
 import type { IOrmAdapter, QueryParams, QueryResult } from '../../types'
 import { executeWriteItemWithSemantics } from '../../writeSemantics/executeWriteItemWithSemantics'
-import { validateWriteForOp } from '../batchRest/validateWriteForOp'
+import { createGetCurrent } from '../shared/createGetCurrent'
+import { summarizeCreateItem, summarizePatches, summarizeUpdateData } from '../../writeSummary'
 
 type JsonObject = Record<string, unknown>
 
@@ -267,67 +269,86 @@ function jsonPatchToAtomaPatches(patch: unknown[]): any[] {
     })
 }
 
-function toBatchWriteOp(op: WriteOp) {
+async function validateVNextWriteOpForAuthz<Ctx>(args: {
+    config: AtomaServerConfig<Ctx>
+    authz: AuthzPolicy<Ctx>
+    route: AtomaServerRoute
+    runtime: ServerRuntime<Ctx>
+    op: WriteOp
+}) {
+    const { config, authz, route, runtime, op } = args
+
     const resource = op.write.resource
+    const makeGetCurrent = createGetCurrent(config.adapter.orm as IOrmAdapter, resource)
     const action = op.write.action
-    const items = op.write.items
+    const items = Array.isArray(op.write.items) ? op.write.items : []
 
-    if (action === 'create') {
-        const payload = items.map((raw: any) => {
-            const meta = isObject(raw?.meta) ? raw.meta : undefined
-            const idempotencyKey = meta && typeof meta.idempotencyKey === 'string' ? meta.idempotencyKey : undefined
-            return {
-                data: (raw as any).value,
-                ...(idempotencyKey ? { meta: { idempotencyKey } } : {})
-            }
-        })
-        return { opId: op.opId, action: 'bulkCreate', resource, payload }
-    }
-
-    if (action === 'update') {
-        const payload = items.map((raw: any) => {
-            const meta = isObject(raw?.meta) ? raw.meta : undefined
-            const idempotencyKey = meta && typeof meta.idempotencyKey === 'string' ? meta.idempotencyKey : undefined
-            return {
-                id: (raw as any).entityId,
-                data: (raw as any).value,
-                baseVersion: (raw as any).baseVersion,
-                ...(idempotencyKey ? { meta: { idempotencyKey } } : {})
-            }
-        })
-        return { opId: op.opId, action: 'bulkUpdate', resource, payload }
-    }
-
-    if (action === 'patch') {
-        const payload = items.map((raw: any) => {
-            const meta = isObject(raw?.meta) ? raw.meta : undefined
-            const idempotencyKey = meta && typeof meta.idempotencyKey === 'string' ? meta.idempotencyKey : undefined
-            const timestamp = meta && typeof meta.clientTimeMs === 'number' ? meta.clientTimeMs : undefined
-            const jsonPatch = Array.isArray(raw.patch) ? raw.patch : undefined
-            if (!jsonPatch) {
-                throwError('INVALID_REQUEST', 'Missing patch', { kind: 'validation', opId: op.opId })
-            }
-            return {
-                id: (raw as any).entityId,
-                patches: jsonPatchToAtomaPatches(jsonPatch),
-                baseVersion: (raw as any).baseVersion,
-                ...(timestamp !== undefined ? { timestamp } : {}),
-                ...(idempotencyKey ? { meta: { idempotencyKey } } : {})
-            }
-        })
-        return { opId: op.opId, action: 'bulkPatch', resource, payload }
-    }
-
-    const payload = items.map((raw: any) => {
-        const meta = isObject(raw?.meta) ? raw.meta : undefined
-        const idempotencyKey = meta && typeof meta.idempotencyKey === 'string' ? meta.idempotencyKey : undefined
-        return {
-            id: (raw as any).entityId,
-            baseVersion: (raw as any).baseVersion,
-            ...(idempotencyKey ? { meta: { idempotencyKey } } : {})
+    await Promise.all(items.map(async (raw: any) => {
+        if (action === 'create') {
+            const summary = summarizeCreateItem(raw?.value)
+            await authz.validateWrite({
+                resource,
+                op,
+                item: raw?.value,
+                changedFields: summary.changedFields,
+                ...(Array.isArray(summary.changedPaths) ? { changedPaths: summary.changedPaths } : {}),
+                getCurrent: async () => undefined,
+                route,
+                runtime
+            })
+            return
         }
-    })
-    return { opId: op.opId, action: 'bulkDelete', resource, payload }
+
+        const entityId = raw?.entityId
+        if (typeof entityId !== 'string' || !entityId) {
+            throwError('INVALID_REQUEST', 'Missing write.item.entityId', { kind: 'validation', opId: op.opId })
+        }
+
+        if (action === 'update') {
+            const summary = summarizeUpdateData(raw?.value)
+            await authz.validateWrite({
+                resource,
+                op,
+                item: raw,
+                changedFields: summary.changedFields,
+                ...(Array.isArray(summary.changedPaths) ? { changedPaths: summary.changedPaths } : {}),
+                getCurrent: makeGetCurrent(entityId),
+                route,
+                runtime
+            })
+            return
+        }
+
+        if (action === 'patch') {
+            const jsonPatch = Array.isArray(raw?.patch) ? raw.patch : undefined
+            if (!jsonPatch) {
+                throwError('INVALID_REQUEST', 'Missing write.item.patch', { kind: 'validation', opId: op.opId })
+            }
+            const patches = jsonPatchToAtomaPatches(jsonPatch)
+            const summary = summarizePatches(patches)
+            await authz.validateWrite({
+                resource,
+                op,
+                item: { ...raw, patches },
+                changedFields: summary.changedFields,
+                ...(Array.isArray(summary.changedPaths) ? { changedPaths: summary.changedPaths } : {}),
+                getCurrent: makeGetCurrent(entityId),
+                route,
+                runtime
+            })
+            return
+        }
+
+        await authz.validateWrite({
+            resource,
+            op,
+            item: raw,
+            changedFields: [],
+            getCurrent: makeGetCurrent(entityId),
+            route,
+            runtime
+        })
+    }))
 }
 
 export function createOpsService<Ctx>(args: {
@@ -484,13 +505,12 @@ export function createOpsService<Ctx>(args: {
                         runtime
                     })
 
-                    const batchWrite = toBatchWriteOp(op)
-                    await validateWriteForOp({
+                    await validateVNextWriteOpForAuthz({
                         config: args.config,
+                        authz: args.authz,
                         route,
-                        op: batchWrite as any,
                         runtime,
-                        authz: args.authz
+                        op
                     })
                     return
                 }
@@ -817,7 +837,7 @@ export function createOpsService<Ctx>(args: {
 
             return {
                 status: 200,
-                body: Protocol.http.compose.ok({ results }, { meta: metaOut })
+                body: Protocol.ops.compose.ok({ results }, metaOut)
             }
         }
     }

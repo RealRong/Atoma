@@ -1,6 +1,6 @@
 import type { ObservabilityContext } from '#observability'
 import { Observability } from '#observability'
-import type { StandardEnvelope } from '#protocol'
+import type { Envelope } from '#protocol'
 import { Protocol } from '#protocol'
 import { resolveHeaders } from './headers'
 import { traceFromContext } from './trace'
@@ -13,7 +13,7 @@ export type HttpInterceptors<T> = {
     onRequest?: (request: Request) => Promise<Request | void> | Request | void
     onResponse?: (context: {
         response: Response
-        envelope: StandardEnvelope<T>
+        envelope: Envelope<T>
         request: Request
     }) => void
     responseParser?: ResponseParser<T>
@@ -27,6 +27,7 @@ export type ExecuteJsonArgs = {
     extraHeaders?: Record<string, string>
     context?: ObservabilityContext
     trace?: HttpTrace
+    signal?: AbortSignal
 }
 
 const hasHeader = (headers: Record<string, string>, name: string) => {
@@ -39,7 +40,7 @@ export function createHttpJsonPipeline<T>(deps: {
     getHeaders: () => Promise<Record<string, string>>
     interceptors?: HttpInterceptors<T>
 }) {
-    const execute = async (args: ExecuteJsonArgs): Promise<{ envelope: StandardEnvelope<T>; response: Response }> => {
+    const execute = async (args: ExecuteJsonArgs): Promise<{ envelope: Envelope<T>; response: Response }> => {
         const trace = args.trace ?? traceFromContext(args.context)
         const ctx = trace.ctx
 
@@ -66,7 +67,8 @@ export function createHttpJsonPipeline<T>(deps: {
                 let request = new Request(args.url, {
                     method: args.method,
                     headers,
-                    body: payloadStr
+                    body: payloadStr,
+                    signal: args.signal
                 })
 
                 if (deps.interceptors?.onRequest) {
@@ -90,7 +92,7 @@ export function createHttpJsonPipeline<T>(deps: {
 
                 const envelope = deps.interceptors?.responseParser
                     ? await deps.interceptors.responseParser(response, json)
-                    : Protocol.http.parse.envelope<T>(response, json)
+                    : Protocol.ops.parse.envelope<T>(json, { v: 1 })
 
                 deps.interceptors?.onResponse?.({
                     response,
@@ -98,7 +100,7 @@ export function createHttpJsonPipeline<T>(deps: {
                     request
                 })
 
-                if (envelope.ok === false || envelope.error) {
+                if (!envelope.ok) {
                     const code = (envelope.error && typeof envelope.error.code === 'string') ? envelope.error.code : 'unknown'
                     const message = (envelope.error && typeof envelope.error.message === 'string') ? envelope.error.message : `Error ${code}`
                     const err = new Error(message)

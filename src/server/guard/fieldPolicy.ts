@@ -1,4 +1,4 @@
-import type { BatchOp, BatchRequest, QueryParams } from '../types'
+import type { QueryParams } from '../types'
 import { throwError } from '../error'
 
 export type FieldListRule =
@@ -15,11 +15,11 @@ export type FieldPolicy = {
 }
 
 export type FieldPolicyResolverArgs = {
-    action: BatchOp['action']
+    action: 'query' | 'write'
     resource: string
     params?: QueryParams
     ctx?: any
-    request?: BatchRequest
+    request?: unknown
     queryIndex?: number
 }
 
@@ -91,11 +91,11 @@ function ensureAllowed(
 
     // deny 优先
     if (rule.deny?.has(field)) {
-        throwError(details.code, `Field not allowed: ${field}`, { kind: 'field_policy', ...details, field })
+        throwError(details.code, `Field not allowed: ${field}`, { kind: 'auth', ...details, field })
     }
 
     if (rule.allow && !rule.allow.has(field)) {
-        throwError(details.code, `Field not allowed: ${field}`, { kind: 'field_policy', ...details, field })
+        throwError(details.code, `Field not allowed: ${field}`, { kind: 'auth', ...details, field })
     }
 }
 

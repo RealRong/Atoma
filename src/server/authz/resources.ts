@@ -10,14 +10,14 @@ export function ensureResourceAllowed<Ctx>(
     const deny = config.authz?.resources?.deny
     if (Array.isArray(deny) && deny.includes(resource)) {
         throwError('ACCESS_DENIED', `Resource access denied: ${resource}`, {
-            kind: 'access',
+            kind: 'auth',
             resource,
             ...(meta ?? {})
         })
     }
     if (Array.isArray(allow) && allow.length && !allow.includes(resource)) {
         throwError('ACCESS_DENIED', `Resource access denied: ${resource}`, {
-            kind: 'access',
+            kind: 'auth',
             resource,
             ...(meta ?? {})
         })

@@ -8,17 +8,16 @@ import { createTopLevelErrorFormatter } from './engine/errors'
 import { createServerServices } from './services/createServerServices'
 import { createDefaultRoutesPlugin } from './plugins/defaultRoutesPlugin'
 
-const DEFAULT_BATCH_PATH = '/batch'
 const DEFAULT_OPS_PATH = '/ops'
-const DEFAULT_SYNC_PUSH_PATH = '/sync/push'
-const DEFAULT_SYNC_PULL_PATH = '/sync/pull'
-const DEFAULT_SYNC_SUBSCRIBE_PATH = '/sync/subscribe'
 const DEFAULT_SYNC_SUBSCRIBE_VNEXT_PATH = '/sync/subscribe-vnext'
 
 function notFound(): HandleResult {
     return {
         status: 404,
-        body: Protocol.http.compose.error(Protocol.error.create('NOT_FOUND', 'No route matched'))
+        body: Protocol.ops.compose.error(
+            { code: 'NOT_FOUND', message: 'No route matched', kind: 'not_found' },
+            { v: 1, serverTimeMs: Date.now() }
+        )
     }
 }
 
@@ -38,22 +37,17 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
     const traceHeader = config.observability?.trace?.traceIdHeader ?? Protocol.trace.headers.TRACE_ID_HEADER
     const requestHeader = config.observability?.trace?.requestIdHeader ?? Protocol.trace.headers.REQUEST_ID_HEADER
 
-    const restEnabled = config.routing?.rest?.enabled ?? true
-    const batchPath = config.routing?.batch?.path ?? DEFAULT_BATCH_PATH
     const opsPath = config.routing?.ops?.path ?? DEFAULT_OPS_PATH
     const basePath = config.routing?.basePath
 
-    const syncPushPath = config.routing?.sync?.pushPath ?? DEFAULT_SYNC_PUSH_PATH
-    const syncPullPath = config.routing?.sync?.pullPath ?? DEFAULT_SYNC_PULL_PATH
-    const syncSubscribePath = config.routing?.sync?.subscribePath ?? DEFAULT_SYNC_SUBSCRIBE_PATH
-    const syncSubscribeVNextPath = DEFAULT_SYNC_SUBSCRIBE_VNEXT_PATH
+    const syncSubscribeVNextPath = config.routing?.sync?.subscribeVNextPath ?? DEFAULT_SYNC_SUBSCRIBE_VNEXT_PATH
 
     const formatTopLevelError = createTopLevelErrorFormatter(config)
     const createRuntime = createRuntimeFactory({ config })
     const services = createServerServices({
         config,
         runtime: { createRuntime, formatTopLevelError },
-        routing: { batchPath, restEnabled, traceHeader, requestHeader, syncEnabled }
+        routing: { syncEnabled }
     })
 
     const userPlugins = Array.isArray(config.plugins) ? config.plugins : []
@@ -70,13 +64,8 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
         config,
         services,
         routing: {
-            batchPath,
             opsPath,
-            restEnabled,
             syncEnabled,
-            syncPushPath,
-            syncPullPath,
-            syncSubscribePath,
             syncSubscribeVNextPath
         }
     } as const

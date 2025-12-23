@@ -1,11 +1,9 @@
-import type { FindManyOptions, StoreKey } from '../core/types'
 import type { ObservabilityContext } from '#observability'
 import type { OpsRequest } from './internal'
 import { sendBatchRequest } from './internal'
 import { QueryLane } from './queryLane'
-import type { QueryEnvelope } from './types'
 import { WriteLane } from './writeLane'
-import type { AtomaPatch } from '#protocol'
+import type { Operation, OperationResult, WriteItem, WriteOp } from '#protocol'
 
 type FetchFn = typeof fetch
 
@@ -30,7 +28,7 @@ export interface BatchEngineConfig {
      */
     queryOverflowStrategy?: 'reject_new' | 'drop_old_queries'
     /**
-     * Max items per bulk op. For the query lane, this is the max query ops per request.
+     * Max items per write op (validation only).
      * Default: unlimited.
      */
     maxBatchSize?: number
@@ -55,7 +53,7 @@ export class BatchEngine {
      *
      * BatchEngine owns two independent lanes that share a single transport endpoint:
      * - Query lane: coalesces read/query operations into fewer HTTP requests.
-     * - Write lane: coalesces mutations into bucketed bulk operations with fairness.
+     * - Write lane: batches WriteOp requests.
      *
      * This class intentionally owns:
      * - scheduling (microtasks/timers)
@@ -79,53 +77,39 @@ export class BatchEngine {
         this.queryLane = new QueryLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            send: (payload, signal, extraHeaders) => this.send(payload, signal, extraHeaders),
-            nextOpId: prefix => this.nextOpId(prefix)
+            send: (payload, signal, extraHeaders) => this.send(payload, signal, extraHeaders)
         })
 
         this.writeLane = new WriteLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            send: (payload, signal, extraHeaders) => this.send(payload, signal, extraHeaders),
-            nextOpId: prefix => this.nextOpId(prefix)
+            send: (payload, signal, extraHeaders) => this.send(payload, signal, extraHeaders)
         })
     }
 
-    enqueueQuery<T>(
-        resource: string,
-        params: FindManyOptions<T> | undefined,
-        fallback: () => Promise<any>,
+    enqueueOp(
+        op: Operation,
         internalContext?: ObservabilityContext
-    ): Promise<QueryEnvelope<T>> {
-        return this.queryLane.enqueue(resource, params, fallback, internalContext)
+    ): Promise<OperationResult> {
+        if (!op || typeof op !== 'object' || typeof (op as any).opId !== 'string' || !(op as any).opId) {
+            return Promise.reject(new Error('[BatchEngine] opId is required'))
+        }
+        if (op.kind === 'query') {
+            return this.queryLane.enqueue(op, internalContext)
+        }
+        if (op.kind === 'write') {
+            const normalized = this.ensureWriteItemMeta(op as WriteOp)
+            this.validateWriteBatchSize(normalized)
+            return this.writeLane.enqueue(normalized, internalContext)
+        }
+        return Promise.reject(new Error(`[BatchEngine] Unsupported op kind: ${op.kind}`))
     }
 
-    enqueueCreate<T>(resource: string, item: T, internalContext?: ObservabilityContext): Promise<any> {
-        return this.writeLane.enqueueCreate(resource, item, internalContext)
-    }
-
-    enqueueUpdate<T>(
-        resource: string,
-        item: { id: StoreKey; data: T; baseVersion: number; meta?: { idempotencyKey?: string } },
+    async enqueueOps(
+        ops: Operation[],
         internalContext?: ObservabilityContext
-    ): Promise<void> {
-        return this.writeLane.enqueueUpdate(resource, item, internalContext)
-    }
-
-    enqueuePatch(
-        resource: string,
-        item: { id: StoreKey; patches: AtomaPatch[]; baseVersion: number; timestamp?: number; meta?: { idempotencyKey?: string } },
-        internalContext?: ObservabilityContext
-    ): Promise<void> {
-        return this.writeLane.enqueuePatch(resource, item, internalContext)
-    }
-
-    enqueueDelete(
-        resource: string,
-        item: { id: StoreKey; baseVersion: number; meta?: { idempotencyKey?: string } },
-        internalContext?: ObservabilityContext
-    ): Promise<void> {
-        return this.writeLane.enqueueDelete(resource, item, internalContext)
+    ): Promise<OperationResult[]> {
+        return Promise.all(ops.map(op => this.enqueueOp(op, internalContext)))
     }
 
     dispose() {
@@ -137,7 +121,52 @@ export class BatchEngine {
         return await sendBatchRequest(this.fetcher, this.endpoint, this.config.headers, payload, signal, extraHeaders)
     }
 
-    private nextOpId(prefix: 'q' | 'w') {
-        return `${prefix}_${Date.now()}_${this.seq++}`
+
+    private validateWriteBatchSize(op: WriteOp) {
+        const max = this.config.maxBatchSize
+        if (typeof max !== 'number' || !Number.isFinite(max) || max <= 0) return
+        const count = Array.isArray(op.write.items) ? op.write.items.length : 0
+        if (count > max) {
+            throw new Error(`[BatchEngine] write.items exceeds maxBatchSize (${count} > ${max})`)
+        }
+    }
+
+    private ensureWriteItemMeta(op: WriteOp): WriteOp {
+        const items = Array.isArray(op.write.items) ? op.write.items : []
+        const nextItems: WriteItem[] = items.map(item => {
+            if (!item || typeof item !== 'object') return item as WriteItem
+            const meta = (item as any).meta
+            const baseMeta = (meta && typeof meta === 'object' && !Array.isArray(meta)) ? meta : {}
+            const idempotencyKey = (typeof (baseMeta as any).idempotencyKey === 'string' && (baseMeta as any).idempotencyKey)
+                ? (baseMeta as any).idempotencyKey
+                : this.createIdempotencyKey()
+            return {
+                ...(item as any),
+                meta: {
+                    ...baseMeta,
+                    idempotencyKey
+                }
+            } as WriteItem
+        })
+
+        return {
+            ...op,
+            write: {
+                ...op.write,
+                items: nextItems
+            }
+        } as WriteOp
+    }
+
+    private createIdempotencyKey(): string {
+        if (typeof crypto !== 'undefined') {
+            const randomUUID = Reflect.get(crypto, 'randomUUID')
+            if (typeof randomUUID === 'function') {
+                const uuid = randomUUID.call(crypto)
+                if (typeof uuid === 'string' && uuid) return `b_${uuid}`
+            }
+        }
+        this.seq += 1
+        return `b_${Date.now()}_${this.seq}`
     }
 }

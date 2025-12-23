@@ -374,3 +374,53 @@ Subscribe 的 transport 是 SSE（事件流），但事件 payload 与 Pull 完�
 - 文档：
   - `HTTP_PROTOCOL.md` 与 vNext 文档对齐（若需要）
 - 验证：全量测试 + typecheck
+
+---
+
+## 15. 当前代码落地现状（基于仓库扫描，2025-12-22）
+
+结论：**vNext 已进入主路径，但“协议层统一”尚未完成**。当前代码同时存在 vNext 与 legacy 协议栈，仍需要旧协议支撑部分路由与解析。
+
+### 已使用 vNext 的路径（可视为“主方向”）
+- **vNext 协议类型/解析**：`src/protocol/vnext/*`、`src/protocol/index.ts` 的 `VNext*` 导出已在多处被使用。
+- **Ops 客户端解析**：`src/adapters/http/transport/ops.ts` 使用 `Protocol.vnext.parse.envelope`，HTTPAdapter 读写统一走 `/ops`，客户端侧已移除 `RestEngine`。
+- **Sync 客户端**：`src/sync/*` 使用 `VNext*` 类型；`HTTPAdapter` 的 sync transport 指向 `/sync/subscribe-vnext`（`src/adapters/http/adapter/HTTPAdapter.ts`）。
+- **Server 路由入口**：`/ops` 与 `/sync/subscribe-vnext` 已存在（`src/server/routes/ops/*`、`src/server/routes/sync/createSyncSubscribeVNextRoute.ts`）。
+
+### 仍依赖 legacy 的路径（协议层未统一的关键点）
+- **HTTP envelope/错误模型**：`Protocol.http.*` 与 `StandardEnvelope` 仍被大量使用：  
+  - `src/adapters/http/transport/pipeline.ts` 默认解析仍是 `Protocol.http.parse.envelope`。  
+  - `src/adapters/http/transport/ops.ts` 已覆写 parser，但 pipeline 默认仍是 legacy。  
+  - `src/server/engine/errors.ts`、`src/server/createAtomaServer.ts`、`src/server/routes/rest/toRestResponse.ts`、`src/server/services/batchRest/createBatchRestService.ts` 均用 `Protocol.http.compose.*`。  
+- **/ops 响应仍是 legacy envelope**：`src/server/services/ops/createOpsService.ts` 仍用 `Protocol.http.compose.ok`，并使用 `Protocol.error`（legacy）生成错误。  
+- **Legacy REST/Batch/Sync 协议仍在 server 侧被使用**：  
+  - `src/server/parser/restMapping.ts`、`src/server/parser/parseHttp.ts` 仍依赖 `Protocol.rest.*`。  
+  - `src/server/validator/validator.ts` 使用 `Protocol.batch.validate.*`。  
+  - `src/server/sync/validation.ts`、`src/server/services/sync/createSyncService.ts` 仍包含 legacy pull/push/subscribe（与 vNext 并存）。  
+ 
+
+### 可清理候选（需先完成 vNext 迁移后再删）
+> 以下并非立刻可删，但都是“协议层统一”后的清理目标。
+
+1) **移除 legacy HTTP envelope**  
+   - `src/protocol/http/*`  
+   - `src/adapters/http/transport/pipeline.ts` 的默认 parser  
+   - `src/server/engine/errors.ts` 与 `src/server/createAtomaServer.ts` 的 `Protocol.http.compose.*`
+
+2) **统一 /ops 到 vNext envelope + vNext error**  
+   - `src/server/services/ops/createOpsService.ts` 改用 `Protocol.vnext.compose.*`（或等价 vNext envelope 构造）  
+   - （客户端已完成）`src/adapters/http/transport/ops.ts` 已覆写 parser 为 `Protocol.vnext.parse.envelope`
+
+3) **删除 legacy REST/Batch 协议层与路由**  
+   - `src/protocol/rest/*`、`src/protocol/batch/*`（以及 `Protocol.rest` / `Protocol.batch` 出口）  
+   - `src/server/routes/rest/*`、`src/server/services/batchRest/*`、`src/server/parser/restMapping.ts`
+
+4) **删除 legacy Sync 协议与端点**  
+   - `src/protocol/sync/*`  
+   - `src/server/sync/validation.ts` 与 `createSyncService.ts` 中 legacy 分支  
+   - `/sync/pull`、`/sync/subscribe`（仅保留 `/sync/subscribe-vnext` 与 `/ops` 的 changes.pull）
+
+5) **清理 BatchEngine 的 legacy envelope 解析**  
+   - （已完成）统一走 vNext envelope（与 `/ops` 对齐）
+
+> 建议：当 `/ops` 与 `/sync/subscribe-vnext` 成为唯一入口后，再一次性删除 legacy 协议与路由，避免“双栈长期共存”导致维护成本飙升。

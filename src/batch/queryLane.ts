@@ -1,19 +1,16 @@
 import {
-    buildQueryLaneRequestContext,
+    buildOpsLaneRequestContext,
     clampInt,
     createCoalescedScheduler,
     createAbortController,
     normalizeMaxQueueLength,
-    normalizeMaxQueryOpsPerRequest,
-    normalizeQueryResultData,
-    normalizeQueryFallback,
+    normalizeMaxOpsPerRequest,
     sendOpsWithAdapterEvents,
     toError
 } from './internal'
-import { normalizeAtomaServerQueryParams } from './queryParams'
-import type { FindManyOptions } from '../core/types'
 import type { ObservabilityContext } from '#observability'
-import type { QueryEnvelope, QueryTask } from './types'
+import type { OperationResult, QueryOp } from '#protocol'
+import type { OpsTask } from './types'
 import type { OpsRequest } from './internal'
 
 type SendFn = (payload: OpsRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
@@ -25,12 +22,10 @@ type QueryLaneDeps = {
         queryMaxInFlight?: number
         maxQueueLength?: number | { query?: number; write?: number }
         queryOverflowStrategy?: 'reject_new' | 'drop_old_queries'
-        maxBatchSize?: number
         maxOpsPerRequest?: number
         onError?: (error: Error, context: unknown) => void
     }
     send: SendFn
-    nextOpId: (prefix: 'q' | 'w') => string
 }
 
 export class QueryLane {
@@ -39,10 +34,10 @@ export class QueryLane {
     private readonly queueOverflowError = new Error('BatchEngine queue overflow')
     private readonly droppedQueryError = new Error('BatchEngine dropped old query due to queue overflow')
 
-    private readonly queryQueue: Array<QueryTask<any>> = []
+    private readonly queryQueue: Array<OpsTask> = []
     private queryInFlight = 0
     private readonly inFlightControllers = new Set<AbortController>()
-    private readonly inFlightTasks = new Set<QueryTask<any>>()
+    private readonly inFlightTasks = new Set<OpsTask>()
 
     private readonly scheduler: ReturnType<typeof createCoalescedScheduler>
 
@@ -53,12 +48,10 @@ export class QueryLane {
         })
     }
 
-    enqueue<T>(
-        resource: string,
-        params: FindManyOptions<T> | undefined,
-        fallback: () => Promise<any>,
+    enqueue(
+        op: QueryOp,
         internalContext?: ObservabilityContext
-    ): Promise<QueryEnvelope<T>> {
+    ): Promise<OperationResult> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -82,14 +75,9 @@ export class QueryLane {
                 }
             }
 
-            const opId = this.deps.nextOpId('q')
             this.queryQueue.push({
-                kind: 'query',
-                opId,
-                resource,
-                params,
+                op,
                 ctx: internalContext,
-                fallback,
                 deferred: { resolve, reject }
             })
 
@@ -100,28 +88,20 @@ export class QueryLane {
     async drain() {
         const config = this.deps.config()
         const maxInFlight = clampInt(config.queryMaxInFlight ?? 2, 1, 64)
-        const maxOps = normalizeMaxQueryOpsPerRequest(config)
+        const maxOps = normalizeMaxOpsPerRequest(config)
 
         while (!this.disposed && this.queryInFlight < maxInFlight && this.queryQueue.length) {
-            const batch = takeQueryBatch(this.queryQueue, maxOps)
+            const batch = takeBatch(this.queryQueue, maxOps)
 
             this.queryInFlight++
             batch.forEach(t => this.inFlightTasks.add(t))
             const controller = createAbortController()
             if (controller) this.inFlightControllers.add(controller)
 
-            const requestContext = buildQueryLaneRequestContext(batch)
+            const requestContext = buildOpsLaneRequestContext(batch)
             const ctxTargets = requestContext.ctxTargets
 
             try {
-                const ops = batch.map(t => ({
-                    opId: t.opId,
-                    kind: 'query' as const,
-                    query: {
-                        resource: t.resource,
-                        params: normalizeAtomaServerQueryParams(t.params)
-                    }
-                }))
                 const payload: OpsRequest = {
                     meta: {
                         v: 1,
@@ -129,7 +109,7 @@ export class QueryLane {
                         ...(requestContext.requestId ? { requestId: requestContext.requestId } : {}),
                         clientTimeMs: Date.now()
                     },
-                    ops
+                    ops: batch.map(t => t.op)
                 }
                 const response = await sendOpsWithAdapterEvents({
                     lane: 'query',
@@ -148,21 +128,13 @@ export class QueryLane {
                         task.deferred.reject(this.disposedError)
                         continue
                     }
-                    const res = resultMap.get(task.opId)
-                    if (!res || res.ok === false || res.error) {
-                        await runQueryFallback(task, res?.error, () => this.disposed, this.disposedError)
-                        continue
-                    }
-                    task.deferred.resolve(normalizeQueryResultData(res.data))
+                    const res = resultMap.get(task.op.opId) ?? missingResult(task.op.opId)
+                    task.deferred.resolve(res)
                 }
             } catch (error: unknown) {
                 this.deps.config().onError?.(toError(error), { lane: 'query' })
                 for (const task of batch) {
-                    if (this.disposed) {
-                        task.deferred.reject(this.disposedError)
-                        continue
-                    }
-                    await runQueryFallback(task, error, () => this.disposed, this.disposedError)
+                    task.deferred.reject(this.disposed ? this.disposedError : error)
                 }
             } finally {
                 if (controller) this.inFlightControllers.delete(controller)
@@ -201,34 +173,23 @@ export class QueryLane {
 
     private signal() {
         if (this.disposed) return
-        const max = normalizeMaxQueryOpsPerRequest(this.deps.config())
-        const immediate = max !== Infinity && this.queryQueue.length >= max
-        this.scheduler.schedule(immediate)
+        this.scheduler.schedule(false)
     }
 }
 
-function takeQueryBatch(queue: Array<QueryTask<any>>, maxOps: number) {
-    const max = maxOps === Infinity ? Infinity : Math.max(1, Math.floor(maxOps))
-    const firstKey = typeof queue[0]?.ctx?.traceId === 'string' && queue[0].ctx.traceId ? queue[0].ctx.traceId : undefined
-    let takeCount = 0
-    for (let i = 0; i < queue.length && takeCount < max; i++) {
-        const task = queue[i]
-        const key = typeof task.ctx?.traceId === 'string' && task.ctx.traceId ? task.ctx.traceId : undefined
-        if (key !== firstKey) break
-        takeCount++
-    }
+function takeBatch(queue: OpsTask[], maxOps: number) {
+    const takeCount = Math.min(queue.length, maxOps)
     return queue.splice(0, takeCount)
 }
 
-async function runQueryFallback<T>(task: QueryTask<T>, reason: unknown, isDisposed: () => boolean, disposedError: Error) {
-    if (isDisposed()) {
-        task.deferred.reject(disposedError)
-        return
-    }
-    try {
-        const res = await task.fallback()
-        task.deferred.resolve(normalizeQueryFallback(res))
-    } catch (fallbackError) {
-        task.deferred.reject(fallbackError ?? reason)
+function missingResult(opId: string): OperationResult {
+    return {
+        opId,
+        ok: false,
+        error: {
+            code: 'INTERNAL',
+            message: 'Missing result',
+            kind: 'internal'
+        }
     }
 }

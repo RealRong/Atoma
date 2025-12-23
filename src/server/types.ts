@@ -64,11 +64,4 @@ export interface OrmAdapterOptions {
 export type { StandardError } from '#protocol'
 
 export type { OrderByRule, CursorToken, Page, QueryParams } from '#protocol'
-export type {
-    Action,
-    WriteOptions,
-    BatchOp,
-    BatchRequest,
-    BatchResult,
-    BatchResponse
-} from '#protocol'
+export type { WriteOptions } from '#protocol'

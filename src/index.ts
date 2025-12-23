@@ -56,11 +56,9 @@ export { setDefaultIdGenerator, defaultSnowflakeGenerator } from './core/idGener
 export { IndexedDBAdapter } from './adapters/IndexedDBAdapter'
 export { HTTPAdapter } from './adapters/HTTPAdapter'
 export { HybridAdapter } from './adapters/HybridAdapter'
-export { SQLiteHttpAdapter } from './adapters/SQLiteHttpAdapter'
 export { BatchEngine } from './batch'
-export { SyncEngine } from './sync'
+export { Sync } from './sync'
 export type { HTTPAdapterConfig, BatchQueryConfig } from './adapters/http/config/types'
-export type { QuerySerializerConfig } from './adapters/http/query'
 export type { HybridAdapterConfig } from './adapters/HybridAdapter'
 
 // Relations
@@ -74,19 +72,10 @@ export { enableGlobalDevtools, getGlobalDevtools, disableGlobalDevtools } from '
 
 // Server（Fetch 风格管道）
 export {
-    parseHttp,
-    restMapping,
-    executeRequest,
-    validateAndNormalizeRequest,
     createAtomaServer,
     authzHelpers
 } from './server'
 export type {
-    BatchRequest,
-    BatchResponse,
-    BatchResult,
-    BatchOp,
-    Action,
     IOrmAdapter,
     OrderByRule,
     CursorToken,

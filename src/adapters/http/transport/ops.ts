@@ -1,5 +1,6 @@
 import type { ObservabilityContext } from '#observability'
-import type { StandardEnvelope } from '#protocol'
+import type { Envelope } from '#protocol'
+import { Protocol } from '#protocol'
 import { traceFromContext } from './trace'
 import type { HttpInterceptors, HttpTrace } from './pipeline'
 import { createHttpJsonPipeline } from './pipeline'
@@ -56,14 +57,22 @@ export function createOpsTransport(deps: {
     getHeaders: () => Promise<Record<string, string>>
     interceptors?: HttpInterceptors<OpsResponseData>
 }) {
+    const responseParser = deps.interceptors?.responseParser
+        ? deps.interceptors.responseParser
+        : async (_response: Response, json: unknown) => {
+            const fallback = { v: 1 }
+            return Protocol.ops.parse.envelope(json, fallback) as any
+        }
     const pipeline = createHttpJsonPipeline<OpsResponseData>({
         fetchFn: deps.fetchFn,
         getHeaders: deps.getHeaders,
         interceptors: deps.interceptors
+            ? { ...deps.interceptors, responseParser }
+            : { responseParser }
     })
 
     const executeOps = async <T = unknown>(args: ExecuteOpsArgs): Promise<{
-        envelope: StandardEnvelope<OpsResponseData<T>>
+        envelope: Envelope<OpsResponseData<T>>
         response: Response
         results: Array<OpsResult<T>>
     }> => {
@@ -97,4 +106,3 @@ export function createOpsTransport(deps: {
 
     return { executeOps }
 }
-

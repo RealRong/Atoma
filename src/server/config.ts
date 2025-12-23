@@ -6,10 +6,8 @@ import type { FieldPolicyInput } from './guard/fieldPolicy'
 import type { ServerPlugin } from './engine/plugins'
 
 export type AtomaServerRoute =
-    | { kind: 'batch' }
     | { kind: 'ops' }
-    | { kind: 'rest'; method: string; resource: string; id?: string }
-    | { kind: 'sync'; name: 'push' | 'pull' | 'subscribe' }
+    | { kind: 'sync'; name: 'pull' | 'subscribe' }
 
 export type AtomaServerHookArgs<Ctx> = {
     route: AtomaServerRoute
@@ -89,14 +87,10 @@ export type AtomaServerConfig<Ctx = unknown> = {
 
     routing?: {
         basePath?: string
-        rest?: { enabled?: boolean }
-        batch?: { path?: string }
         ops?: { path?: string }
         sync?: {
             enabled?: boolean
-            pushPath?: string
-            pullPath?: string
-            subscribePath?: string
+            subscribeVNextPath?: string
         }
     }
 

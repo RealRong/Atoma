@@ -5,10 +5,9 @@ export function allowOnlyFields(allowed: string[], changedFields: string[]) {
     for (const field of changedFields) {
         if (!allow.has(field)) {
             throwError('ACCESS_DENIED', `Field write not allowed: ${field}`, {
-                kind: 'access',
+                kind: 'auth',
                 field
             })
         }
     }
 }
-

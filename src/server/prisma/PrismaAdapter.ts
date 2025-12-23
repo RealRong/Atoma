@@ -69,7 +69,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     async findMany(resource: string, params: QueryParams = {}): Promise<QueryResult> {
         const delegate = this.getDelegate(resource)
         if (!delegate?.findMany) {
-            throwError('RESOURCE_NOT_ALLOWED', `Resource not allowed: ${resource}`, { kind: 'access', resource })
+            throwError('RESOURCE_NOT_ALLOWED', `Resource not allowed: ${resource}`, { kind: 'auth', resource })
         }
 
         const orderBy = ensureStableOrderBy(params.orderBy, {

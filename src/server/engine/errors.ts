@@ -10,9 +10,12 @@ export function createTopLevelErrorFormatter<Ctx>(config: AtomaServerConfig<Ctx>
         }
         const standard = toStandardError(args.error, 'INTERNAL')
         const status = errorStatus(standard)
-        if (args.route?.kind === 'rest' || args.route?.kind === 'ops') {
-            return { status, body: Protocol.http.compose.error(standard) }
+        const meta = {
+            v: 1,
+            ...(args.traceId ? { traceId: args.traceId } : {}),
+            ...(args.requestId ? { requestId: args.requestId } : {}),
+            serverTimeMs: Date.now()
         }
-        return { status, body: { error: standard } }
+        return { status, body: Protocol.ops.compose.error(standard, meta) }
     }
 }

@@ -1,32 +1,56 @@
+import type { EntityId, Version } from '../scalars'
+
 export type ErrorKind =
-    | 'field_policy'
     | 'validation'
-    | 'access'
+    | 'auth'
     | 'limits'
-    | 'adapter'
-    | 'executor'
     | 'conflict'
+    | 'not_found'
+    | 'adapter'
     | 'internal'
 
-export type StandardErrorDetails = {
-    kind: ErrorKind
-    traceId?: string
-    requestId?: string
-    opId?: string
-    resource?: string
-    part?: 'where' | 'orderBy' | 'select' | string
+export type ValidationErrorDetails = {
     field?: string
     path?: string
-    queryIndex?: number
+    part?: string
+    reason?: string
+    [k: string]: unknown
+}
+
+export type LimitsErrorDetails = {
     max?: number
     actual?: number
-    currentValue?: unknown
-    currentVersion?: number
-    [k: string]: any
+    windowMs?: number
+    [k: string]: unknown
 }
+
+export type ConflictErrorDetails = {
+    resource: string
+    entityId: EntityId
+    currentVersion?: Version
+    hint?: 'rebase' | 'server-wins' | 'manual'
+    [k: string]: unknown
+}
+
+export type NotFoundErrorDetails = {
+    resource: string
+    entityId?: EntityId
+    [k: string]: unknown
+}
+
+export type StandardErrorDetails =
+    | ValidationErrorDetails
+    | LimitsErrorDetails
+    | ConflictErrorDetails
+    | NotFoundErrorDetails
+    | Record<string, unknown>
 
 export type StandardError = {
     code: string
     message: string
+    kind: ErrorKind
+    retryable?: boolean
     details?: StandardErrorDetails
+    cause?: StandardError
 }
+

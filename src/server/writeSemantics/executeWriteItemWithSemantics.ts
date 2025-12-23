@@ -1,4 +1,4 @@
-import type { AtomaChange } from '#protocol'
+import type { AtomaChange } from '../sync/types'
 import { throwError, toStandardError, errorStatus } from '../error'
 import type { IOrmAdapter, StandardError as StandardErrorType } from '../types'
 import type { ISyncAdapter } from '../sync/types'

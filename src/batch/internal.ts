@@ -1,8 +1,8 @@
 import { Observability } from '#observability'
 import type { ObservabilityContext, AtomaDebugEventMap, DebugEmitMeta } from '#observability'
 import { Protocol } from '#protocol'
-import type { PageInfo } from '#protocol'
-import type { FetchFn, QueryEnvelope, WriteTask } from './types'
+import type { Meta, Operation, OperationResult } from '#protocol'
+import type { FetchFn } from './types'
 
 // ============================================================================
 // Utils
@@ -129,22 +129,12 @@ export function createCoalescedScheduler(args: {
     return { schedule, cancel, dispose }
 }
 
-export type OpsMeta = {
-    v: number
-    deviceId?: string
-    traceId?: string
-    requestId?: string
-    clientTimeMs?: number
-}
-
 export type OpsRequest = {
-    meta: OpsMeta
-    ops: unknown[]
+    meta: Meta
+    ops: Operation[]
 }
 
-export type OpsResult =
-    | { opId: string; ok: true; data: unknown }
-    | { opId: string; ok: false; error: unknown }
+export type OpsResult = OperationResult
 
 type SendFn = (payload: OpsRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
 
@@ -198,10 +188,10 @@ export async function sendOpsWithAdapterEvents(args: {
         })
         const durationMs = Date.now() - startedAt
 
-        const envelope = parseStandardEnvelopeFromJson<unknown>(response.json)
+        const envelope = parseOpsEnvelopeFromJson<unknown>(response.json)
 
-        if (envelope.ok === false || envelope.error) {
-            const err = new Error((envelope.error as any)?.message ?? 'Ops request failed')
+        if (!envelope.ok) {
+            const err = new Error(envelope.error?.message ?? 'Ops request failed')
             ;(err as any).status = response.status
             ;(err as any).envelope = envelope
             throw err
@@ -222,7 +212,7 @@ export async function sendOpsWithAdapterEvents(args: {
             })
         })
 
-        const results = envelope.data && typeof envelope.data === 'object'
+        const results = (envelope.data && typeof envelope.data === 'object')
             ? Reflect.get(envelope.data as any, 'results')
             : undefined
         const resultMap = mapOpsResults(results)
@@ -275,20 +265,9 @@ export function isWriteQueueFull(config: BatchEngineConfigLike, writePendingCoun
     return writePendingCount >= maxLen
 }
 
-export function normalizeMaxBatchSize(config: BatchEngineConfigLike) {
-    const n = config.maxBatchSize
-    return (typeof n === 'number' && Number.isFinite(n) && n > 0) ? Math.floor(n) : Infinity
-}
-
 export function normalizeMaxOpsPerRequest(config: BatchEngineConfigLike) {
     const n = config.maxOpsPerRequest
     return (typeof n === 'number' && Number.isFinite(n) && n > 0) ? Math.floor(n) : Infinity
-}
-
-export function normalizeMaxQueryOpsPerRequest(config: BatchEngineConfigLike) {
-    const a = normalizeMaxBatchSize(config)
-    const b = normalizeMaxOpsPerRequest(config)
-    return Math.min(a, b)
 }
 
 // ============================================================================
@@ -339,9 +318,15 @@ function buildTraceState(items: Array<{ ctx?: ObservabilityContext }>): TraceSta
     return { commonTraceId, mixedTrace }
 }
 
-export function buildQueryLaneRequestContext(tasks: Array<{ ctx?: ObservabilityContext }>) {
+export function buildOpsLaneRequestContext(tasks: Array<{ ctx?: ObservabilityContext }>) {
     const traceState = buildTraceState(tasks)
-    const requestId = traceState.commonTraceId ? tasks[0]?.ctx?.requestId() : undefined
+    const requestId = (() => {
+        if (!traceState.commonTraceId) return undefined
+        for (const t of tasks) {
+            if (t.ctx) return t.ctx.requestId()
+        }
+        return undefined
+    })()
 
     const byCtx = new Map<ObservabilityContext, { opCount: number }>()
     tasks.forEach(t => {
@@ -352,52 +337,10 @@ export function buildQueryLaneRequestContext(tasks: Array<{ ctx?: ObservabilityC
         byCtx.set(ctx, cur)
     })
 
-    const ctxTargets = Array.from(byCtx.entries()).map(([baseCtx, meta]) => ({
-        ctx: requestId ? baseCtx.with({ requestId }) : baseCtx,
-        ...meta
-    }))
-    const shouldEmitAdapterEvents = ctxTargets.some(t => t.ctx.active)
-
-    return {
-        commonTraceId: traceState.commonTraceId,
-        requestId,
-        mixedTrace: traceState.mixedTrace,
-        ctxTargets,
-        shouldEmitAdapterEvents
-    }
-}
-
-export function buildWriteLaneRequestContext(slicesByOpId: Map<string, WriteTask[]>) {
-    const allTasks: Array<{ ctx?: ObservabilityContext }> = []
-    for (const slice of slicesByOpId.values()) {
-        allTasks.push(...slice)
-    }
-
-    const traceState = buildTraceState(allTasks)
-    const requestId = (() => {
-        if (!traceState.commonTraceId) return undefined
-        for (const t of allTasks) {
-            if (t.ctx) return t.ctx.requestId()
-        }
-        return undefined
-    })()
-
-    const byCtx = new Map<ObservabilityContext, { taskCount: number; opIds: Set<string> }>()
-    for (const [opId, slice] of slicesByOpId.entries()) {
-        slice.forEach(t => {
-            const ctx = t.ctx
-            if (!ctx) return
-            const cur = byCtx.get(ctx) ?? { taskCount: 0, opIds: new Set<string>() }
-            cur.taskCount++
-            cur.opIds.add(opId)
-            byCtx.set(ctx, cur)
-        })
-    }
-
     const ctxTargets = Array.from(byCtx.entries()).map(([ctx, meta]) => ({
         ctx: requestId ? ctx.with({ requestId }) : ctx,
-        taskCount: meta.taskCount,
-        opCount: meta.opIds.size
+        opCount: meta.opCount,
+        taskCount: meta.opCount
     }))
     const shouldEmitAdapterEvents = ctxTargets.some(t => t.ctx.active)
 
@@ -458,71 +401,9 @@ export async function sendBatchRequest(
 // Protocol Helpers
 // ============================================================================
 
-type StandardEnvelopeLike<T> = {
-    ok: boolean
-    data?: T
-    error?: unknown
-    meta?: unknown
-    pageInfo?: PageInfo
+function parseOpsEnvelopeFromJson<T = unknown>(json: unknown) {
+    const fallback = { v: 1 }
+    return Protocol.ops.parse.envelope<T>(json, fallback)
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function parseStandardEnvelopeFromJson<T = unknown>(json: unknown): StandardEnvelopeLike<T> {
-    if (isRecord(json) && typeof (json as any).ok === 'boolean') {
-        const ok = (json as any).ok === true
-        if (!ok) {
-            const errorRaw = (json as any).error
-            const error = isRecord(errorRaw) ? errorRaw : { code: 'INTERNAL', message: 'Request failed' }
-            return { ok: false, error, meta: (json as any).meta }
-        }
-        return {
-            ok: true,
-            data: (json as any).data as T,
-            meta: (json as any).meta,
-            pageInfo: (json as any).pageInfo as any
-        }
-    }
-
-    return { ok: true, data: json as any }
-}
-
-function isPageInfo(value: unknown): value is PageInfo {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-    const cursor = Reflect.get(value, 'cursor')
-    const hasNext = Reflect.get(value, 'hasNext')
-    const total = Reflect.get(value, 'total')
-
-    if (cursor !== undefined && typeof cursor !== 'string') return false
-    if (hasNext !== undefined && typeof hasNext !== 'boolean') return false
-    if (total !== undefined && typeof total !== 'number') return false
-    return true
-}
-
-export function normalizeQueryResultData(data: unknown): QueryEnvelope<any> {
-    if (Array.isArray(data)) return { data }
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return { data: [] }
-    const items = Reflect.get(data, 'items')
-    const pageInfo = Reflect.get(data, 'pageInfo')
-    return {
-        data: Array.isArray(items) ? items : [],
-        ...(isPageInfo(pageInfo) ? { pageInfo } : {})
-    }
-}
-
-export function normalizeQueryFallback(res: unknown): QueryEnvelope<any> {
-    if (Array.isArray(res)) return { data: res }
-
-    if (res && typeof res === 'object' && !Array.isArray(res)) {
-        const data = Reflect.get(res, 'data')
-        const pageInfo = Reflect.get(res, 'pageInfo')
-        return {
-            data: Array.isArray(data) ? data : [],
-            ...(isPageInfo(pageInfo) ? { pageInfo } : {})
-        }
-    }
-
-    return { data: [] }
-}
+// legacy query normalization removed in ops-only mode

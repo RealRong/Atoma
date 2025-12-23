@@ -1,13 +1,18 @@
-export { SyncEngine } from './engine'
-export { MemoryOutboxStore } from './outbox'
-export { MemoryCursorStore, defaultCompareCursor } from './cursor'
+import { SyncEngine } from './engine/SyncEngine'
+import type { SyncClient, SyncConfig } from './types'
+
+export const Sync: { create: (config: SyncConfig) => SyncClient } = {
+    create: (config: SyncConfig) => new SyncEngine(config)
+}
+
 export type {
+    SyncClient,
+    SyncConfig,
+    SyncEvent,
+    SyncPhase,
     SyncOutboxItem,
-    OutboxStore,
-    CursorStore,
-    SyncApplier,
-    SyncTransport,
-    SyncEngineConfig,
     SyncWriteAck,
-    SyncWriteReject
+    SyncWriteReject,
+    SyncTransport,
+    SyncOutboxEvents
 } from './types'

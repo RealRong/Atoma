@@ -1,33 +1,9 @@
-import type { Patch } from 'immer'
-import type { FindManyOptions, PageInfo, PatchMetadata, StoreKey } from '../../../core/types'
+import type { FindManyOptions, PageInfo, StoreKey } from '../../../core/types'
 import type { DevtoolsBridge } from '../../../devtools/types'
 import type { ObservabilityContext } from '#observability'
-import type { StandardEnvelope } from '#protocol'
-import type { QuerySerializerConfig } from '../query'
+import type { Envelope } from '#protocol'
 
 export type RetryConfig = import('../transport/retry').RetryConfig
-
-export interface ConflictConfig<T> {
-    resolution?: 'last-write-wins' | 'server-wins' | 'manual'
-    onConflict?: (args: {
-        key: StoreKey
-        local: T | Patch[]
-        server: any
-        metadata?: PatchMetadata
-    }) => Promise<'accept-server' | 'retry-local' | 'ignore'> | 'accept-server' | 'retry-local' | 'ignore'
-}
-
-export interface VersionConfig {
-    field?: string
-    header?: string
-    cacheSize?: number
-}
-
-export interface OfflineConfig {
-    enabled?: boolean
-    maxQueueSize?: number
-    syncOnReconnect?: boolean
-}
 
 export interface SyncEndpointsConfig {
     push?: string
@@ -47,16 +23,24 @@ export interface SyncConfig {
     mode?: 'sse' | 'poll'
     endpoints?: SyncEndpointsConfig
     pollIntervalMs?: number
+    reconnectDelayMs?: number
+    periodicPullIntervalMs?: number
     pullLimit?: number
     cursorKey?: string
     deviceIdKey?: string
     autoStart?: boolean
+    maxQueueSize?: number
+    inFlightTimeoutMs?: number
+    conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
     sse?: SyncSseConfig
+    retry?: { maxAttempts?: number }
+    backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
+    lockKey?: string
+    lockTtlMs?: number
+    lockRenewIntervalMs?: number
 }
 
 export interface QueryConfig<T> {
-    strategy?: 'REST' | 'Django' | 'GraphQL' | 'passthrough'
-    serializer?: (options: FindManyOptions<T>) => URLSearchParams | object
     customFn?: (options: FindManyOptions<T>) => Promise<{ data: T[]; pageInfo?: PageInfo }>
 }
 
@@ -84,7 +68,7 @@ export interface EventCallbacks {
 export type ResponseParser<T, Raw = unknown> = (
     response: Response,
     data: Raw
-) => Promise<StandardEnvelope<T>> | StandardEnvelope<T>
+) => Promise<Envelope<T>> | Envelope<T>
 
 export interface BatchQueryConfig {
     enabled?: boolean
@@ -96,31 +80,11 @@ export interface BatchQueryConfig {
 
 export interface HTTPAdapterConfig<T> {
     baseURL: string
-    resourceName?: string
-    endpoints?: {
-        getOne?: string | ((id: StoreKey) => string)
-        getAll?: string | (() => string)
-        create?: string | (() => string)
-        update?: string | ((id: StoreKey) => string)
-        delete?: string | ((id: StoreKey) => string)
-        patch?: string | ((id: StoreKey) => string)
-        bulkCreate?: string | (() => string)
-        bulkUpdate?: string | (() => string)
-        bulkDelete?: string | (() => string)
-        bulkDeleteQueryParam?: {
-            path: string | (() => string)
-            param: string
-            maxUrlLength?: number
-        }
-    }
+    resourceName: string
     headers?: () => Promise<Record<string, string>> | Record<string, string>
     retry?: RetryConfig
-    conflict?: ConflictConfig<T>
-    version?: VersionConfig
-    offline?: OfflineConfig
     sync?: SyncConfig
     query?: QueryConfig<T>
-    querySerializer?: QuerySerializerConfig
     concurrency?: ConcurrencyConfig
     bulk?: BulkConfig
     events?: EventCallbacks
@@ -131,8 +95,7 @@ export interface HTTPAdapterConfig<T> {
     onRequest?: (request: Request) => Promise<Request | void> | Request | void
     onResponse?: (context: {
         response: Response
-        envelope: StandardEnvelope<T>
+        envelope: Envelope<T>
         request: Request
     }) => void
 }
-

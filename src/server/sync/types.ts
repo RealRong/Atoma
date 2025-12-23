@@ -1,6 +1,15 @@
-import type { AtomaChange } from '#protocol'
+import type { ChangeKind } from '#protocol'
 
-export type { AtomaChange, ChangeKind } from '#protocol'
+export type AtomaChange = {
+    cursor: number
+    resource: string
+    id: string
+    kind: ChangeKind
+    serverVersion: number
+    changedAt: number
+}
+
+export type { ChangeKind } from '#protocol'
 
 export type IdempotencyHit = {
     hit: true
