@@ -1,14 +1,15 @@
 import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
 import { commitAtomMapUpdate } from './cacheWriter'
-import { type StoreRuntime, resolveObservabilityContext } from './runtime'
+import { resolveObservabilityContext } from './runtime'
+import type { StoreHandle } from '../types'
 
-export function createGetAll<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexes, transform } = runtime
+export function createGetAll<T extends Entity>(handle: StoreHandle<T>) {
+    const { jotaiStore, atom, adapter, services, indexes, transform } = handle
 
     return async (filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions) => {
         const existingMap = jotaiStore.get(atom) as Map<StoreKey, T>
-        const observabilityContext = resolveObservabilityContext(runtime, options)
+        const observabilityContext = resolveObservabilityContext(handle, options)
 
         let arr = await adapter.getAll(filter, observabilityContext)
         arr = arr.map(transform)
@@ -23,7 +24,7 @@ export function createGetAll<T extends Entity>(runtime: StoreRuntime<T>) {
 
         const withRemovals = BaseStore.bulkRemove(toRemove, existingMap)
         const next = BaseStore.bulkAdd(itemsToCache as PartialWithId<T>[], withRemovals)
-        commitAtomMapUpdate({ jotaiStore, atom, before: existingMap, after: next, context, indexes })
+        commitAtomMapUpdate({ handle, before: existingMap, after: next })
 
         return arr
     }

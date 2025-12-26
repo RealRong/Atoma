@@ -1,4 +1,4 @@
-import type { PageInfo, FindManyOptions, RelationIncludeInput, RelationMap, WithRelations } from '../core/types'
+import type { PageInfo, FindManyOptions, RelationIncludeInput, RelationMap, WithRelations } from '#core'
 
 export type UseFindManyResult<
     T,

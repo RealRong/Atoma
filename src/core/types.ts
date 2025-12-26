@@ -1,9 +1,10 @@
 import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
-import type { StoreContext } from './StoreContext'
+import type { StoreServices } from './StoreServices'
 import type { DevtoolsBridge } from '../devtools/types'
-import type { Explain, ObservabilityContext } from '#observability'
+import type { Explain, ObservabilityContext, ObservabilityRuntime } from '#observability'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
+import type { StoreIndexes } from './indexes/StoreIndexes'
 
 /**
  * Base key type for entities
@@ -58,8 +59,8 @@ export interface IAdapter<T extends Entity> {
      * Store bindings (optional)
      * - Sync-enabled adapters can use this to write back remote changes into the store cache.
      */
-    attachStoreAccess?: (access: StoreAccess<T>) => void
-    detachStoreAccess?: () => void
+    attachStoreHandle?: (handle: StoreHandle<T>) => void
+    detachStoreHandle?: () => void
 
     /**
      * Internal context (optional):
@@ -135,17 +136,44 @@ export type OperationContext = Readonly<{
 }>
 
 /**
+ * 写入确认语义（只影响 `await store.addOne/updateOne/delete...` 何时完成）
+ * - optimistic：等待 enqueued（系统已稳定接管：direct=持久化成功；outbox=enqueue 落盘成功）
+ * - strict：等待 confirmed（direct≈持久化成功；outbox=服务端结果）
+ */
+export type WriteConfirmation = 'optimistic' | 'strict'
+
+export type WriteTimeoutBehavior = 'reject' | 'resolve-enqueued'
+
+/**
+ * WriteItemMeta（每个 write item 的 meta，会发到服务端）
+ * - 只放“跨重试仍稳定”的字段（idempotencyKey/clientTimeMs）
+ */
+export type WriteItemMeta = {
+    idempotencyKey: string
+    clientTimeMs: number
+}
+
+/**
+ * 内部票据（每次写入调用一张）
+ * - 只存在于内存
+ * - 用于统一 await 语义（enqueued/confirmed）
+ */
+export type WriteTicket = {
+    idempotencyKey: string
+    clientTimeMs: number
+    enqueued: Promise<void>
+    confirmed: Promise<void>
+    settle: (stage: 'enqueued' | 'confirmed', error?: unknown) => void
+}
+
+/**
  * Dispatch event for queue processing
  */
 export type StoreDispatchEvent<T extends Entity> = {
-    atom: PrimitiveAtom<Map<StoreKey, T>>
-    adapter: IAdapter<T>
-    store: JotaiStore // Jotai store instance
-    context: StoreContext // StoreContext for per-store dependencies (avoids circular import)
-    indexes?: any
-    observabilityContext: ObservabilityContext
+    handle: StoreHandle<T>
     opContext?: OperationContext
     onFail?: (error?: Error) => void  // Accept error object for rejection
+    ticket?: WriteTicket
 } & (
         | {
             type: 'add'
@@ -185,7 +213,15 @@ export type StoreDispatchEvent<T extends Entity> = {
  */
 export interface StoreOperationOptions {
     force?: boolean
-    traceId?: string
+    /**
+     * `await` 完成语义（默认 optimistic）
+     * - 注意：不影响 UI 是否立即更新（UI 仍默认 optimistic commit）
+     */
+    confirmation?: WriteConfirmation
+    /** strict 等待 confirmed 的超时（可选）。undefined 表示无限等待 */
+    timeoutMs?: number
+    /** strict 超时策略（默认 reject） */
+    timeoutBehavior?: WriteTimeoutBehavior
     /**
      * 操作上下文（上层语义：scope/origin/actionId）
      * - 若未提供，core 会在 dispatch 阶段补齐默认值（scope='default', origin='user'）
@@ -197,7 +233,6 @@ export interface StoreOperationOptions {
  * Options for read operations (public, pure-data)
  */
 export interface StoreReadOptions {
-    traceId?: string
 }
 
 export type WhereOperator<T> = Partial<Record<keyof T & string, any | {
@@ -252,8 +287,6 @@ export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
     skipStore?: boolean
     /** Relations include 配置 */
     include?: Include
-    /** 仅用于关联一次调用链（可选）。不传时由 store 决定是否分配。 */
-    traceId?: string
     /** 生成 explain 诊断产物（默认 false） */
     explain?: boolean
 }
@@ -311,8 +344,8 @@ export interface StoreConfig<T> {
     /** Optional index definitions (for findMany 优先命中) */
     indexes?: Array<IndexDefinition<T>>
 
-    /** Per-store context for dependency injection (avoids circular import) */
-    context?: StoreContext
+    /** Per-store services for dependency injection (avoids circular import) */
+    services?: StoreServices
 
     /** Devtools bridge（可选） */
     devtools?: DevtoolsBridge
@@ -340,9 +373,14 @@ export interface IndexDefinition<T> {
 // ============ Relations ============
 export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
 
+/**
+ * Store token - currently a string (store name)
+ */
+export type StoreToken = string
+
 export interface BelongsToConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
     type: 'belongsTo'
-    store: IStore<TTarget, TTargetRelations>
+    store: StoreToken
     foreignKey: KeySelector<TSource>
     primaryKey?: keyof TTarget & string
     options?: RelationIncludeOptions<TTarget, Partial<{ [K in keyof TTargetRelations]: InferIncludeType<TTargetRelations[K]> }>>
@@ -350,7 +388,7 @@ export interface BelongsToConfig<TSource, TTarget extends Entity, TTargetRelatio
 
 export interface HasManyConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
     type: 'hasMany'
-    store: IStore<TTarget, TTargetRelations>
+    store: StoreToken
     primaryKey?: KeySelector<TSource>
     foreignKey: keyof TTarget & string
     options?: RelationIncludeOptions<TTarget, Partial<{ [K in keyof TTargetRelations]: InferIncludeType<TTargetRelations[K]> }>>
@@ -358,7 +396,7 @@ export interface HasManyConfig<TSource, TTarget extends Entity, TTargetRelations
 
 export interface HasOneConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
     type: 'hasOne'
-    store: IStore<TTarget, TTargetRelations>
+    store: StoreToken
     primaryKey?: KeySelector<TSource>
     foreignKey: keyof TTarget & string
     options?: RelationIncludeOptions<TTarget, Partial<{ [K in keyof TTargetRelations]: InferIncludeType<TTargetRelations[K]> }>>
@@ -484,22 +522,9 @@ export type RelationIncludeInput<Relations> =
     : Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
 
 /**
- * Optimistic mode configuration
- * - optimistic: UI updates immediately, adapter failures only rollback locally
- * - strict: UI updates only after adapter confirms success
- */
-export type OptimisticMode = 'optimistic' | 'strict'
-
-/**
  * Queue configuration
  */
 export interface QueueConfig {
-    /** Enable batch processing */
-    enabled: boolean
-
-    /** Success/failure mode (default: 'optimistic' for backward compatibility) */
-    mode?: OptimisticMode
-
     /** Log queue operations */
     debug?: boolean
 }
@@ -530,20 +555,25 @@ export interface IEventEmitter {
 export type JotaiStore = ReturnType<typeof import('jotai/vanilla').createStore>
 
 /**
- * Store access bindings exposed to adapters（可选）。
- * 主要用于 sync/pull/subscribe 这类“服务端推动”的写回场景。
+ * Store internal handle bindings exposed across layers.
+ * - Internal store operations use it as the only runtime object.
+ * - React/client/adapters use it to access atom/jotaiStore/context/indexes, without bloating IStore.
  */
-export type StoreAccess<T extends Entity = any> = {
+export type StoreHandle<T extends Entity = any> = {
     atom: PrimitiveAtom<Map<StoreKey, T>>
     jotaiStore: JotaiStore
-    context: StoreContext
-    adapter?: IAdapter<T>
+    services: StoreServices
+    adapter: IAdapter<T>
     matcher?: QueryMatcherOptions
-    storeName?: string
+    storeName: string
     relations?: () => any | undefined
     createObservabilityContext?: (args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
 
-    transform?: (item: T) => T
-    schema?: SchemaValidator<T>
-    indexes?: any
+    observability: ObservabilityRuntime
+    indexes: StoreIndexes<T> | null
+    hooks: StoreConfig<T>['hooks']
+    schema: StoreConfig<T>['schema']
+    idGenerator: StoreConfig<T>['idGenerator']
+    transform: (item: T) => T
+    stopIndexDevtools?: () => void
 }

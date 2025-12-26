@@ -2,11 +2,13 @@ import { Protocol } from '#protocol'
 import { allowOnlyFields } from './authz/helpers'
 import type { AtomaServerConfig } from './config'
 import type { HandleResult } from './http/types'
+import { normalizePath } from './http/url'
 import { createRouter } from './engine/router'
 import { createRuntimeFactory } from './engine/runtime'
 import { createTopLevelErrorFormatter } from './engine/errors'
 import { createServerServices } from './services/createServerServices'
-import { createDefaultRoutesPlugin } from './plugins/defaultRoutesPlugin'
+import { handleWithRuntime } from './engine/handleWithRuntime'
+import type { RouteHandler } from './engine/router'
 
 const DEFAULT_OPS_PATH = '/ops'
 const DEFAULT_SYNC_SUBSCRIBE_VNEXT_PATH = '/sync/subscribe-vnext'
@@ -50,29 +52,50 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
         routing: { syncEnabled }
     })
 
-    const userPlugins = Array.isArray(config.plugins) ? config.plugins : []
-    const plugins = [...userPlugins, createDefaultRoutesPlugin<Ctx>()]
-
-    const nameSet = new Set<string>()
-    for (const p of plugins) {
-        if (!p?.name) throw new Error('ServerPlugin.name is required')
-        if (nameSet.has(p.name)) throw new Error(`Duplicate ServerPlugin name: ${p.name}`)
-        nameSet.add(p.name)
-    }
-
-    const pluginArgs = {
-        config,
-        services,
-        routing: {
-            opsPath,
-            syncEnabled,
-            syncSubscribeVNextPath
+    const routes: RouteHandler[] = [
+        {
+            id: 'sync:subscribe-vnext',
+            match: ({ pathname }) => syncEnabled && normalizePath(pathname) === normalizePath(syncSubscribeVNextPath),
+            handle: (ctx) => handleWithRuntime<Ctx>({
+                incoming: ctx.incoming,
+                route: { kind: 'sync', name: 'subscribe' },
+                method: ctx.method,
+                pathname: ctx.pathname,
+                initialTraceId: ctx.traceIdHeaderValue,
+                initialRequestId: ctx.requestIdHeaderValue,
+                createRuntime: services.runtime.createRuntime,
+                formatTopLevelError: services.runtime.formatTopLevelError,
+                run: (runtime) => services.sync.subscribeVNext({
+                    incoming: ctx.incoming,
+                    urlObj: ctx.urlObj,
+                    method: ctx.method,
+                    pathname: ctx.pathname,
+                    route: { kind: 'sync', name: 'subscribe' },
+                    runtime
+                })
+            })
+        },
+        {
+            id: 'ops',
+            match: ({ pathname }) => normalizePath(pathname) === normalizePath(opsPath),
+            handle: (ctx) => handleWithRuntime<Ctx>({
+                incoming: ctx.incoming,
+                route: { kind: 'ops' },
+                method: ctx.method,
+                pathname: ctx.pathname,
+                initialTraceId: ctx.traceIdHeaderValue,
+                initialRequestId: ctx.requestIdHeaderValue,
+                createRuntime: services.runtime.createRuntime,
+                formatTopLevelError: services.runtime.formatTopLevelError,
+                run: (runtime) => services.ops.handle({
+                    incoming: ctx.incoming,
+                    method: ctx.method,
+                    pathname: ctx.pathname,
+                    runtime
+                })
+            })
         }
-    } as const
-
-    const setups = plugins.map(p => p.setup(pluginArgs))
-    const routes = setups.flatMap(s => Array.isArray(s?.routes) ? s.routes : [])
-    const middleware = setups.flatMap(s => Array.isArray(s?.middleware) ? s.middleware : [])
+    ]
 
     const router = createRouter({
         basePath,
@@ -85,7 +108,6 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
             error
         }),
         routes,
-        middleware
     })
 
     return router

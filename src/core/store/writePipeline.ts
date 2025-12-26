@@ -2,10 +2,10 @@ import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId } from '../types'
 import { runBeforeSave } from './hooks'
 import { validateWithSchema } from './validation'
-import type { StoreRuntime } from './runtime'
+import type { StoreHandle } from '../types'
 
 export async function prepareForAdd<T extends Entity>(
-    runtime: StoreRuntime<T>,
+    runtime: StoreHandle<T>,
     item: Partial<T>
 ): Promise<PartialWithId<T>> {
     let initedObj = BaseStore.initBaseObject(item, runtime.idGenerator) as unknown as PartialWithId<T>
@@ -16,7 +16,7 @@ export async function prepareForAdd<T extends Entity>(
 }
 
 export async function prepareForUpdate<T extends Entity>(
-    runtime: StoreRuntime<T>,
+    runtime: StoreHandle<T>,
     base: PartialWithId<T>,
     patch: PartialWithId<T>
 ): Promise<PartialWithId<T>> {

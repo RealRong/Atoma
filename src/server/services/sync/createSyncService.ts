@@ -3,14 +3,12 @@ import { validateSyncSubscribeQuery } from '../../sync/validation'
 import type { AtomaServerConfig, AtomaServerRoute } from '../../config'
 import type { ServerRuntime } from '../../engine/runtime'
 import type { AuthzPolicy } from '../../policies/authzPolicy'
-import type { LimitPolicy } from '../../policies/limitPolicy'
 import type { SyncService } from '../types'
 import { Protocol } from '#protocol'
 
 export function createSyncService<Ctx>(args: {
     config: AtomaServerConfig<Ctx>
     authz: AuthzPolicy<Ctx>
-    limits: LimitPolicy<Ctx>
 }): SyncService<Ctx> {
     const vnextSubscribeStream = async function* stream(args2: {
         incoming: any
@@ -66,7 +64,7 @@ export function createSyncService<Ctx>(args: {
     }
 
     return {
-        subscribeVNext: async ({ incoming, urlObj, method, route, runtime, phase }) => {
+        subscribeVNext: async ({ incoming, urlObj, method, route, runtime }) => {
             if (method !== 'GET') {
                 throwError('METHOD_NOT_ALLOWED', 'GET required', { kind: 'validation', traceId: runtime.traceId, requestId: runtime.requestId })
             }
@@ -74,8 +72,6 @@ export function createSyncService<Ctx>(args: {
             const { cursor: startCursor } = validateSyncSubscribeQuery({
                 cursor: urlObj.searchParams.get('cursor')
             })
-
-            await phase.validated({ request: { cursor: startCursor }, event: { cursor: startCursor } })
 
             const heartbeatMs = args.config.sync?.subscribe?.heartbeatMs ?? 15000
             const retryMs = args.config.sync?.subscribe?.retryMs ?? 2000

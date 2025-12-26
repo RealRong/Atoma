@@ -9,8 +9,9 @@ export default defineConfig({
         'adapters/index': 'src/adapters/index.ts',
         'react/index': 'src/react/index.ts',
         'server/index': 'src/server/index.ts',
-        'server/typeorm': 'src/server/typeorm/index.ts',
-        'server/prisma': 'src/server/prisma/index.ts'
+        'server/adapters': 'src/server/adapters/index.ts',
+        'server/adapters/typeorm': 'src/server/adapters/typeorm/index.ts',
+        'server/adapters/prisma': 'src/server/adapters/prisma/index.ts'
     },
     format: ['esm'],
     dts: true,
@@ -21,6 +22,7 @@ export default defineConfig({
     esbuildOptions(options) {
         options.alias = {
             ...(options.alias ?? {}),
+            '#core': 'src/core/index.ts',
             '#observability': 'src/observability/index.ts',
             '#protocol': 'src/protocol/index.ts',
             '#batch': 'src/batch/index.ts'

@@ -1,4 +1,4 @@
-import type { Entity, StoreKey } from '../../../core/types'
+import type { Entity, StoreKey } from '#core'
 import type { Change } from '#protocol'
 import type { SyncWriteAck, SyncWriteReject } from '../../../sync/types'
 

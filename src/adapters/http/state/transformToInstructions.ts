@@ -1,4 +1,4 @@
-import type { Entity, StoreKey } from '../../../core/types'
+import type { Entity, StoreKey } from '#core'
 import type { StateWriteInstruction, StateWriteInput } from './types'
 
 export function transformToInstructions<T extends Entity>(

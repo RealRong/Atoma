@@ -1,10 +1,11 @@
 import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
 import { commitAtomMapUpdate } from './cacheWriter'
-import { type StoreRuntime, resolveObservabilityContext } from './runtime'
+import { resolveObservabilityContext } from './runtime'
+import type { StoreHandle } from '../types'
 
-export function createGetMultipleByIds<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexes, transform } = runtime
+export function createGetMultipleByIds<T extends Entity>(handle: StoreHandle<T>) {
+    const { jotaiStore, atom, adapter, services, indexes, transform } = handle
 
     return async (ids: StoreKey[], cache = true, options?: StoreReadOptions) => {
         const map = jotaiStore.get(atom) as Map<StoreKey, T>
@@ -22,7 +23,7 @@ export function createGetMultipleByIds<T extends Entity>(runtime: StoreRuntime<T
 
         let fetched: T[] = []
         if (missing.length > 0) {
-            const observabilityContext = resolveObservabilityContext(runtime, options)
+            const observabilityContext = resolveObservabilityContext(handle, options)
 
             fetched = (await adapter.bulkGet(missing, observabilityContext)).filter((i): i is T => i !== undefined)
             fetched = fetched.map(transform)
@@ -30,7 +31,7 @@ export function createGetMultipleByIds<T extends Entity>(runtime: StoreRuntime<T
             if (cache && fetched.some(i => !map.has((i as any).id))) {
                 const before = jotaiStore.get(atom) as Map<StoreKey, T>
                 const after = BaseStore.bulkAdd(fetched as PartialWithId<T>[], before)
-                commitAtomMapUpdate({ jotaiStore, atom, before, after, context, indexes })
+                commitAtomMapUpdate({ handle, before, after })
             }
         }
 

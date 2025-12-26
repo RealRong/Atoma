@@ -2,8 +2,6 @@ import type { DebugConfig, DebugEvent } from '#observability'
 import type { AtomaServerLogger } from './logger'
 import type { IOrmAdapter } from './types'
 import type { ISyncAdapter } from './sync/types'
-import type { FieldPolicyInput } from './guard/fieldPolicy'
-import type { ServerPlugin } from './engine/plugins'
 
 export type AtomaServerRoute =
     | { kind: 'ops' }
@@ -24,12 +22,6 @@ export type AtomaAuthorizeHookArgs<Ctx> = AtomaServerHookArgs<Ctx> & {
     op: unknown
 }
 
-export type AtomaFilterQueryHookArgs<Ctx> = AtomaServerHookArgs<Ctx> & {
-    resource: string
-    params: unknown
-    op: unknown
-}
-
 export type AtomaValidateWriteHookArgs<Ctx> = AtomaServerHookArgs<Ctx> & {
     resource: string
     op: unknown
@@ -41,7 +33,6 @@ export type AtomaValidateWriteHookArgs<Ctx> = AtomaServerHookArgs<Ctx> & {
 
 export type AtomaAuthzHooks<Ctx> = {
     authorize?: Array<(args: AtomaAuthorizeHookArgs<Ctx>) => void | Promise<void>>
-    filterQuery?: Array<(args: AtomaFilterQueryHookArgs<Ctx>) => Record<string, any> | void | Promise<Record<string, any> | void>>
     validateWrite?: Array<(args: AtomaValidateWriteHookArgs<Ctx>) => void | Promise<void>>
 }
 
@@ -94,14 +85,6 @@ export type AtomaServerConfig<Ctx = unknown> = {
         }
     }
 
-    /**
-     * 插件系统：用可组合模块替代“before/after 路由注入”。
-     * - 插件按顺序 setup，收集 routes 与 middleware
-     * - 内置路由由 DefaultRoutesPlugin 提供（createAtomaServer 会自动追加到最后）
-     * - 想完全替换内置行为：提供一个 match-all 的 routes 插件放在前面即可
-     */
-    plugins?: Array<ServerPlugin<Ctx>>
-
     authz?: {
         resources?: {
             allow?: string[]
@@ -110,9 +93,7 @@ export type AtomaServerConfig<Ctx = unknown> = {
         hooks?: AtomaAuthzHooks<Ctx>
         perResource?: Record<string, {
             hooks?: AtomaAuthzHooks<Ctx>
-            fieldPolicy?: FieldPolicyInput
         }>
-        fieldPolicy?: FieldPolicyInput
     }
 
     sync?: {
@@ -157,8 +138,6 @@ export type AtomaServerConfig<Ctx = unknown> = {
         debug?: AtomaServerDebugConfig
         hooks?: {
             onRequest?: AtomaServerHook<AtomaServerHookArgs<Ctx> & { incoming: any }>
-            onValidated?: AtomaServerHook<AtomaServerHookArgs<Ctx> & { request: unknown }>
-            onAuthorized?: AtomaServerHook<AtomaServerHookArgs<Ctx>>
             onResponse?: AtomaServerHook<AtomaServerHookArgs<Ctx> & { status: number }>
             onError?: AtomaServerHook<AtomaServerHookArgs<Ctx> & { error: unknown }>
         }

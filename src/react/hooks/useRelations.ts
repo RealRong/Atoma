@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { RelationResolver } from '../../core/relations/RelationResolver'
-import { stableStringify } from '../../core/query'
-import { normalizeKey } from '../../core/relations/utils'
-import type { Entity, FindManyOptions, RelationMap, StoreKey } from '../../core/types'
-import { resolveStoreAccess } from '../../core/storeAccessRegistry'
+import { Core } from '#core'
+import type { Entity, FindManyOptions, IStore, RelationMap, StoreKey, StoreToken } from '#core'
 
 type IncludeOption = Record<string, boolean | (FindManyOptions<any> & { live?: boolean })>
 
@@ -17,9 +14,10 @@ export interface UseRelationsResult<T extends Entity> {
 export function useRelations<T extends Entity>(
     items: T[],
     include: IncludeOption | undefined,
-    relations: any | undefined
+    relations: any | undefined,
+    resolveStore?: (name: StoreToken) => IStore<any> | undefined
 ): UseRelationsResult<T> {
-    const includeKey = useMemo(() => stableStringify(include), [include])
+    const includeKey = useMemo(() => Core.query.stableStringify(include), [include])
     const [data, setData] = useState<T[]>(items)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<Error | undefined>(undefined)
@@ -33,7 +31,7 @@ export function useRelations<T extends Entity>(
                 items
                     .map(item => (item as any)?.id)
                     .filter(id => id !== undefined && id !== null)
-                    .map(id => normalizeKey(id as StoreKey))
+                    .map(id => Core.relations.normalizeKey(id as StoreKey))
             )
         ).sort().join('|')
 
@@ -50,7 +48,7 @@ export function useRelations<T extends Entity>(
                             items
                                 .map(it => (typeof fk === 'function' ? fk(it as any) : (it as any)?.[fk]))
                                 .filter(v => v !== undefined && v !== null)
-                                .map(v => normalizeKey(v as StoreKey))
+                                .map(v => Core.relations.normalizeKey(v as StoreKey))
                         )
                     ).sort().join(',')
                     relKeys.push(`${name}:${sig}`)
@@ -60,7 +58,7 @@ export function useRelations<T extends Entity>(
                             items
                                 .map(it => (it as any)?.id)
                                 .filter(v => v !== undefined && v !== null)
-                                .map(v => normalizeKey(v as StoreKey))
+                                .map(v => Core.relations.normalizeKey(v as StoreKey))
                         )
                     ).sort().join(',')
                     relKeys.push(`${name}:${sig}`)
@@ -79,6 +77,14 @@ export function useRelations<T extends Entity>(
             includeNamesRef.current = []
             resolvedSignatureRef.current = buildSignature()
             setData(items)
+            return items
+        }
+
+        if (!resolveStore) {
+            const err = new Error('[Atoma] useRelations: 缺少 resolveStore（StoreToken -> IStore），无法解析 include 关系')
+            setError(err)
+            setData(items)
+            resolvedSignatureRef.current = buildSignature()
             return items
         }
 
@@ -102,17 +108,18 @@ export function useRelations<T extends Entity>(
             .map(([k]) => k)
 
         try {
-            const resolved = await RelationResolver.resolveBatch(
+            const resolved = await Core.relations.RelationResolver.resolveBatch(
                 items,
                 includeWithSkipStore,
                 relations,
+                resolveStore,
                 { onError: 'partial', timeout: 5000, maxConcurrency: 10 }
             )
             const snapshot = new Map<string, Record<string, any>>()
             resolved.forEach(item => {
                 const id = (item as any)?.id
                 if (id === undefined || id === null) return
-                const key = normalizeKey(id as StoreKey)
+                const key = Core.relations.normalizeKey(id as StoreKey)
                 const relValues: Record<string, any> = {}
                 includeNames.forEach(name => {
                     relValues[name] = (item as any)[name]
@@ -139,7 +146,7 @@ export function useRelations<T extends Entity>(
     // live 订阅：监听子 store map 变化
     const [liveTick, setLiveTick] = useState(0)
     useEffect(() => {
-        if (!include || !relations) return
+        if (!include || !relations || !resolveStore) return
         const unsubscribers: Array<() => void> = []
         Object.entries(include).forEach(([name, opts]) => {
             if (opts === false || opts === undefined || opts === null) return
@@ -147,9 +154,11 @@ export function useRelations<T extends Entity>(
             if (!live) return
             const rel = relations[name]
             if (!rel) return
-            const access = resolveStoreAccess((rel as any).store)
-            if (!access || typeof access.jotaiStore.sub !== 'function') return
-            const unsub = access.jotaiStore.sub(access.atom, () => setLiveTick(t => t + 1))
+            const store = resolveStore((rel as any).store)
+            if (!store) return
+            const handle = Core.store.getHandle(store)
+            if (!handle || typeof handle.jotaiStore.sub !== 'function') return
+            const unsub = handle.jotaiStore.sub(handle.atom, () => setLiveTick(t => t + 1))
             unsubscribers.push(unsub)
         })
         return () => {
@@ -160,6 +169,7 @@ export function useRelations<T extends Entity>(
 
     const computeLiveRelations = (item: T, includeNames: string[]) => {
         if (!relations) return {}
+        if (!resolveStore) return {}
         const merged: Record<string, any> = {}
         includeNames.forEach(name => {
             const rel = relations[name]
@@ -167,9 +177,11 @@ export function useRelations<T extends Entity>(
             const includeOpts = (include as any)?.[name]
             const live = typeof includeOpts === 'object' ? includeOpts.live !== false : true
             if (!live) return
-            const access = resolveStoreAccess((rel as any).store)
-            if (!access || typeof access.jotaiStore.get !== 'function') return
-            const map = access.jotaiStore.get(access.atom) as Map<StoreKey, any>
+            const store = resolveStore((rel as any).store)
+            if (!store) return
+            const handle = Core.store.getHandle(store)
+            if (!handle || typeof handle.jotaiStore.get !== 'function') return
+            const map = handle.jotaiStore.get(handle.atom) as Map<StoreKey, any>
 
             if (rel.type === 'belongsTo') {
                 const fk = typeof rel.foreignKey === 'function'
@@ -238,7 +250,7 @@ export function useRelations<T extends Entity>(
 
         runResolve()
 
-    }, [items, includeKey, relations])
+    }, [items, includeKey, relations, resolveStore])
 
     useEffect(() => {
         if (!include || !relations || items.length === 0) {
@@ -255,7 +267,7 @@ export function useRelations<T extends Entity>(
                 if (live) {
                     Object.assign(merged, computeLiveRelations(item, [name]))
                 } else {
-                    const cached = snapshot.get(normalizeKey((item as any)?.id as StoreKey))
+                    const cached = snapshot.get(Core.relations.normalizeKey((item as any)?.id as StoreKey))
                     if (cached && name in cached) {
                         merged[name] = cached[name]
                     }

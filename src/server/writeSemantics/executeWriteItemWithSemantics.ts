@@ -49,29 +49,6 @@ function normalizeId(value: unknown): string {
     return String(value)
 }
 
-function extractRootReplaceValue(patches: any[] | undefined, id: unknown): any | undefined {
-    if (!Array.isArray(patches) || !patches.length) return undefined
-    for (const p of patches) {
-        if (!p || typeof p !== 'object') continue
-        const op = (p as any).op
-        if (op !== 'replace' && op !== 'add') continue
-        const path = (p as any).path
-        if (!Array.isArray(path)) continue
-        if (path.length === 0) return (p as any).value
-        if (path.length === 1 && (path[0] as any) == (id as any)) return (p as any).value
-    }
-    return undefined
-}
-
-function isNotFoundError(err: unknown): boolean {
-    const e = err as any
-    if (!e || (typeof e !== 'object' && typeof e !== 'function')) return false
-    if (e.name === 'AtomaError' && e.code === 'NOT_FOUND') return true
-    if (e.code === 'NOT_FOUND') return true
-    if (typeof e.message === 'string' && e.message.toLowerCase() === 'not found') return true
-    return false
-}
-
 function extractConflictMeta(error: StandardErrorType) {
     const details = (error as any)?.details
     const currentValue = details && typeof details === 'object' ? (details as any).currentValue : undefined
@@ -204,76 +181,12 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
             if (typeof write.baseVersion !== 'number' || !Number.isFinite(write.baseVersion)) {
                 throwError('INVALID_WRITE', 'Missing baseVersion for patch', { kind: 'validation', resource: write.resource })
             }
-            const upsertViaCreateIfMissing = async () => {
-                if (write.baseVersion !== 0) return undefined
-                const candidate = extractRootReplaceValue(write.patches, write.id)
-                if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined
-                if (typeof orm.create !== 'function' && typeof (orm as any).bulkCreate !== 'function') return undefined
-
-                const data = { ...(candidate as any) }
-                if ((data as any).id === undefined) (data as any).id = write.id
-                const v = (data as any).version
-                if (!(typeof v === 'number' && Number.isFinite(v) && v >= 1)) (data as any).version = 1
-
-                const row = await (async () => {
-                    if (typeof orm.create === 'function') {
-                        const res = await orm.create(write.resource, data, { returning: true } as any)
-                        if (res?.error) throw res.error
-                        return res?.data
-                    }
-                    const res = await (orm as any).bulkCreate(write.resource, [data], { returning: true } as any)
-                    const first = Array.isArray(res?.data) ? res.data[0] : undefined
-                    if (Array.isArray(res?.partialFailures) && res.partialFailures.length) {
-                        throw res.partialFailures[0]?.error ?? new Error('bulkCreate failed')
-                    }
-                    return first
-                })()
-
-                const id = normalizeId((row as any)?.id ?? (data as any).id)
-                if (!id) {
-                    throwError('INVALID_WRITE', 'Missing id from create result', { kind: 'adapter', resource: write.resource })
-                }
-                const serverVersion = typeof (row as any)?.version === 'number' ? (row as any).version : 1
-
-                let change: AtomaChange | undefined
-                if (args.syncEnabled) {
-                    change = await sync!.appendChange({
-                        resource: write.resource,
-                        id,
-                        kind: 'upsert',
-                        serverVersion,
-                        changedAt
-                    }, tx)
-                }
-
-                const replay: OkReplay = {
-                    kind: 'ok',
-                    resource: write.resource,
-                    id,
-                    changeKind: 'upsert',
-                    serverVersion,
-                    ...(change ? { cursor: change.cursor } : {}),
-                    data: row ?? data
-                }
-                await writeIdempotency(replay, 200)
-                return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) } as ExecuteWriteItemResult
-            }
-
-            let res: any
-            try {
-                res = await orm.patch(
-                    write.resource,
-                    { id: write.id, patches: write.patches ?? [], baseVersion: write.baseVersion, timestamp: write.timestamp } as any,
-                    { returning: true } as any
-                )
-                if (res?.error) throw res.error
-            } catch (err) {
-                if (isNotFoundError(err)) {
-                    const upserted = await upsertViaCreateIfMissing()
-                    if (upserted) return upserted
-                }
-                throw err
-            }
+            const res = await orm.patch(
+                write.resource,
+                { id: write.id, patches: write.patches ?? [], baseVersion: write.baseVersion, timestamp: write.timestamp } as any,
+                { returning: true } as any
+            )
+            if (res?.error) throw res.error
 
             const row = res?.data
             const id = normalizeId((row as any)?.id ?? write.id)

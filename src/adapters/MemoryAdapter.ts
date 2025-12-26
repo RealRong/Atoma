@@ -1,4 +1,4 @@
-import { IAdapter, StoreKey, Entity, PatchMetadata } from '../core/types'
+import type { IAdapter, StoreKey, Entity, PatchMetadata } from '#core'
 import { Patch } from 'immer'
 
 /**

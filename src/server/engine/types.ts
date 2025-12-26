@@ -16,8 +16,3 @@ export type FormatTopLevelError<Ctx> = (args: {
     traceId?: string
     error: unknown
 }) => HandleResult
-
-export type PhaseReporter<Ctx> = {
-    validated: (args: { request: unknown; event?: any }) => Promise<void>
-    authorized: (args?: { event?: any }) => Promise<void>
-}

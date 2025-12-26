@@ -1,12 +1,11 @@
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import type { ServerRuntime } from '../engine/runtime'
 import { ensureResourceAllowed } from '../authz/resources'
-import { hooksForResource, runAuthzAuthorizeHooks, runAuthzFilterQueryHooks, runAuthzValidateWriteHooks } from '../authz/hooks'
+import { hooksForResource, runAuthzAuthorizeHooks, runAuthzValidateWriteHooks } from '../authz/hooks'
 
 export type AuthzPolicy<Ctx> = {
     ensureResourceAllowed: (resource: string, meta: { traceId?: string; requestId?: string }) => void
     authorize: (args: { action: 'query' | 'write' | 'sync'; resource: string; op: unknown; route: AtomaServerRoute; runtime: ServerRuntime<Ctx> }) => Promise<void>
-    filterQuery: (args: { resource: string; params: unknown; op: unknown; route: AtomaServerRoute; runtime: ServerRuntime<Ctx> }) => Promise<Record<string, any>[]>
     validateWrite: (args: {
         resource: string
         op: unknown
@@ -39,18 +38,6 @@ export function createAuthzPolicy<Ctx>(config: AtomaServerConfig<Ctx>): AuthzPol
                 requestId: runtime.requestId,
                 action,
                 resource,
-                op
-            })
-        },
-        filterQuery: async ({ resource, params, op, route, runtime }) => {
-            const hooks = hooksForResource(config, resource).filterQuery
-            return runAuthzFilterQueryHooks(hooks, {
-                route,
-                ctx: runtime.ctx,
-                traceId: runtime.traceId,
-                requestId: runtime.requestId,
-                resource,
-                params,
                 op
             })
         },
@@ -115,4 +102,3 @@ export function createAuthzPolicy<Ctx>(config: AtomaServerConfig<Ctx>): AuthzPol
         }
     }
 }
-

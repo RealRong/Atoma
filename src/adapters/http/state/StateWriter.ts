@@ -1,23 +1,21 @@
 import type { ObservabilityContext } from '#observability'
-import type { Entity, StoreAccess, StoreKey } from '../../../core/types'
-import type { StoreIndexes } from '../../../core/indexes/StoreIndexes'
-import { commitAtomMapUpdate } from '../../../core/store/cacheWriter'
-import { validateWithSchema } from '../../../core/store/validation'
+import { Core } from '#core'
+import type { Entity, StoreHandle, StoreKey, StoreIndexes } from '#core'
 import type { StateWriteInstruction } from './types'
 
 type StateWriterDeps<T extends Entity> = {
-    getStoreAccess: () => StoreAccess<T> | undefined
+    getStoreHandle: () => StoreHandle<T> | undefined
 }
 
 export class StateWriter<T extends Entity> {
-    constructor(private readonly deps: StateWriterDeps<T>) {}
+    constructor(private readonly deps: StateWriterDeps<T>) { }
 
     async applyInstructions(
         instructions: StateWriteInstruction<T>[],
         _context?: ObservabilityContext
     ): Promise<void> {
-        const access = this.deps.getStoreAccess()
-        if (!access) return
+        const handle = this.deps.getStoreHandle()
+        if (!handle) return
 
         const upserts: T[] = []
         const deletes: StoreKey[] = []
@@ -41,37 +39,34 @@ export class StateWriter<T extends Entity> {
         }
 
         if (upserts.length || deletes.length) {
-            await this.applyRemoteWriteback(access, { upserts, deletes })
+            await this.applyRemoteWriteback(handle, { upserts, deletes })
         }
 
         for (const { key, version } of versionUpdates) {
-            this.applyVersionUpdate(access, key, version)
+            this.applyVersionUpdate(handle, key, version)
         }
     }
 
-    private applyVersionUpdate(access: StoreAccess<T>, key: StoreKey, version: number) {
-        const before = access.jotaiStore.get(access.atom)
+    private applyVersionUpdate(handle: StoreHandle<T>, key: StoreKey, version: number) {
+        const before = handle.jotaiStore.get(handle.atom)
         const cur = before.get(key) as any
         if (!cur || typeof cur !== 'object') return
         if (cur.version === version) return
 
         const after = new Map(before)
         after.set(key, { ...cur, version })
-        commitAtomMapUpdate({
-            jotaiStore: access.jotaiStore,
-            atom: access.atom,
+        Core.store.cacheWriter.commitAtomMapUpdate({
+            handle,
             before,
-            after,
-            context: access.context,
-            indexes: (access.indexes as StoreIndexes<T>) ?? null
+            after
         })
     }
 
     private async applyRemoteWriteback(
-        access: StoreAccess<T>,
+        handle: StoreHandle<T>,
         args: { upserts: T[]; deletes: StoreKey[] }
     ) {
-        const before = access.jotaiStore.get(access.atom)
+        const before = handle.jotaiStore.get(handle.atom)
         const after = new Map(before)
         let changed = false
 
@@ -95,8 +90,8 @@ export class StateWriter<T extends Entity> {
         }
 
         for (const raw of args.upserts) {
-            const transformed = access.transform ? access.transform(raw) : raw
-            const validated = await validateWithSchema(transformed, access.schema as any)
+            const transformed = handle.transform(raw)
+            const validated = await Core.store.validation.validateWithSchema(transformed, handle.schema as any)
             const item = preserveReference(validated)
             const id = (item as any).id
             const prev = before.get(id)
@@ -105,13 +100,10 @@ export class StateWriter<T extends Entity> {
         }
 
         if (!changed) return
-        commitAtomMapUpdate({
-            jotaiStore: access.jotaiStore,
-            atom: access.atom,
+        Core.store.cacheWriter.commitAtomMapUpdate({
+            handle,
             before,
-            after,
-            context: access.context,
-            indexes: (access.indexes as StoreIndexes<T>) ?? null
+            after
         })
     }
 }

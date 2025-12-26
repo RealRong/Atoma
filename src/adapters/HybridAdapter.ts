@@ -1,5 +1,5 @@
 import { Patch } from 'immer'
-import { IAdapter, PatchMetadata, StoreKey, Entity } from '../core/types'
+import type { IAdapter, PatchMetadata, StoreKey, Entity } from '#core'
 
 /**
  * Hybrid adapter configuration

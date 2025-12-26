@@ -1,16 +1,12 @@
-export type { FieldListRule, FieldPolicy, FieldPolicyInput, FieldPolicyResolverArgs } from './guard/fieldPolicy'
-
 export { createAtomaServer, authzHelpers } from './createAtomaServer'
 export type {
     AtomaServerConfig,
     AtomaServerRoute,
     AtomaServerHookArgs,
     AtomaAuthorizeHookArgs,
-    AtomaFilterQueryHookArgs,
     AtomaValidateWriteHookArgs,
     AtomaAuthzHooks
 } from './config'
-export type { ServerPlugin, ServerPluginSetupArgs, ServerPluginSetup } from './engine/plugins'
 export type { AtomaServerLogger } from './logger'
 
 export { AtomaError, createError, throwError } from './error'
@@ -30,9 +26,9 @@ export type {
     StandardError
 } from './types'
 
-export { AtomaPrismaAdapter } from './prisma'
-export type { PrismaAdapterOptions } from './prisma'
-export { AtomaTypeormAdapter } from './typeorm'
-export type { TypeormAdapterOptions } from './typeorm'
+export { AtomaPrismaAdapter } from './adapters/prisma'
+export type { PrismaAdapterOptions } from './adapters/prisma'
+export { AtomaTypeormAdapter } from './adapters/typeorm'
+export type { TypeormAdapterOptions } from './adapters/typeorm'
 
 export type { ISyncAdapter, AtomaChange, ChangeKind, IdempotencyResult } from './sync/types'

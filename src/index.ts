@@ -1,100 +1,13 @@
 /**
- * Atoma Core
- * Universal state synchronization engine (framework-agnostic core)
+ * Atoma（React-first public API）
+ *
+ * 约定：用户不直接接触 core 的 createCoreStore/createStore/Core 等低层入口；
+ * 对外统一从顶层 client + react hooks 入口进入（defineEntities/createOpContext/useFindMany 等）。
  */
 
-// Core factory function
-export { createCoreStore } from './core/createCoreStore'
-export type { CoreStore, CoreStoreConfig } from './core/createCoreStore'
+export { defineEntities, createOpContext } from './client/createAtomaClient'
+export type { CreateOpContextArgs, DefineClientConfig, AtomaStoresConfig, AtomaClient, AtomaHistory, AtomaSync, AtomaSyncStatus } from './client/types'
+export type { AtomaClientSyncConfig } from './client/sync'
+export type { OperationContext, OperationOrigin } from './core'
 
-// Core types
-export type {
-    IAdapter,
-    IStore,
-    IBase,
-    BaseEntity,
-    PartialWithId,
-    StoreOperationOptions,
-    StoreReadOptions,
-    PatchMetadata,
-    OperationContext,
-    OperationOrigin,
-    QueueConfig,
-    Entity,
-    SchemaValidator,
-    LifecycleHooks,
-    StoreKey,
-    FindManyOptions,
-    FindManyResult,
-    FetchPolicy,
-
-    PageInfo,
-    IndexDefinition,
-    IndexType,
-    RelationMap,
-    RelationConfig,
-    BelongsToConfig,
-    HasManyConfig,
-    HasOneConfig,
-    VariantsConfig,
-    VariantBranch,
-    KeySelector,
-    // Core
-    HistoryChange,
-    IEventEmitter
-} from './core/types'
-export { createStore } from './core/createCoreStore'
-
-// Observability
-export type { TraceContext, Explain, DebugConfig, DebugEvent } from '#observability'
-
-// Core utilities
-export { BaseStore, globalStore } from './core/BaseStore'
-export { setDefaultIdGenerator, defaultSnowflakeGenerator } from './core/idGenerator'
-
-// Adapters
-export { IndexedDBAdapter } from './adapters/IndexedDBAdapter'
-export { HTTPAdapter } from './adapters/HTTPAdapter'
-export { HybridAdapter } from './adapters/HybridAdapter'
-export { BatchEngine } from './batch'
-export { Sync } from './sync'
-export type { HTTPAdapterConfig, BatchQueryConfig } from './adapters/http/config/types'
-export type { HybridAdapterConfig } from './adapters/HybridAdapter'
-
-// Relations
-export { RelationResolver } from './core/relations/RelationResolver'
-export { belongsTo, hasMany, hasOne, variants } from './core/relations/builders'
-
-// Devtools
-export { createDevtoolsBridge } from './devtools/bridge'
-export type { DevtoolsBridge, DevtoolsEvent, StoreSnapshot, IndexSnapshot, IndexQueryPlan, QueueItem, HistoryEntrySummary } from './devtools/types'
-export { enableGlobalDevtools, getGlobalDevtools, disableGlobalDevtools } from './devtools/global'
-
-// Server（Fetch 风格管道）
-export {
-    createAtomaServer,
-    authzHelpers
-} from './server'
-export type {
-    IOrmAdapter,
-    OrderByRule,
-    CursorToken,
-    Page,
-    QueryParams,
-    QueryResult,
-    QueryResultOne,
-    QueryResultMany,
-    WriteOptions,
-    OrmAdapterOptions,
-    StandardError
-} from './server'
-export type {
-    AtomaServerConfig,
-    AtomaServerLogger,
-    AtomaServerRoute,
-    AtomaAuthzHooks
-} from './server'
-export { AtomaTypeormAdapter } from './server/typeorm'
-export type { TypeormAdapterOptions } from './server/typeorm'
-export { AtomaPrismaAdapter } from './server/prisma'
-export type { PrismaAdapterOptions } from './server/prisma'
+export * from './react'

@@ -37,6 +37,18 @@ export type ExecuteOpsArgs = {
     clientTimeMs?: number
 }
 
+function joinUrl(base: string, path: string): string {
+    if (!base) return path
+    if (!path) return base
+
+    const hasTrailing = base.endsWith('/')
+    const hasLeading = path.startsWith('/')
+
+    if (hasTrailing && hasLeading) return `${base}${path.slice(1)}`
+    if (!hasTrailing && !hasLeading) return `${base}/${path}`
+    return `${base}${path}`
+}
+
 function buildOpsMeta(args: {
     v: number
     deviceId?: string
@@ -85,7 +97,7 @@ export function createOpsTransport(deps: {
         })
 
         const { envelope, response } = await pipeline.execute({
-            url: args.url,
+            url: joinUrl(args.url, args.endpoint),
             endpoint: args.endpoint,
             method: 'POST',
             body: {

@@ -1,6 +1,6 @@
 import express from 'express'
 import { createAtomaServer } from 'atoma/server'
-import { createTypeormServerAdapter } from 'atoma/server/typeorm'
+import { createTypeormServerAdapter } from 'atoma/server/adapters/typeorm'
 import { AppDataSource } from './datasource.js'
 import { ensureSeedData } from './seed.js'
 

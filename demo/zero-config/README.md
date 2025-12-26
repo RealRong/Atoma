@@ -9,7 +9,7 @@
 
 Atoma 的 React 侧 hooks / registry 能力已迁移到 `atoma/react`，DevTools UI 则迁移到独立的 `atoma-devtools`（React Overlay），因此本 demo 中：
 
-- `defineEntities` / `createAtomaStore` 从 `atoma/react` 导入（通过 `.defineClient({ defaultAdapterFactory })` 绑定默认适配器工厂）
+- `defineEntities` 从 `atoma` 导入（通过 `.defineClient({ defaultAdapterFactory })` 绑定默认适配器工厂）
 - DevTools 使用 `atoma-devtools` 的 `mountAtomaDevTools()`
 - 适配器、关系构建器、类型等仍从 `atoma` / `atoma/server` 导入
 

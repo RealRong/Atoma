@@ -1,9 +1,7 @@
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
-import type { PhaseReporter } from '../engine/types'
 import type { ServerRuntime } from '../engine/runtime'
 import type { HandleResult } from '../http/types'
 import type { AuthzPolicy } from '../policies/authzPolicy'
-import type { LimitPolicy } from '../policies/limitPolicy'
 import type { CreateRuntime, FormatTopLevelError } from '../engine/types'
 
 export type SyncService<Ctx> = {
@@ -14,7 +12,6 @@ export type SyncService<Ctx> = {
         pathname: string
         route: AtomaServerRoute
         runtime: ServerRuntime<Ctx>
-        phase: PhaseReporter<Ctx>
     }) => Promise<HandleResult>
 }
 
@@ -24,7 +21,6 @@ export type OpsService<Ctx> = {
         method: string
         pathname: string
         runtime: ServerRuntime<Ctx>
-        phase: PhaseReporter<Ctx>
     }) => Promise<HandleResult>
 }
 
@@ -37,7 +33,6 @@ export type AtomaServerServices<Ctx> = {
     config: AtomaServerConfig<Ctx>
     runtime: ServerRuntimeServices<Ctx>
     authz: AuthzPolicy<Ctx>
-    limits: LimitPolicy<Ctx>
     sync: SyncService<Ctx>
     ops: OpsService<Ctx>
 }

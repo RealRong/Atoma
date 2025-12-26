@@ -1,10 +1,10 @@
-import type { BelongsToConfig, Entity, HasManyConfig, HasOneConfig, IStore, KeySelector, RelationIncludeOptions, RelationMap, InferIncludeType, VariantsConfig, VariantBranch } from '../types'
+import type { BelongsToConfig, Entity, HasManyConfig, HasOneConfig, KeySelector, RelationIncludeOptions, RelationMap, InferIncludeType, VariantsConfig, VariantBranch } from '../types'
 
 type IncludeForRelations<Relations extends RelationMap<any>> =
     Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
 
 export function belongsTo<TSource, TTarget extends Entity, TTargetRelations extends RelationMap<TTarget> = {}>(
-    store: IStore<TTarget, TTargetRelations>,
+    store: string,
     config: {
         foreignKey: KeySelector<TSource>
         primaryKey?: keyof TTarget & string
@@ -21,7 +21,7 @@ export function belongsTo<TSource, TTarget extends Entity, TTargetRelations exte
 }
 
 export function hasMany<TSource, TTarget extends Entity, TTargetRelations extends RelationMap<TTarget> = {}>(
-    store: IStore<TTarget, TTargetRelations>,
+    store: string,
     config: {
         primaryKey?: KeySelector<TSource>
         foreignKey: keyof TTarget & string
@@ -38,7 +38,7 @@ export function hasMany<TSource, TTarget extends Entity, TTargetRelations extend
 }
 
 export function hasOne<TSource, TTarget extends Entity, TTargetRelations extends RelationMap<TTarget> = {}>(
-    store: IStore<TTarget, TTargetRelations>,
+    store: string,
     config: {
         primaryKey?: KeySelector<TSource>
         foreignKey: keyof TTarget & string

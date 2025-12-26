@@ -2,7 +2,6 @@ import type { AtomaServerRoute } from '../config'
 import type { HandleResult } from '../http/types'
 import type { ServerRuntime } from './runtime'
 import type { CreateRuntime, FormatTopLevelError } from './types'
-import type { PhaseReporter } from './types'
 
 export async function handleWithRuntime<Ctx>(args: {
     incoming: any
@@ -13,7 +12,7 @@ export async function handleWithRuntime<Ctx>(args: {
     initialRequestId?: string
     createRuntime: CreateRuntime<Ctx>
     formatTopLevelError: FormatTopLevelError<Ctx>
-    run: (runtime: ServerRuntime<Ctx>, phase: PhaseReporter<Ctx>) => Promise<HandleResult>
+    run: (runtime: ServerRuntime<Ctx>) => Promise<HandleResult>
 }): Promise<HandleResult> {
     let runtime: ServerRuntime<Ctx>
 
@@ -36,30 +35,7 @@ export async function handleWithRuntime<Ctx>(args: {
     try {
         if (runtime.hooks?.onRequest) await runtime.hooks.onRequest({ ...runtime.hookArgs, incoming: args.incoming })
         runtime.observabilityContext.emit('server:request', { method: args.method, pathname: args.pathname })
-
-        let didValidated = false
-        let didAuthorized = false
-
-        const phase: PhaseReporter<Ctx> = {
-            validated: async ({ request, event }) => {
-                if (didValidated) return
-                didValidated = true
-                if (runtime.hooks?.onValidated) {
-                    await runtime.hooks.onValidated({ ...runtime.hookArgs, request })
-                }
-                runtime.observabilityContext.emit('server:validated', event ?? {})
-            },
-            authorized: async ({ event } = {}) => {
-                if (didAuthorized) return
-                didAuthorized = true
-                if (runtime.hooks?.onAuthorized) {
-                    await runtime.hooks.onAuthorized(runtime.hookArgs)
-                }
-                runtime.observabilityContext.emit('server:authorized', event ?? {})
-            }
-        }
-
-        const result = await args.run(runtime, phase)
+        const result = await args.run(runtime)
 
         if (runtime.hooks?.onResponse) await runtime.hooks.onResponse({ ...runtime.hookArgs, status: result.status })
         return result

@@ -1,47 +1,44 @@
-import { Atom, PrimitiveAtom, atom, createStore } from 'jotai'
+import { atom } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 import { useMemo } from 'react'
 import { useAtomValue } from 'jotai'
-import { globalStore } from '../../core/BaseStore'
-import { IStore, StoreKey, RelationMap, Entity, WithRelations, RelationIncludeInput } from '../../core/types'
+import { Core } from '#core'
+import type { IStore, StoreKey, Entity, WithRelations, RelationIncludeInput } from '#core'
 import { useRelations } from './useRelations'
-import { resolveStoreRelations } from '../../core/storeAccessRegistry'
 
 /**
  * React hook to subscribe to a single entity by ID
  * Uses selectAtom for fine-grained updates - only re-renders when this specific item changes
  */
-export function createUseValue<T extends Entity, Relations = {}>(
-    objectMapAtom: PrimitiveAtom<Map<StoreKey, T>>,
+export function useValue<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: IStore<T, Relations>,
-    jotaiStore?: ReturnType<typeof createStore>
-) {
-    const actualStore = jotaiStore || globalStore
-
-    return function useValue<const Include extends RelationIncludeInput<Relations> = {}>(
-        id?: StoreKey,
-        options?: { include?: Include }
-    ): (keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined) {
-        const selectedAtom = useMemo(() => {
-            if (!id) return atom(undefined)
-
-            // Check if item exists in cache
-            const exists = actualStore.get(objectMapAtom).has(id)
-            if (!exists) {
-                // Trigger fetch from adapter
-                store.getOneById(id)
-            }
-
-            // Create selector for this specific ID
-            const selected = selectAtom(objectMapAtom, map => map.get(id))
-            return selected
-        }, [id])
-
-        const base = useAtomValue(selectedAtom, { store: actualStore })
-        const relations = resolveStoreRelations<T>(store as any) as any
-        if (!options?.include || !relations) return base as any
-
-        const rel = useRelations(base ? [base] : [], options.include as any, relations)
-        return rel.data[0] as any
+    id?: StoreKey,
+    options?: { include?: Include }
+): (keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined) {
+    const handle = Core.store.getHandle(store)
+    if (!handle) {
+        throw new Error('[Atoma] useValue: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createCoreStore/createStore 创建')
     }
+
+    const objectMapAtom = handle.atom
+    const jotaiStore = handle.jotaiStore
+
+    const selectedAtom = useMemo(() => {
+        if (!id) return atom(undefined)
+
+        const exists = jotaiStore.get(objectMapAtom).has(id)
+        if (!exists) {
+            store.getOneById(id)
+        }
+
+        return selectAtom(objectMapAtom, map => map.get(id))
+    }, [id, jotaiStore, objectMapAtom, store])
+
+    const base = useAtomValue(selectedAtom, { store: jotaiStore })
+    const relations = handle.relations?.()
+    if (!options?.include || !relations) return base as any
+
+    const resolveStore = handle.services.resolveStore
+    const rel = useRelations(base ? [base] : [], options.include as any, relations, resolveStore)
+    return rel.data[0] as any
 }

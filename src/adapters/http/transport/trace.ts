@@ -18,28 +18,3 @@ export function traceFromContext(context?: ObservabilityContext): {
     const ctx = requestId ? context.with({ requestId }) : context
     return { ctx, headers, traceId, requestId }
 }
-
-export function traceFromArgs(args: { context?: ObservabilityContext; traceId?: string }): {
-    ctx: ObservabilityContext | undefined
-    headers: Record<string, string> | undefined
-    traceId: string | undefined
-    requestId: string | undefined
-} {
-    const explicitTraceId = typeof args.traceId === 'string' && args.traceId ? args.traceId : undefined
-    const ctx = args.context
-
-    if (!explicitTraceId) {
-        return traceFromContext(ctx)
-    }
-
-    if (ctx && ctx.traceId === explicitTraceId) {
-        return traceFromContext(ctx)
-    }
-
-    return {
-        ctx,
-        traceId: explicitTraceId,
-        requestId: undefined,
-        headers: { [Protocol.trace.headers.TRACE_ID_HEADER]: explicitTraceId }
-    }
-}

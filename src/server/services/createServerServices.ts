@@ -1,9 +1,9 @@
 import type { AtomaServerConfig } from '../config'
 import type { AtomaServerServices, ServerRuntimeServices } from './types'
 import { createAuthzPolicy } from '../policies/authzPolicy'
-import { createLimitPolicy } from '../policies/limitPolicy'
 import { createSyncService } from './sync/createSyncService'
 import { createOpsService } from './ops/createOpsService'
+import { readJsonBodyWithLimit } from '../http/body'
 
 export function createServerServices<Ctx>(args: {
     config: AtomaServerConfig<Ctx>
@@ -13,22 +13,20 @@ export function createServerServices<Ctx>(args: {
     }
 }): AtomaServerServices<Ctx> {
     const authz = createAuthzPolicy(args.config)
-    const limits = createLimitPolicy(args.config)
+    const readBodyJson = (incoming: any) => readJsonBodyWithLimit(incoming, args.config.limits?.bodyBytes)
 
     return {
         config: args.config,
         runtime: args.runtime,
         authz,
-        limits,
         sync: createSyncService({
             config: args.config,
             authz,
-            limits
         }),
         ops: createOpsService({
             config: args.config,
             authz,
-            limits,
+            readBodyJson,
             syncEnabled: args.routing.syncEnabled
         })
     }

@@ -1,17 +1,16 @@
 import { Patch, applyPatches } from 'immer'
-import type { FindManyOptions, PageInfo, PatchMetadata, StoreKey } from '../../../core/types'
+import type { FindManyOptions, PageInfo, PatchMetadata, StoreKey } from '#core'
 import type { ObservabilityContext } from '#observability'
-import type { JsonPatch, Operation, OperationResult, QueryResultData, WriteAction, WriteItem, WriteResultData } from '#protocol'
+import type { Operation, OperationResult, QueryResultData, WriteAction, WriteItem, WriteResultData } from '#protocol'
+import { Protocol } from '#protocol'
 import { normalizeAtomaServerQueryParams } from '../../../batch/queryParams'
 import type { BatchEngine } from '#batch'
-import type { SyncClient } from '../../../sync'
 
 type ResolveBaseVersion = (id: StoreKey, value?: any) => number
 
 type OperationRouterDeps<T> = {
     resource: string
     batch?: BatchEngine
-    sync?: SyncClient
     opsExecute: (ops: Operation[], context?: ObservabilityContext) => Promise<OperationResult[]>
     usePatchForUpdate: boolean
     resolveBaseVersion: ResolveBaseVersion
@@ -23,20 +22,9 @@ type OperationRouterDeps<T> = {
 export class OperationRouter<T> {
     private opSeq = 0
 
-    constructor(private readonly deps: OperationRouterDeps<T>) {}
+    constructor(private deps: OperationRouterDeps<T>) {}
 
     async put(key: StoreKey, value: T, context?: ObservabilityContext): Promise<void> {
-        if (this.deps.sync) {
-            const baseVersion = this.deps.resolveBaseVersion(key, value)
-            await this.enqueueSyncWrite('update', [{
-                entityId: String(key),
-                baseVersion,
-                value,
-                meta: { clientTimeMs: this.now() }
-            }])
-            return
-        }
-
         if (this.deps.batch) {
             try {
                 const baseVersion = this.deps.resolveBaseVersion(key, value)
@@ -65,17 +53,6 @@ export class OperationRouter<T> {
     }
 
     async bulkPut(items: T[], context?: ObservabilityContext): Promise<void> {
-        if (this.deps.sync) {
-            if (!items.length) return
-            const writeItems: WriteItem[] = items.map(item => ({
-                entityId: String((item as any).id),
-                baseVersion: this.deps.resolveBaseVersion((item as any).id, item),
-                value: item,
-                meta: { clientTimeMs: this.now() }
-            }))
-            await this.enqueueSyncWrite('update', writeItems)
-            return
-        }
         if (this.deps.batch) {
             if (!items.length) return
             const writeItems: WriteItem[] = items.map(item => ({
@@ -125,17 +102,6 @@ export class OperationRouter<T> {
     }
 
     async delete(key: StoreKey, context?: ObservabilityContext): Promise<void> {
-        if (this.deps.sync) {
-            const baseVersion = this.deps.resolveBaseVersion(key)
-            const item: WriteItem = {
-                entityId: String(key),
-                baseVersion,
-                meta: { clientTimeMs: this.now() }
-            }
-            await this.enqueueSyncWrite('delete', [item])
-            return
-        }
-
         if (this.deps.batch) {
             try {
                 const baseVersion = this.deps.resolveBaseVersion(key)
@@ -162,16 +128,6 @@ export class OperationRouter<T> {
     }
 
     async bulkDelete(keys: StoreKey[], context?: ObservabilityContext): Promise<void> {
-        if (this.deps.sync) {
-            if (!keys.length) return
-            const writeItems: WriteItem[] = keys.map(key => ({
-                entityId: String(key),
-                baseVersion: this.deps.resolveBaseVersion(key),
-                meta: { clientTimeMs: this.now() }
-            }))
-            await this.enqueueSyncWrite('delete', writeItems)
-            return
-        }
         if (this.deps.batch) {
             if (!keys.length) return
             const writeItems: WriteItem[] = keys.map(key => ({
@@ -235,10 +191,6 @@ export class OperationRouter<T> {
         metadata: PatchMetadata,
         context?: ObservabilityContext
     ): Promise<{ created?: T[] } | void> {
-        if (this.deps.sync) {
-            return this.applyPatchesViaSync(patches, metadata, context)
-        }
-
         const usePatchForUpdates = this.deps.usePatchForUpdate
 
         const patchesByItemId = new Map<StoreKey, Patch[]>()
@@ -278,14 +230,14 @@ export class OperationRouter<T> {
 
                 if (usePatchForUpdates) {
                     const baseVersion = this.deps.resolveBaseVersion(id)
-                    patchItems.push({
-                        entityId: String(id),
-                        baseVersion,
-                        patch: this.convertImmerPatchesToVNext(itemPatches, id),
-                        meta: { clientTimeMs: metadata.timestamp ?? this.now() }
-                    })
-                    continue
-                }
+                        patchItems.push({
+                            entityId: String(id),
+                            baseVersion,
+                            patch: Protocol.jsonPatch.convertImmerPatchesToJsonPatches(itemPatches, id as any),
+                            meta: { clientTimeMs: metadata.timestamp ?? this.now() }
+                        })
+                        continue
+                    }
 
                 const rootReplace = itemPatches.find(p => (p.op === 'add' || p.op === 'replace') && p.path.length === 1)
                 let next: any
@@ -378,7 +330,7 @@ export class OperationRouter<T> {
                 patchItems.push({
                     entityId: String(id),
                     baseVersion,
-                    patch: this.convertImmerPatchesToVNext(itemPatches, id),
+                    patch: Protocol.jsonPatch.convertImmerPatchesToJsonPatches(itemPatches, id as any),
                     meta: { clientTimeMs: metadata.timestamp ?? this.now() }
                 })
                 continue
@@ -439,97 +391,6 @@ export class OperationRouter<T> {
 
         if (createdResults.length) {
             return { created: createdResults }
-        }
-    }
-
-    private async applyPatchesViaSync(
-        patches: Patch[],
-        metadata: PatchMetadata,
-        context?: ObservabilityContext
-    ): Promise<{ created?: T[] } | void> {
-        if (!this.deps.sync) {
-            throw new Error('[OperationRouter] syncEngine not initialized')
-        }
-
-        const patchesByItemId = new Map<StoreKey, Patch[]>()
-        patches.forEach(patch => {
-            const itemId = patch.path[0] as StoreKey
-            if (!patchesByItemId.has(itemId)) patchesByItemId.set(itemId, [])
-            patchesByItemId.get(itemId)!.push(patch)
-        })
-
-        const createItems: WriteItem[] = []
-        const updateItems: WriteItem[] = []
-        const patchItems: WriteItem[] = []
-        const deleteItems: WriteItem[] = []
-        const createItemIds: StoreKey[] = []
-
-        for (const [id, itemPatches] of patchesByItemId.entries()) {
-            const isDelete = itemPatches.some(p => p.op === 'remove' && p.path.length === 1)
-            if (isDelete) {
-                const baseVersion = this.deps.resolveBaseVersion(id)
-                deleteItems.push({
-                    entityId: String(id),
-                    baseVersion,
-                    meta: { clientTimeMs: metadata.timestamp ?? this.now() }
-                })
-                continue
-            }
-
-            const rootAdd = itemPatches.find(p => p.op === 'add' && p.path.length === 1)
-            if (rootAdd) {
-                createItems.push({
-                    entityId: String(id),
-                    value: rootAdd.value,
-                    meta: { clientTimeMs: metadata.timestamp ?? this.now() }
-                })
-                createItemIds.push(id)
-                continue
-            }
-
-            const rootReplace = itemPatches.find(p => (p.op === 'add' || p.op === 'replace') && p.path.length === 1)
-            if (rootReplace) {
-                const baseVersion = this.deps.resolveBaseVersion(id, rootReplace.value)
-                updateItems.push({
-                    entityId: String(id),
-                    baseVersion,
-                    value: rootReplace.value,
-                    meta: { clientTimeMs: metadata.timestamp ?? this.now() }
-                })
-                continue
-            }
-
-            const baseVersion = this.deps.resolveBaseVersion(id)
-            const vnextPatches = this.convertImmerPatchesToVNext(itemPatches, id)
-            patchItems.push({
-                entityId: String(id),
-                baseVersion,
-                patch: vnextPatches,
-                meta: { clientTimeMs: metadata.timestamp ?? this.now() }
-            })
-        }
-
-        const writePromises: Promise<any>[] = []
-        if (createItems.length) {
-            writePromises.push(this.enqueueSyncWrite('create', createItems))
-        }
-        if (updateItems.length) {
-            writePromises.push(this.enqueueSyncWrite('update', updateItems))
-        }
-        if (patchItems.length) {
-            writePromises.push(this.enqueueSyncWrite('patch', patchItems))
-        }
-        if (deleteItems.length) {
-            writePromises.push(this.enqueueSyncWrite('delete', deleteItems))
-        }
-
-        await Promise.all(writePromises)
-
-        if (createItemIds.length) {
-            await new Promise(resolve => setTimeout(resolve, 100))
-            const fetched = await this.bulkGet(createItemIds as any, context)
-            const created = fetched.filter((i): i is T => i !== undefined)
-            return created.length ? { created } : undefined
         }
     }
 
@@ -679,44 +540,6 @@ export class OperationRouter<T> {
             data: Array.isArray(data.items) ? (data.items as T[]) : [],
             pageInfo: data.pageInfo
         }
-    }
-
-    private async enqueueSyncWrite(action: WriteAction, items: WriteItem[]) {
-        if (!this.deps.sync) {
-            throw new Error('[OperationRouter] syncEngine not initialized')
-        }
-        await this.deps.sync.enqueueWrite({
-            resource: this.deps.resource,
-            action,
-            items
-        })
-    }
-
-    private convertImmerPatchesToVNext(patches: Patch[], entityId: StoreKey): JsonPatch[] {
-        return patches.map(p => {
-            const pathArray = Array.isArray((p as any).path) ? (p as any).path : []
-            const adjustedPath = pathArray.length > 0 && pathArray[0] === entityId
-                ? pathArray.slice(1)
-                : pathArray
-
-            const vnextPatch: JsonPatch = {
-                op: p.op as any,
-                path: this.immerPathToJsonPath(adjustedPath)
-            }
-
-            if ('value' in p) {
-                vnextPatch.value = (p as any).value
-            }
-
-            return vnextPatch
-        })
-    }
-
-    private immerPathToJsonPath(path: any[]): string {
-        if (!path.length) return ''
-        return '/' + path.map(segment => {
-            return String(segment).replace(/~/g, '~0').replace(/\//g, '~1')
-        }).join('/')
     }
 
     private now() {

@@ -28,4 +28,3 @@ export type {
     WriteResultData,
     ChangesPullResultData
 } from './types'
-

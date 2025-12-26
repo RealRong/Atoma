@@ -11,10 +11,6 @@
             "types": "./dist/index.d.mts",
             "import": "./dist/index.mjs"
         },
-        "./core": {
-            "types": "./dist/core/index.d.mts",
-            "import": "./dist/core/index.mjs"
-        },
         "./react": {
             "types": "./dist/react/index.d.mts",
             "import": "./dist/react/index.mjs"
@@ -27,16 +23,24 @@
             "types": "./dist/server/index.d.mts",
             "import": "./dist/server/index.mjs"
         },
-        "./server/typeorm": {
-            "types": "./dist/server/typeorm.d.mts",
-            "import": "./dist/server/typeorm.mjs"
+        "./server/adapters": {
+            "types": "./dist/server/adapters.d.mts",
+            "import": "./dist/server/adapters.mjs"
         },
-        "./server/prisma": {
-            "types": "./dist/server/prisma.d.mts",
-            "import": "./dist/server/prisma.mjs"
+        "./server/adapters/typeorm": {
+            "types": "./dist/server/adapters/typeorm.d.mts",
+            "import": "./dist/server/adapters/typeorm.mjs"
+        },
+        "./server/adapters/prisma": {
+            "types": "./dist/server/adapters/prisma.d.mts",
+            "import": "./dist/server/adapters/prisma.mjs"
         }
     },
     "imports": {
+        "#core": {
+            "types": "./dist/core/index.d.mts",
+            "import": "./dist/core/index.mjs"
+        },
         "#observability": {
             "types": "./dist/observability/index.d.mts",
             "import": "./dist/observability/index.mjs"

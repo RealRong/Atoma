@@ -5,66 +5,64 @@ import type { Entity, PartialWithId, StoreKey, StoreOperationOptions } from '../
 import { commitAtomMapUpdate } from './cacheWriter'
 import { runAfterSave } from './hooks'
 import { validateWithSchema } from './validation'
-import { type StoreRuntime, resolveObservabilityContext } from './runtime'
+import { resolveObservabilityContext } from './runtime'
 import { prepareForUpdate } from './writePipeline'
+import type { StoreHandle } from '../types'
 
-export function createUpdateOne<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexes, hooks, schema, transform } = runtime
-    return (id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
-        return new Promise<T>((resolve, reject) => {
-            const observabilityContext = resolveObservabilityContext(runtime, options)
+export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
+    const { jotaiStore, atom, adapter, services, hooks, schema, transform } = handle
+    return async (id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
+        const observabilityContext = resolveObservabilityContext(handle, options)
 
-            const dispatchUpdate = (validObj: PartialWithId<T>) => {
-                BaseStore.dispatch({
-                    type: 'update',
-                    atom,
-                    adapter,
-                    data: validObj,
-                    store: jotaiStore,
-                    context,
-                    indexes,
-                    observabilityContext,
-                    opContext: options?.opContext,
-                    onSuccess: async updated => {
-                        await runAfterSave(hooks, validObj, 'update')
-                        resolve(updated)
-                    },
-                    onFail: (error) => {
-                        reject(error || new Error(`Failed to update item with id ${id}`))
-                    }
-                })
-            }
-
-            const updateFromBase = (base: PartialWithId<T>) => {
-                const next = produce(base as any, (draft: Draft<T>) => recipe(draft)) as any
-                const patched = { ...(next as any), id } as PartialWithId<T>
-                prepareForUpdate<T>(runtime, base, patched).then(dispatchUpdate).catch(reject)
-            }
-
+        const resolveBase = async (): Promise<PartialWithId<T>> => {
             const cached = jotaiStore.get(atom).get(id) as T | undefined
             if (cached) {
-                updateFromBase(cached as unknown as PartialWithId<T>)
-                return
+                return cached as unknown as PartialWithId<T>
             }
 
-            adapter.get(id, observabilityContext).then(data => {
-                if (!data) {
-                    reject(new Error(`Item with id ${id} not found`))
-                    return
-                }
+            const data = await adapter.get(id, observabilityContext)
+            if (!data) {
+                throw new Error(`Item with id ${id} not found`)
+            }
 
-                const transformed = transform(data)
-                validateWithSchema(transformed, schema)
-                    .then(validFetched => {
-                        const before = jotaiStore.get(atom)
-                        const after = BaseStore.add(validFetched as PartialWithId<T>, before)
-                        commitAtomMapUpdate({ jotaiStore, atom, before, after, context, indexes })
-                        updateFromBase(validFetched as unknown as PartialWithId<T>)
-                    })
-                    .catch(err => reject(err))
-            }).catch(error => {
-                reject(error)
+            const transformed = transform(data)
+            const validFetched = await validateWithSchema(transformed, schema)
+            const before = jotaiStore.get(atom)
+            const after = BaseStore.add(validFetched as PartialWithId<T>, before)
+            commitAtomMapUpdate({ handle, before, after })
+            return validFetched as unknown as PartialWithId<T>
+        }
+
+        const base = await resolveBase()
+
+        const next = produce(base as any, (draft: Draft<T>) => recipe(draft)) as any
+        const patched = { ...(next as any), id } as PartialWithId<T>
+        const validObj = await prepareForUpdate<T>(handle, base, patched)
+
+        const { ticket } = services.mutation.runtime.beginWrite()
+
+        const resultPromise = new Promise<T>((resolve, reject) => {
+            BaseStore.dispatch({
+                type: 'update',
+                handle,
+                data: validObj,
+                opContext: options?.opContext,
+                ticket,
+                onSuccess: async updated => {
+                    await runAfterSave(hooks, validObj, 'update')
+                    resolve(updated)
+                },
+                onFail: (error) => {
+                    reject(error || new Error(`Failed to update item with id ${id}`))
+                }
             })
         })
+
+        await Promise.all([
+            services.mutation.runtime.await(ticket, options),
+            resultPromise
+        ])
+
+        return resultPromise
     }
 }

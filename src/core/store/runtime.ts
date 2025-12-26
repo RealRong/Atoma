@@ -1,103 +1,72 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
-import { globalStore } from '../BaseStore'
-import { createStoreContext } from '../StoreContext'
-import type { StoreContext } from '../StoreContext'
 import type { DevtoolsBridge } from '../../devtools/types'
-import { getGlobalDevtools, registerGlobalIndex } from '../../devtools/global'
+import { registerGlobalIndex } from '../../devtools/global'
 import { StoreIndexes } from '../indexes/StoreIndexes'
-import type { IndexDefinition, IAdapter, JotaiStore, StoreConfig, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../types'
+import type { IndexDefinition, IAdapter, JotaiStore, StoreConfig, StoreHandle, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../types'
 import type { QueryMatcherOptions } from '../query/QueryMatcher'
 import { Observability } from '#observability'
-import type { DebugEvent, ObservabilityContext, ObservabilityRuntime } from '#observability'
+import type { ObservabilityContext } from '#observability'
+import type { StoreServices } from '../StoreServices'
 
-export type StoreRuntime<T extends Entity> = {
+export function createStoreHandle<T extends Entity>(params: {
     atom: PrimitiveAtom<Map<StoreKey, T>>
     adapter: IAdapter<T>
-    jotaiStore: JotaiStore
-    context: StoreContext
-    storeName: string
-    observability: ObservabilityRuntime
-    indexes: StoreIndexes<T> | null
-    matcher?: QueryMatcherOptions
-    hooks: StoreConfig<T>['hooks']
-    schema: StoreConfig<T>['schema']
-    idGenerator: StoreConfig<T>['idGenerator']
-    transform: (item: T) => T
-    stopIndexDevtools?: () => void
-}
-
-export function createStoreRuntime<T extends Entity>(params: {
-    atom: PrimitiveAtom<Map<StoreKey, T>>
-    adapter: IAdapter<T>
-    config?: StoreConfig<T>
-}): StoreRuntime<T> {
+    config: StoreConfig<T> & {
+        store: JotaiStore
+        services: StoreServices
+        storeName: string
+    }
+}): StoreHandle<T> {
     const { atom, adapter, config } = params
 
-    const jotaiStore = config?.store || globalStore
-    const context = config?.context || createStoreContext()
-    if (config?.storeName && !context.storeName) {
-        context.storeName = config.storeName
-    }
-    if (config?.debug && !context.debug) {
-        context.debug = config.debug as any
-    }
-    if (config?.debug?.enabled && !context.debugSink) {
-        const sink: ((e: DebugEvent) => void) = (e) => {
-            const bridge = config?.devtools ?? getGlobalDevtools()
-            try {
-                bridge?.emit({ type: 'debug-event', payload: e as any })
-            } catch {
-                // ignore
-            }
-        }
-        context.debugSink = sink
-    }
+    const jotaiStore = config.store
+    const services = config.services
 
-    const storeName = context.storeName || config?.storeName || adapter.name || 'store'
+    const storeName = config.storeName || adapter.name || 'store'
 
-    const indexes = config?.indexes && config.indexes.length ? new StoreIndexes<T>(config.indexes) : null
+    const indexes = config.indexes && config.indexes.length ? new StoreIndexes<T>(config.indexes) : null
 
-    const matcher = buildQueryMatcherOptions(config?.indexes)
+    const matcher = buildQueryMatcherOptions(config.indexes)
     const stopIndexDevtools = registerStoreIndexesSnapshot({
         indexes,
-        devtools: config?.devtools,
+        devtools: config.devtools,
         storeName
     })
 
     const transform = (item: T): T => {
-        return config?.transformData ? config.transformData(item) : item
+        return config.transformData ? config.transformData(item) : item
     }
 
     const observability = Observability.runtime.create({
         scope: storeName,
-        debug: context.debug,
-        onEvent: context.debugSink
+        debug: services.debug,
+        onEvent: services.debugSink
     })
 
     return {
         atom,
         adapter,
         jotaiStore,
-        context,
+        services,
         storeName,
         observability,
+        createObservabilityContext: observability.createContext.bind(observability),
         indexes,
         matcher,
-        hooks: config?.hooks,
-        schema: config?.schema,
-        idGenerator: config?.idGenerator,
+        hooks: config.hooks,
+        schema: config.schema,
+        idGenerator: config.idGenerator,
         transform,
         stopIndexDevtools
     }
 }
 
 export function resolveObservabilityContext<T extends Entity>(
-    runtime: StoreRuntime<T>,
-    options?: StoreOperationOptions | StoreReadOptions | { traceId?: string; explain?: boolean }
+    handle: StoreHandle<T>,
+    options?: StoreOperationOptions | StoreReadOptions | { explain?: boolean }
 ): ObservabilityContext {
     const anyOptions = options as any
-    return runtime.observability.createContext({
-        traceId: typeof anyOptions?.traceId === 'string' && anyOptions.traceId ? anyOptions.traceId : undefined,
+    return handle.observability.createContext({
         explain: anyOptions?.explain === true
     })
 }

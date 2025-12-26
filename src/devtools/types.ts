@@ -1,4 +1,4 @@
-import type { IndexDefinition } from '../core/types'
+import type { IndexDefinition } from '#core'
 import type { DebugEvent } from '#observability'
 
 export type StoreSnapshot = {

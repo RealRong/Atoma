@@ -1,4 +1,4 @@
-import type { FindManyOptions, PageInfo, StoreKey } from '../../../core/types'
+import type { FindManyOptions, PageInfo, StoreKey } from '#core'
 import type { DevtoolsBridge } from '../../../devtools/types'
 import type { ObservabilityContext } from '#observability'
 import type { Envelope } from '#protocol'
@@ -81,6 +81,8 @@ export interface BatchQueryConfig {
 export interface HTTPAdapterConfig<T> {
     baseURL: string
     resourceName: string
+    /** Ops endpoint path (default: '/ops') */
+    opsEndpoint?: string
     headers?: () => Promise<Record<string, string>> | Record<string, string>
     retry?: RetryConfig
     sync?: SyncConfig

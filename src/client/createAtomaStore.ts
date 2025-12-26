@@ -1,5 +1,7 @@
 import type {
     BelongsToConfig,
+    CoreStore,
+    CoreStoreConfig,
     Entity,
     HasManyConfig,
     HasOneConfig,
@@ -8,11 +10,9 @@ import type {
     RelationIncludeOptions,
     RelationMap,
     InferIncludeType
-} from '../core/types'
-import { belongsTo as coreBelongsTo, hasMany as coreHasMany, hasOne as coreHasOne } from '../core/relations/builders'
-import type { ReactStore, ReactStoreConfig } from '../react/createReactStore'
-import { createReactStore } from '../react/createReactStore'
-import type { AtomaClientContext, InferRelationsFromStoreOverride } from './createAtomaClient'
+} from '#core'
+import { Core } from '#core'
+import type { AtomaClientContext, InferRelationsFromStoreOverride } from './types'
 
 type IncludeForRelations<Relations> =
     Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
@@ -83,21 +83,21 @@ export type RelationMapFromSchema<
     SourceName extends keyof Entities & string,
     Schema extends RelationsSchema<Entities, Stores, SourceName>
 > = {
-    readonly [K in keyof Schema]:
-    Schema[K] extends { type: 'belongsTo'; to: infer TargetName }
+        readonly [K in keyof Schema]:
+        Schema[K] extends { type: 'belongsTo'; to: infer TargetName }
         ? (TargetName extends keyof Entities & string
             ? BelongsToConfig<Entities[SourceName], Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
             : never)
         : Schema[K] extends { type: 'hasMany'; to: infer TargetName }
-            ? (TargetName extends keyof Entities & string
-                ? HasManyConfig<Entities[SourceName], Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
-                : never)
-            : Schema[K] extends { type: 'hasOne'; to: infer TargetName }
-                ? (TargetName extends keyof Entities & string
-                    ? HasOneConfig<Entities[SourceName], Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
-                    : never)
-                : never
-}
+        ? (TargetName extends keyof Entities & string
+            ? HasManyConfig<Entities[SourceName], Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
+            : never)
+        : Schema[K] extends { type: 'hasOne'; to: infer TargetName }
+        ? (TargetName extends keyof Entities & string
+            ? HasOneConfig<Entities[SourceName], Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
+            : never)
+        : never
+    }
 
 export type RelationsDsl<
     Entities extends Record<string, Entity>,
@@ -137,7 +137,7 @@ export type CreateAtomaStoreOptions<
     Name extends keyof Entities & string,
     Stores = {},
     Relations = {}
-> = Omit<ReactStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations'> & {
+> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations' | 'store'> & {
     name: Name
     adapter?: IAdapter<Entities[Name]>
     relations?: Relations
@@ -148,7 +148,7 @@ type CreateAtomaStoreOptionsFactory<
     Name extends keyof Entities & string,
     Stores,
     Relations extends RelationMap<Entities[Name]>
-> = Omit<ReactStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations'> & {
+> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations' | 'store'> & {
     name: Name
     adapter?: IAdapter<Entities[Name]>
     relations?: (dsl: RelationsDsl<Entities, Stores, Entities[Name]>) => Relations
@@ -159,7 +159,7 @@ type CreateAtomaStoreOptionsSchema<
     Name extends keyof Entities & string,
     Stores,
     Schema extends RelationsSchema<Entities, Stores, Name>
-> = Omit<ReactStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations'> & {
+> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations' | 'store'> & {
     name: Name
     adapter?: IAdapter<Entities[Name]>
     relations?: Schema
@@ -173,7 +173,7 @@ export function createAtomaStore<
 >(
     ctx: AtomaClientContext<Entities, Stores>,
     options: CreateAtomaStoreOptionsSchema<Entities, Name, Stores, Schema>
-): ReactStore<Entities[Name], RelationMapFromSchema<Entities, Stores, Name, Schema>>
+): CoreStore<Entities[Name], RelationMapFromSchema<Entities, Stores, Name, Schema>>
 
 export function createAtomaStore<
     Entities extends Record<string, Entity>,
@@ -183,7 +183,7 @@ export function createAtomaStore<
 >(
     ctx: AtomaClientContext<Entities, Stores>,
     options: CreateAtomaStoreOptionsFactory<Entities, Name, Stores, Relations>
-): ReactStore<Entities[Name], Relations>
+): CoreStore<Entities[Name], Relations>
 
 export function createAtomaStore<
     Entities extends Record<string, Entity>,
@@ -192,14 +192,14 @@ export function createAtomaStore<
 >(
     ctx: AtomaClientContext<Entities, Stores>,
     options: CreateAtomaStoreOptions<Entities, Name, Stores, any>
-): ReactStore<Entities[Name], any> {
+): CoreStore<Entities[Name], any> {
     const adapter = (options.adapter ?? ctx.defaultAdapterFactory(options.name)) as IAdapter<Entities[Name]>
 
     const createFromDsl = (factory: any) =>
         factory({
-            belongsTo: (name: any, config: any) => coreBelongsTo(ctx.getStoreRef(name), config),
-            hasMany: (name: any, config: any) => coreHasMany(ctx.getStoreRef(name), config),
-            hasOne: (name: any, config: any) => coreHasOne(ctx.getStoreRef(name), config)
+            belongsTo: (name: any, config: any) => Core.relations.belongsTo(name, config),
+            hasMany: (name: any, config: any) => Core.relations.hasMany(name, config),
+            hasOne: (name: any, config: any) => Core.relations.hasOne(name, config)
         })
 
     const createFromSchema = (schema: any) => {
@@ -208,19 +208,19 @@ export function createAtomaStore<
             const def = schema[k]
             if (!def || typeof def !== 'object') continue
             if (def.type === 'belongsTo') {
-                out[k] = coreBelongsTo(ctx.getStoreRef(def.to), {
+                out[k] = Core.relations.belongsTo(def.to, {
                     foreignKey: def.foreignKey,
                     primaryKey: def.primaryKey,
                     options: def.options
                 })
             } else if (def.type === 'hasMany') {
-                out[k] = coreHasMany(ctx.getStoreRef(def.to), {
+                out[k] = Core.relations.hasMany(def.to, {
                     primaryKey: def.primaryKey,
                     foreignKey: def.foreignKey,
                     options: def.options
                 })
             } else if (def.type === 'hasOne') {
-                out[k] = coreHasOne(ctx.getStoreRef(def.to), {
+                out[k] = Core.relations.hasOne(def.to, {
                     primaryKey: def.primaryKey,
                     foreignKey: def.foreignKey,
                     options: def.options
@@ -236,11 +236,12 @@ export function createAtomaStore<
             : createFromSchema(options.relations)
         : undefined
 
-    return createReactStore<Entities[Name], any>({
+    return Core.store.createCoreStore<Entities[Name], any>({
         ...(options as any),
         name: options.name,
+        store: ctx.jotaiStore as any,
         adapter,
-        relations: relationsFactory as any
+        relations: relationsFactory as any,
+        resolveStore: ctx.resolveStore as any
     })
 }
-

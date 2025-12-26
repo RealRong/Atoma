@@ -1,7 +1,7 @@
 import { Table } from 'dexie'
 import { Patch } from 'immer'
-import { IAdapter, PatchMetadata, StoreKey, FindManyOptions, PageInfo, Entity } from '../core/types'
-import { applyQuery } from '../core/query'
+import type { IAdapter, PatchMetadata, StoreKey, FindManyOptions, PageInfo, Entity } from '#core'
+import { Core } from '#core'
 
 /**
  * IndexedDB Adapter using Dexie
@@ -127,7 +127,7 @@ export class IndexedDBAdapter<T extends Entity> implements IAdapter<T> {
             : items
 
         // applyQuery handles where/orderBy/limit/offset
-        const filtered = applyQuery(transformed as any, options) as T[]
+        const filtered = Core.query.applyQuery(transformed as any, options) as T[]
 
         // cursor 分页（通用路径）：按结果集位置切片
         const sliceStart = options?.cursor

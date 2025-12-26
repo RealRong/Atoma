@@ -1,7 +1,8 @@
 import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
 import { commitAtomMapUpdate } from './cacheWriter'
-import { type StoreRuntime, resolveObservabilityContext } from './runtime'
+import { resolveObservabilityContext } from './runtime'
+import type { StoreHandle } from '../types'
 import type { ObservabilityContext } from '#observability'
 
 type GetOneTask<T> = {
@@ -10,8 +11,8 @@ type GetOneTask<T> = {
     observabilityContext: ObservabilityContext
 }
 
-export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, transform, context, indexes } = runtime
+export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
+    const { jotaiStore, atom, adapter, transform, services, indexes } = handle
 
     let batchGetOneTaskQueue: GetOneTask<T>[] = []
     let batchFetchOneTaskQueue: GetOneTask<T>[] = []
@@ -60,7 +61,7 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
 
         const before = jotaiStore.get(atom)
         const after = BaseStore.bulkAdd(items as PartialWithId<T>[], before)
-        commitAtomMapUpdate({ jotaiStore, atom, before, after, context, indexes })
+        commitAtomMapUpdate({ handle, before, after })
     }
 
     const processFetchOneTaskQueue = async () => {
@@ -106,7 +107,7 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
 
 
     const handleGetOne = (id: StoreKey, resolve: (v: T | undefined) => void, options?: StoreReadOptions) => {
-        const observabilityContext = resolveObservabilityContext(runtime, options)
+        const observabilityContext = resolveObservabilityContext(handle, options)
         if (batchGetOneTaskQueue.length) {
             batchGetOneTaskQueue.push({ resolve, id, observabilityContext })
         } else {
@@ -118,7 +119,7 @@ export function createBatchGet<T extends Entity>(runtime: StoreRuntime<T>) {
     }
 
     const handleFetchOne = (id: StoreKey, resolve: (v: T | undefined) => void, options?: StoreReadOptions) => {
-        const observabilityContext = resolveObservabilityContext(runtime, options)
+        const observabilityContext = resolveObservabilityContext(handle, options)
         if (batchFetchOneTaskQueue.length) {
             batchFetchOneTaskQueue.push({ resolve, id, observabilityContext })
         } else {

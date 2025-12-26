@@ -1,5 +1,5 @@
 import { HTTPAdapter, BaseEntity } from 'atoma'
-import { defineEntities } from 'atoma/react'
+import { defineEntities } from 'atoma'
 
 export type UserEntity = {
     id: number

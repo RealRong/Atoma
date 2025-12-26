@@ -1,15 +1,10 @@
-import type { IAdapter, StoreKey, Entity, StoreAccess } from '../../../core/types'
-import { makeUrl } from '../request'
+import type { IAdapter, StoreKey, Entity } from '#core'
 import { BatchEngine, Batch } from '#batch'
 import type { ObservabilityContext } from '#observability'
 import { fetchWithRetry } from '../transport/retry'
 import type { BatchQueryConfig, HTTPAdapterConfig } from '../config/types'
 import { createOpsTransport } from '../transport/ops'
-import { Sync, type SyncClient } from '../../../sync'
 import { OperationRouter } from './OperationRouter'
-import { StateWriter } from '../state/StateWriter'
-import { transformToInstructions } from '../state/transformToInstructions'
-import type { StateWriteInstruction } from '../state/types'
 
 const ROUTER_METHODS = [
     'put',
@@ -33,6 +28,10 @@ type ParsedBatchConfig = {
     devWarnings: boolean
 }
 
+function makeUrl(base: string, path: string): string {
+    return `${base}${path}`
+}
+
 /**
  * HTTP Adapter for ops-based APIs
  */
@@ -41,11 +40,8 @@ export class HTTPAdapter<T extends Entity> {
     private readonly queueStorageKey: string
     private batchEngine?: BatchEngine
     private router: OperationRouter<T>
-    private stateWriter: StateWriter<T>
     private resourceNameForBatch: string
     private usePatchForUpdate: boolean
-    private storeAccess?: StoreAccess<T>
-    private syncEngine?: SyncClient
     private opsTransport: ReturnType<typeof createOpsTransport>
 
     constructor(private config: HTTPAdapterConfig<T>) {
@@ -59,9 +55,6 @@ export class HTTPAdapter<T extends Entity> {
 
         this.name = config.baseURL
         this.queueStorageKey = `atoma:httpQueue:${this.name}`
-        this.stateWriter = new StateWriter<T>({
-            getStoreAccess: () => this.storeAccess
-        })
 
         this.opsTransport = createOpsTransport({
             fetchFn: this.fetchWithRetry.bind(this),
@@ -71,10 +64,6 @@ export class HTTPAdapter<T extends Entity> {
                 onResponse: this.config.onResponse as any
             }
         })
-
-        const opsExecute = async (ops: any[], context?: ObservabilityContext) => {
-            return this.executeOps(ops, context)
-        }
 
         if (batchConfig.enabled) {
             const endpointPath = batchConfig.endpoint ?? '/ops'
@@ -101,112 +90,10 @@ export class HTTPAdapter<T extends Entity> {
             }
         }
 
-        const syncEnabled = this.config.sync?.enabled === true
-        if (syncEnabled) {
-            const outboxKey = `${this.queueStorageKey}:sync-vnext`
-            const cursorKey = this.config.sync?.cursorKey ?? `atoma:sync:${this.config.baseURL}:vnext:cursor`
-            const baseURL = this.config.baseURL
-            const opsEndpoint = this.config.sync?.endpoints?.ops ?? '/ops'
-            const subscribeEndpoint = this.config.sync?.endpoints?.subscribeVNext ?? '/sync/subscribe-vnext'
-
-            this.syncEngine = Sync.create({
-                executeOps: async (args) => {
-                    return this.executeOps(args.ops, undefined, {
-                        v: args.meta?.v,
-                        deviceId: args.meta?.deviceId,
-                        clientTimeMs: args.meta?.clientTimeMs
-                    }, { baseURL, opsEndpoint })
-                },
-                subscribeUrl: (cursor) => {
-                    const url = makeUrl(baseURL, subscribeEndpoint)
-                    return `${url}?cursor=${encodeURIComponent(cursor)}`
-                },
-                eventSourceFactory: this.config.sync?.sse?.eventSourceFactory,
-                onPullChanges: async (changes) => {
-                    if (!this.storeAccess) return
-
-                    const upsertIds = new Set<StoreKey>()
-                    const deleteIds = new Set<StoreKey>()
-
-                    const normalizeStoreKey = (id: StoreKey): StoreKey => {
-                        if (typeof id === 'string' && /^[0-9]+$/.test(id)) {
-                            return Number(id)
-                        }
-                        return id
-                    }
-
-                    for (const change of changes) {
-                        const key = normalizeStoreKey(change.entityId as any)
-                        if (change.kind === 'delete') {
-                            deleteIds.add(key)
-                        } else {
-                            upsertIds.add(key)
-                        }
-                    }
-
-                    const instructions: StateWriteInstruction<T>[] = []
-
-                    if (upsertIds.size) {
-                        const fetched = await this.router.bulkGet(Array.from(upsertIds))
-                        const upserts = fetched.filter((i): i is T => i !== undefined)
-                        if (upserts.length) {
-                            instructions.push({ kind: 'upsert', items: upserts })
-                        }
-                    }
-
-                    if (deleteIds.size) {
-                        instructions.push({ kind: 'delete', keys: Array.from(deleteIds) })
-                    }
-
-                    if (!instructions.length) return
-                    await this.stateWriter.applyInstructions(instructions)
-                },
-                onWriteAck: async (ack) => {
-                    const instructions = transformToInstructions<T>({ source: 'syncAck', ack } as any, {
-                        conflictStrategy: this.config.sync?.conflictStrategy
-                    })
-                    if (!instructions.length) return
-                    await this.stateWriter.applyInstructions(instructions)
-                },
-                onWriteReject: async (reject, conflictStrategy) => {
-                    const instructions = transformToInstructions<T>({
-                        source: 'syncReject',
-                        reject,
-                        conflictStrategy
-                    } as any, { conflictStrategy: this.config.sync?.conflictStrategy })
-                    if (!instructions.length) return
-                    await this.stateWriter.applyInstructions(instructions)
-                },
-                outboxKey,
-                cursorKey,
-                maxQueueSize: this.config.sync?.maxQueueSize ?? 1000,
-                outboxEvents: {
-                    onQueueChange: this.config.events?.onQueueChange,
-                    onQueueFull: (dropped, max) => this.config.events?.onQueueFull?.(dropped as any, max)
-                },
-                maxPushItems: 50,
-                pullLimit: this.config.sync?.pullLimit ?? 200,
-                resources: [this.resourceNameForBatch],
-                returning: true,
-                conflictStrategy: this.config.sync?.conflictStrategy,
-                subscribe: true,
-                reconnectDelayMs: this.config.sync?.reconnectDelayMs ?? 1000,
-                periodicPullIntervalMs: this.config.sync?.periodicPullIntervalMs ?? this.config.sync?.pollIntervalMs ?? 5_000,
-                inFlightTimeoutMs: this.config.sync?.inFlightTimeoutMs ?? 30_000,
-                retry: this.config.sync?.retry,
-                backoff: this.config.sync?.backoff,
-                lockKey: this.config.sync?.lockKey,
-                lockTtlMs: this.config.sync?.lockTtlMs,
-                lockRenewIntervalMs: this.config.sync?.lockRenewIntervalMs,
-                onError: (error, context) => this.config.events?.onSyncError?.(error, context as any)
-            })
-        }
-
         this.router = new OperationRouter<T>({
             resource: this.resourceNameForBatch,
             batch: this.batchEngine,
-            sync: this.syncEngine,
-            opsExecute,
+            opsExecute: this.executeOps.bind(this),
             usePatchForUpdate: this.usePatchForUpdate,
             resolveBaseVersion: this.resolveLocalBaseVersion.bind(this),
             onError: this.onError.bind(this),
@@ -217,32 +104,7 @@ export class HTTPAdapter<T extends Entity> {
     }
 
     dispose(): void {
-        this.detachStoreAccess()
         this.batchEngine?.dispose()
-        this.syncEngine?.dispose()
-    }
-
-    attachStoreAccess(access: StoreAccess<T>) {
-        this.storeAccess = access
-        if (this.config.sync?.enabled === true && this.config.sync?.autoStart !== false) {
-            void this.startSync()
-        }
-    }
-
-    detachStoreAccess() {
-        this.stopSync()
-        this.storeAccess = undefined
-    }
-
-    private async startSync() {
-        if (!this.config.sync?.enabled) return
-        if (!this.syncEngine) return
-        this.syncEngine.start()
-    }
-
-    private stopSync() {
-        if (!this.syncEngine) return
-        this.syncEngine.stop()
     }
 
     private async executeOps(
@@ -251,9 +113,10 @@ export class HTTPAdapter<T extends Entity> {
         meta?: { v?: number; deviceId?: string; clientTimeMs?: number },
         override?: { baseURL?: string; opsEndpoint?: string }
     ) {
+        const resolvedOpsEndpoint = this.config.opsEndpoint ?? '/ops'
         const result = await this.opsTransport.executeOps({
             url: override?.baseURL ?? this.config.baseURL,
-            endpoint: override?.opsEndpoint ?? (this.config.sync?.endpoints?.ops ?? '/ops'),
+            endpoint: override?.opsEndpoint ?? resolvedOpsEndpoint,
             ops,
             context,
             v: meta?.v,
@@ -266,9 +129,6 @@ export class HTTPAdapter<T extends Entity> {
     private resolveLocalBaseVersion(id: StoreKey, value?: any): number {
         const versionFromValue = value && typeof value === 'object' ? (value as any).version : undefined
         if (typeof versionFromValue === 'number' && Number.isFinite(versionFromValue)) return versionFromValue
-        const fromStore = this.storeAccess?.jotaiStore.get(this.storeAccess.atom).get(id) as any
-        const v = fromStore?.version
-        if (typeof v === 'number' && Number.isFinite(v)) return v
         return 0
     }
 

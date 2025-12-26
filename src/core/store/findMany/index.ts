@@ -8,10 +8,11 @@ import { evaluateWithIndexes } from './localEvaluate'
 import { normalizeFindManyResult } from './normalize'
 import { summarizeFindManyParams } from './paramsSummary'
 import { applyQuery } from '../../query'
-import { type StoreRuntime, resolveObservabilityContext } from '../runtime'
+import { resolveObservabilityContext } from '../runtime'
+import type { StoreHandle } from '../../types'
 
-export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexes, matcher, transform } = runtime
+export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
+    const { jotaiStore, atom, adapter, services, indexes, matcher, transform } = handle
 
     const preserveReference = (incoming: T): T => {
         const existing = jotaiStore.get(atom).get((incoming as any).id)
@@ -30,15 +31,14 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
         const explainEnabled = options?.explain === true
         const cachePolicy = resolveCachePolicy(options)
 
-        const observabilityContext = resolveObservabilityContext(runtime, options)
-        const traceId = observabilityContext.traceId
+        const observabilityContext = resolveObservabilityContext(handle, options)
 
         const optionsForAdapter = options
-            ? ({ ...options, traceId: undefined, explain: undefined } as any as FindManyOptions<T>)
+            ? ({ ...options, explain: undefined } as any as FindManyOptions<T>)
             : options
 
         const explain: Explain | undefined = explainEnabled
-            ? { schemaVersion: 1, traceId: traceId || Observability.trace.createId() }
+            ? { schemaVersion: 1, traceId: observabilityContext.traceId || Observability.trace.createId() }
             : undefined
 
         const emit = (type: string, payload: any) => observabilityContext.emit(type as any, payload)
@@ -110,12 +110,9 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
                 })
 
                 commitAtomMapUpdate({
-                    jotaiStore,
-                    atom,
+                    handle,
                     before: existingMap,
-                    after: next,
-                    context,
-                    indexes
+                    after: next
                 })
 
                 emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
@@ -136,7 +133,7 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
                 const err = error instanceof Error ? error : new Error(String(error))
                 return withExplain(
                     { data: (localResult as any).data },
-                    { errors: [{ kind: 'adapter', code: 'FIND_MANY_FAILED', message: err.message, traceId }] }
+                    { errors: [{ kind: 'adapter', code: 'FIND_MANY_FAILED', message: err.message, traceId: observabilityContext.traceId }] }
                 )
             }
         }
@@ -179,12 +176,9 @@ export function createFindMany<T extends Entity>(runtime: StoreRuntime<T>) {
             const withRemovals = BaseStore.bulkRemove(toRemove, existingMap)
             const next = BaseStore.bulkAdd(remote as PartialWithId<T>[], withRemovals)
             commitAtomMapUpdate({
-                jotaiStore,
-                atom,
+                handle,
                 before: existingMap,
-                after: next,
-                context,
-                indexes
+                after: next
             })
 
             emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })

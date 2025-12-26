@@ -8,7 +8,7 @@ import {
     VariantsConfig
 } from '../types'
 import { deepMergeWhere, getValueByPath, normalizeKey } from './utils'
-import { resolveStoreName } from '../storeAccessRegistry'
+import { getStoreHandle } from '../storeHandleRegistry'
 
 export interface ResolveBatchOptions {
     onError?: 'skip' | 'throw' | 'partial'
@@ -24,6 +24,7 @@ export class RelationResolver {
         items: T[],
         include: Record<string, boolean | FindManyOptions<any>> | undefined,
         relations: RelationMap<T> | undefined,
+        resolveStore: (name: string) => IStore<any> | undefined,
         options: ResolveBatchOptions = {}
     ): Promise<T[]> {
         if (!items.length || !include || !relations) return items
@@ -40,7 +41,9 @@ export class RelationResolver {
                             results,
                             relName,
                             relOpts,
+
                             relations,
+                            resolveStore,
                             maxConcurrency,
                             controller.signal
                         ),
@@ -73,6 +76,7 @@ export class RelationResolver {
         relName: string,
         relOpts: boolean | FindManyOptions<any>,
         relations: RelationMap<T>,
+        resolveStore: (name: string) => IStore<any> | undefined,
         maxConcurrency: number,
         signal: AbortSignal
     ): Promise<void> {
@@ -88,11 +92,11 @@ export class RelationResolver {
         }
 
         if (config.type === 'variants') {
-            await this.resolveVariants(results, relName, config, userOptions, maxConcurrency, signal)
+            await this.resolveVariants(results, relName, config, userOptions, resolveStore, maxConcurrency, signal)
             return
         }
 
-        await this.resolveStandardRelation(results, relName, config, userOptions, signal)
+        await this.resolveStandardRelation(results, relName, config, userOptions, resolveStore, signal)
     }
 
     private static async resolveStandardRelation<T extends Entity>(
@@ -100,6 +104,7 @@ export class RelationResolver {
         relName: string,
         config: Exclude<RelationConfig<T, any>, VariantsConfig<T>>,
         userOptions: FindManyOptions<any>,
+        resolveStore: (name: string) => IStore<any> | undefined,
         signal: AbortSignal
     ): Promise<void> {
         if (signal.aborted) return
@@ -114,11 +119,17 @@ export class RelationResolver {
             return
         }
 
+        const store = resolveStore(config.store)
+        if (!store) {
+            console.warn(`[Atoma Relations] Store not found: "${config.store}" in relation "${relName}"`)
+            return
+        }
+
         const mergedOptions = this.mergeQueryOptions(config.options, userOptions)
         const targetKeyField = this.getTargetKeyField(config)
         const bucket = new Map<string, any[]>()
         const normalizedHitKeys = new Set<string>()
-        const cacheKey = this.getRelationCacheKey(config.store, relName, targetKeyField, mergedOptions.where)
+        const cacheKey = this.getRelationCacheKey(store, relName, targetKeyField, mergedOptions.where)
         const cacheBucket = cacheKey ? (this.relationCache.get(cacheKey) || new Map<string, any[]>()) : undefined
         if (cacheKey && cacheBucket && !this.relationCache.has(cacheKey)) {
             this.relationCache.set(cacheKey, cacheBucket)
@@ -127,10 +138,10 @@ export class RelationResolver {
         try {
             // 1) 先尝试通过 getMultipleByIds 命中 Store Map（仅适用于按 id 查询的 belongsTo/hasOne）
             let missingKeys = uniqueKeys
-            const canUseIdLookup = config.type === 'belongsTo' && !!config.store.getMultipleByIds
+            const canUseIdLookup = config.type === 'belongsTo' && !!store.getMultipleByIds
 
             if (canUseIdLookup) {
-                const hitItems = await config.store.getMultipleByIds!(uniqueKeys, true)
+                const hitItems = await store.getMultipleByIds!(uniqueKeys, true)
                 hitItems.forEach(item => {
                     const keyVal = normalizeKey((item as any)[targetKeyField] ?? (item as any).id)
                     if (!bucket.has(keyVal)) bucket.set(keyVal, [])
@@ -160,7 +171,7 @@ export class RelationResolver {
                     where: deepMergeWhere(mergedOptions.where, { [targetKeyField]: { in: missingKeys } })
                 }
 
-                const fetched = await this.executeFindMany(config.store, batchQuery, signal)
+                const fetched = await this.executeFindMany(store, batchQuery, signal)
 
                 fetched.forEach(item => {
                     const keyVal = normalizeKey((item as any)[targetKeyField])
@@ -189,6 +200,7 @@ export class RelationResolver {
         relName: string,
         config: VariantsConfig<T>,
         userOptions: FindManyOptions<any>,
+        resolveStore: (name: string) => IStore<any> | undefined,
         maxConcurrency: number,
         signal: AbortSignal
     ): Promise<void> {
@@ -207,7 +219,7 @@ export class RelationResolver {
         await Promise.all(
             Array.from(branchGroups.entries()).map(async ([idx, items]) => {
                 const branch = config.branches[idx]
-                await this.resolveStandardRelation(items, relName, branch.relation, userOptions, signal)
+                await this.resolveStandardRelation(items, relName, branch.relation, userOptions, resolveStore, signal)
             })
         )
     }
@@ -415,7 +427,7 @@ export class RelationResolver {
         } else if (where) {
             return undefined
         }
-        const storeName = resolveStoreName(store) || 'store'
+        const storeName = getStoreHandle(store)?.storeName || 'store'
         return `${storeName}:${relName}:${targetKeyField}`
     }
 

@@ -1,22 +1,19 @@
 import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId, StoreKey, StoreOperationOptions } from '../types'
-import { type StoreRuntime, resolveObservabilityContext } from './runtime'
+import type { StoreHandle } from '../types'
 
-export function createDeleteOneById<T extends Entity>(runtime: StoreRuntime<T>) {
-    const { jotaiStore, atom, adapter, context, indexes } = runtime
-    return (id: StoreKey, options?: StoreOperationOptions) => {
-        return new Promise<boolean>((resolve, reject) => {
-            const observabilityContext = resolveObservabilityContext(runtime, options)
+export function createDeleteOneById<T extends Entity>(handle: StoreHandle<T>) {
+    const { services } = handle
+    return async (id: StoreKey, options?: StoreOperationOptions) => {
+        const { ticket } = services.mutation.runtime.beginWrite()
+
+        const resultPromise = new Promise<boolean>((resolve, reject) => {
             BaseStore.dispatch({
                 type: options?.force ? 'forceRemove' : 'remove',
                 data: { id } as PartialWithId<T>,
-                adapter,
-                atom,
-                store: jotaiStore,
-                context,
-                indexes,
-                observabilityContext,
+                handle,
                 opContext: options?.opContext,
+                ticket,
                 onSuccess: () => {
                     resolve(true)
                 },
@@ -25,5 +22,12 @@ export function createDeleteOneById<T extends Entity>(runtime: StoreRuntime<T>) 
                 }
             })
         })
+
+        await Promise.all([
+            services.mutation.runtime.await(ticket, options),
+            resultPromise
+        ])
+
+        return resultPromise
     }
 }

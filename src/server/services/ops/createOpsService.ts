@@ -3,12 +3,8 @@ import { byteLengthUtf8 } from '../../http/body'
 import type { AtomaServerConfig, AtomaServerRoute } from '../../config'
 import type { OpsService } from '../types'
 import type { AuthzPolicy } from '../../policies/authzPolicy'
-import type { LimitPolicy } from '../../policies/limitPolicy'
 import type { ServerRuntime } from '../../engine/runtime'
 import { throwError, toStandardError } from '../../error'
-import { fieldPolicyForResource } from '../../authz/fieldPolicyForResource'
-import { mergeForcedWhere } from '../../authz/mergeForcedWhere'
-import { enforceQueryFieldPolicy, resolveFieldPolicy } from '../../guard/fieldPolicy'
 import { Protocol } from '#protocol'
 import type { IOrmAdapter, QueryParams, QueryResult } from '../../types'
 import { executeWriteItemWithSemantics } from '../../writeSemantics/executeWriteItemWithSemantics'
@@ -354,7 +350,7 @@ async function validateVNextWriteOpForAuthz<Ctx>(args: {
 export function createOpsService<Ctx>(args: {
     config: AtomaServerConfig<Ctx>
     authz: AuthzPolicy<Ctx>
-    limits: LimitPolicy<Ctx>
+    readBodyJson: (incoming: any) => Promise<any>
     syncEnabled: boolean
 }): OpsService<Ctx> {
     const adapter = args.config.adapter.orm as IOrmAdapter
@@ -367,12 +363,12 @@ export function createOpsService<Ctx>(args: {
     }
 
     return {
-        handle: async ({ incoming, method, runtime, phase }) => {
+        handle: async ({ incoming, method, runtime }) => {
             if (method !== 'POST') {
                 throwError('METHOD_NOT_ALLOWED', 'POST required', { kind: 'validation', traceId: runtime.traceId, requestId: runtime.requestId })
             }
 
-            const bodyRaw = await args.limits.readBodyJson(incoming)
+            const bodyRaw = await args.readBodyJson(incoming)
             const req = normalizeOpsRequest(bodyRaw)
             ensureV1(req.meta)
 
@@ -385,8 +381,6 @@ export function createOpsService<Ctx>(args: {
                 }
                 seen.add(op.opId)
             }
-
-            await phase.validated({ request: req, event: { opCount: ops.length } })
 
             const limits = args.config.limits
             const queryOps = ops.filter((o): o is QueryOp => o.kind === 'query')
@@ -455,37 +449,10 @@ export function createOpsService<Ctx>(args: {
                 }
             }
 
-            for (let i = 0; i < queryOps.length; i++) {
-                const op = queryOps[i]
-                const resource = op.query.resource
-                const input = fieldPolicyForResource(args.config, resource)
-                const policy = resolveFieldPolicy(input, {
-                    action: 'query',
-                    resource,
-                    params: op.query.params,
-                    ctx: runtime.ctx,
-                    queryIndex: i
-                })
-                enforceQueryFieldPolicy(resource, op.query.params, policy, {
-                    queryIndex: i,
-                    traceId: runtime.traceId,
-                    requestId: runtime.requestId,
-                    opId: op.opId
-                })
-            }
-
             const route: AtomaServerRoute = { kind: 'ops' }
 
             await Promise.all(ops.map(async (op) => {
                 if (op.kind === 'query') {
-                    const forced = await args.authz.filterQuery({
-                        resource: op.query.resource,
-                        params: op.query.params,
-                        op,
-                        route,
-                        runtime
-                    })
-                    forced.forEach(w => mergeForcedWhere(op.query.params, w))
                     await args.authz.authorize({
                         action: 'query',
                         resource: op.query.resource,
@@ -515,8 +482,6 @@ export function createOpsService<Ctx>(args: {
                     return
                 }
             }))
-
-            await phase.authorized({ event: { queryOps: queryOps.length, writeOps: writeOps.length } })
 
             const resultsByOpId = new Map<string, OperationResult>()
 

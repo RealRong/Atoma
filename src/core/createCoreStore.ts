@@ -1,7 +1,7 @@
 import { atom } from 'jotai/vanilla'
 import type { DevtoolsBridge, StoreSnapshot } from '../devtools/types'
 import { getGlobalDevtools, registerGlobalStore } from '../devtools/global'
-import { createStoreRuntime } from './store/runtime'
+import { createStoreHandle } from './store/runtime'
 import { createAddOne } from './store/addOne'
 import { createBatchGet } from './store/batchGet'
 import { createDeleteOneById } from './store/deleteOneById'
@@ -9,11 +9,9 @@ import { createFindMany } from './store/findMany/index'
 import { createGetAll } from './store/getAll'
 import { createGetMultipleByIds } from './store/getMultipleByIds'
 import { createUpdateOne } from './store/updateOne'
-import { registerStoreAccess, resolveStoreAccess } from './storeAccessRegistry'
-import { globalStore } from './BaseStore'
-import { createStoreContext } from './StoreContext'
+import { registerStoreHandle } from './storeHandleRegistry'
+import { createStoreServices } from './StoreServices'
 import type { JotaiStore } from './types'
-import { getDefaultAdapterFactory } from './defaultAdapterFactory'
 import type { DebugConfig, DebugEvent } from '#observability'
 import type {
     Entity,
@@ -24,21 +22,23 @@ import type {
     RelationConfig,
     RelationMap,
     SchemaValidator,
-    StoreKey
+    StoreKey,
+    StoreToken
 } from './types'
 
 export interface CoreStoreConfig<T extends Entity> {
     name: string
-    adapter?: IAdapter<T>
+    adapter: IAdapter<T>
     transformData?: (data: T) => T | undefined
     idGenerator?: () => StoreKey
-    store?: JotaiStore
+    store: JotaiStore
     schema?: SchemaValidator<T>
     hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>
     queue?: Partial<import('./types').QueueConfig>
     devtools?: DevtoolsBridge
     debug?: DebugConfig
+    resolveStore?: (name: StoreToken) => IStore<any> | undefined
 }
 
 export interface CoreStore<T extends Entity, Relations = {}> extends IStore<T, Relations> {
@@ -72,22 +72,17 @@ export function createCoreStore<T extends Entity, Relations = {}>(
         }
         : undefined
 
-    const resolvedAdapter = (() => {
-        if (config.adapter) return config.adapter
-        const factory = getDefaultAdapterFactory()
-        if (factory) return factory<T>(name)
-        return undefined
-    })()
+    const resolvedAdapter = config.adapter
 
-    if (!resolvedAdapter) {
-        throw new Error(`[Atoma] createCoreStore("${name}") 需要提供 adapter，或先调用 setDefaultAdapterFactory`)
-    }
-
-    const jotaiStore = config.store || globalStore
-    const context = createStoreContext(config.queue, { debug: resolvedDebug, debugSink, storeName: name })
+    const jotaiStore = config.store
+    const services = createStoreServices(config.queue, {
+        debug: resolvedDebug,
+        debugSink,
+        resolveStore: config.resolveStore
+    })
     const objectMapAtom = atom(new Map<StoreKey, T>())
 
-    const runtime = createStoreRuntime<T>({
+    const handle = createStoreHandle<T>({
         atom: objectMapAtom,
         adapter: resolvedAdapter,
         config: {
@@ -97,22 +92,22 @@ export function createCoreStore<T extends Entity, Relations = {}>(
             schema: config.schema,
             hooks: config.hooks,
             indexes: config.indexes,
-            context,
+            services,
             devtools: config.devtools,
             storeName: name
         }
     })
-    void runtime.stopIndexDevtools
+    void handle.stopIndexDevtools
 
-    const { getOneById, fetchOneById } = createBatchGet(runtime)
-    const findMany = createFindMany<T>(runtime)
+    const { getOneById, fetchOneById } = createBatchGet(handle)
+    const findMany = createFindMany<T>(handle)
 
     const store = {
-        addOne: createAddOne<T>(runtime),
-        updateOne: createUpdateOne<T>(runtime),
-        deleteOneById: createDeleteOneById<T>(runtime),
-        getAll: createGetAll<T>(runtime),
-        getMultipleByIds: createGetMultipleByIds<T>(runtime),
+        addOne: createAddOne<T>(handle),
+        updateOne: createUpdateOne<T>(handle),
+        deleteOneById: createDeleteOneById<T>(handle),
+        getAll: createGetAll<T>(handle),
+        getMultipleByIds: createGetMultipleByIds<T>(handle),
         getOneById,
         fetchOneById,
         findMany
@@ -120,6 +115,7 @@ export function createCoreStore<T extends Entity, Relations = {}>(
 
     const coreStore = store as unknown as CoreStore<T, Relations>
     coreStore.name = name
+    registerStoreHandle(coreStore, handle)
 
     const snapshot = (): StoreSnapshot => {
         const map = jotaiStore.get(objectMapAtom)
@@ -158,19 +154,7 @@ export function createCoreStore<T extends Entity, Relations = {}>(
             if (!cache) cache = factory()
             return cache
         }
-        registerStoreAccess(coreStore as any, {
-            atom: objectMapAtom as any,
-            jotaiStore,
-            context,
-            adapter: resolvedAdapter as any,
-            matcher: runtime.matcher,
-            storeName: name,
-            relations: getter as any,
-            createObservabilityContext: runtime.observability.createContext.bind(runtime.observability),
-            transform: runtime.transform as any,
-            schema: runtime.schema as any,
-            indexes: runtime.indexes as any
-        })
+        handle.relations = getter as any
     }
 
     coreStore.withRelations = <NewRelations extends Record<string, RelationConfig<any, any>>>(factory: () => NewRelations) => {
@@ -195,28 +179,8 @@ export function createCoreStore<T extends Entity, Relations = {}>(
 
     applyRelations(getRelations)
 
-    // 即使没有 relations，也要注册 atom/jotaiStore/matcher/storeName
-    if (!resolveStoreAccess(coreStore)) {
-        registerStoreAccess(coreStore, {
-            atom: objectMapAtom,
-            jotaiStore,
-            context,
-            adapter: resolvedAdapter as any,
-            matcher: runtime.matcher,
-            storeName: name,
-            relations: undefined,
-            createObservabilityContext: runtime.observability.createContext.bind(runtime.observability),
-            transform: runtime.transform as any,
-            schema: runtime.schema as any,
-            indexes: runtime.indexes as any
-        })
-    }
-
-    // 让 adapter（若支持）绑定 store access，用于 sync/pull/subscribe 写回
-    const access = resolveStoreAccess(coreStore)
-    if (access) {
-        resolvedAdapter.attachStoreAccess?.(access as any)
-    }
+    // 让 adapter（若支持）绑定 store handle，用于 sync/pull/subscribe 写回
+    resolvedAdapter.attachStoreHandle?.(handle as any)
 
     return coreStore
 }

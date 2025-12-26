@@ -1,0 +1,108 @@
+import type { Patch } from 'immer'
+import type { PrimitiveAtom } from 'jotai/vanilla'
+import type { ObservabilityContext } from '#observability'
+import type {
+    Entity,
+    OperationContext,
+    PatchMetadata,
+    StoreDispatchEvent,
+    StoreHandle,
+    StoreKey
+} from '../../types'
+import type { StoreIndexes } from '../../indexes/StoreIndexes'
+import type { VersionManager } from './VersionManager'
+import type { Committer as MutationCommitter } from '../types'
+
+export type Plan<T extends Entity> = Readonly<{
+    nextState: Map<StoreKey, T>
+    patches: Patch[]
+    inversePatches: Patch[]
+    changedFields: Set<string>
+    appliedData: T[]
+    operationTypes: StoreDispatchEvent<T>['type'][]
+    atom: PrimitiveAtom<Map<StoreKey, T>>
+}>
+
+export interface Planner {
+    plan: <T extends Entity>(
+        operations: StoreDispatchEvent<T>[],
+        currentState: Map<StoreKey, T>
+    ) => Plan<T>
+}
+
+export type PersisterPersistArgs<T extends Entity> = Readonly<{
+    handle: StoreHandle<T>
+    operations: StoreDispatchEvent<T>[]
+    plan: Plan<T>
+    metadata: PatchMetadata
+    observabilityContext: ObservabilityContext
+}>
+
+export type PersisterPersistResult<T extends Entity> = { created?: T[] } | void
+
+export interface Persister {
+    persist: <T extends Entity>(args: PersisterPersistArgs<T>) => Promise<PersisterPersistResult<T>>
+}
+
+export type RecorderRecordArgs<T extends Entity> = Readonly<{
+    handle: StoreHandle<T>
+    storeName: string
+    opContext: OperationContext
+    plan: Plan<T>
+}>
+
+export interface Recorder {
+    record: <T extends Entity>(args: RecorderRecordArgs<T>) => void
+}
+
+export type ExecutorRunArgs<T extends Entity> = Readonly<{
+    handle: StoreHandle<T>
+    operations: StoreDispatchEvent<T>[]
+    plan: Plan<T>
+    atom: PrimitiveAtom<Map<any, any>>
+    store: any
+    versionTracker: VersionManager
+    indexes?: StoreIndexes<T> | null
+    observabilityContext: ObservabilityContext
+    storeName?: string
+    opContext?: OperationContext
+}>
+
+export type CommitOptimisticBeforePersistArgs<T extends Entity> = Readonly<{
+    atom: PrimitiveAtom<Map<any, any>>
+    store: any
+    plan: Plan<T>
+    originalState: Map<any, any>
+    versionTracker: VersionManager
+    indexes?: StoreIndexes<T> | null
+}>
+
+export type CommitAfterPersistArgs<T extends Entity> = Readonly<{
+    atom: PrimitiveAtom<Map<any, any>>
+    store: any
+    plan: Plan<T>
+    createdResults?: T[]
+    versionTracker: VersionManager
+    indexes?: StoreIndexes<T> | null
+}>
+
+export type RollbackOptimisticArgs<T extends Entity> = Readonly<{
+    atom: PrimitiveAtom<Map<any, any>>
+    store: any
+    plan: Plan<T>
+    originalState: Map<any, any>
+    versionTracker: VersionManager
+    indexes?: StoreIndexes<T> | null
+}>
+
+export interface ICommitter {
+    commitOptimisticBeforePersist: <T extends Entity>(args: CommitOptimisticBeforePersistArgs<T>) => void
+    commitAfterPersist: <T extends Entity>(args: CommitAfterPersistArgs<T>) => void
+    rollbackOptimistic: <T extends Entity>(args: RollbackOptimisticArgs<T>) => void
+}
+
+export interface IExecutor {
+    planner: Planner
+    committer: MutationCommitter
+    run: <T extends Entity>(args: ExecutorRunArgs<T>) => Promise<void>
+}

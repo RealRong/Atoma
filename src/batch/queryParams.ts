@@ -1,4 +1,4 @@
-import type { FindManyOptions } from '../core/types'
+import type { FindManyOptions } from '#core'
 import type { OrderByRule, Page, QueryParams } from '#protocol'
 
 /**

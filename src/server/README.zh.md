@@ -10,6 +10,14 @@
 
 > 入口：`createAtomaServer(config)`（`src/server/createAtomaServer.ts`）
 
+## 安全模型（重要）
+
+Atoma Server **不实现**行级数据隔离（Row-Level Security / 多租户隔离）的通用方案：
+- 不提供 `where` 注入/改写（forced where）
+- 不提供 query 字段级白名单/黑名单策略（field policy）
+
+如果你要把它当作“正式可用的通用服务端”，必须在业务侧使用数据库能力保证行级隔离（推荐 **DB RLS**，或等价的视图/存储过程/权限模型），并在应用层的 `authz.resources` / `authz.hooks.authorize` 做资源级访问控制。
+
 ---
 
 ## 1. 总览：三层结构
@@ -23,7 +31,7 @@ Atoma Server 以“三层”组织代码与依赖方向：
     - 负责：把“路由请求”转成“具体业务动作”（ops + subscribe-vnext），并协调 policies、adapter、writeSemantics
 
 3) **Policies（策略层）**
-    - 负责：鉴权/过滤/写校验（`AuthzPolicy`）、body 读取限制（`LimitPolicy.readBodyJson`）等
+    - 负责：鉴权/过滤/写校验（`AuthzPolicy`）、body 读取限制等
 
 依赖方向（推荐理解方式）：
 
@@ -41,8 +49,7 @@ Atoma Server 以“三层”组织代码与依赖方向：
 - 读取 `AtomaServerConfig`，确定 routing（basePath、opsPath、subscribeVNextPath、syncEnabled、trace header）
 - 创建 `runtime` 工厂与顶层错误格式化器
 - 创建 `services`
-- 组装 `plugins`（用户插件 + 内置 `default-routes`）
-- 收集插件产出的 `routes` 与 `middleware`，交给 router 调度
+- 组装内置路由（`/ops` + `/sync/subscribe-vnext`），交给 router 调度
 
 ### 2.2 Router：纯路由调度 + middleware 链
 
@@ -54,14 +61,11 @@ Atoma Server 以“三层”组织代码与依赖方向：
 - 提供 middleware 链：`middleware(ctx, next)`
 - 提供 `onError` 兜底：捕获异常并转为 vNext envelope 错误
 
-### 2.3 Plugins：路由与中间件的模块化扩展
+### 2.3 Routes：内置 vNext 路由
 
-文件：`src/server/engine/plugins.ts`、`src/server/plugins/defaultRoutesPlugin.ts`
-
-内置插件：
-- `default-routes`：提供
-  - `/ops`
-  - `/sync/subscribe-vnext`
+内置路由：
+- `POST /ops`
+- `GET /sync/subscribe-vnext`
 
 ### 2.4 Services：业务路由的执行实现
 
@@ -78,9 +82,8 @@ Atoma Server 以“三层”组织代码与依赖方向：
 
 1) `createAtomaServer(config)` 组装：
     - `services = createServerServices(...)`
-    - `plugins = [...config.plugins, defaultRoutes]`
-    - `routes/middleware = plugins.flatMap(...)`
-    - `router = createRouter({ routes, middleware, onError })`
+    - `routes = [ops, sync/subscribe-vnext]`
+    - `router = createRouter({ routes, onError })`
 
 2) 每次请求进入 `router(incoming)`：
     - middleware 链
@@ -99,7 +102,7 @@ Atoma Server 以“三层”组织代码与依赖方向：
 
 ### 4.1 /ops
 
-入口 route：`src/server/routes/ops/createOpsRoute.ts`
+入口：内置 route（在 `src/server/createAtomaServer.ts` 内组装）
 
 调用链（概念）：
 - `route.handle(ctx)`
@@ -111,7 +114,7 @@ Atoma Server 以“三层”组织代码与依赖方向：
 
 ### 4.2 /sync/subscribe-vnext（SSE）
 
-入口 route：`src/server/routes/sync/createSyncSubscribeVNextRoute.ts`
+入口：内置 route（在 `src/server/createAtomaServer.ts` 内组装）
 
 调用链（概念）：
 - `route.handle(ctx)`
@@ -121,4 +124,3 @@ Atoma Server 以“三层”组织代码与依赖方向：
       - `adapter.sync.waitForChanges(...)`
       - `authz.filterChanges(...)`
       - 输出 `event: changes` + `ChangeBatch`
-

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { StoreKey } from 'atoma'
+import { useFindMany, useValue } from 'atoma/react'
 import { PostsStore } from './stores'
 
 export function App() {
-    const { data: posts, loading, error } = PostsStore.useFindMany({
+    const { data: posts, loading, error } = useFindMany(PostsStore, {
         orderBy: { field: 'createdAt', direction: 'desc' },
         include: {
             author: true,
@@ -125,7 +126,7 @@ export function App() {
 
 // ... (inside PostCard)
 const PostCard = React.memo(function PostCard({ id }: { id: StoreKey }) {
-    const post = PostsStore.useValue(id, {
+    const post = useValue(PostsStore, id, {
         include: {
             author: true,
             comments: {

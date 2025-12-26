@@ -2,6 +2,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
+      "#core": [
+        "src/core/index.ts"
+      ],
       "#observability": [
         "src/observability/index.ts"
       ],
