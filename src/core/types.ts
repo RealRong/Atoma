@@ -431,6 +431,12 @@ export type InferIncludeType<R> =
  * Store interface - main API for CRUD operations
  */
 export interface IStore<T, Relations = {}> {
+    /**
+     * 类型占位（运行时不要求存在）：
+     * - 用于在泛型推导时把 Relations 携带在 store 类型上（例如 react hooks 推导 include 结果）
+     */
+    readonly __relations?: Relations
+
     /** Add a new item */
     addOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
 
@@ -471,7 +477,10 @@ type InferTargetType<R> =
     : never
 
 type InferStoreRelations<R> =
-    R extends { store: IStore<any, infer TR> } ? TR : {}
+    R extends BelongsToConfig<any, any, infer TR> ? TR
+    : R extends HasManyConfig<any, any, infer TR> ? TR
+    : R extends HasOneConfig<any, any, infer TR> ? TR
+    : {}
 
 type InferIncludeForRelations<Relations> =
     Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>

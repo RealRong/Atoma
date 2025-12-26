@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Core } from '#core'
-import type { Entity, FindManyOptions, IStore, RelationMap, StoreKey, StoreToken } from '#core'
-
-type IncludeOption = Record<string, boolean | (FindManyOptions<any> & { live?: boolean })>
+import type { Entity, IStore, RelationIncludeInput, StoreKey, StoreToken, WithRelations } from '#core'
 
 export interface UseRelationsResult<T extends Entity> {
     data: T[]
@@ -11,12 +9,30 @@ export interface UseRelationsResult<T extends Entity> {
     refetch: () => Promise<T[]>
 }
 
+export function useRelations<T extends Entity, Relations>(
+    items: T[],
+    include: undefined,
+    relations: Relations | undefined,
+    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
+): UseRelationsResult<T>
+
+export function useRelations<T extends Entity, Relations, const Include extends RelationIncludeInput<Relations>>(
+    items: T[],
+    include: Include,
+    relations: Relations | undefined,
+    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
+): UseRelationsResult<keyof Include extends never ? T : WithRelations<T, Relations, Include>>
+
 export function useRelations<T extends Entity>(
     items: T[],
-    include: IncludeOption | undefined,
+    include: Record<string, any> | undefined,
     relations: any | undefined,
-    resolveStore?: (name: StoreToken) => IStore<any> | undefined
-): UseRelationsResult<T> {
+    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
+): UseRelationsResult<any> {
+    const effectiveInclude = include && typeof include === 'object' && Object.keys(include).length === 0
+        ? undefined
+        : include
+
     const includeKey = useMemo(() => Core.query.stableStringify(include), [include])
     const [data, setData] = useState<T[]>(items)
     const [loading, setLoading] = useState(false)
@@ -36,8 +52,8 @@ export function useRelations<T extends Entity>(
         ).sort().join('|')
 
         const relKeys: string[] = []
-        if (relations && include) {
-            Object.entries(include).forEach(([name, opts]) => {
+        if (relations && effectiveInclude) {
+            Object.entries(effectiveInclude).forEach(([name, opts]) => {
                 if (opts === undefined || opts === null || opts === false) return
                 const rel = relations[name]
                 if (!rel) return
@@ -72,7 +88,7 @@ export function useRelations<T extends Entity>(
     const canReuseRelations = () => buildSignature() === resolvedSignatureRef.current
 
     const runResolve = async () => {
-        if (!include || !relations || items.length === 0) {
+        if (!effectiveInclude || !relations || items.length === 0) {
             relationsSnapshotRef.current = new Map()
             includeNamesRef.current = []
             resolvedSignatureRef.current = buildSignature()
@@ -93,7 +109,7 @@ export function useRelations<T extends Entity>(
         setError(undefined)
 
         const includeWithSkipStore = Object.fromEntries(
-            Object.entries(include).map(([key, opts]) => {
+            Object.entries(effectiveInclude).map(([key, opts]) => {
                 if (opts === false || opts === undefined) return [key, opts]
                 if (opts && typeof opts === 'object') {
                     const { live: _live, ...rest } = opts as any
@@ -101,7 +117,7 @@ export function useRelations<T extends Entity>(
                 }
                 return [key, { skipStore: false }]
             })
-        ) as IncludeOption
+        )
 
         const includeNames = Object.entries(includeWithSkipStore)
             .filter(([, v]) => v !== false && v !== undefined && v !== null)
@@ -146,9 +162,9 @@ export function useRelations<T extends Entity>(
     // live 订阅：监听子 store map 变化
     const [liveTick, setLiveTick] = useState(0)
     useEffect(() => {
-        if (!include || !relations || !resolveStore) return
+        if (!effectiveInclude || !relations || !resolveStore) return
         const unsubscribers: Array<() => void> = []
-        Object.entries(include).forEach(([name, opts]) => {
+        Object.entries(effectiveInclude).forEach(([name, opts]) => {
             if (opts === false || opts === undefined || opts === null) return
             const live = typeof opts === 'object' ? opts.live !== false : true
             if (!live) return
@@ -174,7 +190,7 @@ export function useRelations<T extends Entity>(
         includeNames.forEach(name => {
             const rel = relations[name]
             if (!rel) return
-            const includeOpts = (include as any)?.[name]
+            const includeOpts = effectiveInclude?.[name]
             const live = typeof includeOpts === 'object' ? includeOpts.live !== false : true
             if (!live) return
             const store = resolveStore((rel as any).store)
@@ -233,7 +249,7 @@ export function useRelations<T extends Entity>(
     }
 
     useEffect(() => {
-        if (!include || !relations || items.length === 0) {
+        if (!effectiveInclude || !relations || items.length === 0) {
             relationsSnapshotRef.current = new Map()
             includeNamesRef.current = []
             setData(items)
@@ -253,7 +269,7 @@ export function useRelations<T extends Entity>(
     }, [items, includeKey, relations, resolveStore])
 
     useEffect(() => {
-        if (!include || !relations || items.length === 0) {
+        if (!effectiveInclude || !relations || items.length === 0) {
             setData(items)
             return
         }
@@ -262,7 +278,7 @@ export function useRelations<T extends Entity>(
         const rebased = items.map(item => {
             const merged: any = { ...item }
             includeNames.forEach(name => {
-                const includeOpts = (include as any)?.[name]
+                const includeOpts = effectiveInclude?.[name]
                 const live = typeof includeOpts === 'object' ? includeOpts.live !== false : true
                 if (live) {
                     Object.assign(merged, computeLiveRelations(item, [name]))

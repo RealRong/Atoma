@@ -10,8 +10,10 @@ import { useRelations } from './useRelations'
  */
 export function useAll<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: IStore<T, Relations>,
-    options?: { include?: Include }
+    options?: { include?: RelationIncludeInput<Relations> & Include }
 ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
+    type Result = keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]
+
     const handle = Core.store.getHandle(store)
     if (!handle) {
         throw new Error('[Atoma] useAll: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createCoreStore/createStore 创建')
@@ -24,9 +26,9 @@ export function useAll<T extends Entity, Relations = {}, const Include extends R
     const memoedArr = useMemo(() => Array.from(all.values()), [all])
 
     const relations = handle.relations?.()
-    if (!options?.include || !relations) return memoedArr as any
+    if (!options?.include || !relations) return memoedArr as Result
 
     const resolveStore = handle.services.resolveStore
-    const relationsResult = useRelations(memoedArr, options.include as any, relations, resolveStore)
-    return relationsResult.data as any
+    const relationsResult = useRelations<T, Relations, Include>(memoedArr, options.include, relations as Relations, resolveStore)
+    return relationsResult.data as unknown as Result
 }

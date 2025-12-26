@@ -45,7 +45,7 @@ export class AtomCommitter implements Committer {
     prepare<T extends Entity>(args: CommitterPrepareArgs<T>) {
         args.store.set(args.atom, args.plan.nextState)
         args.versionTracker.bump(args.atom, args.plan.changedFields)
-        args.indexes?.applyPatches(args.originalState as any, args.plan.nextState as any, args.plan.patches)
+        args.indexes?.applyPatches(args.originalState, args.plan.nextState, args.plan.patches)
     }
 
     commit<T extends Entity>(args: CommitterCommitArgs<T>) {
@@ -69,6 +69,6 @@ export class AtomCommitter implements Committer {
 
     rollback<T extends Entity>(args: CommitterRollbackArgs<T>) {
         args.store.set(args.atom, args.originalState)
-        args.indexes?.applyPatches(args.plan.nextState as any, args.originalState as any, args.plan.inversePatches)
+        args.indexes?.applyPatches(args.plan.nextState, args.originalState, args.plan.inversePatches)
     }
 }

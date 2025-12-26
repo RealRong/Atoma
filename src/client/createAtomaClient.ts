@@ -1,4 +1,4 @@
-import type { Entity, OperationContext } from '#core'
+import type { CoreStore, Entity, IStore, OperationContext } from '#core'
 import { Core } from '#core'
 import { createHistoryPlugin } from './history'
 import { createSyncPlugin } from './sync'
@@ -23,8 +23,8 @@ const defineStoresInternal = <
     return {
         defineClient: (config: DefineClientConfig<Entities>) => {
             const runtime = createClientRuntime({
-                stores: stores as any,
-                config: config as any
+                stores,
+                config
             })
 
             const plugins = applyClientPlugins(runtime, [
@@ -32,13 +32,21 @@ const defineStoresInternal = <
                 createSyncPlugin({ syncConfig: config.sync })
             ])
 
-            const client: AtomaClient<any, any> = {
-                Store: runtime.Store as any,
-                resolveStore: runtime.resolveStore as any,
+            const Store = (<Name extends keyof Entities & string>(name: Name) => {
+                return runtime.Store(name) as unknown as CoreStore<Entities[Name], any>
+            }) as AtomaClient<Entities, Stores>['Store']
+
+            const resolveStore = ((name: string) => {
+                return runtime.resolveStore(name) as unknown as IStore<any>
+            }) as AtomaClient<Entities, Stores>['resolveStore']
+
+            const client: AtomaClient<Entities, Stores> = {
+                Store,
+                resolveStore,
                 ...(plugins.client as any)
             }
 
-            return client as any
+            return client
         }
     }
 }
@@ -48,10 +56,12 @@ export function defineEntities<
 >(): EntitiesDefinition<Entities> {
     function defineStores(): StoresDefinition<Entities, {}>
     function defineStores<const Stores extends StoresConstraint<Entities>>(
-        stores: Stores & StoresConstraint<Entities>
+        stores: Stores
     ): StoresDefinition<Entities, Stores>
-    function defineStores(storesArg?: any): StoresDefinition<Entities, any> {
-        return defineStoresInternal<Entities, any>((storesArg ?? {}) as any)
+    function defineStores<const Stores extends StoresConstraint<Entities> = {}>(
+        storesArg?: Stores & StoresConstraint<Entities>
+    ): StoresDefinition<Entities, Stores> {
+        return defineStoresInternal<Entities, Stores>(((storesArg ?? {}) as unknown) as Stores)
     }
 
     return {

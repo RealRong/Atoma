@@ -13,8 +13,10 @@ import { useRelations } from './useRelations'
 export function useValue<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: IStore<T, Relations>,
     id?: StoreKey,
-    options?: { include?: Include }
+    options?: { include?: RelationIncludeInput<Relations> & Include }
 ): (keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined) {
+    type Result = keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined
+
     const handle = Core.store.getHandle(store)
     if (!handle) {
         throw new Error('[Atoma] useValue: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createCoreStore/createStore 创建')
@@ -36,9 +38,9 @@ export function useValue<T extends Entity, Relations = {}, const Include extends
 
     const base = useAtomValue(selectedAtom, { store: jotaiStore })
     const relations = handle.relations?.()
-    if (!options?.include || !relations) return base as any
+    if (!options?.include || !relations) return base as Result
 
     const resolveStore = handle.services.resolveStore
-    const rel = useRelations(base ? [base] : [], options.include as any, relations, resolveStore)
-    return rel.data[0] as any
+    const rel = useRelations<T, Relations, Include>(base ? [base] : [], options.include, relations as Relations, resolveStore)
+    return rel.data[0] as unknown as Result
 }

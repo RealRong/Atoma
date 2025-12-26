@@ -1,4 +1,5 @@
 import type { StoreOperationOptions, WriteItemMeta, WriteTicket, WriteTimeoutBehavior, WriteConfirmation } from '../../types'
+import { Protocol } from '#protocol'
 
 type Deferred<T> = {
     promise: Promise<T>
@@ -40,12 +41,6 @@ function toError(reason: unknown, fallbackMessage: string): Error {
     }
 }
 
-function createIdempotencyKey(): string {
-    const c = (globalThis as any)?.crypto
-    if (c && typeof c.randomUUID === 'function') return c.randomUUID()
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-}
-
 export class WriteTimeoutError extends Error {
     name = 'WriteTimeoutError'
 
@@ -61,7 +56,7 @@ export class TicketTracker {
 
     beginWrite(): { ticket: WriteTicket; meta: WriteItemMeta } {
         const meta: WriteItemMeta = {
-            idempotencyKey: createIdempotencyKey(),
+            idempotencyKey: Protocol.ids.createIdempotencyKey({ now: this.now }),
             clientTimeMs: this.now()
         }
 

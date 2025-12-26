@@ -1,12 +1,17 @@
 import type { Entity, IStore, StoreHandle } from './types'
 
-const registry = new WeakMap<IStore<any>, StoreHandle<any>>()
+const registry = new WeakMap<IStore<any, any>, StoreHandle<any>>()
 
-export const registerStoreHandle = <T extends Entity>(store: IStore<T>, handle: StoreHandle<T>) => {
-    registry.set(store as any, handle as any)
+export const registerStoreHandle = <T extends Entity, Relations>(
+    store: IStore<T, Relations>,
+    handle: StoreHandle<T>
+): void => {
+    registry.set(store, handle)
 }
 
-export const getStoreHandle = <T extends Entity>(store: IStore<T> | undefined): StoreHandle<T> | null => {
+export const getStoreHandle = <T extends Entity, Relations>(
+    store: IStore<T, Relations> | undefined
+): StoreHandle<T> | null => {
     if (!store) return null
     return (registry.get(store) as StoreHandle<T> | undefined) ?? null
 }

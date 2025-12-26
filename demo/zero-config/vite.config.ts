@@ -20,6 +20,7 @@ export default defineConfig({
             'atoma-devtools': path.resolve(__dirname, '../..', 'devtools', 'dist', 'index.js'),
             'atoma/server': path.resolve(__dirname, '../..', 'src/server'),
             'atoma/adapters': path.resolve(__dirname, '../..', 'src/adapters'),
+            '#core': path.resolve(__dirname, '../..', 'src/core/index.ts'),
             '#observability': path.resolve(__dirname, '../..', 'src/observability/index.ts'),
             '#protocol': path.resolve(__dirname, '../..', 'src/protocol/index.ts'),
             '#batch': path.resolve(__dirname, '../..', 'src/batch/index.ts')

@@ -50,7 +50,7 @@ export function createClientRuntime(args: {
         }
     }
 
-    const rawStore = (name: any): any => {
+    const rawStore = (name: string): any => {
         const key = String(name)
         const existing = storeCache.get(key)
         if (existing) return existing as any
@@ -72,12 +72,12 @@ export function createClientRuntime(args: {
             return createAtomaStore(ctx, { ...(override as any), name } as any)
         })()
 
-        storeCache.set(key, created as any)
+        storeCache.set(key, created)
 
         const handle = Core.store.getHandle(created)
         if (handle) emitHandleCreated(handle)
 
-        return created as any
+        return created
     }
 
     return {

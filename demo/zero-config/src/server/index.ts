@@ -50,14 +50,18 @@ export async function startServer(port = 3000) {
     const adapter = createTypeormServerAdapter({ dataSource: AppDataSource })
     const handler = createAtomaServer({
         adapter,
-        routing: { rest: { enabled: true }, batch: { path: '/batch' } },
+        routing: {
+            ops: { path: '/ops' },
+            sync: { enabled: true }
+        },
         authz: { resources: { allow: allowList } }
     })
 
     // 统一入口（批量 + REST 映射），基于 Fetch 风格 handler 做薄封装
     app.use('/api', async (req, res, next) => {
         try {
-            const url = req.originalUrl?.replace(/^\/api/, '') || '/'
+            const url = (req.originalUrl?.replace(/^\/api/, '') || '/')
+                .replace(/^\/batch\b/, '/ops')
             const controller = new AbortController()
             req.on('close', () => controller.abort())
             const incoming = {

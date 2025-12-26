@@ -3,9 +3,9 @@ import { createApplier } from '../internal'
 import { PushLane } from '../lanes/PushLane'
 import { PullLane } from '../lanes/PullLane'
 import { SubscribeLane, subscribeToVNextChangesSse } from '../lanes/SubscribeLane'
-import { createIdempotencyKey, createOpId, type IdSequence } from '../policies/idempotency'
 import { createVNextStores } from '../vnextStore'
 import type { Cursor, Meta, WriteAction, WriteItem } from '#protocol'
+import { Protocol } from '#protocol'
 import { computeBackoffDelayMs } from '../policies/backoffPolicy'
 import { SingleInstanceLock } from '../policies/singleInstanceLock'
 import type { SyncTransport } from '../types'
@@ -13,7 +13,6 @@ import type { SyncTransport } from '../types'
 export class SyncEngine implements SyncClient {
     private disposed = false
     private started = false
-    private readonly seq: IdSequence = { value: 0 }
 
     private readonly resolved: {
         maxPushItems: number
@@ -224,7 +223,7 @@ export class SyncEngine implements SyncClient {
         const meta = (item.meta && typeof item.meta === 'object' && !Array.isArray(item.meta)) ? item.meta : {}
         const idempotencyKey = typeof (meta as any).idempotencyKey === 'string' && (meta as any).idempotencyKey
             ? (meta as any).idempotencyKey
-            : this.createIdempotencyKey()
+            : Protocol.ids.createIdempotencyKey({ now: () => this.now() })
         return {
             ...meta,
             idempotencyKey
@@ -327,12 +326,8 @@ export class SyncEngine implements SyncClient {
         }
     }
 
-    private createIdempotencyKey(): string {
-        return createIdempotencyKey('s', this.seq, () => Date.now())
-    }
-
     private nextOpId(prefix: 'w' | 'c') {
-        return createOpId(prefix, this.seq, () => Date.now())
+        return Protocol.ids.createOpId(prefix, { now: () => this.now() })
     }
 }
 

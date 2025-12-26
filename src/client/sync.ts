@@ -117,9 +117,9 @@ export function createSyncPlugin(args: { syncConfig?: AtomaClientSyncConfig }): 
                         changes: list
                     })
 
-            const writer = new StateWriter<any>({
-                getStoreHandle: () => Core.store.getHandle(store) ?? undefined
-            })
+                    const writer = new StateWriter<any>({
+                        getStoreHandle: () => Core.store.getHandle(store) ?? undefined
+                    })
 
                     const deleteKeys: StoreKey[] = []
                     const upsertEntityIds: string[] = []
@@ -152,22 +152,22 @@ export function createSyncPlugin(args: { syncConfig?: AtomaClientSyncConfig }): 
                 }
             }
 
-    const applyWriteAck = async (ack: SyncWriteAck) => {
-        const store = runtime.resolveStore(ack.resource)
-        const handle = Core.store.getHandle(store)
-        if (!handle) return
-        const key = (ack.item as any)?.meta && typeof (ack.item as any).meta === 'object'
-            ? (ack.item as any).meta.idempotencyKey
-            : undefined
-        handle.services.mutation.control.remoteAck({
-            storeName: ack.resource,
-            idempotencyKey: (typeof key === 'string' && key) ? key : undefined,
-            ack
-        })
-        const writer = new StateWriter<any>({ getStoreHandle: () => Core.store.getHandle(store) ?? undefined })
-        const ctx = handle.createObservabilityContext?.({}) as any
+            const applyWriteAck = async (ack: SyncWriteAck) => {
+                const store = runtime.resolveStore(ack.resource)
+                const handle = Core.store.getHandle(store)
+                if (!handle) return
+                const key = (ack.item as any)?.meta && typeof (ack.item as any).meta === 'object'
+                    ? (ack.item as any).meta.idempotencyKey
+                    : undefined
+                handle.services.mutation.control.remoteAck({
+                    storeName: ack.resource,
+                    idempotencyKey: (typeof key === 'string' && key) ? key : undefined,
+                    ack
+                })
+                const writer = new StateWriter<any>({ getStoreHandle: () => Core.store.getHandle(store) ?? undefined })
+                const ctx = handle.createObservabilityContext?.({}) as any
 
-        const extra: any[] = []
+                const extra: any[] = []
                 if (ack.action === 'create') {
                     const tempEntityId = (ack.item as any)?.entityId
                     const nextEntityId = ack.result.entityId
@@ -209,42 +209,42 @@ export function createSyncPlugin(args: { syncConfig?: AtomaClientSyncConfig }): 
             const applyWriteReject = async (
                 reject: SyncWriteReject,
                 conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
-    ) => {
-        const store = runtime.resolveStore(reject.resource)
-        const handle = Core.store.getHandle(store)
-        if (!handle) return
-        const key = (reject.item as any)?.meta && typeof (reject.item as any).meta === 'object'
-            ? (reject.item as any).meta.idempotencyKey
-            : undefined
-        handle.services.mutation.control.remoteReject({
-            storeName: reject.resource,
-            idempotencyKey: (typeof key === 'string' && key) ? key : undefined,
-            reject,
-            reason: (reject.result as any)?.error ?? reject.result
-        })
-        const writer = new StateWriter<any>({ getStoreHandle: () => Core.store.getHandle(store) ?? undefined })
-        const ctx = handle.createObservabilityContext?.({}) as any
+            ) => {
+                const store = runtime.resolveStore(reject.resource)
+                const handle = Core.store.getHandle(store)
+                if (!handle) return
+                const key = (reject.item as any)?.meta && typeof (reject.item as any).meta === 'object'
+                    ? (reject.item as any).meta.idempotencyKey
+                    : undefined
+                handle.services.mutation.control.remoteReject({
+                    storeName: reject.resource,
+                    idempotencyKey: (typeof key === 'string' && key) ? key : undefined,
+                    reject,
+                    reason: (reject.result as any)?.error ?? reject.result
+                })
+                const writer = new StateWriter<any>({ getStoreHandle: () => Core.store.getHandle(store) ?? undefined })
+                const ctx = handle.createObservabilityContext?.({}) as any
 
-        const extra: any[] = []
-        if (reject.action === 'create') {
-            const tempEntityId = (reject.item as any)?.entityId
-            const tempKey = (typeof tempEntityId === 'string' && tempEntityId)
-                ? normalizeStoreKeyFromEntityId(tempEntityId)
-                : null
-            if (tempKey !== null) {
-                extra.push({ kind: 'delete', keys: [tempKey] } as const)
+                const extra: any[] = []
+                if (reject.action === 'create') {
+                    const tempEntityId = (reject.item as any)?.entityId
+                    const tempKey = (typeof tempEntityId === 'string' && tempEntityId)
+                        ? normalizeStoreKeyFromEntityId(tempEntityId)
+                        : null
+                    if (tempKey !== null) {
+                        extra.push({ kind: 'delete', keys: [tempKey] } as const)
+                    }
+                }
+
+                const base = transformToInstructions({
+                    source: 'syncReject',
+                    reject,
+                    conflictStrategy
+                } as any, { conflictStrategy: syncConfig?.conflictStrategy })
+                const instructions = [...extra, ...base]
+                if (!instructions.length) return
+                await writer.applyInstructions(instructions as any, ctx)
             }
-        }
-
-        const base = transformToInstructions({
-            source: 'syncReject',
-            reject,
-            conflictStrategy
-        } as any, { conflictStrategy: syncConfig?.conflictStrategy })
-        const instructions = [...extra, ...base]
-        if (!instructions.length) return
-        await writer.applyInstructions(instructions as any, ctx)
-    }
 
             let syncStarted = false
             let syncEngine: SyncClient | null = null

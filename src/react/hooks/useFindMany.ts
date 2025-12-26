@@ -1,13 +1,13 @@
 import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useState } from 'react'
 import { Core } from '#core'
-import type { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, RelationIncludeInput, Entity } from '#core'
+import type { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, RelationIncludeInput, Entity, WithRelations } from '#core'
 import type { UseFindManyResult } from '../types'
 import { useRelations } from './useRelations'
 
 export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: IStore<T, Relations>,
-    options?: FindManyOptions<T, Include> & { fetchPolicy?: FetchPolicy }
+    options?: FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy }
 ): UseFindManyResult<T, Relations, Include> {
     const handle = Core.store.getHandle(store)
     if (!handle) {
@@ -199,14 +199,15 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
                 ? remoteData
                 : (localData.length ? localData : remoteData)
 
-    const relations = handle.relations?.()
+    const relations = handle.relations?.() as Relations | undefined
     const resolveStore = handle.services.resolveStore
-    const relationsResult = useRelations(data, options?.include as any, relations, resolveStore)
+    const effectiveInclude = (options?.include ?? ({} as Include))
+    const relationsResult = useRelations<T, Relations, Include>(data, effectiveInclude, relations, resolveStore)
     const finalData = relationsResult.data
     const combinedError = relationsResult.error ?? error
 
     return {
-        data: finalData as any,
+        data: finalData as unknown as (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]),
         loading: loading || relationsResult.loading,
         error: combinedError,
         refetch,

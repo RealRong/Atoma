@@ -59,7 +59,7 @@ export function createHistoryPlugin(): ClientPlugin {
 
             const unsubscribers: Array<() => void> = []
             const unregister = runtime.onHandleCreated((handle) => {
-                const unsub = handle.services.mutation.hooks.events.committed.on((e: any) => {
+                const unsub = handle.services.mutation.hooks.events.committed.on((e) => {
                     const opContext = e?.opContext
                     if (!opContext) return
                     historyManager.record({

@@ -10,4 +10,9 @@ export type { CreateOpContextArgs, DefineClientConfig, AtomaStoresConfig, AtomaC
 export type { AtomaClientSyncConfig } from './client/sync'
 export type { OperationContext, OperationOrigin } from './core'
 
+export { enableGlobalDevtools, getGlobalDevtools } from './devtools/global'
+export { createDevtoolsBridge } from './devtools/bridge'
+export type { DevtoolsBridge, DevtoolsEvent, StoreSnapshot, IndexSnapshot, QueueItem, IndexQueryPlan, HistoryEntrySummary } from './devtools/types'
+export type { DebugEvent } from './observability'
+
 export * from './react'

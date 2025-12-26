@@ -4,6 +4,7 @@ import { sendBatchRequest } from './internal'
 import { QueryLane } from './queryLane'
 import { WriteLane } from './writeLane'
 import type { Operation, OperationResult, WriteItem, WriteOp } from '#protocol'
+import { Protocol } from '#protocol'
 
 type FetchFn = typeof fetch
 
@@ -62,8 +63,6 @@ export class BatchEngine {
      *
      * Lane state + drain algorithms live inside `QueryLane` / `WriteLane`.
      */
-    private seq = 0
-
     private readonly endpoint: string
     private readonly fetcher: FetchFn
 
@@ -139,7 +138,7 @@ export class BatchEngine {
             const baseMeta = (meta && typeof meta === 'object' && !Array.isArray(meta)) ? meta : {}
             const idempotencyKey = (typeof (baseMeta as any).idempotencyKey === 'string' && (baseMeta as any).idempotencyKey)
                 ? (baseMeta as any).idempotencyKey
-                : this.createIdempotencyKey()
+                : Protocol.ids.createIdempotencyKey()
             return {
                 ...(item as any),
                 meta: {
@@ -158,15 +157,4 @@ export class BatchEngine {
         } as WriteOp
     }
 
-    private createIdempotencyKey(): string {
-        if (typeof crypto !== 'undefined') {
-            const randomUUID = Reflect.get(crypto, 'randomUUID')
-            if (typeof randomUUID === 'function') {
-                const uuid = randomUUID.call(crypto)
-                if (typeof uuid === 'string' && uuid) return `b_${uuid}`
-            }
-        }
-        this.seq += 1
-        return `b_${Date.now()}_${this.seq}`
-    }
 }

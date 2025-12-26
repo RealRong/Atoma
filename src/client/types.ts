@@ -12,7 +12,7 @@ import type {
     RelationMap,
     StoreConfig
 } from '#core'
-import type { RelationsSchema } from './createAtomaStore'
+import type { RelationsSchema, RelationMapFromSchema } from './createAtomaStore'
 import type { AtomaClientSyncConfig } from './sync'
 
 export type InferRelationsFromStoreOverride<
@@ -27,9 +27,11 @@ export type InferRelationsFromStoreOverride<
         : Stores[Name] extends { relations?: infer Relations }
             ? Relations extends (...args: any[]) => infer R2
                 ? (R2 extends RelationMap<Entities[Name]> ? R2 : {})
-                : Relations extends RelationMap<Entities[Name]>
-                    ? Relations
-                    : {}
+                : Relations extends RelationsSchema<Entities, Stores, Name>
+                    ? RelationMapFromSchema<Entities, Stores, Name, Relations>
+                    : Relations extends RelationMap<Entities[Name]>
+                        ? Relations
+                        : {}
             : {}
     : {}
 
@@ -62,7 +64,7 @@ type StoreOverrideConstraint<
 > =
     | ((ctx: any) => any)
     | (Partial<StoreConfig<Entities[Name]>> & {
-        relations?: RelationsSchema<Entities, any, Name> | ((dsl: RelationsDslForConstraint<Entities, Entities[Name]>) => unknown)
+        relations?: unknown | ((dsl: RelationsDslForConstraint<Entities, Entities[Name]>) => unknown)
     })
 
 export type StoresConstraint<Entities extends Record<string, Entity>> =
@@ -114,7 +116,7 @@ export type EntitiesDefinition<
     defineStores: {
         (): StoresDefinition<Entities, {}>
         <const Stores extends StoresConstraint<Entities>>(
-            stores: Stores & StoresConstraint<Entities>
+            stores: Stores
         ): StoresDefinition<Entities, Stores>
     }
 }

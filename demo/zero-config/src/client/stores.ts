@@ -1,4 +1,4 @@
-import { HTTPAdapter, BaseEntity } from 'atoma'
+import { HTTPAdapter } from 'atoma/adapters'
 import { defineEntities } from 'atoma'
 
 export type UserEntity = {
@@ -14,7 +14,14 @@ export type CommentEntity = {
     authorId: number
 }
 
-export type PostEntity = BaseEntity & {
+export type PostEntity = {
+    id: number
+    createdAt: number
+    updatedAt: number
+    deleted?: boolean
+    deletedAt?: number
+    version?: number
+    _etag?: string
     title: string
     body: string
     authorId: number
@@ -51,9 +58,8 @@ export const client = defineEntities<Entities>().defineStores({
         new HTTPAdapter<any>({
             baseURL: API_BASE,
             resourceName,
-            batch: true,
+            batch: { endpoint: '/batch', flushIntervalMs: 5 },
             usePatchForUpdate: true,
-            offline: { enabled: true, syncOnReconnect: true },
             sync: { enabled: true, mode: 'sse' }
         })
 })
