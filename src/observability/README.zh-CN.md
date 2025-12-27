@@ -134,12 +134,12 @@ const res = await store.findMany({ where: { done: { eq: false } }, explain: true
 console.log(res.explain)
 ```
 
-## 关于 ID 与请求头
+## 关于 ID 与 trace 传递
 
-- HTTP adapter 与 `BatchEngine` 通常会透传：
-  - `x-atoma-trace-id`
-  - `x-atoma-request-id`
+- 对于 ops 请求：traceId/requestId 以 **op-scoped** 形式写在 `op.meta.traceId` / `op.meta.requestId`（batch 场景尤其重要：同一请求内允许 mixed trace，不需要为 trace 拆批）。
+- `x-atoma-trace-id` / `x-atoma-request-id` 这两个请求头是可选的：服务端仍可解析它们作为“请求级”上下文（例如顶层错误/日志），但不再作为 op 级 trace 的权威来源。
 - `requestId` 通常通过 `ctx.requestId()`（runtime 内部维护 per-trace 序列）在实例内按 trace 生成序列，避免进程级全局可变状态，更适合 SSR/并发场景。
+- 对于 `sync/subscribe-vnext` 这类 GET/SSE（无 JSON body）：trace 通过 URL query（`traceId`/`requestId`）传递。
 
 ## 延伸阅读
 

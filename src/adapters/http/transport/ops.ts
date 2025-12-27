@@ -1,8 +1,7 @@
 import type { ObservabilityContext } from '#observability'
 import type { Envelope } from '#protocol'
 import { Protocol } from '#protocol'
-import { traceFromContext } from './trace'
-import type { HttpInterceptors, HttpTrace } from './pipeline'
+import type { HttpInterceptors } from './pipeline'
 import { createHttpJsonPipeline } from './pipeline'
 
 export type OpsMeta = {
@@ -35,6 +34,7 @@ export type ExecuteOpsArgs = {
     v?: number
     deviceId?: string
     clientTimeMs?: number
+    signal?: AbortSignal
 }
 
 function joinUrl(base: string, path: string): string {
@@ -53,13 +53,10 @@ function buildOpsMeta(args: {
     v: number
     deviceId?: string
     clientTimeMs?: number
-    trace: HttpTrace
 }): OpsMeta {
     return {
         v: args.v,
         ...(args.deviceId ? { deviceId: args.deviceId } : {}),
-        ...(args.trace.traceId ? { traceId: args.trace.traceId } : {}),
-        ...(args.trace.requestId ? { requestId: args.trace.requestId } : {}),
         ...(typeof args.clientTimeMs === 'number' ? { clientTimeMs: args.clientTimeMs } : {})
     }
 }
@@ -88,12 +85,10 @@ export function createOpsTransport(deps: {
         response: Response
         results: Array<OpsResult<T>>
     }> => {
-        const trace = traceFromContext(args.context)
         const meta = buildOpsMeta({
             v: args.v ?? 1,
             deviceId: args.deviceId,
-            clientTimeMs: args.clientTimeMs ?? Date.now(),
-            trace
+            clientTimeMs: args.clientTimeMs ?? Date.now()
         })
 
         const { envelope, response } = await pipeline.execute({
@@ -105,8 +100,8 @@ export function createOpsTransport(deps: {
                 ops: args.ops
             } satisfies OpsRequest,
             extraHeaders: args.extraHeaders,
-            context: trace.ctx,
-            trace
+            context: args.context,
+            signal: args.signal
         })
 
         const results = (envelope.ok === true && envelope.data && typeof envelope.data === 'object' && Array.isArray((envelope.data as any).results))

@@ -627,7 +627,7 @@ export function createOpsService<Ctx>(args: {
                                     tx,
                                     syncEnabled,
                                     idempotencyTtlMs,
-                                    meta: { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId },
+                                    meta: opTrace,
                                     write: {
                                         kind: 'patch',
                                         resource,
@@ -652,7 +652,7 @@ export function createOpsService<Ctx>(args: {
                                 itemResults[i] = {
                                     index: i,
                                     ok: false,
-                                    error: Protocol.error.withTrace(res.error, { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId }),
+                                    error: Protocol.error.withTrace(res.error, opTrace),
                                     ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
                                         ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
                                         : {})
@@ -675,7 +675,7 @@ export function createOpsService<Ctx>(args: {
                                     tx,
                                     syncEnabled,
                                     idempotencyTtlMs,
-                                    meta: { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId },
+                                    meta: opTrace,
                                     write: {
                                         kind: 'patch',
                                         resource,
@@ -703,7 +703,7 @@ export function createOpsService<Ctx>(args: {
                                 itemResults[i] = {
                                     index: i,
                                     ok: false,
-                                    error: Protocol.error.withTrace(res.error, { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId }),
+                                    error: Protocol.error.withTrace(res.error, opTrace),
                                     ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
                                         ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
                                         : {})
@@ -719,7 +719,7 @@ export function createOpsService<Ctx>(args: {
                                 tx,
                                 syncEnabled,
                                 idempotencyTtlMs,
-                                meta: { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId },
+                                meta: opTrace,
                                 write: {
                                     kind: 'delete',
                                     resource,
@@ -743,7 +743,7 @@ export function createOpsService<Ctx>(args: {
                             itemResults[i] = {
                                 index: i,
                                 ok: false,
-                                error: Protocol.error.withTrace(res.error, { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId }),
+                                error: Protocol.error.withTrace(res.error, opTrace),
                                 ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
                                     ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
                                     : {})
@@ -751,7 +751,7 @@ export function createOpsService<Ctx>(args: {
                         } catch (err) {
                             const standard = Protocol.error.withTrace(
                                 toStandardError(err, 'WRITE_FAILED'),
-                                { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId }
+                                opTrace
                             )
                             itemResults[i] = { index: i, ok: false, error: standard }
                         }
@@ -804,7 +804,7 @@ export function createOpsService<Ctx>(args: {
                 } catch (err) {
                     const standard = Protocol.error.withTrace(
                         toStandardError(err, 'SYNC_PULL_FAILED'),
-                        { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId }
+                        traceMetaForOpId(op.opId)
                     )
                     resultsByOpId.set(op.opId, { opId: op.opId, ok: false, error: standard })
                 }
@@ -818,15 +818,13 @@ export function createOpsService<Ctx>(args: {
                     ok: false,
                     error: Protocol.error.withTrace(
                         Protocol.error.create('INTERNAL', 'Missing result'),
-                        { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId }
+                        traceMetaForOpId(op.opId)
                     )
                 }
             })
 
             const metaOut = {
                 v: 1,
-                ...(runtime.traceId ? { traceId: runtime.traceId } : {}),
-                ...(runtime.requestId ? { requestId: runtime.requestId } : {}),
                 serverTimeMs: Date.now(),
                 ...(req.meta.deviceId ? { deviceId: req.meta.deviceId } : {})
             }

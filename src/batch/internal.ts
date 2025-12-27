@@ -1,6 +1,5 @@
 import { Observability } from '#observability'
 import type { ObservabilityContext, AtomaDebugEventMap, DebugEmitMeta } from '#observability'
-import { Protocol } from '#protocol'
 import type { Meta, Operation, OperationResult } from '#protocol'
 import type { OpsTask } from './types'
 
@@ -115,7 +114,11 @@ export type OpsRequest = {
 
 export type OpsResult = OperationResult
 
-type SendFn = (payload: OpsRequest, signal?: AbortSignal) => Promise<{ json: unknown; status: number }>
+export type ExecuteOpsFn = (args: {
+    ops: Operation[]
+    meta: Meta
+    signal?: AbortSignal
+}) => Promise<{ results: unknown; status?: number }>
 
 export function mapOpsResults(results: unknown): Map<string, OpsResult> {
     const map = new Map<string, OpsResult>()
@@ -142,7 +145,7 @@ export async function executeOpsTasksBatch(args: {
     lane: 'query' | 'write'
     endpoint: string
     tasks: OpsTask[]
-    send: SendFn
+    executeOps: ExecuteOpsFn
     controller?: AbortController
 }) {
     const requestContext = buildOpsLaneRequestContext(args.tasks)
@@ -157,36 +160,12 @@ export async function executeOpsTasksBatch(args: {
         ops: opsWithTrace
     }
 
-    const response = await sendOpsWithAdapterEvents({
-        lane: args.lane,
-        endpoint: args.endpoint,
-        payload,
-        send: args.send,
-        controller: args.controller,
-        ctxTargets: requestContext.ctxTargets,
-        totalOpCount: args.tasks.length,
-        mixedTrace: requestContext.mixedTrace
-    })
-
-    const resultMap = response.resultMap
-    return opsWithTrace.map((op) => resultMap.get(op.opId) ?? missingResult(op.opId))
-}
-
-export async function sendOpsWithAdapterEvents(args: {
-    lane: 'query' | 'write'
-    endpoint: string
-    payload: OpsRequest
-    send: SendFn
-    controller?: AbortController
-    ctxTargets: Array<{ ctx: ObservabilityContext; opCount?: number; taskCount?: number }>
-    totalOpCount: number
-    mixedTrace: boolean
-}) {
-    const shouldEmitAdapterEvents = args.ctxTargets.some(t => t.ctx.active)
-    const payloadBytes = shouldEmitAdapterEvents ? Observability.utf8.byteLength(JSON.stringify(args.payload)) : undefined
+    const payloadBytes = requestContext.shouldEmitAdapterEvents
+        ? Observability.utf8.byteLength(JSON.stringify(payload))
+        : undefined
 
     emitAdapterEvent({
-        targets: args.ctxTargets,
+        targets: requestContext.ctxTargets,
         type: 'adapter:request',
         payloadFor: t => ({
             lane: args.lane,
@@ -196,50 +175,41 @@ export async function sendOpsWithAdapterEvents(args: {
             payloadBytes,
             opCount: t.opCount,
             taskCount: t.taskCount,
-            totalOpCount: args.totalOpCount,
-            mixedTrace: args.mixedTrace
+            totalOpCount: args.tasks.length,
+            mixedTrace: requestContext.mixedTrace
         })
     })
 
     let startedAt: number | undefined
     try {
         startedAt = Date.now()
-        const response = await args.send(args.payload, args.controller?.signal)
+        const res = await args.executeOps({
+            ops: payload.ops,
+            meta: payload.meta,
+            signal: args.controller?.signal
+        })
         const durationMs = Date.now() - startedAt
 
-        const envelope = parseOpsEnvelopeFromJson<unknown>(response.json)
-
-        if (!envelope.ok) {
-            const err = new Error(envelope.error?.message ?? 'Ops request failed')
-            ;(err as any).status = response.status
-            ;(err as any).envelope = envelope
-            throw err
-        }
-
         emitAdapterEvent({
-            targets: args.ctxTargets,
+            targets: requestContext.ctxTargets,
             type: 'adapter:response',
             payloadFor: t => ({
                 lane: args.lane,
                 ok: true,
-                status: response.status,
+                status: res.status,
                 durationMs,
                 opCount: t.opCount,
                 taskCount: t.taskCount,
-                totalOpCount: args.totalOpCount,
-                mixedTrace: args.mixedTrace
+                totalOpCount: args.tasks.length,
+                mixedTrace: requestContext.mixedTrace
             })
         })
 
-        const results = (envelope.data && typeof envelope.data === 'object')
-            ? Reflect.get(envelope.data as any, 'results')
-            : undefined
-        const resultMap = mapOpsResults(results)
-
-        return { status: response.status, durationMs, resultMap }
+        const resultMap = mapOpsResults(res.results)
+        return opsWithTrace.map((op) => resultMap.get(op.opId) ?? missingResult(op.opId))
     } catch (error: unknown) {
         emitAdapterEvent({
-            targets: args.ctxTargets,
+            targets: requestContext.ctxTargets,
             type: 'adapter:response',
             payloadFor: t => ({
                 lane: args.lane,
@@ -248,8 +218,8 @@ export async function sendOpsWithAdapterEvents(args: {
                 durationMs: typeof startedAt === 'number' ? (Date.now() - startedAt) : undefined,
                 opCount: t.opCount,
                 taskCount: t.taskCount,
-                totalOpCount: args.totalOpCount,
-                mixedTrace: args.mixedTrace
+                totalOpCount: args.tasks.length,
+                mixedTrace: requestContext.mixedTrace
             })
         })
         throw error
@@ -387,10 +357,5 @@ function withOpTraceMeta(op: Operation, ctx?: ObservabilityContext): Operation {
 // ============================================================================
 // Protocol Helpers
 // ============================================================================
-
-function parseOpsEnvelopeFromJson<T = unknown>(json: unknown) {
-    const fallback = { v: 1 }
-    return Protocol.ops.parse.envelope<T>(json, fallback)
-}
 
 // legacy query normalization removed in ops-only mode

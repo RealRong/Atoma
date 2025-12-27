@@ -3,6 +3,7 @@ import {
     createCoalescedScheduler,
     createAbortController,
     executeOpsTasksBatch,
+    type ExecuteOpsFn,
     isWriteQueueFull,
     normalizeMaxOpsPerRequest,
     toError
@@ -10,9 +11,6 @@ import {
 import type { ObservabilityContext } from '#observability'
 import type { OperationResult, WriteOp } from '#protocol'
 import type { OpsTask } from './types'
-import type { OpsRequest } from './internal'
-
-type SendFn = (payload: OpsRequest, signal?: AbortSignal) => Promise<{ json: unknown; status: number }>
 
 type WriteLaneDeps = {
     endpoint: () => string
@@ -23,7 +21,7 @@ type WriteLaneDeps = {
         maxOpsPerRequest?: number
         onError?: (error: Error, context: unknown) => void
     }
-    send: SendFn
+    executeOps: ExecuteOpsFn
 }
 
 export class WriteLane {
@@ -86,7 +84,7 @@ export class WriteLane {
                     lane: 'write',
                     endpoint: this.deps.endpoint(),
                     tasks: batch,
-                    send: this.deps.send,
+                    executeOps: this.deps.executeOps,
                     controller
                 })
 

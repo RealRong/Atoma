@@ -61,8 +61,16 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
                 route: { kind: 'sync', name: 'subscribe' },
                 method: ctx.method,
                 pathname: ctx.pathname,
-                initialTraceId: ctx.traceIdHeaderValue,
-                initialRequestId: ctx.requestIdHeaderValue,
+                initialTraceId: (() => {
+                    const q = ctx.urlObj.searchParams.get('traceId')
+                    if (typeof q === 'string' && q) return q
+                    return ctx.traceIdHeaderValue
+                })(),
+                initialRequestId: (() => {
+                    const q = ctx.urlObj.searchParams.get('requestId')
+                    if (typeof q === 'string' && q) return q
+                    return ctx.requestIdHeaderValue
+                })(),
                 createRuntime: services.runtime.createRuntime,
                 formatTopLevelError: services.runtime.formatTopLevelError,
                 run: (runtime) => services.sync.subscribeVNext({

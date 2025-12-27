@@ -134,12 +134,12 @@ const res = await store.findMany({ where: { done: { eq: false } }, explain: true
 console.log(res.explain)
 ```
 
-## Notes on IDs and headers
+## Notes on IDs and trace propagation
 
-- HTTP adapters and `BatchEngine` typically propagate:
-  - `x-atoma-trace-id`
-  - `x-atoma-request-id`
+- For ops requests: traceId/requestId are carried in an **op-scoped** form via `op.meta.traceId` / `op.meta.requestId` (especially important for batching: mixed traces are allowed without splitting requests).
+- The `x-atoma-trace-id` / `x-atoma-request-id` headers are optional: the server may still parse them as request-level context (e.g. for top-level errors/logging), but they are no longer the source of truth for op-scoped tracing.
 - `requestId` is derived via `ctx.requestId()` (the runtime maintains a per-trace sequence), which avoids process-global mutable state and supports SSR/concurrency.
+- For `sync/subscribe-vnext` GET/SSE (no JSON body): tracing is passed via URL query params (`traceId`/`requestId`).
 
 ## Further reading
 

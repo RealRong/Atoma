@@ -16,20 +16,20 @@ This folder implements Atoma’s **client-side batching engine** used by adapter
 - **Concurrency control**
   - `queryMaxInFlight` and `writeMaxInFlight` cap in-flight requests per lane.
 - **Observability hooks**
-  - When tasks carry `traceId` + `debugEmitter`, the lanes emit `adapter:request/adapter:response` debug events.
+  - When tasks carry an `ObservabilityContext` and `ctx.active === true`, the lanes emit `adapter:request/adapter:response` debug events.
 
 ## Key modules
 
 - `BatchEngine.ts`
   - Public surface: `enqueueOp` / `enqueueOps`, `dispose`.
-  - Owns lifecycle and shared transport (headers + fetch + JSON parsing); lane scheduling/queues live inside `QueryLane`/`WriteLane`.
+  - Owns lifecycle and scheduling; network sending is delegated to an injected `executeOps` function (lane scheduling/queues live inside `QueryLane`/`WriteLane`).
 - `queryLane.ts`
   - Drains QueryOp tasks and sends `POST /ops`.
-  - Maintains FIFO batching boundaries and avoids mixing traced/untraced tasks in a single request.
+  - Maintains FIFO batching boundaries (trace is no longer a batching dimension).
 - `writeLane.ts`
   - Drains WriteOp tasks and sends `POST /ops`.
 - `internal.ts`
-  - Internal helpers (config normalization, small utils, adapter debug events fan-out, and `executeOpsTasksBatch` which does payload → send → parse → result mapping/fallback).
+  - Internal helpers (config normalization, small utils, adapter debug events fan-out, and `executeOpsTasksBatch` which does payload → executeOps → result mapping/fallback).
 - (Not in this folder) `src/adapters/http/transport/queryParams.ts`
   - Translates `FindManyOptions<T>` into server `QueryParams` (ops protocol requires `params.page`), used by the HTTP ops router to build QueryOp.
 
@@ -42,7 +42,7 @@ An adapter that enables batching will create a `BatchEngine` and call:
 - `enqueueOp(op, internalContext?)`
 - `enqueueOps(ops, internalContext?)`
 
-`internalContext` is an internal observability wiring object. If it contains `traceId` and `emitter`, those are copied onto tasks.
+`internalContext` is an internal observability wiring object (`ObservabilityContext`). It is copied onto tasks for debug attribution (and for writing `op.meta.traceId/requestId`).
 
 ### 2) Scheduling (coalesced flush)
 
@@ -59,17 +59,17 @@ Each drain iteration:
 
 - selects a batch of tasks (query/write FIFO),
 - builds a request payload,
-- sends `POST /ops` via the `BatchEngine` transport (fetch),
+- sends `POST /ops` via the injected `executeOps`,
 - maps server results back to individual task promises.
 
-### 4) Trace/request header rules
+### 4) Trace and `op.meta` rules
 
-For protocol cleanliness, a batch request includes `traceId`/`requestId` (payload `meta` + headers) **only when all tasks in that request have the same non-empty `traceId`**.
+To ensure observability does not affect batching performance, tracing is **op-scoped**:
 
-- If tasks are mixed (different traceIds or traced + untraced), the request is treated as “no common trace”:
-  - no `x-atoma-trace-id` header
-  - no `traceId`/`requestId` fields in `payload.meta`
-  - debug events set `mixedTrace: true`
+- Each task’s `ctx` only affects its corresponding `op.meta.traceId/requestId`.
+- `OpsRequest.meta` only keeps transport-level fields (e.g. `v/clientTimeMs`) and does not include traceId/requestId.
+- No `x-atoma-trace-id` / `x-atoma-request-id` headers are injected.
+- Mixed traces within the same request are allowed; debug events set `mixedTrace: true`.
 
 ### 5) Debug events (adapter:request/adapter:response)
 

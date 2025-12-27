@@ -3,11 +3,8 @@ import { Observability } from '#observability'
 import type { Envelope } from '#protocol'
 import { Protocol } from '#protocol'
 import { resolveHeaders } from './headers'
-import { traceFromContext } from './trace'
 import { withAdapterEvents } from './events'
 import type { ResponseParser } from '../config/types'
-
-export type HttpTrace = ReturnType<typeof traceFromContext>
 
 export type HttpInterceptors<T> = {
     onRequest?: (request: Request) => Promise<Request | void> | Request | void
@@ -26,7 +23,6 @@ export type ExecuteJsonArgs = {
     body?: unknown
     extraHeaders?: Record<string, string>
     context?: ObservabilityContext
-    trace?: HttpTrace
     signal?: AbortSignal
 }
 
@@ -41,8 +37,7 @@ export function createHttpJsonPipeline<T>(deps: {
     interceptors?: HttpInterceptors<T>
 }) {
     const execute = async (args: ExecuteJsonArgs): Promise<{ envelope: Envelope<T>; response: Response }> => {
-        const trace = args.trace ?? traceFromContext(args.context)
-        const ctx = trace.ctx
+        const ctx = args.context
 
         const payloadStr = args.body === undefined
             ? undefined
@@ -59,7 +54,7 @@ export function createHttpJsonPipeline<T>(deps: {
                 payloadBytes
             },
             async () => {
-                const headers = await resolveHeaders(deps.getHeaders, trace.headers, args.extraHeaders)
+                const headers = await resolveHeaders(deps.getHeaders, args.extraHeaders)
                 if (payloadStr !== undefined && !hasHeader(headers, 'Content-Type')) {
                     headers['Content-Type'] = 'application/json'
                 }

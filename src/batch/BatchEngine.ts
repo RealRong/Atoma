@@ -1,18 +1,14 @@
 import type { ObservabilityContext } from '#observability'
-import type { OpsRequest } from './internal'
+import type { ExecuteOpsFn } from './internal'
 import { QueryLane } from './queryLane'
 import { WriteLane } from './writeLane'
 import type { Operation, OperationResult, WriteOp } from '#protocol'
 
-type FetchFn = typeof fetch
-
 export interface BatchEngineConfig {
-    /** Ops endpoint path (default: `/ops`, aligned with atoma/server default opsPath) */
+    /** Ops endpoint (for observability payloads only). */
     endpoint?: string
-    /** Custom headers (can be async, e.g. for tokens) */
-    headers?: () => Promise<Record<string, string>> | Record<string, string>
-    /** Custom fetch implementation (polyfills, timeouts, instrumentation) */
-    fetchFn?: FetchFn
+    /** Execute an ops request (transport owned by the adapter). */
+    executeOps: ExecuteOpsFn
     /**
      * Per-lane queue backpressure limit.
      * - number: applies to both query and write lanes
@@ -56,30 +52,33 @@ export class BatchEngine {
      *
      * This class intentionally owns:
      * - lifecycle (`dispose`)
-     * - shared transport (`send`)
+     * - shared transport (`executeOps`)
      *
      * Lane state + drain algorithms live inside `QueryLane` / `WriteLane`.
      */
     private readonly endpoint: string
-    private readonly fetcher: FetchFn
+    private readonly executeOps: ExecuteOpsFn
 
     private readonly queryLane: QueryLane
     private readonly writeLane: WriteLane
 
-    constructor(private readonly config: BatchEngineConfig = {}) {
+    constructor(private readonly config: BatchEngineConfig) {
+        if (!config || typeof (config as any).executeOps !== 'function') {
+            throw new Error('[BatchEngine] config.executeOps is required')
+        }
         this.endpoint = (config.endpoint || '/ops').replace(/\/$/, '')
-        this.fetcher = config.fetchFn ?? fetch
+        this.executeOps = config.executeOps
 
         this.queryLane = new QueryLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            send: (payload, signal) => this.send(payload, signal)
+            executeOps: (args) => this.executeOps(args)
         })
 
         this.writeLane = new WriteLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            send: (payload, signal) => this.send(payload, signal)
+            executeOps: (args) => this.executeOps(args)
         })
     }
 
@@ -112,39 +111,6 @@ export class BatchEngine {
         this.queryLane.dispose()
         this.writeLane.dispose()
     }
-
-    private async send(payload: OpsRequest, signal?: AbortSignal) {
-        const headersFn = this.config.headers
-        const resolvedHeadersRaw = headersFn ? await Promise.resolve(headersFn()) : {}
-        const resolvedHeaders = (resolvedHeadersRaw && typeof resolvedHeadersRaw === 'object' && !Array.isArray(resolvedHeadersRaw))
-            ? resolvedHeadersRaw
-            : {}
-
-        const response = await this.fetcher(this.endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...resolvedHeaders,
-            },
-            body: JSON.stringify(payload),
-            signal
-        })
-
-        const status = typeof (response as any)?.status === 'number' ? (response as any).status : 0
-
-        let json: unknown = null
-        try {
-            const parse = (response as any)?.json
-            if (typeof parse === 'function') {
-                json = await parse.call(response)
-            }
-        } catch {
-            json = null
-        }
-
-        return { json, status }
-    }
-
 
     private validateWriteBatchSize(op: WriteOp) {
         const max = this.config.maxBatchSize

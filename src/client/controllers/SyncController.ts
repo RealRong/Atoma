@@ -1,6 +1,7 @@
 import type { StoreKey } from '#core'
 import { Core } from '#core'
 import type { ObservabilityContext } from '#observability'
+import { Observability } from '#observability'
 import { Sync, SyncWriteAck, SyncWriteReject, type SyncClient, type SyncEvent, type SyncPhase } from '../../sync'
 import type { Change, Cursor, Meta, Operation, OperationResult } from '#protocol'
 import { createOpsTransport } from '../../adapters/http/transport/ops'
@@ -65,6 +66,9 @@ export function createSyncController(args: {
     let syncStarted = false
     let syncEngine: SyncClient | null = null
     const middlewareByStoreName = new Map<string, () => void>()
+
+    let subscribeTraceId: string | undefined
+    let subscribeRequestSequencer: ReturnType<typeof Observability.trace.createRequestSequencer> | undefined
 
     // ---------------------------------------------
     // 1) Public API（新手先看这里）
@@ -359,10 +363,23 @@ export function createSyncController(args: {
         if (!syncConfig) {
             throw new Error('[Atoma] sync: 未配置 subscribeUrl')
         }
-        if (syncConfig.subscribeUrl) return syncConfig.subscribeUrl(cursor)
-        const endpoint = syncConfig.subscribeEndpoint ?? '/sync/subscribe-vnext'
-        const base = joinUrl(syncConfig.baseURL, endpoint)
-        return withCursorParam(base, cursor)
+        const base = syncConfig.subscribeUrl
+            ? syncConfig.subscribeUrl(cursor)
+            : (() => {
+                const endpoint = syncConfig.subscribeEndpoint ?? '/sync/subscribe-vnext'
+                const base = joinUrl(syncConfig.baseURL, endpoint)
+                return withCursorParam(base, cursor)
+            })()
+
+        if (!subscribeTraceId) {
+            subscribeTraceId = Observability.trace.createId()
+        }
+        if (!subscribeRequestSequencer) {
+            subscribeRequestSequencer = Observability.trace.createRequestSequencer()
+        }
+
+        const requestId = subscribeRequestSequencer.next(subscribeTraceId)
+        return withQueryParams(base, { traceId: subscribeTraceId, requestId })
     }
 
     // ---------------------------------------------
@@ -406,6 +423,13 @@ function withCursorParam(url: string, cursor: Cursor): string {
     const encoded = encodeURIComponent(String(cursor))
     if (url.includes('?')) return `${url}&cursor=${encoded}`
     return `${url}?cursor=${encoded}`
+}
+
+function withQueryParams(url: string, params: { traceId: string; requestId: string }): string {
+    const t = encodeURIComponent(params.traceId)
+    const r = encodeURIComponent(params.requestId)
+    const join = url.includes('?') ? '&' : '?'
+    return `${url}${join}traceId=${t}&requestId=${r}`
 }
 
 function normalizeStoreKeyFromEntityId(id: string): StoreKey {

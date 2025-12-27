@@ -16,20 +16,20 @@
 - **并发控制**
   - `queryMaxInFlight` / `writeMaxInFlight` 分别限制两条 lane 的并发请求数。
 - **可观测性对接**
-  - 当 task 携带 `traceId` + `debugEmitter` 时，会发出 `adapter:request/adapter:response` 事件。
+  - 当 task 携带 `ObservabilityContext` 且 `ctx.active === true` 时，会发出 `adapter:request/adapter:response` 事件。
 
 ## 主要模块
 
 - `BatchEngine.ts`
   - 对外入口：`enqueueOp` / `enqueueOps`、`dispose`。
-  - 负责生命周期与共享 transport（headers + fetch + JSON 解析）；lane 的调度/队列算法在 `QueryLane`/`WriteLane` 内部。
+  - 负责生命周期与调度；网络发送委托给注入的 `executeOps`（lane 的调度/队列算法在 `QueryLane`/`WriteLane` 内部）。
 - `queryLane.ts`
   - drain QueryOp 任务并发送 `POST /ops`。
-  - 保持 FIFO 边界，并避免把“有 trace/无 trace”的任务混到同一个请求里。
+  - 保持 FIFO 边界（trace 不再作为拆批维度）。
 - `writeLane.ts`
   - drain WriteOp 任务并发送 `POST /ops`。
 - `internal.ts`
-  - 内部辅助：配置归一化、小工具、adapter 事件 fan-out，以及 `executeOpsTasksBatch`（组 payload → 发送 → 解析 → results 映射/兜底）。
+  - 内部辅助：配置归一化、小工具、adapter 事件 fan-out，以及 `executeOpsTasksBatch`（组 payload → 调用 executeOps → results 映射/兜底）。
 - （不在本目录）`src/adapters/http/transport/queryParams.ts`
   - 把 `FindManyOptions<T>` 翻译为服务端 ops 协议需要的 `QueryParams`（要求 `params.page`），供 HTTP ops 路由层构造 QueryOp 使用。
 
@@ -42,7 +42,7 @@
 - `enqueueOp(op, internalContext?)`
 - `enqueueOps(ops, internalContext?)`
 
-其中 `internalContext` 是内部可观测性上下文；若包含 `traceId` 与 `emitter`，会被复制到 task 上用于后续埋点与归因。
+其中 `internalContext` 是内部可观测性上下文（`ObservabilityContext`）；会被复制到 task 上用于后续埋点与归因（以及写入每个 `op.meta.traceId/requestId`）。
 
 ### 2）调度与 flush（coalesced）
 
@@ -59,20 +59,17 @@
 
 - 选出一批 task（query/write 各自 FIFO）
 - 构造 payload
-- 通过 `BatchEngine` 内部 transport（fetch）发送 `POST /ops`
+- 通过注入的 `executeOps` 发送 `POST /ops`
 - 把服务端 results 映射回每个 task 的 promise
 
-### 4）trace/requestId 与请求头规则
+### 4）trace/requestId 与 op.meta 规则
 
-为了保持 trace 语义干净，一个 batch request 只有在满足“**该请求内所有任务都带相同且非空的 traceId**”时，才会写入：
+为了让“观测不干扰 batch 性能”，trace 被定义为 **op-scoped**：
 
-- 请求头：`x-atoma-trace-id` / `x-atoma-request-id`
-- payload `meta`：`traceId` / `requestId`
-
-若该请求内存在混用（不同 traceId，或 trace + no-trace 混用）：
-
-- 不会写入 trace 相关 header/payload meta 字段
-- debug 事件会标记 `mixedTrace: true`
+- 每个 task 的 `ctx` 只影响它对应的 `op.meta.traceId/requestId`
+- `OpsRequest.meta` 只保留 transport 级字段（例如 `v/clientTimeMs`），不再写入 traceId/requestId
+- 请求头不再注入 `x-atoma-trace-id` / `x-atoma-request-id`
+- 同一批请求内允许 mixed trace；debug 事件会标记 `mixedTrace: true`
 
 ### 5）adapter 事件（adapter:request / adapter:response）
 

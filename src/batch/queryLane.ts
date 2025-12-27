@@ -3,6 +3,7 @@ import {
     createCoalescedScheduler,
     createAbortController,
     executeOpsTasksBatch,
+    type ExecuteOpsFn,
     normalizeMaxQueueLength,
     normalizeMaxOpsPerRequest,
     toError
@@ -10,9 +11,6 @@ import {
 import type { ObservabilityContext } from '#observability'
 import type { OperationResult, QueryOp } from '#protocol'
 import type { OpsTask } from './types'
-import type { OpsRequest } from './internal'
-
-type SendFn = (payload: OpsRequest, signal?: AbortSignal) => Promise<{ json: unknown; status: number }>
 
 type QueryLaneDeps = {
     endpoint: () => string
@@ -24,7 +22,7 @@ type QueryLaneDeps = {
         maxOpsPerRequest?: number
         onError?: (error: Error, context: unknown) => void
     }
-    send: SendFn
+    executeOps: ExecuteOpsFn
 }
 
 export class QueryLane {
@@ -102,7 +100,7 @@ export class QueryLane {
                     lane: 'query',
                     endpoint: this.deps.endpoint(),
                     tasks: batch,
-                    send: this.deps.send,
+                    executeOps: this.deps.executeOps,
                     controller
                 })
 

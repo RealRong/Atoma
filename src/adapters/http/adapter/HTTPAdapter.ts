@@ -72,8 +72,18 @@ export class HTTPAdapter<T extends Entity> {
                 endpoint: batchEndpoint,
                 maxBatchSize: batchConfig.maxBatchSize,
                 flushIntervalMs: batchConfig.flushIntervalMs,
-                headers: this.getHeaders.bind(this),
-                fetchFn: this.fetchWithRetry.bind(this),
+                executeOps: async ({ ops, meta, signal }) => {
+                    const res = await this.opsTransport.executeOps({
+                        url: this.config.baseURL,
+                        endpoint: endpointPath,
+                        ops,
+                        v: meta?.v,
+                        deviceId: meta?.deviceId,
+                        clientTimeMs: meta?.clientTimeMs,
+                        signal
+                    })
+                    return { results: res.results as any, status: res.response.status }
+                },
                 onError: (error, payload) => {
                     this.onError(error, 'batch')
                     if (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
@@ -114,16 +124,41 @@ export class HTTPAdapter<T extends Entity> {
         override?: { baseURL?: string; opsEndpoint?: string }
     ) {
         const resolvedOpsEndpoint = this.config.opsEndpoint ?? '/ops'
+        const opsWithTrace = this.applyOpTraceMeta(ops, context)
         const result = await this.opsTransport.executeOps({
             url: override?.baseURL ?? this.config.baseURL,
             endpoint: override?.opsEndpoint ?? resolvedOpsEndpoint,
-            ops,
+            ops: opsWithTrace,
             context,
             v: meta?.v,
             deviceId: meta?.deviceId,
             clientTimeMs: meta?.clientTimeMs
         })
         return result.results as any
+    }
+
+    private applyOpTraceMeta(ops: any[], context?: ObservabilityContext): any[] {
+        if (!context || !Array.isArray(ops) || !ops.length) return ops
+        const traceId = (typeof context.traceId === 'string' && context.traceId) ? context.traceId : undefined
+        if (!traceId) return ops
+
+        return ops.map((op) => {
+            if (!op || typeof op !== 'object') return op
+            const requestId = context.requestId()
+            const baseMeta = (op as any).meta
+            const meta = (baseMeta && typeof baseMeta === 'object' && !Array.isArray(baseMeta))
+                ? baseMeta
+                : undefined
+            return {
+                ...(op as any),
+                meta: {
+                    v: 1,
+                    ...(meta ? meta : {}),
+                    traceId,
+                    ...(requestId ? { requestId } : {})
+                }
+            }
+        })
     }
 
     private resolveLocalBaseVersion(id: StoreKey, value?: any): number {
