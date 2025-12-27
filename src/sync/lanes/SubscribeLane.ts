@@ -2,8 +2,8 @@ import type { CursorStore, SyncEvent, SyncPhase, SyncTransport } from '../types'
 import type { ChangeBatch, Cursor } from '#protocol'
 import { Protocol } from '#protocol'
 import type { SyncApplier } from '../internal'
-import { computeBackoffDelayMs } from '../policies/backoffPolicy'
 import { readCursorOrInitial, toError } from '../internal'
+import { RetryBackoff } from '../policies/retryBackoff'
 
 export class SubscribeLane {
     private disposed = false
@@ -11,7 +11,7 @@ export class SubscribeLane {
     private enabled = false
     private subscription?: { close: () => void }
     private reconnectTimer?: ReturnType<typeof setTimeout>
-    private retryAttempt = 0
+    private readonly retry: RetryBackoff
 
     constructor(private readonly deps: {
         cursor: CursorStore
@@ -23,18 +23,27 @@ export class SubscribeLane {
         backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
         onError?: (error: Error, context: { phase: SyncPhase }) => void
         onEvent?: (event: SyncEvent) => void
-    }) {}
+    }) {
+        const baseDelayMs = Math.max(0, Math.floor(deps.reconnectDelayMs))
+        this.retry = new RetryBackoff({
+            retry: deps.retry,
+            backoff: deps.backoff,
+            baseDelayMs
+        })
+    }
 
     start() {
         this.started = true
         this.maybeOpen()
     }
 
-    stop() {
-        this.started = false
+    stop(options?: { keepStarted?: boolean }) {
+        if (!options?.keepStarted) {
+            this.started = false
+        }
         this.close()
         this.deps.onEvent?.({ type: 'subscribe:stopped' })
-        this.retryAttempt = 0
+        this.retry.reset()
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer)
             this.reconnectTimer = undefined
@@ -50,8 +59,7 @@ export class SubscribeLane {
     setEnabled(enabled: boolean) {
         this.enabled = enabled
         if (!enabled) {
-            this.close()
-            this.deps.onEvent?.({ type: 'subscribe:stopped' })
+            this.stop({ keepStarted: true })
             return
         }
         this.maybeOpen()
@@ -87,7 +95,7 @@ export class SubscribeLane {
                     this.scheduleReconnect()
                 }
             })
-            this.retryAttempt = 0
+            this.retry.reset()
             this.deps.onEvent?.({ type: 'subscribe:connected' })
         } catch (error) {
             this.deps.onError?.(toError(error), { phase: 'subscribe' })
@@ -109,24 +117,17 @@ export class SubscribeLane {
     private scheduleReconnect() {
         if (!this.started || !this.enabled) return
         if (this.reconnectTimer) return
-        this.retryAttempt += 1
-        const maxAttempts = this.deps.retry?.maxAttempts
-        if (maxAttempts !== undefined && this.retryAttempt >= Math.max(1, Math.floor(maxAttempts))) {
-            return
-        }
-
-        const base = Math.max(0, Math.floor(this.deps.reconnectDelayMs))
-        const backoff = this.deps.backoff ?? { baseDelayMs: base }
-        const delay = computeBackoffDelayMs(this.retryAttempt, { baseDelayMs: base, ...backoff })
-        this.deps.onEvent?.({ type: 'subscribe:backoff', attempt: this.retryAttempt, delayMs: delay })
+        const { attempt, delayMs, stop } = this.retry.next()
+        if (stop) return
+        this.deps.onEvent?.({ type: 'subscribe:backoff', attempt, delayMs })
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = undefined
             this.maybeOpen()
-        }, delay)
+        }, delayMs)
     }
 }
 
-export function subscribeToVNextChangesSse(args: {
+export function subscribeChangesSse(args: {
     cursor: Cursor
     buildUrl: (cursor: Cursor) => string
     eventSourceFactory?: (url: string) => EventSource

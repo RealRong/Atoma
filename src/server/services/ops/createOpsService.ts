@@ -26,9 +26,15 @@ type OpsRequest = {
     ops: unknown[]
 }
 
+type OpMeta = {
+    traceId?: string
+    requestId?: string
+}
+
 type QueryOp = {
     opId: string
     kind: 'query'
+    meta?: OpMeta
     query: {
         resource: string
         params: QueryParams
@@ -51,6 +57,7 @@ type WriteItem =
 type WriteOp = {
     opId: string
     kind: 'write'
+    meta?: OpMeta
     write: {
         resource: string
         action: WriteAction
@@ -62,6 +69,7 @@ type WriteOp = {
 type ChangesPullOp = {
     opId: string
     kind: 'changes.pull'
+    meta?: OpMeta
     pull: {
         cursor: string
         limit: number
@@ -122,6 +130,14 @@ function normalizeOpsRequest(value: unknown): OpsRequest {
     return { meta, ops }
 }
 
+function normalizeOpMeta(value: unknown): OpMeta | undefined {
+    if (!isObject(value)) return undefined
+    const traceId = readString(value, 'traceId')
+    const requestId = readString(value, 'requestId')
+    if (!traceId && !requestId) return undefined
+    return { ...(traceId ? { traceId } : {}), ...(requestId ? { requestId } : {}) }
+}
+
 function normalizeOperation(value: unknown): Operation {
     if (!isObject(value)) {
         throwError('INVALID_REQUEST', 'Invalid op', { kind: 'validation' })
@@ -135,6 +151,8 @@ function normalizeOperation(value: unknown): Operation {
         throwError('INVALID_REQUEST', 'Missing kind', { kind: 'validation', opId })
     }
 
+    const meta = normalizeOpMeta((value as any).meta)
+
     if (kind === 'query') {
         if (!isObject(value.query)) {
             throwError('INVALID_REQUEST', 'Missing query', { kind: 'validation', opId })
@@ -147,7 +165,7 @@ function normalizeOperation(value: unknown): Operation {
         if (!isObject(params)) {
             throwError('INVALID_REQUEST', 'Missing query.params', { kind: 'validation', opId })
         }
-        return { opId, kind: 'query', query: { resource, params: params as QueryParams } }
+        return { opId, kind: 'query', ...(meta ? { meta } : {}), query: { resource, params: params as QueryParams } }
     }
 
     if (kind === 'write') {
@@ -169,6 +187,7 @@ function normalizeOperation(value: unknown): Operation {
         return {
             opId,
             kind: 'write',
+            ...(meta ? { meta } : {}),
             write: { resource, action, items: items as any[], ...(value.write.options !== undefined ? { options: value.write.options } : {}) }
         }
     }
@@ -185,7 +204,7 @@ function normalizeOperation(value: unknown): Operation {
         const resources = Array.isArray((value.pull as any).resources)
             ? (value.pull as any).resources.filter((r: any) => typeof r === 'string')
             : undefined
-        return { opId, kind: 'changes.pull', pull: { cursor, limit, ...(resources ? { resources } : {}) } }
+        return { opId, kind: 'changes.pull', ...(meta ? { meta } : {}), pull: { cursor, limit, ...(resources ? { resources } : {}) } }
     }
 
     throwError('INVALID_REQUEST', `Unsupported op kind: ${kind}`, { kind: 'validation', opId })
@@ -373,6 +392,17 @@ export function createOpsService<Ctx>(args: {
             ensureV1(req.meta)
 
             const ops = req.ops.map(normalizeOperation)
+            const traceByOpId = new Map<string, { traceId?: string; requestId?: string }>()
+            ops.forEach(op => {
+                const traceId = (op.meta && typeof op.meta.traceId === 'string' && op.meta.traceId) ? op.meta.traceId : undefined
+                const requestId = (op.meta && typeof op.meta.requestId === 'string' && op.meta.requestId) ? op.meta.requestId : undefined
+                if (traceId || requestId) traceByOpId.set(op.opId, { traceId, requestId })
+            })
+
+            const traceMetaForOpId = (opId: string) => {
+                const t = traceByOpId.get(opId)
+                return { traceId: t?.traceId, requestId: t?.requestId, opId }
+            }
 
             const seen = new Set<string>()
             for (const op of ops) {
@@ -522,7 +552,7 @@ export function createOpsService<Ctx>(args: {
                         }
                         const standard = Protocol.error.withTrace(
                             toStandardError(res.reason, 'QUERY_FAILED'),
-                            { traceId: runtime.traceId, requestId: runtime.requestId, opId: e.opId }
+                            traceMetaForOpId(e.opId)
                         )
                         resultsByOpId.set(e.opId, { opId: e.opId, ok: false, error: standard })
                     }
@@ -533,6 +563,7 @@ export function createOpsService<Ctx>(args: {
                 const limit = pLimit(8)
 
                 await Promise.all(writeOps.map(op => limit(async () => {
+                    const opTrace = traceMetaForOpId(op.opId)
                     const resource = op.write.resource
                     const action = op.write.action
                     const items = Array.isArray(op.write.items) ? op.write.items : []
@@ -553,7 +584,7 @@ export function createOpsService<Ctx>(args: {
                                     tx,
                                     syncEnabled,
                                     idempotencyTtlMs,
-                                    meta: { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId },
+                                    meta: opTrace,
                                     write: {
                                         kind: 'create',
                                         resource,
@@ -576,7 +607,7 @@ export function createOpsService<Ctx>(args: {
                                 itemResults[i] = {
                                     index: i,
                                     ok: false,
-                                    error: Protocol.error.withTrace(res.error, { traceId: runtime.traceId, requestId: runtime.requestId, opId: op.opId }),
+                                    error: Protocol.error.withTrace(res.error, opTrace),
                                     ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
                                         ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
                                         : {})

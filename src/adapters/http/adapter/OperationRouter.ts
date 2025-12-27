@@ -3,7 +3,7 @@ import type { FindManyOptions, PageInfo, PatchMetadata, StoreKey } from '#core'
 import type { ObservabilityContext } from '#observability'
 import type { Operation, OperationResult, QueryResultData, WriteAction, WriteItem, WriteResultData } from '#protocol'
 import { Protocol } from '#protocol'
-import { normalizeAtomaServerQueryParams } from '../../../batch/queryParams'
+import { normalizeAtomaServerQueryParams } from '../transport/queryParams'
 import type { BatchEngine } from '#batch'
 
 type ResolveBaseVersion = (id: StoreKey, value?: any) => number
@@ -406,13 +406,14 @@ export class OperationRouter<T> {
     }
 
     private buildWriteOp(action: WriteAction, items: WriteItem[]): Operation {
-            return {
-                opId: this.nextOpId('w'),
-                kind: 'write',
-                write: {
-                    resource: this.deps.resource,
+        const nextItems: WriteItem[] = items.map(item => this.ensureWriteItemMeta(item))
+        return {
+            opId: this.nextOpId('w'),
+            kind: 'write',
+            write: {
+                resource: this.deps.resource,
                 action,
-                items
+                items: nextItems
             }
         }
     }
@@ -544,6 +545,22 @@ export class OperationRouter<T> {
 
     private now() {
         return this.deps.now ? this.deps.now() : Date.now()
+    }
+
+    private ensureWriteItemMeta(item: WriteItem): WriteItem {
+        if (!item || typeof item !== 'object') return item
+        const meta = (item as any).meta
+        const baseMeta = (meta && typeof meta === 'object' && !Array.isArray(meta)) ? meta : {}
+        const idempotencyKey = (typeof (baseMeta as any).idempotencyKey === 'string' && (baseMeta as any).idempotencyKey)
+            ? (baseMeta as any).idempotencyKey
+            : Protocol.ids.createIdempotencyKey({ now: () => this.now() })
+        return {
+            ...(item as any),
+            meta: {
+                ...baseMeta,
+                idempotencyKey
+            }
+        } as WriteItem
     }
 
     private nextOpId(prefix: 'q' | 'w') {

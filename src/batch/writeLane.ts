@@ -1,11 +1,10 @@
 import {
-    buildOpsLaneRequestContext,
     clampInt,
     createCoalescedScheduler,
     createAbortController,
+    executeOpsTasksBatch,
     isWriteQueueFull,
     normalizeMaxOpsPerRequest,
-    sendOpsWithAdapterEvents,
     toError
 } from './internal'
 import type { ObservabilityContext } from '#observability'
@@ -13,7 +12,7 @@ import type { OperationResult, WriteOp } from '#protocol'
 import type { OpsTask } from './types'
 import type { OpsRequest } from './internal'
 
-type SendFn = (payload: OpsRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
+type SendFn = (payload: OpsRequest, signal?: AbortSignal) => Promise<{ json: unknown; status: number }>
 
 type WriteLaneDeps = {
     endpoint: () => string
@@ -82,38 +81,22 @@ export class WriteLane {
             const controller = createAbortController()
             if (controller) this.inFlightControllers.add(controller)
 
-            const requestContext = buildOpsLaneRequestContext(batch)
-            const ctxTargets = requestContext.ctxTargets
-
             try {
-                const payload: OpsRequest = {
-                    meta: {
-                        v: 1,
-                        ...(requestContext.commonTraceId ? { traceId: requestContext.commonTraceId } : {}),
-                        ...(requestContext.requestId ? { requestId: requestContext.requestId } : {}),
-                        clientTimeMs: Date.now()
-                    },
-                    ops: batch.map(t => t.op)
-                }
-                const response = await sendOpsWithAdapterEvents({
+                const results = await executeOpsTasksBatch({
                     lane: 'write',
                     endpoint: this.deps.endpoint(),
-                    payload,
+                    tasks: batch,
                     send: this.deps.send,
-                    controller,
-                    ctxTargets,
-                    totalOpCount: batch.length,
-                    mixedTrace: requestContext.mixedTrace
+                    controller
                 })
-                const resultMap = response.resultMap
 
-                for (const task of batch) {
+                for (let i = 0; i < batch.length; i++) {
+                    const task = batch[i]
                     if (this.disposed) {
                         task.deferred.reject(this.disposedError)
                         continue
                     }
-                    const res = resultMap.get(task.op.opId) ?? missingResult(task.op.opId)
-                    task.deferred.resolve(res)
+                    task.deferred.resolve(results[i])
                 }
             } catch (error: unknown) {
                 this.deps.config().onError?.(toError(error), { lane: 'write' })
@@ -157,23 +140,11 @@ export class WriteLane {
 
     private signal() {
         if (this.disposed) return
-        this.scheduler.schedule(false)
+        this.scheduler.schedule()
     }
 }
 
 function takeBatch(queue: OpsTask[], maxOps: number) {
     const takeCount = Math.min(queue.length, maxOps)
     return queue.splice(0, takeCount)
-}
-
-function missingResult(opId: string): OperationResult {
-    return {
-        opId,
-        ok: false,
-        error: {
-            code: 'INTERNAL',
-            message: 'Missing result',
-            kind: 'internal'
-        }
-    }
 }

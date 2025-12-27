@@ -2,7 +2,7 @@ import { Observability } from '#observability'
 import type { ObservabilityContext, AtomaDebugEventMap, DebugEmitMeta } from '#observability'
 import { Protocol } from '#protocol'
 import type { Meta, Operation, OperationResult } from '#protocol'
-import type { FetchFn } from './types'
+import type { OpsTask } from './types'
 
 // ============================================================================
 // Utils
@@ -43,71 +43,51 @@ export function createCoalescedScheduler(args: {
 }) {
     let scheduled = false
     let running = false
-    let microtaskQueued = false
-    let timer: ReturnType<typeof setTimeout> | undefined
     let rerunRequested = false
-    let rerunImmediate = false
+    let timer: ReturnType<typeof setTimeout> | undefined
     let disposed = false
+    let token = 0
 
-    const trigger = () => {
-        microtaskQueued = false
+    const trigger = (id: number) => {
         if (disposed) return
+        if (id !== token) return
+        scheduled = false
+        timer = undefined
 
+        running = true
+        void Promise.resolve(args.run()).finally(() => {
+            running = false
+            if (disposed) return
+            if (!rerunRequested) return
+            rerunRequested = false
+            schedule()
+        })
+    }
+
+    const schedule = () => {
+        if (disposed) return
         if (running) {
             rerunRequested = true
             return
         }
+        if (scheduled) return
+        scheduled = true
 
         if (timer) {
             clearTimeout(timer)
             timer = undefined
         }
 
-        running = true
-        void Promise.resolve(args.run()).finally(() => {
-            running = false
-            if (disposed) return
+        const delayMs = Math.max(0, Math.floor(args.getDelayMs() ?? 0))
+        token += 1
+        const id = token
 
-            if (rerunRequested) {
-                rerunRequested = false
-                const immediate = rerunImmediate
-                rerunImmediate = false
-                scheduled = false
-                schedule(immediate)
-                return
-            }
-
-            scheduled = false
-        })
-    }
-
-    const schedule = (immediate: boolean) => {
-        if (disposed) return
-
-        if (scheduled) {
-            rerunRequested = true
-            rerunImmediate = rerunImmediate || immediate
-            if (immediate && timer) {
-                clearTimeout(timer)
-                timer = undefined
-                if (!microtaskQueued) {
-                    microtaskQueued = true
-                    queueMicrotask(trigger)
-                }
-            }
+        if (delayMs > 0) {
+            timer = setTimeout(() => trigger(id), delayMs)
             return
         }
 
-        scheduled = true
-
-        const delay = args.getDelayMs()
-        if (!immediate && delay > 0) {
-            timer = setTimeout(trigger, delay)
-            return
-        }
-
-        microtaskQueued = true
-        queueMicrotask(trigger)
+        queueMicrotask(() => trigger(id))
     }
 
     const cancel = () => {
@@ -115,10 +95,9 @@ export function createCoalescedScheduler(args: {
             clearTimeout(timer)
             timer = undefined
         }
-        microtaskQueued = false
-        rerunRequested = false
-        rerunImmediate = false
         scheduled = false
+        rerunRequested = false
+        token += 1
     }
 
     const dispose = () => {
@@ -136,7 +115,7 @@ export type OpsRequest = {
 
 export type OpsResult = OperationResult
 
-type SendFn = (payload: OpsRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) => Promise<{ json: unknown; status: number }>
+type SendFn = (payload: OpsRequest, signal?: AbortSignal) => Promise<{ json: unknown; status: number }>
 
 export function mapOpsResults(results: unknown): Map<string, OpsResult> {
     const map = new Map<string, OpsResult>()
@@ -145,6 +124,52 @@ export function mapOpsResults(results: unknown): Map<string, OpsResult> {
         if (r && typeof r.opId === 'string') map.set(r.opId, r as OpsResult)
     })
     return map
+}
+
+function missingResult(opId: string): OperationResult {
+    return {
+        opId,
+        ok: false,
+        error: {
+            code: 'INTERNAL',
+            message: 'Missing result',
+            kind: 'internal'
+        }
+    }
+}
+
+export async function executeOpsTasksBatch(args: {
+    lane: 'query' | 'write'
+    endpoint: string
+    tasks: OpsTask[]
+    send: SendFn
+    controller?: AbortController
+}) {
+    const requestContext = buildOpsLaneRequestContext(args.tasks)
+
+    const opsWithTrace = args.tasks.map(t => withOpTraceMeta(t.op, t.ctx))
+
+    const payload: OpsRequest = {
+        meta: {
+            v: 1,
+            clientTimeMs: Date.now()
+        },
+        ops: opsWithTrace
+    }
+
+    const response = await sendOpsWithAdapterEvents({
+        lane: args.lane,
+        endpoint: args.endpoint,
+        payload,
+        send: args.send,
+        controller: args.controller,
+        ctxTargets: requestContext.ctxTargets,
+        totalOpCount: args.tasks.length,
+        mixedTrace: requestContext.mixedTrace
+    })
+
+    const resultMap = response.resultMap
+    return opsWithTrace.map((op) => resultMap.get(op.opId) ?? missingResult(op.opId))
 }
 
 export async function sendOpsWithAdapterEvents(args: {
@@ -178,14 +203,8 @@ export async function sendOpsWithAdapterEvents(args: {
 
     let startedAt: number | undefined
     try {
-        const traceId = typeof args.payload.meta?.traceId === 'string' && args.payload.meta.traceId ? args.payload.meta.traceId : undefined
-        const requestId = typeof args.payload.meta?.requestId === 'string' && args.payload.meta.requestId ? args.payload.meta.requestId : undefined
-
         startedAt = Date.now()
-        const response = await args.send(args.payload, args.controller?.signal, {
-            ...(traceId ? { [Protocol.trace.headers.TRACE_ID_HEADER]: traceId } : {}),
-            ...(requestId ? { [Protocol.trace.headers.REQUEST_ID_HEADER]: requestId } : {})
-        })
+        const response = await args.send(args.payload, args.controller?.signal)
         const durationMs = Date.now() - startedAt
 
         const envelope = parseOpsEnvelopeFromJson<unknown>(response.json)
@@ -295,7 +314,6 @@ export function emitAdapterEvent<M extends { ctx?: ObservabilityContext }, TType
 }
 
 type TraceState = {
-    commonTraceId?: string
     mixedTrace: boolean
 }
 
@@ -313,20 +331,12 @@ function buildTraceState(items: Array<{ ctx?: ObservabilityContext }>): TraceSta
         else hasMissing = true
     })
 
-    const commonTraceId = (!hasMissing && distinct.size === 1) ? Array.from(distinct)[0] : undefined
     const mixedTrace = distinct.size > 1 || (hasMissing && distinct.size > 0)
-    return { commonTraceId, mixedTrace }
+    return { mixedTrace }
 }
 
 export function buildOpsLaneRequestContext(tasks: Array<{ ctx?: ObservabilityContext }>) {
     const traceState = buildTraceState(tasks)
-    const requestId = (() => {
-        if (!traceState.commonTraceId) return undefined
-        for (const t of tasks) {
-            if (t.ctx) return t.ctx.requestId()
-        }
-        return undefined
-    })()
 
     const byCtx = new Map<ObservabilityContext, { opCount: number }>()
     tasks.forEach(t => {
@@ -338,63 +348,40 @@ export function buildOpsLaneRequestContext(tasks: Array<{ ctx?: ObservabilityCon
     })
 
     const ctxTargets = Array.from(byCtx.entries()).map(([ctx, meta]) => ({
-        ctx: requestId ? ctx.with({ requestId }) : ctx,
+        ctx,
         opCount: meta.opCount,
         taskCount: meta.opCount
     }))
     const shouldEmitAdapterEvents = ctxTargets.some(t => t.ctx.active)
 
     return {
-        commonTraceId: traceState.commonTraceId,
-        requestId,
         mixedTrace: traceState.mixedTrace,
         ctxTargets,
         shouldEmitAdapterEvents
     }
 }
 
-// ============================================================================
-// Transport
-// ============================================================================
+function withOpTraceMeta(op: Operation, ctx?: ObservabilityContext): Operation {
+    if (!ctx) return op
 
-type HeadersResolver = () => Promise<Record<string, string>> | Record<string, string>
+    const traceId = normalizeTraceId(ctx.traceId)
+    const requestId = traceId ? normalizeTraceId(ctx.requestId()) : undefined
+    if (!traceId && !requestId) return op
 
-export async function resolveHeaders(headers?: HeadersResolver): Promise<Record<string, string>> {
-    if (!headers) return {}
-    const h = headers()
-    return h instanceof Promise ? await h : h
-}
+    const baseMeta = (op as any)?.meta
+    const meta = (baseMeta && typeof baseMeta === 'object' && !Array.isArray(baseMeta))
+        ? baseMeta
+        : undefined
 
-export async function sendBatchRequest(
-    fetcher: FetchFn,
-    endpoint: string,
-    headers: HeadersResolver | undefined,
-    payload: unknown,
-    signal?: AbortSignal,
-    extraHeaders?: Record<string, string>
-) {
-    const resolvedHeaders = await resolveHeaders(headers)
-    const response = await fetcher(endpoint, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            ...resolvedHeaders,
-            ...(extraHeaders || {})
-        },
-        body: JSON.stringify(payload),
-        signal
-    })
-
-    const status = typeof (response as any)?.status === 'number' ? (response as any).status : 0
-    const json = await (response as any).json?.().catch?.(() => null) ?? await (async () => {
-        try {
-            return await (response as any).json()
-        } catch {
-            return null
+    return {
+        ...(op as any),
+        meta: {
+            v: 1,
+            ...(meta ? meta : {}),
+            ...(traceId ? { traceId } : {}),
+            ...(requestId ? { requestId } : {})
         }
-    })()
-
-    return { json, status }
+    } as any
 }
 
 // ============================================================================

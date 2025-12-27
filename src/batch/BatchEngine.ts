@@ -1,10 +1,8 @@
 import type { ObservabilityContext } from '#observability'
 import type { OpsRequest } from './internal'
-import { sendBatchRequest } from './internal'
 import { QueryLane } from './queryLane'
 import { WriteLane } from './writeLane'
-import type { Operation, OperationResult, WriteItem, WriteOp } from '#protocol'
-import { Protocol } from '#protocol'
+import type { Operation, OperationResult, WriteOp } from '#protocol'
 
 type FetchFn = typeof fetch
 
@@ -57,7 +55,6 @@ export class BatchEngine {
      * - Write lane: batches WriteOp requests.
      *
      * This class intentionally owns:
-     * - scheduling (microtasks/timers)
      * - lifecycle (`dispose`)
      * - shared transport (`send`)
      *
@@ -76,13 +73,13 @@ export class BatchEngine {
         this.queryLane = new QueryLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            send: (payload, signal, extraHeaders) => this.send(payload, signal, extraHeaders)
+            send: (payload, signal) => this.send(payload, signal)
         })
 
         this.writeLane = new WriteLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            send: (payload, signal, extraHeaders) => this.send(payload, signal, extraHeaders)
+            send: (payload, signal) => this.send(payload, signal)
         })
     }
 
@@ -97,9 +94,9 @@ export class BatchEngine {
             return this.queryLane.enqueue(op, internalContext)
         }
         if (op.kind === 'write') {
-            const normalized = this.ensureWriteItemMeta(op as WriteOp)
-            this.validateWriteBatchSize(normalized)
-            return this.writeLane.enqueue(normalized, internalContext)
+            const writeOp = op as WriteOp
+            this.validateWriteBatchSize(writeOp)
+            return this.writeLane.enqueue(writeOp, internalContext)
         }
         return Promise.reject(new Error(`[BatchEngine] Unsupported op kind: ${op.kind}`))
     }
@@ -116,8 +113,36 @@ export class BatchEngine {
         this.writeLane.dispose()
     }
 
-    private async send(payload: OpsRequest, signal?: AbortSignal, extraHeaders?: Record<string, string>) {
-        return await sendBatchRequest(this.fetcher, this.endpoint, this.config.headers, payload, signal, extraHeaders)
+    private async send(payload: OpsRequest, signal?: AbortSignal) {
+        const headersFn = this.config.headers
+        const resolvedHeadersRaw = headersFn ? await Promise.resolve(headersFn()) : {}
+        const resolvedHeaders = (resolvedHeadersRaw && typeof resolvedHeadersRaw === 'object' && !Array.isArray(resolvedHeadersRaw))
+            ? resolvedHeadersRaw
+            : {}
+
+        const response = await this.fetcher(this.endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...resolvedHeaders,
+            },
+            body: JSON.stringify(payload),
+            signal
+        })
+
+        const status = typeof (response as any)?.status === 'number' ? (response as any).status : 0
+
+        let json: unknown = null
+        try {
+            const parse = (response as any)?.json
+            if (typeof parse === 'function') {
+                json = await parse.call(response)
+            }
+        } catch {
+            json = null
+        }
+
+        return { json, status }
     }
 
 
@@ -128,33 +153,6 @@ export class BatchEngine {
         if (count > max) {
             throw new Error(`[BatchEngine] write.items exceeds maxBatchSize (${count} > ${max})`)
         }
-    }
-
-    private ensureWriteItemMeta(op: WriteOp): WriteOp {
-        const items = Array.isArray(op.write.items) ? op.write.items : []
-        const nextItems: WriteItem[] = items.map(item => {
-            if (!item || typeof item !== 'object') return item as WriteItem
-            const meta = (item as any).meta
-            const baseMeta = (meta && typeof meta === 'object' && !Array.isArray(meta)) ? meta : {}
-            const idempotencyKey = (typeof (baseMeta as any).idempotencyKey === 'string' && (baseMeta as any).idempotencyKey)
-                ? (baseMeta as any).idempotencyKey
-                : Protocol.ids.createIdempotencyKey()
-            return {
-                ...(item as any),
-                meta: {
-                    ...baseMeta,
-                    idempotencyKey
-                }
-            } as WriteItem
-        })
-
-        return {
-            ...op,
-            write: {
-                ...op.write,
-                items: nextItems
-            }
-        } as WriteOp
     }
 
 }

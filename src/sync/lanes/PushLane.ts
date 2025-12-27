@@ -9,15 +9,16 @@ import type {
     WriteResultData
 } from '#protocol'
 import type { SyncApplier } from '../internal'
-import { computeBackoffDelayMs, sleepMs } from '../policies/backoffPolicy'
+import { sleepMs } from '../policies/backoffPolicy'
 import { executeSingleOp, toError } from '../internal'
+import { RetryBackoff } from '../policies/retryBackoff'
 
 export class PushLane {
     private disposed = false
     private pushing = false
     private flushScheduled = false
     private flushRequested = false
-    private retryAttempt = 0
+    private readonly retry: RetryBackoff
 
     constructor(private readonly deps: {
         outbox: OutboxStore
@@ -33,27 +34,25 @@ export class PushLane {
         nextOpId: (prefix: 'w') => string
         onError?: (error: Error, context: { phase: SyncPhase }) => void
         onEvent?: (event: SyncEvent) => void
-    }) {}
+    }) {
+        this.retry = new RetryBackoff({
+            retry: deps.retry,
+            backoff: deps.backoff
+        })
+    }
 
     dispose() {
         this.disposed = true
     }
 
-    requestFlush(immediate = false) {
+    requestFlush() {
         if (this.disposed) return
         if (this.flushScheduled) return
         this.flushScheduled = true
-
-        const trigger = () => {
+        queueMicrotask(() => {
             this.flushScheduled = false
             void this.flush()
-        }
-
-        if (immediate) {
-            queueMicrotask(trigger)
-            return
-        }
-        queueMicrotask(trigger)
+        })
     }
 
     async flush() {
@@ -68,7 +67,7 @@ export class PushLane {
         try {
             while (!this.disposed) {
                 const batch = await this.peekWriteBatch()
-                if (!batch.items.length) break
+                if (!batch) break
 
                 const { resource, action, items, entries } = batch
                 const keys = entries.map(e => e.idempotencyKey)
@@ -100,14 +99,14 @@ export class PushLane {
 
                     if (!opResult.ok) {
                         if (isRetryableOpError(opResult.error as any)) {
-                            await this.retryBackoff()
+                            const stop = await this.retryBackoff()
                             await Promise.resolve(this.deps.outbox.releaseInFlight?.(keys))
-                            if (this.shouldStopRetrying()) break
+                            if (stop) break
                             continue
                         }
                         const rejected = await this.rejectAllFromOpError(opResult, entries)
                         await this.deps.outbox.reject(rejected)
-                        this.retryAttempt = 0
+                        this.retry.reset()
                         continue
                     }
 
@@ -150,13 +149,13 @@ export class PushLane {
 
                     await this.deps.outbox.ack(acked)
                     await this.deps.outbox.reject(rejected)
-                    this.retryAttempt = 0
+                    this.retry.reset()
                 } catch (error) {
                     const err = toError(error)
                     this.deps.onError?.(err, { phase: 'push' })
                     await Promise.resolve(this.deps.outbox.releaseInFlight?.(keys))
-                    await this.retryBackoff()
-                    if (this.shouldStopRetrying()) break
+                    const stop = await this.retryBackoff()
+                    if (stop) break
                 }
             }
         } finally {
@@ -164,7 +163,7 @@ export class PushLane {
             this.deps.onEvent?.({ type: 'push:idle' })
             if (this.flushRequested) {
                 this.flushRequested = false
-                this.requestFlush(true)
+                this.requestFlush()
             }
         }
     }
@@ -175,22 +174,16 @@ export class PushLane {
         return buildWriteBatch(pending)
     }
 
-    private shouldStopRetrying(): boolean {
-        const maxAttempts = this.deps.retry?.maxAttempts
-        if (maxAttempts === undefined) return false
-        return this.retryAttempt >= Math.max(1, Math.floor(maxAttempts))
-    }
-
-    private async retryBackoff() {
-        this.retryAttempt += 1
-        if (this.shouldStopRetrying()) return
-        const delay = computeBackoffDelayMs(this.retryAttempt, this.deps.backoff)
-        if (!delay) return
-        this.deps.onEvent?.({ type: 'push:backoff', attempt: this.retryAttempt, delayMs: delay })
-        await sleepMs(delay)
+    private async retryBackoff(): Promise<boolean> {
+        const { attempt, delayMs, stop } = this.retry.next()
+        if (stop) return true
+        if (!delayMs) return false
+        this.deps.onEvent?.({ type: 'push:backoff', attempt, delayMs })
+        await sleepMs(delayMs)
         if (!this.disposed) {
             this.deps.onEvent?.({ type: 'push:start' })
         }
+        return false
     }
 
     private async rejectAllFromOpError(result: OperationResult, entries: SyncOutboxItem[]): Promise<string[]> {

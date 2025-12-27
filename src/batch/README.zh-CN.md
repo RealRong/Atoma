@@ -22,16 +22,16 @@
 
 - `BatchEngine.ts`
   - 对外入口：`enqueueOp` / `enqueueOps`、`dispose`。
-  - 负责调度（microtask/timer）、生命周期与共享资源（AbortController）。
+  - 负责生命周期与共享 transport（headers + fetch + JSON 解析）；lane 的调度/队列算法在 `QueryLane`/`WriteLane` 内部。
 - `queryLane.ts`
   - drain QueryOp 任务并发送 `POST /ops`。
   - 保持 FIFO 边界，并避免把“有 trace/无 trace”的任务混到同一个请求里。
 - `writeLane.ts`
   - drain WriteOp 任务并发送 `POST /ops`。
-- `queryParams.ts`
-  - 把 `FindManyOptions<T>` 翻译为服务端 Batch 协议需要的 `QueryParams`（要求 `params.page`）。
 - `internal.ts`
-  - 内部辅助：配置归一化、小工具、transport（`sendBatchRequest`）、adapter 事件 fan-out 等。
+  - 内部辅助：配置归一化、小工具、adapter 事件 fan-out，以及 `executeOpsTasksBatch`（组 payload → 发送 → 解析 → results 映射/兜底）。
+- （不在本目录）`src/adapters/http/transport/queryParams.ts`
+  - 把 `FindManyOptions<T>` 翻译为服务端 ops 协议需要的 `QueryParams`（要求 `params.page`），供 HTTP ops 路由层构造 QueryOp 使用。
 
 ## 运行流程（端到端）
 
@@ -51,7 +51,7 @@
 - 每条 lane 各自维护 `*Scheduled` 和可选 `*Timer`。
 - 默认：同一 tick 的多次 enqueue 会合并到一次 microtask flush。
 - `flushIntervalMs > 0`：允许延迟 flush，提高合批率。
-- 当达到阈值（例如队列达到上限）时，会把“等待中的 timer flush”升级为“立即 microtask flush”。
+  - 设计目标是：在 `flushIntervalMs` 窗口内尽量合并更多 enqueue，减少请求次数。
 
 ### 3）drain 为 HTTP 请求
 
@@ -59,7 +59,7 @@
 
 - 选出一批 task（query/write 各自 FIFO）
 - 构造 payload
-- 通过内部 transport（`internal.ts`）发送 `POST /ops`
+- 通过 `BatchEngine` 内部 transport（fetch）发送 `POST /ops`
 - 把服务端 results 映射回每个 task 的 promise
 
 ### 4）trace/requestId 与请求头规则

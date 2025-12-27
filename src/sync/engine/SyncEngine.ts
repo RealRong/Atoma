@@ -1,35 +1,97 @@
-import type { SyncClient, SyncConfig, SyncOutboxItem } from '../types'
+import type { SyncBackoffConfig, SyncClient, SyncConfig, SyncOutboxItem, SyncRetryConfig, SyncTransport } from '../types'
 import { createApplier, toError } from '../internal'
 import { PushLane } from '../lanes/PushLane'
 import { PullLane } from '../lanes/PullLane'
-import { SubscribeLane, subscribeToVNextChangesSse } from '../lanes/SubscribeLane'
-import { createVNextStores } from '../vnextStore'
+import { SubscribeLane, subscribeChangesSse } from '../lanes/SubscribeLane'
+import { createStores } from '../store'
 import type { Cursor, Meta, WriteAction, WriteItem } from '#protocol'
 import { Protocol } from '#protocol'
-import { computeBackoffDelayMs } from '../policies/backoffPolicy'
 import { SingleInstanceLock } from '../policies/singleInstanceLock'
-import type { SyncTransport } from '../types'
+import { RetryBackoff } from '../policies/retryBackoff'
+
+type ResolvedSyncConfig = {
+    push: {
+        maxItems: number
+        returning: boolean
+        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
+        retry: SyncRetryConfig
+        backoff: SyncBackoffConfig
+    }
+    pull: {
+        limit: number
+        resources?: string[]
+        initialCursor?: Cursor
+        periodic: {
+            intervalMs: number
+            retry: SyncRetryConfig
+            backoff: SyncBackoffConfig
+        }
+    }
+    subscribe: {
+        enabled: boolean
+        initialCursor?: Cursor
+        reconnectDelayMs: number
+        retry: SyncRetryConfig
+        backoff: SyncBackoffConfig
+    }
+    lock: {
+        backoff: SyncBackoffConfig
+    }
+}
+
+function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
+    const resolveBackoff = (fallback: { baseDelayMs: number }) => {
+        return {
+            baseDelayMs: fallback.baseDelayMs,
+            maxDelayMs: 30_000,
+            jitterRatio: 0.2,
+            ...(config.backoff ?? {})
+        }
+    }
+
+    const reconnectDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 1000))
+    const periodicPullIntervalMs = Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 5_000))
+    const periodicPullBackoffBaseDelayMs = Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 1_000))
+    const lockBackoffBaseDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 300))
+    const retry = config.retry ?? { maxAttempts: 10 }
+    const initialCursor = config.initialCursor
+
+    return {
+        push: {
+            maxItems: Math.max(1, Math.floor(config.maxPushItems ?? 50)),
+            returning: config.returning !== false,
+            conflictStrategy: config.conflictStrategy,
+            retry,
+            backoff: resolveBackoff({ baseDelayMs: 300 })
+        },
+        pull: {
+            limit: Math.max(1, Math.floor(config.pullLimit ?? 200)),
+            resources: config.resources,
+            initialCursor,
+            periodic: {
+                intervalMs: periodicPullIntervalMs,
+                retry,
+                backoff: resolveBackoff({ baseDelayMs: periodicPullBackoffBaseDelayMs })
+            }
+        },
+        subscribe: {
+            enabled: config.subscribe === true,
+            initialCursor,
+            reconnectDelayMs,
+            retry,
+            backoff: resolveBackoff({ baseDelayMs: reconnectDelayMs })
+        },
+        lock: {
+            backoff: resolveBackoff({ baseDelayMs: lockBackoffBaseDelayMs })
+        }
+    }
+}
 
 export class SyncEngine implements SyncClient {
     private disposed = false
     private started = false
 
-    private readonly resolved: {
-        maxPushItems: number
-        pullLimit: number
-        resources?: string[]
-        initialCursor?: Cursor
-        returning: boolean
-        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
-        subscribe: boolean
-        reconnectDelayMs: number
-        periodicPullIntervalMs: number
-        retry: { maxAttempts?: number }
-        pushBackoff: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
-        subscribeBackoff: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
-        periodicPullBackoff: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
-        lockBackoff: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
-    }
+    private readonly resolved: ResolvedSyncConfig
 
     private readonly outbox
     private readonly cursor
@@ -39,40 +101,17 @@ export class SyncEngine implements SyncClient {
     private readonly pullLane: PullLane
     private readonly subscribeLane: SubscribeLane
     private periodicPullTimer?: ReturnType<typeof setTimeout>
-    private periodicPullAttempt = 0
+    private readonly periodicPullRetry: RetryBackoff
     private lock?: SingleInstanceLock
     private startInFlight?: Promise<void>
     private readonly transport: SyncTransport
 
     constructor(private readonly config: SyncConfig) {
-        const resolveBackoff = (fallback: { baseDelayMs: number }) => {
-            return {
-                baseDelayMs: fallback.baseDelayMs,
-                maxDelayMs: 30_000,
-                jitterRatio: 0.2,
-                ...(config.backoff ?? {})
-            }
-        }
-
-        const reconnectDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 1000))
-        const periodicPullIntervalMs = Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 5_000))
-
-        this.resolved = {
-            maxPushItems: Math.max(1, Math.floor(config.maxPushItems ?? 50)),
-            pullLimit: Math.max(1, Math.floor(config.pullLimit ?? 200)),
-            resources: config.resources,
-            initialCursor: config.initialCursor,
-            returning: config.returning !== false,
-            conflictStrategy: config.conflictStrategy,
-            subscribe: config.subscribe === true,
-            reconnectDelayMs,
-            periodicPullIntervalMs,
-            retry: config.retry ?? { maxAttempts: 10 },
-            pushBackoff: resolveBackoff({ baseDelayMs: 300 }),
-            subscribeBackoff: resolveBackoff({ baseDelayMs: reconnectDelayMs }),
-            periodicPullBackoff: resolveBackoff({ baseDelayMs: Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 1_000)) }),
-            lockBackoff: resolveBackoff({ baseDelayMs: Math.max(0, Math.floor(config.reconnectDelayMs ?? 300)) })
-        }
+        this.resolved = resolveSyncConfig(config)
+        this.periodicPullRetry = new RetryBackoff({
+            retry: this.resolved.pull.periodic.retry,
+            backoff: this.resolved.pull.periodic.backoff
+        })
 
         this.transport = {
             executeOps: config.executeOps,
@@ -80,7 +119,7 @@ export class SyncEngine implements SyncClient {
                 if (!config.subscribeUrl) {
                     throw new Error('[Sync] subscribeUrl is required when subscribe is enabled')
                 }
-                return subscribeToVNextChangesSse({
+                return subscribeChangesSse({
                     cursor: args.cursor,
                     buildUrl: config.subscribeUrl,
                     eventSourceFactory: config.eventSourceFactory,
@@ -91,7 +130,7 @@ export class SyncEngine implements SyncClient {
             }
         }
 
-        const stores = createVNextStores({
+        const stores = createStores({
             outboxKey: config.outboxKey,
             cursorKey: config.cursorKey,
             maxQueueSize: config.maxQueueSize,
@@ -113,11 +152,11 @@ export class SyncEngine implements SyncClient {
             outbox: this.outbox,
             transport: this.transport,
             applier: this.applier,
-            maxPushItems: this.resolved.maxPushItems,
-            returning: this.resolved.returning,
-            conflictStrategy: this.resolved.conflictStrategy,
-            retry: this.resolved.retry,
-            backoff: this.resolved.pushBackoff,
+            maxPushItems: this.resolved.push.maxItems,
+            returning: this.resolved.push.returning,
+            conflictStrategy: this.resolved.push.conflictStrategy,
+            retry: this.resolved.push.retry,
+            backoff: this.resolved.push.backoff,
             now: () => this.now(),
             buildMeta: () => this.buildMeta(),
             nextOpId: (prefix) => this.nextOpId(prefix),
@@ -129,9 +168,9 @@ export class SyncEngine implements SyncClient {
             cursor: this.cursor,
             transport: this.transport,
             applier: this.applier,
-            pullLimit: this.resolved.pullLimit,
-            resources: this.resolved.resources,
-            initialCursor: this.resolved.initialCursor,
+            pullLimit: this.resolved.pull.limit,
+            resources: this.resolved.pull.resources,
+            initialCursor: this.resolved.pull.initialCursor,
             buildMeta: () => this.buildMeta(),
             nextOpId: (prefix) => this.nextOpId(prefix),
             onError: config.onError,
@@ -142,10 +181,10 @@ export class SyncEngine implements SyncClient {
             cursor: this.cursor,
             transport: this.transport,
             applier: this.applier,
-            initialCursor: this.resolved.initialCursor,
-            reconnectDelayMs: this.resolved.reconnectDelayMs,
-            retry: this.resolved.retry,
-            backoff: this.resolved.subscribeBackoff,
+            initialCursor: this.resolved.subscribe.initialCursor,
+            reconnectDelayMs: this.resolved.subscribe.reconnectDelayMs,
+            retry: this.resolved.subscribe.retry,
+            backoff: this.resolved.subscribe.backoff,
             onError: config.onError,
             onEvent: config.onEvent
         })
@@ -254,7 +293,7 @@ export class SyncEngine implements SyncClient {
             renewIntervalMs: Math.max(200, Math.floor(this.config.lockRenewIntervalMs ?? 3_000)),
             now: () => this.now(),
             maxAcquireAttempts: 5,
-            backoff: this.resolved.lockBackoff,
+            backoff: this.resolved.lock.backoff,
             onLost: (error) => {
                 this.config.onEvent?.({ type: 'lifecycle:lock_lost', error })
                 this.config.onError?.(error, { phase: 'lifecycle' })
@@ -283,8 +322,8 @@ export class SyncEngine implements SyncClient {
         }
 
         this.subscribeLane.start()
-        this.subscribeLane.setEnabled(this.resolved.subscribe)
-        this.pushLane.requestFlush(true)
+        this.subscribeLane.setEnabled(this.resolved.subscribe.enabled)
+        this.pushLane.requestFlush()
         this.schedulePeriodicPull(0)
         this.config.onEvent?.({ type: 'lifecycle:started' })
     }
@@ -292,7 +331,7 @@ export class SyncEngine implements SyncClient {
     private schedulePeriodicPull(delayMs: number) {
         if (this.disposed || !this.started) return
         this.clearPeriodicPull()
-        const interval = this.resolved.periodicPullIntervalMs
+        const interval = this.resolved.pull.periodic.intervalMs
         if (interval <= 0) return
 
         const delay = delayMs === 0 ? 0 : Math.max(0, Math.floor(delayMs))
@@ -312,17 +351,13 @@ export class SyncEngine implements SyncClient {
 
         try {
             await this.pullLane.pullNow()
-            this.periodicPullAttempt = 0
-            this.schedulePeriodicPull(this.resolved.periodicPullIntervalMs)
+            this.periodicPullRetry.reset()
+            this.schedulePeriodicPull(this.resolved.pull.periodic.intervalMs)
         } catch (error) {
-            this.periodicPullAttempt += 1
-            const maxAttempts = this.resolved.retry.maxAttempts
-            if (maxAttempts !== undefined && this.periodicPullAttempt >= Math.max(1, Math.floor(maxAttempts))) {
-                return
-            }
-            const delay = computeBackoffDelayMs(this.periodicPullAttempt, this.resolved.periodicPullBackoff)
-            this.config.onEvent?.({ type: 'pull:backoff', attempt: this.periodicPullAttempt, delayMs: delay })
-            this.schedulePeriodicPull(delay)
+            const { attempt, delayMs, stop } = this.periodicPullRetry.next()
+            if (stop) return
+            this.config.onEvent?.({ type: 'pull:backoff', attempt, delayMs })
+            this.schedulePeriodicPull(delayMs)
         }
     }
 

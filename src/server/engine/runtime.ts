@@ -29,6 +29,15 @@ export function createRuntimeFactory<Ctx>(args: {
         initialTraceId?: string
         initialRequestId?: string
     }) {
+        const createObservabilityContext = (ctxArgs?: { traceId?: string; requestId?: string; opId?: string }): ObservabilityContext => {
+            const traceId = (typeof ctxArgs?.traceId === 'string' && ctxArgs.traceId) ? ctxArgs.traceId : undefined
+            const base = observability.createContext({ traceId })
+            const requestId = (typeof ctxArgs?.requestId === 'string' && ctxArgs.requestId) ? ctxArgs.requestId : undefined
+            const withRequest = requestId ? base.with({ requestId }) : base
+            const opId = (typeof ctxArgs?.opId === 'string' && ctxArgs.opId) ? ctxArgs.opId : undefined
+            return opId ? withRequest.with({ opId }) : withRequest
+        }
+
         const initialTraceId = (() => {
             if (typeof runtimeArgs.initialTraceId === 'string' && runtimeArgs.initialTraceId) return runtimeArgs.initialTraceId
             if (typeof createIdFn === 'function') return createIdFn()
@@ -59,7 +68,7 @@ export function createRuntimeFactory<Ctx>(args: {
         const hookArgs = { route: runtimeArgs.route, ctx, traceId, requestId }
         const observabilityContext = baseCtx.with({ requestId })
 
-        return { traceId, requestId, logger, ctx, hookArgs, observabilityContext, hooks }
+        return { traceId, requestId, logger, ctx, hookArgs, observabilityContext, createObservabilityContext, hooks }
     }
 }
 
@@ -75,5 +84,6 @@ export type ServerRuntime<Ctx> = {
         requestId: string
     }
     observabilityContext: ObservabilityContext
+    createObservabilityContext: (args?: { traceId?: string; requestId?: string; opId?: string }) => ObservabilityContext
     hooks?: any
 }

@@ -22,16 +22,16 @@ This folder implements Atoma’s **client-side batching engine** used by adapter
 
 - `BatchEngine.ts`
   - Public surface: `enqueueOp` / `enqueueOps`, `dispose`.
-  - Owns scheduling (microtask/timer), lifecycle, and shared resources (abort controllers).
+  - Owns lifecycle and shared transport (headers + fetch + JSON parsing); lane scheduling/queues live inside `QueryLane`/`WriteLane`.
 - `queryLane.ts`
   - Drains QueryOp tasks and sends `POST /ops`.
   - Maintains FIFO batching boundaries and avoids mixing traced/untraced tasks in a single request.
 - `writeLane.ts`
   - Drains WriteOp tasks and sends `POST /ops`.
-- `queryParams.ts`
-  - Translates `FindManyOptions<T>` into server `QueryParams` (ops protocol requires `params.page`).
 - `internal.ts`
-  - Internal helpers (config normalization, small utils, transport `sendBatchRequest`, adapter debug events fan-out).
+  - Internal helpers (config normalization, small utils, adapter debug events fan-out, and `executeOpsTasksBatch` which does payload → send → parse → result mapping/fallback).
+- (Not in this folder) `src/adapters/http/transport/queryParams.ts`
+  - Translates `FindManyOptions<T>` into server `QueryParams` (ops protocol requires `params.page`), used by the HTTP ops router to build QueryOp.
 
 ## How it runs (end-to-end)
 
@@ -51,7 +51,7 @@ An adapter that enables batching will create a `BatchEngine` and call:
 - Each lane has its own `*Scheduled` flag and optional `*Timer`.
 - By default, enqueues coalesce into a single microtask flush.
 - If `flushIntervalMs > 0`, flushing can be delayed to increase batch size.
-- If a lane hits a threshold (e.g. queue reaches cap), it “upgrades” a pending timer flush into an immediate microtask flush.
+  - The goal is to coalesce more enqueues within the `flushIntervalMs` window and reduce request count.
 
 ### 3) Draining into HTTP requests
 
@@ -59,7 +59,7 @@ Each drain iteration:
 
 - selects a batch of tasks (query/write FIFO),
 - builds a request payload,
-- sends `POST /ops` via internal transport (`internal.ts`),
+- sends `POST /ops` via the `BatchEngine` transport (fetch),
 - maps server results back to individual task promises.
 
 ### 4) Trace/request header rules

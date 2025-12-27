@@ -8,15 +8,8 @@ export type WriteBatch = {
     entries: SyncOutboxItem[]
 }
 
-export function buildWriteBatch(pending: SyncOutboxItem[]): WriteBatch {
-    if (!pending.length) {
-        return {
-            resource: '',
-            action: 'create' as WriteAction,
-            items: [],
-            entries: []
-        }
-    }
+export function buildWriteBatch(pending: SyncOutboxItem[]): WriteBatch | undefined {
+    if (!pending.length) return undefined
 
     const first = pending[0]
     const entries: SyncOutboxItem[] = []

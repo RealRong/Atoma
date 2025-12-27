@@ -4,7 +4,7 @@ import { defaultCompareCursor } from './policies/cursorGuard'
 import type { Cursor } from '#protocol'
 import type { SyncOutboxEvents } from './types'
 
-export type VNextStoreConfig = {
+export type SyncStoresConfig = {
     outboxKey: string
     cursorKey: string
     maxQueueSize?: number
@@ -13,23 +13,23 @@ export type VNextStoreConfig = {
     inFlightTimeoutMs?: number
 }
 
-export function createVNextStores(config: VNextStoreConfig): {
-    outbox: VNextOutboxStore
-    cursor: VNextCursorStore
+export function createStores(config: SyncStoresConfig): {
+    outbox: DefaultOutboxStore
+    cursor: DefaultCursorStore
 } {
     return {
-        outbox: new VNextOutboxStore(
+        outbox: new DefaultOutboxStore(
             config.outboxKey,
             config.outboxEvents,
             config.maxQueueSize ?? 1000,
             config.now ?? (() => Date.now()),
             config.inFlightTimeoutMs ?? 30_000
         ),
-        cursor: new VNextCursorStore(config.cursorKey)
+        cursor: new DefaultCursorStore(config.cursorKey)
     }
 }
 
-export class VNextOutboxStore implements OutboxStore {
+export class DefaultOutboxStore implements OutboxStore {
     private readonly kv = createKVStore()
     private queue: Array<SyncOutboxItem & { inFlightAtMs?: number }> = []
     private byKey = new Map<string, SyncOutboxItem & { inFlightAtMs?: number }>()
@@ -160,7 +160,7 @@ export class VNextOutboxStore implements OutboxStore {
     }
 }
 
-export class VNextCursorStore implements CursorStore {
+export class DefaultCursorStore implements CursorStore {
     private readonly kv = createKVStore()
     private cursor: Cursor | undefined
     private initialized: Promise<void>
