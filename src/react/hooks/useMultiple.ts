@@ -4,7 +4,7 @@ import { Core } from '#core'
 import type { Entity, IStore, RelationIncludeInput, StoreKey, WithRelations } from '#core'
 import { useRelations } from './useRelations'
 
-export interface UseMultipleOptions<T, Relations = {}> {
+interface UseMultipleOptions<T, Relations = {}> {
     limit?: number
     unique?: boolean
     selector?: (item: T) => any

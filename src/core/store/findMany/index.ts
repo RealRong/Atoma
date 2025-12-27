@@ -2,7 +2,8 @@ import { BaseStore } from '../../BaseStore'
 import { Observability } from '#observability'
 import type { Explain } from '#observability'
 import type { Entity, FindManyOptions, FindManyResult, PartialWithId, StoreKey } from '../../types'
-import { commitAtomMapUpdate } from '../cacheWriter'
+import { commitAtomMapUpdateDelta } from '../cacheWriter'
+import { preserveReferenceShallow } from '../preserveReference'
 import { resolveCachePolicy } from './cachePolicy'
 import { evaluateWithIndexes } from './localEvaluate'
 import { normalizeFindManyResult } from './normalize'
@@ -17,14 +18,7 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
     const preserveReference = (incoming: T): T => {
         const existing = jotaiStore.get(atom).get((incoming as any).id)
         if (!existing) return incoming
-
-        const keys = new Set([...Object.keys(existing as any), ...Object.keys(incoming as any)])
-        for (const key of keys) {
-            if ((existing as any)[key] !== (incoming as any)[key]) {
-                return incoming
-            }
-        }
-        return existing
+        return preserveReferenceShallow(existing, incoming)
     }
 
     return async (options?: FindManyOptions<T>): Promise<FindManyResult<T>> => {
@@ -100,20 +94,29 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                     )
                 }
 
-                const existingMap = jotaiStore.get(atom) as Map<StoreKey, T>
-                const next = new Map(existingMap)
                 const processed = transformed.map(item => preserveReference(item))
+
+                const existingMap = jotaiStore.get(atom) as Map<StoreKey, T>
+                const changedIds = new Set<StoreKey>()
+                let next: Map<StoreKey, T> | null = null
 
                 processed.forEach((item: T) => {
                     const id = (item as any).id as StoreKey
+                    const prev = existingMap.get(id)
+                    if (prev === item) return
+                    changedIds.add(id)
+                    if (!next) next = new Map(existingMap)
                     next.set(id, item)
                 })
 
-                commitAtomMapUpdate({
-                    handle,
-                    before: existingMap,
-                    after: next
-                })
+                if (next && changedIds.size) {
+                    commitAtomMapUpdateDelta({
+                        handle,
+                        before: existingMap,
+                        after: next,
+                        changedIds
+                    })
+                }
 
                 emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
                 return withExplain(
@@ -175,11 +178,9 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
 
             const withRemovals = BaseStore.bulkRemove(toRemove, existingMap)
             const next = BaseStore.bulkAdd(remote as PartialWithId<T>[], withRemovals)
-            commitAtomMapUpdate({
-                handle,
-                before: existingMap,
-                after: next
-            })
+            const changedIds = new Set<StoreKey>(toRemove)
+            incomingIds.forEach(id => changedIds.add(id))
+            commitAtomMapUpdateDelta({ handle, before: existingMap, after: next, changedIds })
 
             emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
             return withExplain(

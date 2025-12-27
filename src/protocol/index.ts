@@ -28,5 +28,3 @@ export type {
     WriteResultData,
     ChangesPullResultData
 } from './ops'
-
-export { SSE_EVENT_CHANGES } from './sse'

@@ -1,19 +1,8 @@
-import isEqual from 'lodash/isEqual'
 import type { Entity } from '../types'
+import { preserveReferenceShallow } from '../store/preserveReference'
 import type { Committer, CommitterCommitArgs, CommitterPrepareArgs, CommitterRollbackArgs } from './types'
 
 export class AtomCommitter implements Committer {
-    private mapsEqual(a: Map<any, any>, b: Map<any, any>) {
-        if (a === b) return true
-        if (a.size !== b.size) return false
-        for (const [key, valA] of a.entries()) {
-            if (!b.has(key)) return false
-            const valB = b.get(key)
-            if (!isEqual(valA, valB)) return false
-        }
-        return true
-    }
-
     private rewriteCreatedInCurrentMap<T extends Entity>(args: {
         store: any
         atom: any
@@ -21,7 +10,9 @@ export class AtomCommitter implements Committer {
         created: T[]
     }) {
         const current = args.store.get(args.atom)
-        const next = new Map(current)
+        let next: Map<any, any> | null = null
+        let changed = false
+        const changedIds = new Set<any>()
         let addCursor = 0
 
         args.plan.operationTypes.forEach((type, idx) => {
@@ -29,17 +20,30 @@ export class AtomCommitter implements Committer {
             const temp = args.plan.appliedData[idx]
             const serverItem = args.created[addCursor++] ?? temp
             const tempId = (temp as any)?.id
-            if (tempId !== undefined) {
-                next.delete(tempId)
-            }
             const serverId = (serverItem as any)?.id
+
+            if (tempId !== undefined && tempId !== serverId && current.has(tempId)) {
+                if (!next) next = new Map(current)
+                next.delete(tempId)
+                changed = true
+                changedIds.add(tempId)
+            }
+
             if (serverId !== undefined) {
-                next.set(serverId, serverItem as any)
+                const existing = current.get(serverId)
+                const value = preserveReferenceShallow(existing, serverItem)
+                const existed = current.has(serverId)
+                if (!existed || existing !== value) {
+                    if (!next) next = new Map(current)
+                    next.set(serverId, value as any)
+                    changed = true
+                    changedIds.add(serverId)
+                }
             }
             args.plan.appliedData[idx] = serverItem
         })
 
-        return { current, next }
+        return { current, next: next ?? current, changed, changedIds }
     }
 
     prepare<T extends Entity>(args: CommitterPrepareArgs<T>) {
@@ -52,17 +56,17 @@ export class AtomCommitter implements Committer {
         const activeIndexes = args.indexes ?? null
 
         if (args.createdResults?.length) {
-            const { current, next } = this.rewriteCreatedInCurrentMap({
+            const { current, next, changed, changedIds } = this.rewriteCreatedInCurrentMap({
                 store: args.store,
                 atom: args.atom,
                 plan: args.plan as any,
                 created: args.createdResults
             })
 
-            if (!this.mapsEqual(current, next)) {
+            if (changed) {
                 args.store.set(args.atom, next)
                 args.versionTracker.bump(args.atom, new Set(['id']))
-                activeIndexes?.applyMapDiff(current as any, next as any)
+                activeIndexes?.applyChangedIds(current as any, next as any, changedIds)
             }
         }
     }

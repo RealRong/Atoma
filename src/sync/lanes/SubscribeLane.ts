@@ -1,5 +1,4 @@
 import type { CursorStore, SyncEvent, SyncPhase, SyncTransport } from '../types'
-import { SSE_EVENT_CHANGES } from '#protocol'
 import type { ChangeBatch, Cursor } from '#protocol'
 import { Protocol } from '#protocol'
 import type { SyncApplier } from '../internal'
@@ -147,7 +146,7 @@ export function subscribeToVNextChangesSse(args: {
         throw new Error('[Sync] EventSource not available and no eventSourceFactory provided')
     }
 
-    const eventName = args.eventName ?? SSE_EVENT_CHANGES
+    const eventName = args.eventName ?? Protocol.sse.events.CHANGES
 
     eventSource.addEventListener(eventName, (event: any) => {
         try {

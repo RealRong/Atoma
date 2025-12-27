@@ -1,7 +1,6 @@
 import type { CoreStore, IStore, JotaiStore, StoreHandle } from '#core'
-import { Core } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
-import { createAtomaStore } from './createAtomaStore'
+import { createStoreInstance } from './createAtomaStore'
 import type { AtomaClientContext, DefineClientConfig, StoresConstraint } from './types'
 
 export type ClientRuntime = Readonly<{
@@ -50,31 +49,26 @@ export function createClientRuntime(args: {
         }
     }
 
-    const rawStore = (name: string): any => {
+    const rawStore = (name: string) => {
         const key = String(name)
         const existing = storeCache.get(key)
-        if (existing) return existing as any
+        if (existing) return existing
 
         const ctx: AtomaClientContext<any, any> = {
             jotaiStore,
-            defaultAdapterFactory: args.config.defaultAdapterFactory as any,
-            Store: rawStore as any,
-            resolveStore: rawStore as any
+            defaultAdapterFactory: args.config.defaultAdapterFactory,
+            Store: rawStore,
+            resolveStore: rawStore
         }
 
-        const override = (args.stores as any)?.[name]
-        const created = (() => {
-            if (!override) return createAtomaStore(ctx, { name } as any)
-            if (typeof override === 'function') return override(ctx)
-            if (typeof (override as any)?.name === 'string' && (override as any).name !== name) {
-                throw new Error(`[Atoma] defineStores(...).defineClient: stores["${String(name)}"].name 不一致（收到 "${String((override as any).name)}"）`)
-            }
-            return createAtomaStore(ctx, { ...(override as any), name } as any)
-        })()
+        const { store: created, handle } = createStoreInstance({
+            name,
+            stores: args.stores,
+            ctx
+        })
 
         storeCache.set(key, created)
 
-        const handle = Core.store.getHandle(created)
         if (handle) emitHandleCreated(handle)
 
         return created

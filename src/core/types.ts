@@ -1,6 +1,6 @@
 import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
-import type { StoreServices } from './StoreServices'
+import type { StoreServices } from './createCoreStore'
 import type { DevtoolsBridge } from '../devtools/types'
 import type { Explain, ObservabilityContext, ObservabilityRuntime } from '#observability'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
@@ -529,14 +529,6 @@ export type RelationIncludeInput<Relations> =
     : string extends keyof Relations
     ? Partial<Record<string, boolean | RelationIncludeOptions<any, any>>>
     : Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
-
-/**
- * Queue configuration
- */
-export interface QueueConfig {
-    /** Log queue operations */
-    debug?: boolean
-}
 
 /**
  * History change record

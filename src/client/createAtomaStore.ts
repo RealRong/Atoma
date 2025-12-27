@@ -1,199 +1,9 @@
-import type {
-    BelongsToConfig,
-    CoreStore,
-    CoreStoreConfig,
-    Entity,
-    HasManyConfig,
-    HasOneConfig,
-    IAdapter,
-    KeySelector,
-    RelationIncludeOptions,
-    RelationMap,
-    InferIncludeType
-} from '#core'
+import type { CoreStore, StoreHandle } from '#core'
 import { Core } from '#core'
-import type { AtomaClientContext, InferRelationsFromStoreOverride } from './types'
+import type { AtomaClientContext, CreateAtomaStore, StoresConstraint } from './types'
 
-type IncludeForRelations<Relations> =
-    Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
-
-type TargetRelations<
-    Entities extends Record<string, Entity>,
-    Stores,
-    TargetName extends keyof Entities & string
-> = InferRelationsFromStoreOverride<Entities, Stores, TargetName>
-
-export type BelongsToSchema<
-    Entities extends Record<string, Entity>,
-    Stores,
-    SourceName extends keyof Entities & string,
-    TargetName extends keyof Entities & string
-> = {
-    type: 'belongsTo'
-    to: TargetName
-    foreignKey: KeySelector<Entities[SourceName]>
-    primaryKey?: keyof Entities[TargetName] & string
-    options?: RelationIncludeOptions<Entities[TargetName], IncludeForRelations<TargetRelations<Entities, Stores, TargetName>>>
-}
-
-export type HasManySchema<
-    Entities extends Record<string, Entity>,
-    Stores,
-    SourceName extends keyof Entities & string,
-    TargetName extends keyof Entities & string
-> = {
-    type: 'hasMany'
-    to: TargetName
-    primaryKey?: KeySelector<Entities[SourceName]>
-    foreignKey: keyof Entities[TargetName] & string
-    options?: RelationIncludeOptions<Entities[TargetName], IncludeForRelations<TargetRelations<Entities, Stores, TargetName>>>
-}
-
-export type HasOneSchema<
-    Entities extends Record<string, Entity>,
-    Stores,
-    SourceName extends keyof Entities & string,
-    TargetName extends keyof Entities & string
-> = {
-    type: 'hasOne'
-    to: TargetName
-    primaryKey?: KeySelector<Entities[SourceName]>
-    foreignKey: keyof Entities[TargetName] & string
-    options?: RelationIncludeOptions<Entities[TargetName], IncludeForRelations<TargetRelations<Entities, Stores, TargetName>>>
-}
-
-export type RelationSchemaItem<
-    Entities extends Record<string, Entity>,
-    Stores,
-    SourceName extends keyof Entities & string
-> =
-    | { [TargetName in keyof Entities & string]: BelongsToSchema<Entities, Stores, SourceName, TargetName> }[keyof Entities & string]
-    | { [TargetName in keyof Entities & string]: HasManySchema<Entities, Stores, SourceName, TargetName> }[keyof Entities & string]
-    | { [TargetName in keyof Entities & string]: HasOneSchema<Entities, Stores, SourceName, TargetName> }[keyof Entities & string]
-
-export type RelationsSchema<
-    Entities extends Record<string, Entity>,
-    Stores,
-    SourceName extends keyof Entities & string
-> = Readonly<Record<string, RelationSchemaItem<Entities, Stores, SourceName>>>
-
-export type RelationMapFromSchema<
-    Entities extends Record<string, Entity>,
-    Stores,
-    SourceName extends keyof Entities & string,
-    Schema extends RelationsSchema<Entities, Stores, SourceName>
-> = {
-        readonly [K in keyof Schema]:
-        Schema[K] extends { type: 'belongsTo'; to: infer TargetName }
-        ? (TargetName extends keyof Entities & string
-            ? BelongsToConfig<Entities[SourceName], Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
-            : never)
-        : Schema[K] extends { type: 'hasMany'; to: infer TargetName }
-        ? (TargetName extends keyof Entities & string
-            ? HasManyConfig<Entities[SourceName], Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
-            : never)
-        : Schema[K] extends { type: 'hasOne'; to: infer TargetName }
-        ? (TargetName extends keyof Entities & string
-            ? HasOneConfig<Entities[SourceName], Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
-            : never)
-        : never
-    }
-
-export type RelationsDsl<
-    Entities extends Record<string, Entity>,
-    Stores,
-    TSource extends Entity
-> = {
-    belongsTo: <TargetName extends keyof Entities & string>(
-        name: TargetName,
-        config: {
-            foreignKey: KeySelector<TSource>
-            primaryKey?: keyof Entities[TargetName] & string
-            options?: RelationIncludeOptions<Entities[TargetName], IncludeForRelations<TargetRelations<Entities, Stores, TargetName>>>
-        }
-    ) => BelongsToConfig<TSource, Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
-
-    hasMany: <TargetName extends keyof Entities & string>(
-        name: TargetName,
-        config: {
-            primaryKey?: KeySelector<TSource>
-            foreignKey: keyof Entities[TargetName] & string
-            options?: RelationIncludeOptions<Entities[TargetName], IncludeForRelations<TargetRelations<Entities, Stores, TargetName>>>
-        }
-    ) => HasManyConfig<TSource, Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
-
-    hasOne: <TargetName extends keyof Entities & string>(
-        name: TargetName,
-        config: {
-            primaryKey?: KeySelector<TSource>
-            foreignKey: keyof Entities[TargetName] & string
-            options?: RelationIncludeOptions<Entities[TargetName], IncludeForRelations<TargetRelations<Entities, Stores, TargetName>>>
-        }
-    ) => HasOneConfig<TSource, Entities[TargetName], TargetRelations<Entities, Stores, TargetName>>
-}
-
-export type CreateAtomaStoreOptions<
-    Entities extends Record<string, Entity>,
-    Name extends keyof Entities & string,
-    Stores = {},
-    Relations = {}
-> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations' | 'store'> & {
-    name: Name
-    adapter?: IAdapter<Entities[Name]>
-    relations?: Relations
-}
-
-type CreateAtomaStoreOptionsFactory<
-    Entities extends Record<string, Entity>,
-    Name extends keyof Entities & string,
-    Stores,
-    Relations extends RelationMap<Entities[Name]>
-> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations' | 'store'> & {
-    name: Name
-    adapter?: IAdapter<Entities[Name]>
-    relations?: (dsl: RelationsDsl<Entities, Stores, Entities[Name]>) => Relations
-}
-
-type CreateAtomaStoreOptionsSchema<
-    Entities extends Record<string, Entity>,
-    Name extends keyof Entities & string,
-    Stores,
-    Schema extends RelationsSchema<Entities, Stores, Name>
-> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations' | 'store'> & {
-    name: Name
-    adapter?: IAdapter<Entities[Name]>
-    relations?: Schema
-}
-
-export function createAtomaStore<
-    Entities extends Record<string, Entity>,
-    Name extends keyof Entities & string,
-    Stores,
-    const Schema extends RelationsSchema<Entities, Stores, Name> = {}
->(
-    ctx: AtomaClientContext<Entities, Stores>,
-    options: CreateAtomaStoreOptionsSchema<Entities, Name, Stores, Schema>
-): CoreStore<Entities[Name], RelationMapFromSchema<Entities, Stores, Name, Schema>>
-
-export function createAtomaStore<
-    Entities extends Record<string, Entity>,
-    Name extends keyof Entities & string,
-    Stores,
-    const Relations extends RelationMap<Entities[Name]> = {}
->(
-    ctx: AtomaClientContext<Entities, Stores>,
-    options: CreateAtomaStoreOptionsFactory<Entities, Name, Stores, Relations>
-): CoreStore<Entities[Name], Relations>
-
-export function createAtomaStore<
-    Entities extends Record<string, Entity>,
-    Name extends keyof Entities & string,
-    Stores
->(
-    ctx: AtomaClientContext<Entities, Stores>,
-    options: CreateAtomaStoreOptions<Entities, Name, Stores, any>
-): CoreStore<Entities[Name], any> {
-    const adapter = (options.adapter ?? ctx.defaultAdapterFactory(options.name)) as IAdapter<Entities[Name]>
+export const createAtomaStore = ((ctx: any, options: any) => {
+    const adapter = options.adapter ?? ctx.defaultAdapterFactory(options.name)
 
     const createFromDsl = (factory: any) =>
         factory({
@@ -236,7 +46,7 @@ export function createAtomaStore<
             : createFromSchema(options.relations)
         : undefined
 
-    return Core.store.createCoreStore<Entities[Name], any>({
+    return Core.store.createCoreStore<any, any>({
         ...(options as any),
         name: options.name,
         store: ctx.jotaiStore as any,
@@ -244,4 +54,39 @@ export function createAtomaStore<
         relations: relationsFactory as any,
         resolveStore: ctx.resolveStore as any
     })
+}) as CreateAtomaStore
+
+export function createStoreInstance(args: {
+    name: string
+    stores: StoresConstraint<any>
+    ctx: AtomaClientContext<any, any>
+}): { store: CoreStore<any, any>; handle: StoreHandle<any> | null } {
+    const name = String(args.name)
+    const override = args.stores?.[name]
+
+    const created = (() => {
+        if (!override) return createAtomaStore(args.ctx, { name })
+        if (typeof override === 'function') return override(args.ctx)
+        if (typeof (override as any)?.name === 'string' && (override as any).name !== name) {
+            throw new Error(`[Atoma] defineStores(...).defineClient: stores["${String(name)}"].name 不一致（收到 "${String((override as any).name)}"）`)
+        }
+        return createAtomaStore(args.ctx, { ...(override as any), name })
+    })()
+
+    const handle = Core.store.getHandle(created)
+    return {
+        store: created,
+        handle
+    }
 }
+
+export type {
+    BelongsToSchema,
+    CreateAtomaStoreOptions,
+    HasManySchema,
+    HasOneSchema,
+    RelationMapFromSchema,
+    RelationSchemaItem,
+    RelationsDsl,
+    RelationsSchema
+} from './types'

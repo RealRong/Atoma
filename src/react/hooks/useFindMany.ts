@@ -2,8 +2,23 @@ import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useState } from 'react'
 import { Core } from '#core'
 import type { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, RelationIncludeInput, Entity, WithRelations } from '#core'
-import type { UseFindManyResult } from '../types'
 import { useRelations } from './useRelations'
+
+ type UseFindManyResult<
+    T,
+    Relations = {},
+    Include extends RelationIncludeInput<Relations> = {}
+> = {
+    data: keyof Include extends never
+    ? T[]
+    : WithRelations<T, Relations, Include>[]
+    loading: boolean
+    error?: Error
+    refetch: () => Promise<T[]>
+    isStale: boolean
+    pageInfo?: PageInfo
+    fetchMore: (options: FindManyOptions<T>) => Promise<T[]>
+}
 
 export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: IStore<T, Relations>,

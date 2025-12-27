@@ -1,6 +1,6 @@
 import { BaseStore } from '../BaseStore'
 import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
-import { commitAtomMapUpdate } from './cacheWriter'
+import { commitAtomMapUpdateDelta } from './cacheWriter'
 import { resolveObservabilityContext } from './runtime'
 import type { StoreHandle } from '../types'
 import type { ObservabilityContext } from '#observability'
@@ -59,9 +59,12 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
             })
         }
 
-        const before = jotaiStore.get(atom)
-        const after = BaseStore.bulkAdd(items as PartialWithId<T>[], before)
-        commitAtomMapUpdate({ handle, before, after })
+        if (items.length) {
+            const before = jotaiStore.get(atom)
+            const after = BaseStore.bulkAdd(items as PartialWithId<T>[], before)
+            const changedIds = new Set<StoreKey>(items.map(i => (i as any).id as StoreKey))
+            commitAtomMapUpdateDelta({ handle, before, after, changedIds })
+        }
     }
 
     const processFetchOneTaskQueue = async () => {

@@ -10,7 +10,7 @@ import { createGetAll } from './store/getAll'
 import { createGetMultipleByIds } from './store/getMultipleByIds'
 import { createUpdateOne } from './store/updateOne'
 import { registerStoreHandle } from './storeHandleRegistry'
-import { createStoreServices } from './StoreServices'
+import { MutationPipeline } from './mutation'
 import type { JotaiStore } from './types'
 import type { DebugConfig, DebugEvent } from '#observability'
 import type {
@@ -26,6 +26,13 @@ import type {
     StoreToken
 } from './types'
 
+export interface StoreServices {
+    mutation: MutationPipeline
+    resolveStore?: (name: StoreToken) => IStore<any> | undefined
+    debug?: DebugConfig
+    debugSink?: (e: DebugEvent) => void
+}
+
 export interface CoreStoreConfig<T extends Entity> {
     name: string
     adapter: IAdapter<T>
@@ -35,7 +42,6 @@ export interface CoreStoreConfig<T extends Entity> {
     schema?: SchemaValidator<T>
     hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>
-    queue?: Partial<import('./types').QueueConfig>
     devtools?: DevtoolsBridge
     debug?: DebugConfig
     resolveStore?: (name: StoreToken) => IStore<any> | undefined
@@ -75,11 +81,12 @@ export function createCoreStore<T extends Entity, Relations = {}>(
     const resolvedAdapter = config.adapter
 
     const jotaiStore = config.store
-    const services = createStoreServices(config.queue, {
+    const services: StoreServices = {
+        mutation: new MutationPipeline(),
+        resolveStore: config.resolveStore,
         debug: resolvedDebug,
-        debugSink,
-        resolveStore: config.resolveStore
-    })
+        debugSink
+    }
     const objectMapAtom = atom(new Map<StoreKey, T>())
 
     const handle = createStoreHandle<T>({

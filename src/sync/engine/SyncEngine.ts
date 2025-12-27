@@ -1,5 +1,5 @@
 import type { SyncClient, SyncConfig, SyncOutboxItem } from '../types'
-import { createApplier } from '../internal'
+import { createApplier, toError } from '../internal'
 import { PushLane } from '../lanes/PushLane'
 import { PullLane } from '../lanes/PullLane'
 import { SubscribeLane, subscribeToVNextChangesSse } from '../lanes/SubscribeLane'
@@ -329,8 +329,4 @@ export class SyncEngine implements SyncClient {
     private nextOpId(prefix: 'w' | 'c') {
         return Protocol.ids.createOpId(prefix, { now: () => this.now() })
     }
-}
-
-function toError(error: unknown): Error {
-    return error instanceof Error ? error : new Error(String(error))
 }

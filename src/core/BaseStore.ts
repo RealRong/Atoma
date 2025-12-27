@@ -98,4 +98,4 @@ export const BaseStore = {
 
 export default BaseStore
 
-export type { StoreServices } from './StoreServices'
+export type { StoreServices } from './createCoreStore'

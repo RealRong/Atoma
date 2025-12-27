@@ -16,6 +16,24 @@ export const createActionId = (): string => {
     return createFallbackId()
 }
 
+export type CreateOpContextArgs = Readonly<{
+    scope: string
+    origin?: OperationOrigin
+    label?: string
+    traceId?: string
+}>
+
+export function createOpContext(args: CreateOpContextArgs): OperationContext {
+    return {
+        scope: String(args.scope || 'default'),
+        origin: args.origin ?? 'user',
+        actionId: createActionId(),
+        label: args.label,
+        timestamp: Date.now(),
+        traceId: args.traceId
+    }
+}
+
 export const normalizeOperationContext = (
     ctx: OperationContext | undefined,
     options?: { defaultScope?: string; defaultOrigin?: OperationOrigin; traceId?: string }
@@ -35,4 +53,3 @@ export const normalizeOperationContext = (
         traceId
     }
 }
-

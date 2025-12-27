@@ -42,6 +42,17 @@ export class StoreIndexes<T> {
         })
     }
 
+    applyChangedIds(before: Map<StoreKey, T>, after: Map<StoreKey, T>, changedIds: Iterable<StoreKey>) {
+        for (const id of changedIds) {
+            const prev = before.get(id)
+            const next = after.get(id)
+
+            if (prev === next) continue
+            if (prev) this.manager.remove(prev)
+            if (next) this.manager.add(next)
+        }
+    }
+
     applyMapDiff(before: Map<StoreKey, T>, after: Map<StoreKey, T>) {
         // removals + updates
         before.forEach((prevItem, id) => {
@@ -64,4 +75,3 @@ export class StoreIndexes<T> {
         })
     }
 }
-

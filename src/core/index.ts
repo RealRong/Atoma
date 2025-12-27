@@ -1,15 +1,17 @@
 import { createCoreStore, createStore } from './createCoreStore'
 import { BaseStore } from './BaseStore'
 import { setDefaultIdGenerator, defaultSnowflakeGenerator } from './idGenerator'
-import { createActionId, normalizeOperationContext } from './operationContext'
+import { createActionId, createOpContext, normalizeOperationContext } from './operationContext'
 import { applyQuery, extractQueryFields, stableStringify } from './query'
 import { belongsTo, hasMany, hasOne, variants } from './relations/builders'
 import { RelationResolver } from './relations/RelationResolver'
+import { collectRelationStoreTokens, projectRelationsBatch } from './relations/projector'
 import { normalizeKey } from './relations/utils'
 import { HistoryManager } from './history/HistoryManager'
 import { getStoreHandle } from './storeHandleRegistry'
-import { commitAtomMapUpdate } from './store/cacheWriter'
+import { commitAtomMapUpdate, commitAtomMapUpdateDelta } from './store/cacheWriter'
 import { validateWithSchema } from './store/validation'
+import { applyStoreWriteback } from './store/writeback'
 import { fuzzySearch } from './search'
 
 export const Core = {
@@ -19,7 +21,11 @@ export const Core = {
         BaseStore,
         getHandle: getStoreHandle,
         cacheWriter: {
-            commitAtomMapUpdate
+            commitAtomMapUpdate,
+            commitAtomMapUpdateDelta
+        },
+        writeback: {
+            applyStoreWriteback
         },
         validation: {
             validateWithSchema
@@ -31,6 +37,7 @@ export const Core = {
     },
     operation: {
         createActionId,
+        createOpContext,
         normalizeOperationContext
     },
     query: {
@@ -41,6 +48,8 @@ export const Core = {
     relations: {
         RelationResolver,
         normalizeKey,
+        collectRelationStoreTokens,
+        projectRelationsBatch,
         belongsTo,
         hasMany,
         hasOne,

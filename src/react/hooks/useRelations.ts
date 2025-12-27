@@ -33,65 +33,100 @@ export function useRelations<T extends Entity>(
         ? undefined
         : include
 
-    const includeKey = useMemo(() => Core.query.stableStringify(include), [include])
+    const includeKey = useMemo(() => Core.query.stableStringify(effectiveInclude), [effectiveInclude])
+
     const [data, setData] = useState<T[]>(items)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<Error | undefined>(undefined)
-    const resolvedSignatureRef = useRef<string>('')
-    const relationsSnapshotRef = useRef<Map<string, Record<string, any>>>(new Map())
-    const includeNamesRef = useRef<string[]>([])
 
-    const buildSignature = () => {
-        const idsSignature = Array.from(
-            new Set(
-                items
-                    .map(item => (item as any)?.id)
-                    .filter(id => id !== undefined && id !== null)
-                    .map(id => Core.relations.normalizeKey(id as StoreKey))
-            )
-        ).sort().join('|')
+    const snapshotRef = useRef<Map<StoreKey, Record<string, any>>>(new Map())
+    const snapshotNamesRef = useRef<string[]>([])
 
-        const relKeys: string[] = []
-        if (relations && effectiveInclude) {
+    const { liveInclude, snapshotInclude, snapshotNames } = useMemo(() => {
+        const outLive: Record<string, any> = {}
+        const outSnapshot: Record<string, any> = {}
+
+        if (effectiveInclude) {
             Object.entries(effectiveInclude).forEach(([name, opts]) => {
-                if (opts === undefined || opts === null || opts === false) return
-                const rel = relations[name]
-                if (!rel) return
-                if (rel.type === 'belongsTo') {
-                    const fk = rel.foreignKey
-                    const sig = Array.from(
-                        new Set(
-                            items
-                                .map(it => (typeof fk === 'function' ? fk(it as any) : (it as any)?.[fk]))
-                                .filter(v => v !== undefined && v !== null)
-                                .map(v => Core.relations.normalizeKey(v as StoreKey))
-                        )
-                    ).sort().join(',')
-                    relKeys.push(`${name}:${sig}`)
-                } else if (rel.type === 'hasMany') {
-                    const sig = Array.from(
-                        new Set(
-                            items
-                                .map(it => (it as any)?.id)
-                                .filter(v => v !== undefined && v !== null)
-                                .map(v => Core.relations.normalizeKey(v as StoreKey))
-                        )
-                    ).sort().join(',')
-                    relKeys.push(`${name}:${sig}`)
-                }
+                if (opts === false || opts === undefined || opts === null) return
+                const live = typeof opts === 'object' ? (opts as any).live !== false : true
+                if (live) outLive[name] = opts
+                else outSnapshot[name] = opts
             })
         }
 
-        return `${includeKey}::${idsSignature}::${relKeys.join('|')}`
+        const snapNames = Object.keys(outSnapshot)
+
+        return {
+            liveInclude: Object.keys(outLive).length ? outLive : undefined,
+            snapshotInclude: snapNames.length ? outSnapshot : undefined,
+            snapshotNames: snapNames
+        }
+    }, [includeKey])
+
+    // include/relations 变化时先清空快照，避免短暂合并旧数据
+    useEffect(() => {
+        snapshotRef.current = new Map()
+        snapshotNamesRef.current = []
+    }, [includeKey, relations])
+
+    const getStoreMap = (storeToken: StoreToken): Map<StoreKey, any> | undefined => {
+        if (!resolveStore) return undefined
+        const store = resolveStore(storeToken)
+        if (!store) return undefined
+        const handle = Core.store.getHandle(store)
+        if (!handle || typeof handle.jotaiStore.get !== 'function') return undefined
+        return handle.jotaiStore.get(handle.atom) as Map<StoreKey, any>
     }
 
-    const canReuseRelations = () => buildSignature() === resolvedSignatureRef.current
+    const project = (source: T[]): T[] => {
+        if (!effectiveInclude || !relations || !resolveStore || source.length === 0) return source
 
-    const runResolve = async () => {
+        const projectedLive = Core.relations.projectRelationsBatch(
+            source,
+            liveInclude,
+            relations,
+            getStoreMap
+        ) as T[]
+
+        const names = snapshotNamesRef.current
+        if (!names.length) return projectedLive
+
+        const snapshot = snapshotRef.current
+        return projectedLive.map(item => {
+            const cached = snapshot.get((item as any).id as StoreKey)
+            if (!cached) return item
+            return { ...item, ...cached } as any
+        })
+    }
+
+    const buildSnapshot = (source: T[]) => {
+        snapshotRef.current = new Map()
+        snapshotNamesRef.current = []
+
+        if (!snapshotInclude || !snapshotNames.length || !relations || !resolveStore || source.length === 0) return
+
+        const projected = Core.relations.projectRelationsBatch(source, snapshotInclude, relations, getStoreMap) as any[]
+
+        const next = new Map<StoreKey, Record<string, any>>()
+        projected.forEach(item => {
+            const id = (item as any)?.id as StoreKey | undefined | null
+            if (id === undefined || id === null) return
+            const values: Record<string, any> = {}
+            snapshotNames.forEach(name => { values[name] = item[name] })
+            next.set(id, values)
+        })
+
+        snapshotRef.current = next
+        snapshotNamesRef.current = snapshotNames
+    }
+
+    const runPrefetch = async (): Promise<T[]> => {
         if (!effectiveInclude || !relations || items.length === 0) {
-            relationsSnapshotRef.current = new Map()
-            includeNamesRef.current = []
-            resolvedSignatureRef.current = buildSignature()
+            snapshotRef.current = new Map()
+            snapshotNamesRef.current = []
+            setError(undefined)
+            setLoading(false)
             setData(items)
             return items
         }
@@ -99,203 +134,113 @@ export function useRelations<T extends Entity>(
         if (!resolveStore) {
             const err = new Error('[Atoma] useRelations: 缺少 resolveStore（StoreToken -> IStore），无法解析 include 关系')
             setError(err)
+            setLoading(false)
             setData(items)
-            resolvedSignatureRef.current = buildSignature()
             return items
         }
 
-        const sig = buildSignature()
         setLoading(true)
         setError(undefined)
 
-        const includeWithSkipStore = Object.fromEntries(
-            Object.entries(effectiveInclude).map(([key, opts]) => {
-                if (opts === false || opts === undefined) return [key, opts]
-                if (opts && typeof opts === 'object') {
-                    const { live: _live, ...rest } = opts as any
-                    return [key, { ...rest, skipStore: false }]
-                }
-                return [key, { skipStore: false }]
-            })
-        )
-
-        const includeNames = Object.entries(includeWithSkipStore)
-            .filter(([, v]) => v !== false && v !== undefined && v !== null)
-            .map(([k]) => k)
-
         try {
-            const resolved = await Core.relations.RelationResolver.resolveBatch(
+            await Core.relations.RelationResolver.prefetchBatch(
                 items,
-                includeWithSkipStore,
+                effectiveInclude,
                 relations,
                 resolveStore,
                 { onError: 'partial', timeout: 5000, maxConcurrency: 10 }
             )
-            const snapshot = new Map<string, Record<string, any>>()
-            resolved.forEach(item => {
-                const id = (item as any)?.id
-                if (id === undefined || id === null) return
-                const key = Core.relations.normalizeKey(id as StoreKey)
-                const relValues: Record<string, any> = {}
-                includeNames.forEach(name => {
-                    relValues[name] = (item as any)[name]
-                })
-                snapshot.set(key, relValues)
-            })
-
-            relationsSnapshotRef.current = snapshot
-            includeNamesRef.current = includeNames
-            resolvedSignatureRef.current = sig
-
-            setData(resolved)
-            return resolved
         } catch (err: any) {
             const e = err instanceof Error ? err : new Error(String(err))
             setError(e)
-            setData(items)
-            return items
         } finally {
             setLoading(false)
         }
+
+        buildSnapshot(items)
+        const projected = project(items)
+        setData(projected)
+        return projected
     }
 
-    // live 订阅：监听子 store map 变化
+    // items/include/relations 变化：触发 prefetch（并刷新 snapshot）
+    useEffect(() => {
+        let cancelled = false
+
+        const run = async () => {
+            if (!effectiveInclude || !relations || items.length === 0) {
+                snapshotRef.current = new Map()
+                snapshotNamesRef.current = []
+                setError(undefined)
+                setLoading(false)
+                setData(items)
+                return
+            }
+
+            if (!resolveStore) {
+                const err = new Error('[Atoma] useRelations: 缺少 resolveStore（StoreToken -> IStore），无法解析 include 关系')
+                setError(err)
+                setLoading(false)
+                setData(items)
+                return
+            }
+
+            setLoading(true)
+            setError(undefined)
+
+            try {
+                await Core.relations.RelationResolver.prefetchBatch(
+                    items,
+                    effectiveInclude,
+                    relations,
+                    resolveStore,
+                    { onError: 'partial', timeout: 5000, maxConcurrency: 10 }
+                )
+            } catch (err: any) {
+                const e = err instanceof Error ? err : new Error(String(err))
+                setError(e)
+            } finally {
+                if (!cancelled) setLoading(false)
+            }
+
+            if (cancelled) return
+            buildSnapshot(items)
+            setData(project(items))
+        }
+
+        run()
+        return () => { cancelled = true }
+    }, [items, includeKey, relations, resolveStore])
+
+    // live 订阅：监听相关 store map 变化
     const [liveTick, setLiveTick] = useState(0)
     useEffect(() => {
-        if (!effectiveInclude || !relations || !resolveStore) return
+        if (!liveInclude || !relations || !resolveStore) return
+
+        const tokens = Core.relations.collectRelationStoreTokens(liveInclude, relations)
+        if (!tokens.length) return
+
         const unsubscribers: Array<() => void> = []
-        Object.entries(effectiveInclude).forEach(([name, opts]) => {
-            if (opts === false || opts === undefined || opts === null) return
-            const live = typeof opts === 'object' ? opts.live !== false : true
-            if (!live) return
-            const rel = relations[name]
-            if (!rel) return
-            const store = resolveStore((rel as any).store)
+        tokens.forEach(token => {
+            const store = resolveStore(token)
             if (!store) return
             const handle = Core.store.getHandle(store)
             if (!handle || typeof handle.jotaiStore.sub !== 'function') return
             const unsub = handle.jotaiStore.sub(handle.atom, () => setLiveTick(t => t + 1))
             unsubscribers.push(unsub)
         })
+
         return () => {
             unsubscribers.forEach(fn => fn())
         }
+    }, [includeKey, relations, resolveStore])
 
-    }, [includeKey, relations])
-
-    const computeLiveRelations = (item: T, includeNames: string[]) => {
-        if (!relations) return {}
-        if (!resolveStore) return {}
-        const merged: Record<string, any> = {}
-        includeNames.forEach(name => {
-            const rel = relations[name]
-            if (!rel) return
-            const includeOpts = effectiveInclude?.[name]
-            const live = typeof includeOpts === 'object' ? includeOpts.live !== false : true
-            if (!live) return
-            const store = resolveStore((rel as any).store)
-            if (!store) return
-            const handle = Core.store.getHandle(store)
-            if (!handle || typeof handle.jotaiStore.get !== 'function') return
-            const map = handle.jotaiStore.get(handle.atom) as Map<StoreKey, any>
-
-            if (rel.type === 'belongsTo') {
-                const fk = typeof rel.foreignKey === 'function'
-                    ? rel.foreignKey(item as any)
-                    : (item as any)[rel.foreignKey]
-                const val = fk !== undefined && fk !== null ? map.get(fk as StoreKey) ?? null : null
-                merged[name] = val ?? null
-            } else if (rel.type === 'hasMany') {
-                const pkVal = typeof rel.primaryKey === 'function'
-                    ? rel.primaryKey(item as any)
-                    : (item as any).id
-
-                const matches: any[] = []
-                map.forEach(v => {
-                    if ((v as any)[rel.foreignKey] === pkVal) {
-                        matches.push(v)
-                    }
-                })
-                const orderBy = (includeOpts as any)?.orderBy
-                if (orderBy) {
-                    const rules = Array.isArray(orderBy) ? orderBy : [orderBy]
-                    matches.sort((a, b) => {
-                        for (const { field, direction } of rules) {
-                            const av = (a as any)[field]
-                            const bv = (b as any)[field]
-                            if (av === bv) continue
-                            const cmp = av < bv ? -1 : 1
-                            return direction === 'asc' ? cmp : -cmp
-                        }
-                        return 0
-                    })
-                }
-                const limit = (includeOpts as any)?.limit
-                merged[name] = typeof limit === 'number' ? matches.slice(0, limit) : matches
-            } else if (rel.type === 'hasOne') {
-                const pkVal = typeof rel.primaryKey === 'function'
-                    ? rel.primaryKey(item as any)
-                    : (item as any).id
-                let found: any = null
-                map.forEach(v => {
-                    if ((v as any)[rel.foreignKey] === pkVal) {
-                        found = v
-                    }
-                })
-                merged[name] = found
-            }
-        })
-        return merged
-    }
-
+    // liveTick 变化：仅重算 live 投影，并合并 snapshot
     useEffect(() => {
-        if (!effectiveInclude || !relations || items.length === 0) {
-            relationsSnapshotRef.current = new Map()
-            includeNamesRef.current = []
-            setData(items)
-            setLoading(false)
-            setError(undefined)
-            resolvedSignatureRef.current = buildSignature()
-            return
-        }
+        setData(project(items))
+    }, [items, includeKey, relations, resolveStore, liveTick])
 
-        if (canReuseRelations()) {
-            setLoading(false)
-            return
-        }
-
-        runResolve()
-
-    }, [items, includeKey, relations, resolveStore])
-
-    useEffect(() => {
-        if (!effectiveInclude || !relations || items.length === 0) {
-            setData(items)
-            return
-        }
-        const includeNames = includeNamesRef.current
-        const snapshot = relationsSnapshotRef.current
-        const rebased = items.map(item => {
-            const merged: any = { ...item }
-            includeNames.forEach(name => {
-                const includeOpts = effectiveInclude?.[name]
-                const live = typeof includeOpts === 'object' ? includeOpts.live !== false : true
-                if (live) {
-                    Object.assign(merged, computeLiveRelations(item, [name]))
-                } else {
-                    const cached = snapshot.get(Core.relations.normalizeKey((item as any)?.id as StoreKey))
-                    if (cached && name in cached) {
-                        merged[name] = cached[name]
-                    }
-                }
-            })
-            return merged as T
-        })
-        setData(rebased)
-
-    }, [items, includeKey, relations, liveTick])
-
-    const refetch = () => runResolve()
+    const refetch = () => runPrefetch()
 
     return { data, loading, error, refetch }
 }

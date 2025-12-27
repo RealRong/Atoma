@@ -6,7 +6,7 @@ import type { IndexDefinition, IAdapter, JotaiStore, StoreConfig, StoreHandle, S
 import type { QueryMatcherOptions } from '../query/QueryMatcher'
 import { Observability } from '#observability'
 import type { ObservabilityContext } from '#observability'
-import type { StoreServices } from '../StoreServices'
+import type { StoreServices } from '../createCoreStore'
 
 export function createStoreHandle<T extends Entity>(params: {
     atom: PrimitiveAtom<Map<StoreKey, T>>
