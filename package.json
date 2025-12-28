@@ -15,9 +15,9 @@
             "types": "./dist/react/index.d.mts",
             "import": "./dist/react/index.mjs"
         },
-        "./adapters": {
-            "types": "./dist/adapters/index.d.mts",
-            "import": "./dist/adapters/index.mjs"
+        "./datasources": {
+            "types": "./dist/datasources/index.d.mts",
+            "import": "./dist/datasources/index.mjs"
         },
         "./server": {
             "types": "./dist/server/index.d.mts",

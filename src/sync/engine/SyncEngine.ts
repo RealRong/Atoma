@@ -2,7 +2,7 @@ import type { SyncBackoffConfig, SyncClient, SyncConfig, SyncOutboxItem, SyncRet
 import { createApplier, toError } from '../internal'
 import { PushLane } from '../lanes/PushLane'
 import { PullLane } from '../lanes/PullLane'
-import { SubscribeLane, subscribeChangesSse } from '../lanes/SubscribeLane'
+import { SubscribeLane } from '../lanes/SubscribeLane'
 import { createStores } from '../store'
 import type { Cursor, Meta, WriteAction, WriteItem } from '#protocol'
 import { Protocol } from '#protocol'
@@ -107,28 +107,19 @@ export class SyncEngine implements SyncClient {
     private readonly transport: SyncTransport
 
     constructor(private readonly config: SyncConfig) {
+        const transport = (config as any)?.transport
+        const opsClient = transport?.opsClient
+        if (!transport || !opsClient || typeof opsClient.executeOps !== 'function' || typeof transport.subscribe !== 'function') {
+            throw new Error('[Sync] transport is required')
+        }
+
         this.resolved = resolveSyncConfig(config)
         this.periodicPullRetry = new RetryBackoff({
             retry: this.resolved.pull.periodic.retry,
             backoff: this.resolved.pull.periodic.backoff
         })
 
-        this.transport = {
-            executeOps: config.executeOps,
-            subscribe: (args) => {
-                if (!config.subscribeUrl) {
-                    throw new Error('[Sync] subscribeUrl is required when subscribe is enabled')
-                }
-                return subscribeChangesSse({
-                    cursor: args.cursor,
-                    buildUrl: config.subscribeUrl,
-                    eventSourceFactory: config.eventSourceFactory,
-                    eventName: config.subscribeEventName,
-                    onBatch: args.onBatch,
-                    onError: args.onError
-                })
-            }
-        }
+        this.transport = config.transport
 
         const stores = createStores({
             outboxKey: config.outboxKey,

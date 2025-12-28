@@ -22,9 +22,9 @@ export type Explain = {
         paramsSummary?: any
     }
     cacheWrite?: { writeToCache: boolean; reason?: 'skipStore' | 'sparseFields' | 'other' }
-    adapter?: { requestId?: string; opId?: string; durationMs?: number; ok?: boolean; status?: number }
+    dataSource?: { requestId?: string; opId?: string; durationMs?: number; ok?: boolean; status?: number }
     errors?: Array<{ kind: string; code: string; message: string; traceId?: string; requestId?: string; opId?: string }>
-    adapterRemoteExplain?: unknown
+    dataSourceRemoteExplain?: unknown
 }
 
 export type DebugConfig = {

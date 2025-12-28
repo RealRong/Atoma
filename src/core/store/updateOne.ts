@@ -10,7 +10,7 @@ import { prepareForUpdate } from './writePipeline'
 import type { StoreHandle } from '../types'
 
 export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
-    const { jotaiStore, atom, adapter, services, hooks, schema, transform } = handle
+    const { jotaiStore, atom, dataSource, services, hooks, schema, transform } = handle
     return async (id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         const observabilityContext = resolveObservabilityContext(handle, options)
 
@@ -20,7 +20,7 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
                 return cached as unknown as PartialWithId<T>
             }
 
-            const data = await adapter.get(id, observabilityContext)
+            const data = await dataSource.get(id, observabilityContext)
             if (!data) {
                 throw new Error(`Item with id ${id} not found`)
             }

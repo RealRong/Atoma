@@ -5,7 +5,7 @@ import { resolveObservabilityContext } from './runtime'
 import type { StoreHandle } from '../types'
 
 export function createGetMultipleByIds<T extends Entity>(handle: StoreHandle<T>) {
-    const { jotaiStore, atom, adapter, services, indexes, transform } = handle
+    const { jotaiStore, atom, dataSource, services, indexes, transform } = handle
 
     return async (ids: StoreKey[], cache = true, options?: StoreReadOptions) => {
         const map = jotaiStore.get(atom) as Map<StoreKey, T>
@@ -25,7 +25,7 @@ export function createGetMultipleByIds<T extends Entity>(handle: StoreHandle<T>)
         if (missing.length > 0) {
             const observabilityContext = resolveObservabilityContext(handle, options)
 
-            fetched = (await adapter.bulkGet(missing, observabilityContext)).filter((i): i is T => i !== undefined)
+            fetched = (await dataSource.bulkGet(missing, observabilityContext)).filter((i): i is T => i !== undefined)
             fetched = fetched.map(transform)
 
             if (cache && fetched.some(i => !map.has((i as any).id))) {

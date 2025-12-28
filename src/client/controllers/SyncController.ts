@@ -3,65 +3,63 @@ import { Core } from '#core'
 import type { ObservabilityContext } from '#observability'
 import { Observability } from '#observability'
 import { Sync, SyncWriteAck, SyncWriteReject, type SyncClient, type SyncEvent, type SyncPhase } from '../../sync'
-import type { Change, Cursor, Meta, Operation, OperationResult } from '#protocol'
-import { createOpsTransport } from '../../adapters/http/transport/ops'
+import type { Change, ChangeBatch, Cursor, Meta, Operation, OperationResult } from '#protocol'
 import type { AtomaSync } from '../types'
 import type { ClientRuntime } from '../runtime'
 import { OutboxPersister } from '../../core/mutation/pipeline/persisters/Outbox'
 import type { BeforePersistContext, PersistResult } from '../../core/mutation/hooks'
+import { subscribeChangesSse } from '../../sync/lanes/SubscribeLane'
+import type { ResolvedBackend } from '../backend'
 
 export type IdRemapSink = (storeName: string, from: StoreKey, to: StoreKey) => void
 
-export type AtomaClientSyncConfig = {
-    enabled?: boolean
-    /** ops base URL（例如 '/api' 或 'https://example.com'） */
-    baseURL: string
-    /** ops endpoint path（默认：'/ops'） */
-    opsEndpoint?: string
-    /** SSE subscribe endpoint path（默认：'/sync/subscribe-vnext'） */
-    subscribeEndpoint?: string
-    /** 是否启用 subscribe（默认：true） */
-    subscribe?: boolean
-    /** SSE event name（默认：Protocol.SSE_EVENT_CHANGES） */
-    subscribeEventName?: string
-    /** 自定义 subscribeUrl 构造（优先级高于 subscribeEndpoint） */
-    subscribeUrl?: (cursor: Cursor) => string
-    /** 当 EventSource 不可用或需要自定义时注入 */
-    eventSourceFactory?: (url: string) => EventSource
-    /** 同步资源过滤（默认：不过滤；服务端返回所有 changes） */
-    resources?: string[]
-    /** outbox/cursor 存储 key（默认：基于 baseURL 生成） */
-    outboxKey?: string
-    cursorKey?: string
-    maxQueueSize?: number
-    maxPushItems?: number
-    pullLimit?: number
-    reconnectDelayMs?: number
-    periodicPullIntervalMs?: number
-    inFlightTimeoutMs?: number
-    retry?: { maxAttempts?: number }
-    backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
-    lockKey?: string
-    lockTtlMs?: number
-    lockRenewIntervalMs?: number
-    now?: () => number
-    conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
-    returning?: boolean
-    headers?: () => Promise<Record<string, string>> | Record<string, string>
-    onError?: (error: Error, context: { phase: SyncPhase }) => void
-    onEvent?: (event: SyncEvent) => void
-}
+export type AtomaClientSyncConfig =
+    | boolean
+    | {
+        enabled?: boolean
+        /** 是否启用 subscribe（默认：true） */
+        subscribe?: boolean
+        /** SSE event name（默认：Protocol.sse.events.CHANGES） */
+        subscribeEventName?: string
+        /** 同步资源过滤（默认：不过滤；服务端返回所有 changes） */
+        resources?: string[]
+        /** outbox/cursor 存储 key（默认：基于 backend.key 生成） */
+        outboxKey?: string
+        cursorKey?: string
+        maxQueueSize?: number
+        maxPushItems?: number
+        pullLimit?: number
+        reconnectDelayMs?: number
+        periodicPullIntervalMs?: number
+        inFlightTimeoutMs?: number
+        retry?: { maxAttempts?: number }
+        backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
+        lockKey?: string
+        lockTtlMs?: number
+        lockRenewIntervalMs?: number
+        now?: () => number
+        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
+        returning?: boolean
+        onError?: (error: Error, context: { phase: SyncPhase }) => void
+        onEvent?: (event: SyncEvent) => void
+    }
 
 export function createSyncController(args: {
     runtime: ClientRuntime
+    backend?: ResolvedBackend
     syncConfig?: AtomaClientSyncConfig
     idRemapSink?: IdRemapSink
 }): Readonly<{
     sync: AtomaSync
     dispose: () => void
 }> {
-    const syncConfig = args.syncConfig
-    const syncEnabled = syncConfig?.enabled !== false
+    const syncConfigRaw = args.syncConfig
+    const syncConfig = syncConfigRaw === true
+        ? {}
+        : syncConfigRaw === false
+            ? { enabled: false }
+            : syncConfigRaw
+    const syncEnabled = Boolean(syncConfig && (syncConfig as any).enabled !== false)
 
     let syncStarted = false
     let syncEngine: SyncClient | null = null
@@ -131,7 +129,7 @@ export function createSyncController(args: {
     // ---------------------------------------------
     // 3) Engine（只做构造与缓存）
     // ---------------------------------------------
-    const syncDefaultsKey = syncConfig?.baseURL ? String(syncConfig.baseURL) : 'default'
+    const syncDefaultsKey = args.backend?.key ? String(args.backend.key) : 'default'
     const defaultOutboxKey = `atoma:sync:${syncDefaultsKey}:outbox`
     const defaultCursorKey = `atoma:sync:${syncDefaultsKey}:cursor`
 
@@ -140,15 +138,37 @@ export function createSyncController(args: {
         if (!syncConfig || !syncEnabled) {
             throw new Error('[Atoma] sync: 未启用或未配置（请在 defineClient({ sync: ... }) 中提供配置）')
         }
+        if (!args.backend) {
+            throw new Error('[Atoma] sync: backend 未配置（请在 defineClient({ backend: ... }) 中提供配置）')
+        }
 
         const outboxKey = syncConfig.outboxKey ?? defaultOutboxKey
         const cursorKey = syncConfig.cursorKey ?? defaultCursorKey
 
+        const backend = args.backend
+
+        if (syncConfig.subscribe !== false && !backend.subscribe && !backend.sse?.buildUrl) {
+            throw new Error('[Atoma] sync: subscribe 已启用，但 backend 未提供 subscribe 能力（请提供 backend.http.subscribePath/subscribeUrl、backend.sse 或 backend.subscribe）')
+        }
+
+        const transport = {
+            opsClient: backend.opsClient,
+            subscribe: backend.subscribe
+                ? backend.subscribe
+                : (subArgs: { cursor: Cursor; onBatch: (batch: ChangeBatch) => void; onError: (error: unknown) => void }) => {
+                    return subscribeChangesSse({
+                        cursor: subArgs.cursor,
+                        buildUrl: buildSubscribeUrl,
+                        eventSourceFactory: backend.sse?.eventSourceFactory,
+                        eventName: syncConfig.subscribeEventName,
+                        onBatch: subArgs.onBatch,
+                        onError: subArgs.onError
+                    })
+                }
+        }
+
         syncEngine = Sync.create({
-            executeOps,
-            subscribeUrl: buildSubscribeUrl,
-            eventSourceFactory: syncConfig.eventSourceFactory,
-            subscribeEventName: syncConfig.subscribeEventName,
+            transport,
             onPullChanges: applyPullChanges,
             onWriteAck: applyWriteAck,
             onWriteReject: applyWriteReject,
@@ -216,7 +236,7 @@ export function createSyncController(args: {
                 : (undefined as any)
 
             const upserts = uniqueUpsertKeys.length
-                ? (await handle.adapter.bulkGet(uniqueUpsertKeys, ctx)).filter((i: any): i is any => i !== undefined)
+                ? (await handle.dataSource.bulkGet(uniqueUpsertKeys, ctx)).filter((i: any): i is any => i !== undefined)
                 : []
 
             await Core.store.writeback.applyStoreWriteback(handle as any, {
@@ -330,46 +350,12 @@ export function createSyncController(args: {
         await Core.store.writeback.applyStoreWriteback(handle as any, { upserts, deletes })
     }
 
-    // ---------------------------------------------
-    // 5) Transport（HTTP + SSE）
-    // ---------------------------------------------
-    const opsTransport = syncConfig
-        ? createOpsTransport({
-            fetchFn: fetch.bind(globalThis),
-            getHeaders: async () => {
-                if (!syncConfig.headers) return {}
-                const headers = syncConfig.headers()
-                return headers instanceof Promise ? await headers : headers
-            }
-        })
-        : null
-
-    async function executeOps(runArgs: { ops: Operation[]; meta: Meta }): Promise<OperationResult[]> {
-        if (!syncConfig || !opsTransport) {
-            throw new Error('[Atoma] sync: 未配置（请在 defineClient({ sync: ... }) 中提供 baseURL 等配置）')
-        }
-        const endpoint = syncConfig.opsEndpoint ?? '/ops'
-        const res = await opsTransport.executeOps({
-            url: syncConfig.baseURL,
-            endpoint,
-            ops: runArgs.ops,
-            v: runArgs.meta.v,
-            clientTimeMs: runArgs.meta.clientTimeMs
-        })
-        return res.results as any
-    }
-
     function buildSubscribeUrl(cursor: Cursor): string {
-        if (!syncConfig) {
-            throw new Error('[Atoma] sync: 未配置 subscribeUrl')
+        const backend = args.backend
+        if (!backend?.sse?.buildUrl) {
+            throw new Error('[Atoma] sync: subscribe 已启用，但 backend 未配置 SSE subscribeUrl')
         }
-        const base = syncConfig.subscribeUrl
-            ? syncConfig.subscribeUrl(cursor)
-            : (() => {
-                const endpoint = syncConfig.subscribeEndpoint ?? '/sync/subscribe-vnext'
-                const base = joinUrl(syncConfig.baseURL, endpoint)
-                return withCursorParam(base, cursor)
-            })()
+        const base = backend.sse.buildUrl(cursor)
 
         if (!subscribeTraceId) {
             subscribeTraceId = Observability.trace.createId()
@@ -405,24 +391,6 @@ export function createSyncController(args: {
         sync,
         dispose
     }
-}
-
-function joinUrl(base: string, path: string): string {
-    if (!base) return path
-    if (!path) return base
-
-    const hasTrailing = base.endsWith('/')
-    const hasLeading = path.startsWith('/')
-
-    if (hasTrailing && hasLeading) return `${base}${path.slice(1)}`
-    if (!hasTrailing && !hasLeading) return `${base}/${path}`
-    return `${base}${path}`
-}
-
-function withCursorParam(url: string, cursor: Cursor): string {
-    const encoded = encodeURIComponent(String(cursor))
-    if (url.includes('?')) return `${url}&cursor=${encoded}`
-    return `${url}?cursor=${encoded}`
 }
 
 function withQueryParams(url: string, params: { traceId: string; requestId: string }): string {

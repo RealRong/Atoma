@@ -3,7 +3,7 @@ import { Core } from '#core'
 import type { AtomaClientContext, CreateAtomaStore, StoresConstraint } from './types'
 
 export const createAtomaStore = ((ctx: any, options: any) => {
-    const adapter = options.adapter ?? ctx.defaultAdapterFactory(options.name)
+    const dataSource = options.dataSource ?? ctx.defaultDataSourceFactory(options.name)
 
     const createFromDsl = (factory: any) =>
         factory({
@@ -50,7 +50,7 @@ export const createAtomaStore = ((ctx: any, options: any) => {
         ...(options as any),
         name: options.name,
         store: ctx.jotaiStore as any,
-        adapter,
+        dataSource,
         relations: relationsFactory as any,
         resolveStore: ctx.resolveStore as any
     })

@@ -1,7 +1,7 @@
-export type RetryConfig = {
+export type RetryOptions = {
     maxAttempts?: number
     backoff?: 'exponential' | 'linear'
-    initialDelay?: number
+    initialDelayMs?: number
     maxElapsedMs?: number
     jitter?: boolean
 }
@@ -13,13 +13,13 @@ function addJitter(base: number): number {
 
 function calculateBackoff(
     backoff: 'exponential' | 'linear',
-    initialDelay: number,
+    initialDelayMs: number,
     attempt: number,
     jitter: boolean
 ): number {
     const base = backoff === 'exponential'
-        ? initialDelay * Math.pow(2, attempt - 1)
-        : initialDelay * attempt
+        ? initialDelayMs * Math.pow(2, attempt - 1)
+        : initialDelayMs * attempt
     return jitter ? addJitter(base) : base
 }
 
@@ -29,7 +29,7 @@ export async function fetchWithRetry(
     fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
     input: RequestInfo | URL,
     init: RequestInit | undefined,
-    retry: RetryConfig | undefined,
+    retry: RetryOptions | undefined,
     startedAt = Date.now(),
     attemptNumber = 1
 ): Promise<Response> {
@@ -56,8 +56,8 @@ export async function fetchWithRetry(
         if (elapsed >= maxElapsedMs) throw error
 
         const backoff = retry?.backoff ?? 'exponential'
-        const initialDelay = retry?.initialDelay ?? 1000
-        const delay = calculateBackoff(backoff, initialDelay, attemptNumber, retry?.jitter === true)
+        const initialDelayMs = retry?.initialDelayMs ?? 1000
+        const delay = calculateBackoff(backoff, initialDelayMs, attemptNumber, retry?.jitter === true)
 
         await sleep(delay)
         return fetchWithRetry(fetchFn, input, init, retry, startedAt, attemptNumber + 1)

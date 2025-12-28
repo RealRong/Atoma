@@ -49,23 +49,16 @@ export type BaseEntity = IBase
 export type PartialWithId<T> = Partial<T> & { id: StoreKey }
 
 /**
- * Adapter interface - abstracts the storage backend
+ * DataSource interface - abstracts the persistence/remote backend
  */
-export interface IAdapter<T extends Entity> {
-    /** Adapter name for debugging */
+export interface IDataSource<T extends Entity> {
+    /** DataSource name for debugging */
     name: string
 
     /**
-     * Store bindings (optional)
-     * - Sync-enabled adapters can use this to write back remote changes into the store cache.
-     */
-    attachStoreHandle?: (handle: StoreHandle<T>) => void
-    detachStoreHandle?: () => void
-
-    /**
      * Internal context (optional):
-     * - Only adapters that perform I/O (e.g. HTTP) need to actually consume it.
-     * - Other adapters can safely ignore the extra param.
+     * - Only data sources that perform I/O (e.g. HTTP) need to actually consume it.
+     * - Other data sources can safely ignore the extra param.
      */
     /**  
      * Persistence operations
@@ -564,7 +557,7 @@ export type StoreHandle<T extends Entity = any> = {
     atom: PrimitiveAtom<Map<StoreKey, T>>
     jotaiStore: JotaiStore
     services: StoreServices
-    adapter: IAdapter<T>
+    dataSource: IDataSource<T>
     matcher?: QueryMatcherOptions
     storeName: string
     relations?: () => any | undefined

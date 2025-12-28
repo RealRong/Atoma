@@ -81,7 +81,7 @@
   - `outbox.peek(max)` 取待发送条目
   - `buildWriteBatch(...)` 按 `(resource, action)` 把连续条目组装成一个写入 batch
   - 可选：把这些 key 标记为 inFlight
-  - `transport.executeOps({ ops: [writeOp], meta })`
+  - `transport.opsClient.executeOps({ ops: [writeOp], meta })`
   - 对每条结果：
     - ok：`applyWriteAck(...)` → `outbox.ack(keys)`
     - not ok：`applyWriteReject(...)` → `outbox.reject(keys)`
@@ -97,7 +97,7 @@
 
 - `SyncEngine.pullNow()` → `PullLane.pullNow()`
   - 读取当前 cursor（没有则用 `initialCursor`，再没有则 `'0'`）
-  - `transport.executeOps({ ops: [changes.pull], meta })`
+  - `transport.opsClient.executeOps({ ops: [changes.pull], meta })`
   - `applier.applyChanges(batch.changes)`
   - `cursor.set(batch.nextCursor)`
 
@@ -133,7 +133,7 @@
 
 ## Transport & Applier（对接点）
 
-- `SyncTransport.executeOps(...)` 是必需的服务端对接点。
+- `SyncTransport.opsClient` 是必需的服务端对接点（提供 `opsClient.executeOps(...)`）。
 - 订阅需要 `subscribeUrl`（可选 `eventSourceFactory`）。
 - `applier` 负责把 sync 事件转成用户回调：
   - `onPullChanges(changes)`
@@ -152,4 +152,3 @@
   - 是否调用了 `setSubscribed(true)`？
   - 是否配置了 `subscribeUrl`？
   - 运行环境是否有 `EventSource`（没有就需要 `eventSourceFactory`）？
-

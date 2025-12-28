@@ -1,4 +1,3 @@
-import { HTTPAdapter } from 'atoma/adapters'
 import { defineEntities } from 'atoma'
 
 export type UserEntity = {
@@ -54,14 +53,12 @@ export const client = defineEntities<Entities>().defineStores({
         }
     }
 }).defineClient({
-    defaultAdapterFactory: (resourceName) =>
-        new HTTPAdapter<any>({
-            baseURL: API_BASE,
-            resourceName,
-            batch: { endpoint: '/batch', flushIntervalMs: 5 },
-            usePatchForUpdate: true,
-            sync: { enabled: true, mode: 'sse' }
-        })
+    backend: API_BASE,
+    remote: {
+        batch: { flushIntervalMs: 5 },
+        usePatchForUpdate: true
+    },
+    sync: true
 })
 
 export const Store = client.Store

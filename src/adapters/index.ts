@@ -1,6 +1,0 @@
-export { IndexedDBAdapter } from './IndexedDBAdapter'
-export { HTTPAdapter } from './HTTPAdapter'
-export { HybridAdapter } from './HybridAdapter'
-export type { HTTPAdapterConfig } from './http/config/types'
-export type { HybridAdapterConfig } from './HybridAdapter'
-export { MemoryAdapter } from './MemoryAdapter'

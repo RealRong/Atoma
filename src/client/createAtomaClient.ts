@@ -3,6 +3,8 @@ import { createHistoryController } from './controllers/HistoryController'
 import { createSyncController } from './controllers/SyncController'
 import { createClientRuntime } from './runtime'
 import type { AtomaClient, DefineClientConfig, EntitiesDefinition, StoresConstraint, StoresDefinition } from './types'
+import { resolveBackend } from './backend'
+import { HttpDataSource } from '../datasources/HttpDataSource'
 
 const defineStoresInternal = <
     const Entities extends Record<string, Entity>,
@@ -10,14 +12,29 @@ const defineStoresInternal = <
 >(stores: Stores): StoresDefinition<Entities, Stores> => {
     return {
         defineClient: (config: DefineClientConfig<Entities>) => {
+            const backend = resolveBackend(config.backend)
+
+            const defaultDataSourceFactory = config.defaultDataSourceFactory
+                ? config.defaultDataSourceFactory
+                : ((resourceName: string) => {
+                    return new HttpDataSource<any>({
+                        opsClient: backend.opsClient,
+                        name: backend.key,
+                        resourceName,
+                        batch: config.remote?.batch,
+                        usePatchForUpdate: config.remote?.usePatchForUpdate
+                    })
+                })
+
             const runtime = createClientRuntime({
                 stores,
-                config
+                defaultDataSourceFactory
             })
 
             const historyController = createHistoryController({ runtime })
             const syncController = createSyncController({
                 runtime,
+                backend,
                 syncConfig: config.sync,
                 idRemapSink: historyController.recordIdRemap
             })

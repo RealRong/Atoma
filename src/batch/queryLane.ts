@@ -3,12 +3,12 @@ import {
     createCoalescedScheduler,
     createAbortController,
     executeOpsTasksBatch,
-    type ExecuteOpsFn,
     normalizeMaxQueueLength,
     normalizeMaxOpsPerRequest,
     toError
 } from './internal'
 import type { ObservabilityContext } from '#observability'
+import type { OpsClient } from '../backend/OpsClient'
 import type { OperationResult, QueryOp } from '#protocol'
 import type { OpsTask } from './types'
 
@@ -22,7 +22,7 @@ type QueryLaneDeps = {
         maxOpsPerRequest?: number
         onError?: (error: Error, context: unknown) => void
     }
-    executeOps: ExecuteOpsFn
+    opsClient: OpsClient
 }
 
 export class QueryLane {
@@ -100,7 +100,7 @@ export class QueryLane {
                     lane: 'query',
                     endpoint: this.deps.endpoint(),
                     tasks: batch,
-                    executeOps: this.deps.executeOps,
+                    opsClient: this.deps.opsClient,
                     controller
                 })
 

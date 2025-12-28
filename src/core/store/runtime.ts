@@ -2,7 +2,7 @@ import type { PrimitiveAtom } from 'jotai/vanilla'
 import type { DevtoolsBridge } from '../../devtools/types'
 import { registerGlobalIndex } from '../../devtools/global'
 import { StoreIndexes } from '../indexes/StoreIndexes'
-import type { IndexDefinition, IAdapter, JotaiStore, StoreConfig, StoreHandle, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../types'
+import type { IndexDefinition, IDataSource, JotaiStore, StoreConfig, StoreHandle, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../types'
 import type { QueryMatcherOptions } from '../query/QueryMatcher'
 import { Observability } from '#observability'
 import type { ObservabilityContext } from '#observability'
@@ -10,19 +10,19 @@ import type { StoreServices } from '../createCoreStore'
 
 export function createStoreHandle<T extends Entity>(params: {
     atom: PrimitiveAtom<Map<StoreKey, T>>
-    adapter: IAdapter<T>
+    dataSource: IDataSource<T>
     config: StoreConfig<T> & {
         store: JotaiStore
         services: StoreServices
         storeName: string
     }
 }): StoreHandle<T> {
-    const { atom, adapter, config } = params
+    const { atom, dataSource, config } = params
 
     const jotaiStore = config.store
     const services = config.services
 
-    const storeName = config.storeName || adapter.name || 'store'
+    const storeName = config.storeName || dataSource.name || 'store'
 
     const indexes = config.indexes && config.indexes.length ? new StoreIndexes<T>(config.indexes) : null
 
@@ -45,7 +45,7 @@ export function createStoreHandle<T extends Entity>(params: {
 
     return {
         atom,
-        adapter,
+        dataSource,
         jotaiStore,
         services,
         storeName,

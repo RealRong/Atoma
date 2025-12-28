@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { Core } from '../../src/core'
-import type { IAdapter } from '../../src/core'
+import type { IDataSource } from '../../src/core'
 
 type Post = {
     id: number
@@ -11,7 +11,7 @@ type Post = {
 }
 
 function createAdapter() {
-    const adapter: IAdapter<Post> = {
+    const adapter: IDataSource<Post> = {
         name: 'test',
         applyPatches: vi.fn(async () => { }),
         put: vi.fn(async () => { }),
@@ -30,7 +30,7 @@ describe('core remote port (phase 5): remoteAck settles tickets + emits event', 
         const adapter = createAdapter()
         const store = Core.store.createCoreStore<Post>({
             name: 'posts',
-            adapter,
+            dataSource: adapter,
             store: createJotaiStore()
         })
 
@@ -59,4 +59,3 @@ describe('core remote port (phase 5): remoteAck settles tickets + emits event', 
         expect(remoteAckSpy.mock.calls.length).toBe(1)
     })
 })
-

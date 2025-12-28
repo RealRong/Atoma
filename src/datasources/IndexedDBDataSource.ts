@@ -1,12 +1,12 @@
 import { Table } from 'dexie'
 import { Patch } from 'immer'
-import type { IAdapter, PatchMetadata, StoreKey, FindManyOptions, PageInfo, Entity } from '#core'
+import type { IDataSource, PatchMetadata, StoreKey, FindManyOptions, PageInfo, Entity } from '#core'
 import { Core } from '#core'
 
 /**
- * IndexedDB Adapter using Dexie
+ * IndexedDB DataSource using Dexie
  */
-export class IndexedDBAdapter<T extends Entity> implements IAdapter<T> {
+export class IndexedDBDataSource<T extends Entity> implements IDataSource<T> {
     public readonly name: string
 
     constructor(
@@ -186,7 +186,7 @@ export class IndexedDBAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     onError(error: Error, operation: string): void {
-        console.error(`[IndexedDBAdapter:${this.name}] Error in ${operation}:`, error)
+        console.error(`[IndexedDBDataSource:${this.name}] Error in ${operation}:`, error)
     }
 
     /**

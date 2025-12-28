@@ -1,14 +1,15 @@
 import type { ObservabilityContext } from '#observability'
-import type { ExecuteOpsFn } from './internal'
+import type { OpsClient } from '../backend/OpsClient'
 import { QueryLane } from './queryLane'
 import { WriteLane } from './writeLane'
+import { Protocol } from '#protocol'
 import type { Operation, OperationResult, WriteOp } from '#protocol'
 
 export interface BatchEngineConfig {
     /** Ops endpoint (for observability payloads only). */
     endpoint?: string
     /** Execute an ops request (transport owned by the adapter). */
-    executeOps: ExecuteOpsFn
+    opsClient: OpsClient
     /**
      * Per-lane queue backpressure limit.
      * - number: applies to both query and write lanes
@@ -52,33 +53,34 @@ export class BatchEngine {
      *
      * This class intentionally owns:
      * - lifecycle (`dispose`)
-     * - shared transport (`executeOps`)
+     * - shared transport (`opsClient`)
      *
      * Lane state + drain algorithms live inside `QueryLane` / `WriteLane`.
      */
     private readonly endpoint: string
-    private readonly executeOps: ExecuteOpsFn
+    private readonly opsClient: OpsClient
 
     private readonly queryLane: QueryLane
     private readonly writeLane: WriteLane
 
     constructor(private readonly config: BatchEngineConfig) {
-        if (!config || typeof (config as any).executeOps !== 'function') {
-            throw new Error('[BatchEngine] config.executeOps is required')
+        const opsClient = (config as any)?.opsClient
+        if (!opsClient || typeof opsClient.executeOps !== 'function') {
+            throw new Error('[BatchEngine] config.opsClient is required')
         }
-        this.endpoint = (config.endpoint || '/ops').replace(/\/$/, '')
-        this.executeOps = config.executeOps
+        this.endpoint = (config.endpoint || Protocol.http.paths.OPS).replace(/\/$/, '')
+        this.opsClient = config.opsClient
 
         this.queryLane = new QueryLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            executeOps: (args) => this.executeOps(args)
+            opsClient: this.opsClient
         })
 
         this.writeLane = new WriteLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            executeOps: (args) => this.executeOps(args)
+            opsClient: this.opsClient
         })
     }
 

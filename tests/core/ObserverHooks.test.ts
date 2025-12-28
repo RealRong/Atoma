@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { Core } from '../../src/core'
-import type { IAdapter } from '../../src/core'
+import type { IDataSource } from '../../src/core'
 
 type Post = {
     id: number
@@ -11,7 +11,7 @@ type Post = {
 }
 
 function createOkAdapter() {
-    const adapter: IAdapter<Post> = {
+    const adapter: IDataSource<Post> = {
         name: 'ok',
         applyPatches: vi.fn(async () => { }),
         put: vi.fn(async () => { }),
@@ -26,7 +26,7 @@ function createOkAdapter() {
 }
 
 function createFailAdapter() {
-    const adapter: IAdapter<Post> = {
+    const adapter: IDataSource<Post> = {
         name: 'fail',
         applyPatches: vi.fn(async () => {
             throw new Error('persist failed')
@@ -47,7 +47,7 @@ describe('core mutation hooks (phase 4): planned/committed/rolledBack observers'
         const adapter = createOkAdapter()
         const store = Core.store.createCoreStore<Post>({
             name: 'posts',
-            adapter,
+            dataSource: adapter,
             store: createJotaiStore()
         })
 
@@ -78,7 +78,7 @@ describe('core mutation hooks (phase 4): planned/committed/rolledBack observers'
         const adapter = createFailAdapter()
         const store = Core.store.createCoreStore<Post>({
             name: 'posts',
-            adapter,
+            dataSource: adapter,
             store: createJotaiStore()
         })
 
@@ -97,4 +97,3 @@ describe('core mutation hooks (phase 4): planned/committed/rolledBack observers'
         expect(payload.error).toBeInstanceOf(Error)
     })
 })
-

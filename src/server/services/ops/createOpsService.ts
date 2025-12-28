@@ -284,7 +284,7 @@ function jsonPatchToAtomaPatches(patch: unknown[]): any[] {
     })
 }
 
-async function validateVNextWriteOpForAuthz<Ctx>(args: {
+async function validateWriteOpForAuthz<Ctx>(args: {
     config: AtomaServerConfig<Ctx>
     authz: AuthzPolicy<Ctx>
     route: AtomaServerRoute
@@ -502,7 +502,7 @@ export function createOpsService<Ctx>(args: {
                         runtime
                     })
 
-                    await validateVNextWriteOpForAuthz({
+                    await validateWriteOpForAuthz({
                         config: args.config,
                         authz: args.authz,
                         route,

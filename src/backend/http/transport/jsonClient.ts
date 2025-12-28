@@ -2,9 +2,8 @@ import type { ObservabilityContext } from '#observability'
 import { Observability } from '#observability'
 import type { Envelope } from '#protocol'
 import { Protocol } from '#protocol'
-import { resolveHeaders } from './headers'
-import { withAdapterEvents } from './events'
-import type { ResponseParser } from '../config/types'
+import { resolveRequestHeaders } from './requestHeaders'
+import { withRequestTelemetry } from './telemetry'
 
 export type HttpInterceptors<T> = {
     onRequest?: (request: Request) => Promise<Request | void> | Request | void
@@ -13,7 +12,7 @@ export type HttpInterceptors<T> = {
         envelope: Envelope<T>
         request: Request
     }) => void
-    responseParser?: ResponseParser<T>
+    responseParser?: (response: Response, data: unknown) => Promise<Envelope<T>> | Envelope<T>
 }
 
 export type ExecuteJsonArgs = {
@@ -31,7 +30,7 @@ const hasHeader = (headers: Record<string, string>, name: string) => {
     return Object.keys(headers).some(k => k.toLowerCase() === needle)
 }
 
-export function createHttpJsonPipeline<T>(deps: {
+export function createJsonHttpClient<T>(deps: {
     fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
     getHeaders: () => Promise<Record<string, string>>
     interceptors?: HttpInterceptors<T>
@@ -46,7 +45,7 @@ export function createHttpJsonPipeline<T>(deps: {
             ? Observability.utf8.byteLength(payloadStr)
             : undefined
 
-        return withAdapterEvents(
+        return withRequestTelemetry(
             ctx,
             {
                 method: args.method,
@@ -54,7 +53,7 @@ export function createHttpJsonPipeline<T>(deps: {
                 payloadBytes
             },
             async () => {
-                const headers = await resolveHeaders(deps.getHeaders, args.extraHeaders)
+                const headers = await resolveRequestHeaders(deps.getHeaders, args.extraHeaders)
                 if (payloadStr !== undefined && !hasHeader(headers, 'Content-Type')) {
                     headers['Content-Type'] = 'application/json'
                 }

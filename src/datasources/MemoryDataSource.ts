@@ -1,14 +1,14 @@
-import type { IAdapter, StoreKey, Entity, PatchMetadata } from '#core'
+import type { IDataSource, StoreKey, Entity, PatchMetadata } from '#core'
 import { Patch } from 'immer'
 
 /**
- * MemoryAdapter
+ * MemoryDataSource
  * 
- * A No-Op adapter that performs no persistence.
+ * A No-Op data source that performs no persistence.
  * Used for pure local state management where data is transient (memory-only)
  * or managed entirely by other side-effects (e.g. from a real-time socket).
  */
-export class MemoryAdapter<T extends Entity> implements IAdapter<T> {
+export class MemoryDataSource<T extends Entity> implements IDataSource<T> {
     name = 'memory'
 
     async put(key: StoreKey, value: T): Promise<void> {

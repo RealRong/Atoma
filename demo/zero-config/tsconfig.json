@@ -31,8 +31,8 @@
             "atoma/server": [
                 "../../src/server"
             ],
-            "atoma/adapters": [
-                "../../src/adapters"
+            "atoma/datasources": [
+                "../../src/datasources"
             ],
             "typeorm": [
                 "./node_modules/typeorm"

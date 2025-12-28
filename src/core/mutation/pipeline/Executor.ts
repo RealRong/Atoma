@@ -46,7 +46,7 @@ export class Executor implements IExecutor {
 
         const metadata: PatchMetadata = {
             atom,
-            databaseName: handle.adapter.name,
+            databaseName: handle.dataSource.name,
             timestamp: typeof clientTimeMs === 'number' ? clientTimeMs : Date.now(),
             baseVersion: Date.now(),
             traceId

@@ -1,4 +1,5 @@
 import { envelope } from '../envelope'
+import { encodeWriteIntent } from './encodeWrite'
 
 export const ops = {
     parse: {
@@ -7,7 +8,8 @@ export const ops = {
     compose: {
         ok: envelope.compose.ok,
         error: envelope.compose.error
-    }
+    },
+    encodeWriteIntent
 } as const
 
 export type {
@@ -28,3 +30,5 @@ export type {
     WriteResultData,
     ChangesPullResultData
 } from './types'
+
+export { encodeWriteIntent }

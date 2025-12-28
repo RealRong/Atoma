@@ -10,7 +10,7 @@ export function createSyncService<Ctx>(args: {
     config: AtomaServerConfig<Ctx>
     authz: AuthzPolicy<Ctx>
 }): SyncService<Ctx> {
-    const vnextSubscribeStream = async function* stream(args2: {
+    const subscribeStream = async function* stream(args2: {
         incoming: any
         startCursor: number
         route: AtomaServerRoute
@@ -64,7 +64,7 @@ export function createSyncService<Ctx>(args: {
     }
 
     return {
-        subscribeVNext: async ({ incoming, urlObj, method, route, runtime }) => {
+        subscribe: async ({ incoming, urlObj, method, route, runtime }) => {
             if (method !== 'GET') {
                 throwError('METHOD_NOT_ALLOWED', 'GET required', { kind: 'validation', traceId: runtime.traceId, requestId: runtime.requestId })
             }
@@ -86,7 +86,7 @@ export function createSyncService<Ctx>(args: {
             return {
                 status: 200,
                 headers,
-                body: vnextSubscribeStream({
+                body: subscribeStream({
                     incoming,
                     startCursor,
                     route,

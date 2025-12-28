@@ -5,7 +5,7 @@ import type { AuthzPolicy } from '../policies/authzPolicy'
 import type { CreateRuntime, FormatTopLevelError } from '../engine/types'
 
 export type SyncService<Ctx> = {
-    subscribeVNext: (args: {
+    subscribe: (args: {
         incoming: any
         urlObj: URL
         method: string

@@ -5,13 +5,13 @@ import { resolveObservabilityContext } from './runtime'
 import type { StoreHandle } from '../types'
 
 export function createGetAll<T extends Entity>(handle: StoreHandle<T>) {
-    const { jotaiStore, atom, adapter, services, indexes, transform } = handle
+    const { jotaiStore, atom, dataSource, services, indexes, transform } = handle
 
     return async (filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions) => {
         const existingMap = jotaiStore.get(atom) as Map<StoreKey, T>
         const observabilityContext = resolveObservabilityContext(handle, options)
 
-        let arr = await adapter.getAll(filter, observabilityContext)
+        let arr = await dataSource.getAll(filter, observabilityContext)
         arr = arr.map(transform)
 
         const incomingIds = new Set(arr.map(i => (i as any).id as StoreKey))

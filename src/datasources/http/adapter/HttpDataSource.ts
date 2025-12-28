@@ -1,9 +1,8 @@
-import type { IAdapter, StoreKey, Entity } from '#core'
+import type { IDataSource, StoreKey, Entity } from '#core'
 import { BatchEngine, Batch } from '#batch'
 import type { ObservabilityContext } from '#observability'
-import { fetchWithRetry } from '../transport/retry'
-import type { BatchQueryConfig, HTTPAdapterConfig } from '../config/types'
-import { createOpsTransport } from '../transport/ops'
+import { Protocol, type Meta, type Operation, type OperationResult } from '#protocol'
+import type { BatchQueryConfig, HttpDataSourceConfig } from '../config/types'
 import { OperationRouter } from './OperationRouter'
 
 const ROUTER_METHODS = [
@@ -28,73 +27,51 @@ type ParsedBatchConfig = {
     devWarnings: boolean
 }
 
-function makeUrl(base: string, path: string): string {
-    return `${base}${path}`
-}
-
 /**
- * HTTP Adapter for ops-based APIs
+ * HTTP DataSource for ops-based APIs
  */
-export class HTTPAdapter<T extends Entity> {
+export class HttpDataSource<T extends Entity> implements IDataSource<T> {
     public readonly name: string
-    private readonly queueStorageKey: string
     private batchEngine?: BatchEngine
     private router: OperationRouter<T>
     private resourceNameForBatch: string
     private usePatchForUpdate: boolean
-    private opsTransport: ReturnType<typeof createOpsTransport>
+    private readonly opsClient: HttpDataSourceConfig<T>['opsClient']
 
-    constructor(private config: HTTPAdapterConfig<T>) {
+    constructor(private config: HttpDataSourceConfig<T>) {
         if (!config.resourceName) {
-            throw new Error('[HTTPAdapter] "resourceName" is required for ops routing')
+            throw new Error('[HttpDataSource] "resourceName" is required for ops routing')
+        }
+
+        if (!config.opsClient) {
+            throw new Error('[HttpDataSource] "opsClient" is required')
         }
 
         const batchConfig = this.parseBatchConfig(config.batch)
         this.resourceNameForBatch = this.normalizeResourceName(config.resourceName)
         this.usePatchForUpdate = config.usePatchForUpdate ?? false
 
-        this.name = config.baseURL
-        this.queueStorageKey = `atoma:httpQueue:${this.name}`
-
-        this.opsTransport = createOpsTransport({
-            fetchFn: this.fetchWithRetry.bind(this),
-            getHeaders: this.getHeaders.bind(this),
-            interceptors: {
-                onRequest: this.config.onRequest,
-                onResponse: this.config.onResponse as any
-            }
-        })
+        this.opsClient = config.opsClient
+        this.name = config.name ?? `remote:${this.resourceNameForBatch}`
 
         if (batchConfig.enabled) {
-            const endpointPath = batchConfig.endpoint ?? '/ops'
-            const batchEndpoint = makeUrl(this.config.baseURL, endpointPath)
+            const endpointPath = batchConfig.endpoint ?? Protocol.http.paths.OPS
             this.batchEngine = Batch.create({
-                endpoint: batchEndpoint,
+                endpoint: endpointPath,
                 maxBatchSize: batchConfig.maxBatchSize,
                 flushIntervalMs: batchConfig.flushIntervalMs,
-                executeOps: async ({ ops, meta, signal }) => {
-                    const res = await this.opsTransport.executeOps({
-                        url: this.config.baseURL,
-                        endpoint: endpointPath,
-                        ops,
-                        v: meta?.v,
-                        deviceId: meta?.deviceId,
-                        clientTimeMs: meta?.clientTimeMs,
-                        signal
-                    })
-                    return { results: res.results as any, status: res.response.status }
-                },
+                opsClient: this.opsClient,
                 onError: (error, payload) => {
                     this.onError(error, 'batch')
                     if (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
-                        console.debug?.('[HTTPAdapter:batch] payload failed', payload)
+                        console.debug?.('[HttpDataSource:batch] payload failed', payload)
                     }
                 }
             })
 
             if (batchConfig.devWarnings && typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
                 console.info(
-                    `[Atoma] BatchQuery enabled for "${this.resourceNameForBatch}" → ${batchEndpoint}\n` +
+                    `[Atoma] BatchQuery enabled for "${this.resourceNameForBatch}" → ${endpointPath}\n` +
                     'Ensure backend exposes the ops endpoint. Set `batch:false` to disable.'
                 )
             }
@@ -118,21 +95,15 @@ export class HTTPAdapter<T extends Entity> {
     }
 
     private async executeOps(
-        ops: any[],
-        context?: ObservabilityContext,
-        meta?: { v?: number; deviceId?: string; clientTimeMs?: number },
-        override?: { baseURL?: string; opsEndpoint?: string }
-    ) {
-        const resolvedOpsEndpoint = this.config.opsEndpoint ?? '/ops'
-        const opsWithTrace = this.applyOpTraceMeta(ops, context)
-        const result = await this.opsTransport.executeOps({
-            url: override?.baseURL ?? this.config.baseURL,
-            endpoint: override?.opsEndpoint ?? resolvedOpsEndpoint,
+        ops: Operation[],
+        context?: ObservabilityContext
+    ): Promise<OperationResult[]> {
+        const opsWithTrace = this.applyOpTraceMeta(ops as any, context) as Operation[]
+        const meta: Meta = { v: 1, clientTimeMs: Date.now() }
+        const result = await this.opsClient.executeOps({
             ops: opsWithTrace,
-            context,
-            v: meta?.v,
-            deviceId: meta?.deviceId,
-            clientTimeMs: meta?.clientTimeMs
+            meta,
+            context
         })
         return result.results as any
     }
@@ -167,8 +138,6 @@ export class HTTPAdapter<T extends Entity> {
         return 0
     }
 
-
-
     async onConnect(): Promise<void> {
         // HTTP connects on-demand, nothing to do
     }
@@ -178,29 +147,7 @@ export class HTTPAdapter<T extends Entity> {
     }
 
     onError(error: Error, operation: string): void {
-        console.error(`[HTTPAdapter:${this.name}] Error in ${operation}:`, error)
-    }
-
-    /**
-     * Fetch with retry logic
-     */
-    private async fetchWithRetry(
-        input: RequestInfo | URL,
-        init?: RequestInit
-    ): Promise<Response> {
-        return fetchWithRetry(fetch, input, init, this.config.retry)
-    }
-
-    /**
-     * Get headers (supports async for auth tokens)
-     */
-    private async getHeaders(): Promise<Record<string, string>> {
-        if (!this.config.headers) {
-            return {}
-        }
-
-        const headers = this.config.headers()
-        return headers instanceof Promise ? await headers : headers
+        console.error(`[HttpDataSource:${this.name}] Error in ${operation}:`, error)
     }
 
     private bindRouterMethods() {
@@ -235,4 +182,4 @@ export class HTTPAdapter<T extends Entity> {
     }
 }
 
-export interface HTTPAdapter<T extends Entity> extends IAdapter<T> {}
+export interface HttpDataSource<T extends Entity> extends IDataSource<T> {}

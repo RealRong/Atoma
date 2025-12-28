@@ -61,8 +61,8 @@ export async function executeSingleOp(args: {
     op: Operation
     meta: Meta
 }): Promise<OperationResult> {
-    const results = await args.transport.executeOps({ ops: [args.op], meta: args.meta })
-    return findOpResult(results, args.op.opId)
+    const res = await args.transport.opsClient.executeOps({ ops: [args.op], meta: args.meta })
+    return findOpResult(res.results, args.op.opId)
 }
 
 export async function readCursorOrInitial(args: {

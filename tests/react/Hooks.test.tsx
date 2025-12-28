@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { Core } from '../../src/core'
-import { MemoryAdapter } from '../../src/adapters/MemoryAdapter'
+import { MemoryDataSource } from '../../src/datasources/MemoryDataSource'
 import { useAll, useValue } from '../../src/react'
 
 type Post = {
@@ -21,7 +21,7 @@ afterEach(() => {
 function createPostsStore() {
     return Core.store.createCoreStore<Post>({
         name: 'posts',
-        adapter: new MemoryAdapter<Post>(),
+        dataSource: new MemoryDataSource<Post>(),
         store: createJotaiStore()
     })
 }

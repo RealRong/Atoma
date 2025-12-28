@@ -1,15 +1,15 @@
 import { Patch } from 'immer'
-import type { IAdapter, PatchMetadata, StoreKey, Entity } from '#core'
+import type { IDataSource, PatchMetadata, StoreKey, Entity } from '#core'
 
 /**
- * Hybrid adapter configuration
+ * Hybrid data source configuration
  */
-export interface HybridAdapterConfig<T extends Entity> {
+export interface HybridDataSourceConfig<T extends Entity> {
     /** Local adapter (fast cache) */
-    local: IAdapter<T>
+    local: IDataSource<T>
 
     /** Remote adapter (authoritative source) */
-    remote: IAdapter<T>
+    remote: IDataSource<T>
 
     /** Strategy configuration */
     strategy?: {
@@ -35,7 +35,7 @@ export interface HybridAdapterConfig<T extends Entity> {
 }
 
 /**
- * HybridAdapter - Combines local cache with remote storage
+ * HybridDataSource - Combines local cache with remote data source
  * 
  * Features:
  * - Read-through cache (local first, fallback to remote)
@@ -43,13 +43,13 @@ export interface HybridAdapterConfig<T extends Entity> {
  * - Offline fallback (local-only when remote fails)
  * - Automatic cache synchronization
  */
-export class HybridAdapter<T extends Entity> implements IAdapter<T> {
+export class HybridDataSource<T extends Entity> implements IDataSource<T> {
     public readonly name: string
-    private config: Required<HybridAdapterConfig<T>>
+    private config: Required<HybridDataSourceConfig<T>>
     private lastSyncTime = new Map<StoreKey, number>()
     private isRefreshingAll = false
 
-    constructor(config: HybridAdapterConfig<T>) {
+    constructor(config: HybridDataSourceConfig<T>) {
         this.name = `Hybrid(${config.local.name}+${config.remote.name})`
 
         // Set defaults
@@ -63,7 +63,7 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
                 syncDeletes: config.strategy?.syncDeletes ?? true
             },
             events: config.events || {} // Ensure events is always an object
-        } as Required<HybridAdapterConfig<T>>
+        } as Required<HybridDataSourceConfig<T>>
     }
 
     async get(key: StoreKey): Promise<T | undefined> {
@@ -309,7 +309,7 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
     }
 
     onError(error: Error, operation: string): void {
-        console.error(`[HybridAdapter] Error in ${operation}:`, error)
+        console.error(`[HybridDataSource] Error in ${operation}:`, error)
         this.config.local.onError?.(error, operation)
         this.config.remote.onError?.(error, operation)
     }
@@ -441,7 +441,7 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
      * Fallback: apply patches via put/delete operations
      */
     private async applyPatchesViaOperations(
-        adapter: IAdapter<T>,
+        dataSource: IDataSource<T>,
         patches: Patch[]
     ): Promise<void> {
         const putActions: T[] = []
@@ -456,10 +456,10 @@ export class HybridAdapter<T extends Entity> implements IAdapter<T> {
         })
 
         if (putActions.length) {
-            await adapter.bulkPut(putActions)
+            await dataSource.bulkPut(putActions)
         }
         if (deleteKeys.length) {
-            await adapter.bulkDelete(deleteKeys)
+            await dataSource.bulkDelete(deleteKeys)
         }
     }
 

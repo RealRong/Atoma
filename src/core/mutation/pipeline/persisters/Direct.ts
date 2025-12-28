@@ -1,6 +1,6 @@
 import type { Patch } from 'immer'
 import type { ObservabilityContext } from '#observability'
-import type { Entity, IAdapter, StoreDispatchEvent } from '../../../types'
+import type { Entity, IDataSource, StoreDispatchEvent } from '../../../types'
 import type { Persister, PersisterPersistArgs, PersisterPersistResult } from '../types'
 
 type ApplySideEffects<T> = {
@@ -8,7 +8,7 @@ type ApplySideEffects<T> = {
 }
 
 const applyPatchesViaOperations = async <T extends Entity>(
-    adapter: IAdapter<T>,
+    dataSource: IDataSource<T>,
     patches: Patch[],
     appliedData: T[],
     operationTypes: StoreDispatchEvent<T>['type'][],
@@ -34,10 +34,10 @@ const applyPatchesViaOperations = async <T extends Entity>(
         })
 
         if (putActions.length) {
-            await adapter.bulkPut(putActions, internalContext)
+            await dataSource.bulkPut(putActions, internalContext)
         }
         if (deleteKeys.length) {
-            await adapter.bulkDelete(deleteKeys, internalContext)
+            await dataSource.bulkDelete(deleteKeys, internalContext)
         }
         return { createdResults: undefined }
     }
@@ -65,21 +65,21 @@ const applyPatchesViaOperations = async <T extends Entity>(
     let createdResults: T[] | undefined
 
     if (createActions.length) {
-        if (adapter.bulkCreate) {
-            const res = await adapter.bulkCreate(createActions, internalContext)
+        if (dataSource.bulkCreate) {
+            const res = await dataSource.bulkCreate(createActions, internalContext)
             if (Array.isArray(res)) {
                 createdResults = res
             }
         } else {
-            await adapter.bulkPut(createActions, internalContext)
+            await dataSource.bulkPut(createActions, internalContext)
         }
     }
 
     if (putActions.length) {
-        await adapter.bulkPut(putActions, internalContext)
+        await dataSource.bulkPut(putActions, internalContext)
     }
     if (deleteKeys.length) {
-        await adapter.bulkDelete(deleteKeys, internalContext)
+        await dataSource.bulkDelete(deleteKeys, internalContext)
     }
     return {
         createdResults: Array.isArray(createdResults) ? createdResults : undefined
@@ -88,11 +88,11 @@ const applyPatchesViaOperations = async <T extends Entity>(
 
 export class DirectPersister implements Persister {
     async persist<T extends Entity>(args: PersisterPersistArgs<T>): Promise<PersisterPersistResult<T>> {
-        const adapter = args.handle.adapter
+        const dataSource = args.handle.dataSource
 
         try {
-            if (adapter.applyPatches) {
-                const res = await adapter.applyPatches(
+            if (dataSource.applyPatches) {
+                const res = await dataSource.applyPatches(
                     args.plan.patches,
                     args.metadata,
                     args.observabilityContext
@@ -106,7 +106,7 @@ export class DirectPersister implements Persister {
             }
 
             const sideEffects = await applyPatchesViaOperations(
-                adapter,
+                dataSource,
                 args.plan.patches,
                 args.plan.appliedData,
                 args.plan.operationTypes,
@@ -117,7 +117,7 @@ export class DirectPersister implements Persister {
             return created && created.length ? { created } : undefined
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error))
-            adapter.onError?.(err, 'applyPatches')
+            dataSource.onError?.(err, 'applyPatches')
             throw err
         }
     }

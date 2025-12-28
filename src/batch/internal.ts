@@ -1,6 +1,7 @@
 import { Observability } from '#observability'
 import type { ObservabilityContext, AtomaDebugEventMap, DebugEmitMeta } from '#observability'
 import type { Meta, Operation, OperationResult } from '#protocol'
+import type { OpsClient } from '../backend/OpsClient'
 import type { OpsTask } from './types'
 
 // ============================================================================
@@ -114,12 +115,6 @@ export type OpsRequest = {
 
 export type OpsResult = OperationResult
 
-export type ExecuteOpsFn = (args: {
-    ops: Operation[]
-    meta: Meta
-    signal?: AbortSignal
-}) => Promise<{ results: unknown; status?: number }>
-
 export function mapOpsResults(results: unknown): Map<string, OpsResult> {
     const map = new Map<string, OpsResult>()
     if (!Array.isArray(results)) return map
@@ -145,7 +140,7 @@ export async function executeOpsTasksBatch(args: {
     lane: 'query' | 'write'
     endpoint: string
     tasks: OpsTask[]
-    executeOps: ExecuteOpsFn
+    opsClient: OpsClient
     controller?: AbortController
 }) {
     const requestContext = buildOpsLaneRequestContext(args.tasks)
@@ -160,13 +155,13 @@ export async function executeOpsTasksBatch(args: {
         ops: opsWithTrace
     }
 
-    const payloadBytes = requestContext.shouldEmitAdapterEvents
+    const payloadBytes = requestContext.shouldEmitDataSourceEvents
         ? Observability.utf8.byteLength(JSON.stringify(payload))
         : undefined
 
-    emitAdapterEvent({
+    emitDataSourceEvent({
         targets: requestContext.ctxTargets,
-        type: 'adapter:request',
+        type: 'datasource:request',
         payloadFor: t => ({
             lane: args.lane,
             method: 'POST',
@@ -183,16 +178,16 @@ export async function executeOpsTasksBatch(args: {
     let startedAt: number | undefined
     try {
         startedAt = Date.now()
-        const res = await args.executeOps({
+        const res = await args.opsClient.executeOps({
             ops: payload.ops,
             meta: payload.meta,
             signal: args.controller?.signal
         })
         const durationMs = Date.now() - startedAt
 
-        emitAdapterEvent({
+        emitDataSourceEvent({
             targets: requestContext.ctxTargets,
-            type: 'adapter:response',
+            type: 'datasource:response',
             payloadFor: t => ({
                 lane: args.lane,
                 ok: true,
@@ -208,9 +203,9 @@ export async function executeOpsTasksBatch(args: {
         const resultMap = mapOpsResults(res.results)
         return opsWithTrace.map((op) => resultMap.get(op.opId) ?? missingResult(op.opId))
     } catch (error: unknown) {
-        emitAdapterEvent({
+        emitDataSourceEvent({
             targets: requestContext.ctxTargets,
-            type: 'adapter:response',
+            type: 'datasource:response',
             payloadFor: t => ({
                 lane: args.lane,
                 ok: false,
@@ -263,9 +258,9 @@ export function normalizeMaxOpsPerRequest(config: BatchEngineConfigLike) {
 // Adapter Events
 // ============================================================================
 
-type AdapterEventType = 'adapter:request' | 'adapter:response'
+type DataSourceEventType = 'datasource:request' | 'datasource:response'
 
-export function emitAdapterEvent<M extends { ctx?: ObservabilityContext }, TType extends AdapterEventType>(args: {
+export function emitDataSourceEvent<M extends { ctx?: ObservabilityContext }, TType extends DataSourceEventType>(args: {
     targets: M[]
     type: TType
     payloadFor: (m: M) => AtomaDebugEventMap[TType]
@@ -322,12 +317,12 @@ export function buildOpsLaneRequestContext(tasks: Array<{ ctx?: ObservabilityCon
         opCount: meta.opCount,
         taskCount: meta.opCount
     }))
-    const shouldEmitAdapterEvents = ctxTargets.some(t => t.ctx.active)
+    const shouldEmitDataSourceEvents = ctxTargets.some(t => t.ctx.active)
 
     return {
         mixedTrace: traceState.mixedTrace,
         ctxTargets,
-        shouldEmitAdapterEvents
+        shouldEmitDataSourceEvents
     }
 }
 

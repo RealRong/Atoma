@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { Core } from '../../src/core'
-import type { IAdapter, OperationContext } from '../../src/core'
+import type { IDataSource, OperationContext } from '../../src/core'
 
 type Post = {
     id: number
@@ -11,7 +11,7 @@ type Post = {
 }
 
 function createTestAdapter() {
-    const adapter: IAdapter<Post> = {
+    const adapter: IDataSource<Post> = {
         name: 'test',
         applyPatches: vi.fn(async () => { }),
         put: vi.fn(async () => { }),
@@ -30,7 +30,7 @@ describe('core mutation hooks (phase 3): beforeDispatch middleware', () => {
         const adapter = createTestAdapter()
         const store = Core.store.createCoreStore<Post>({
             name: 'posts',
-            adapter,
+            dataSource: adapter,
             store: createJotaiStore()
         })
 
@@ -53,7 +53,7 @@ describe('core mutation hooks (phase 3): beforeDispatch middleware', () => {
         const adapter = createTestAdapter()
         const store = Core.store.createCoreStore<Post>({
             name: 'posts',
-            adapter,
+            dataSource: adapter,
             store: createJotaiStore()
         })
 
@@ -81,4 +81,3 @@ describe('core mutation hooks (phase 3): beforeDispatch middleware', () => {
         expect((adapter.applyPatches as any).mock.calls.length).toBe(1)
     })
 })
-

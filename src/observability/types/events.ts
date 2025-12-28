@@ -32,8 +32,8 @@ export type AtomaDebugEventMap = {
     'mutation:patches': { patchCount: number; inversePatchCount: number; changedFields?: string[] }
     'mutation:rollback': { reason: string }
 
-    // Adapter / transport (HTTP + batch lanes)
-    'adapter:request': {
+    // DataSource / transport (HTTP + batch lanes)
+    'datasource:request': {
         lane?: 'query' | 'write'
         method: string
         endpoint: string
@@ -45,7 +45,7 @@ export type AtomaDebugEventMap = {
         totalOpCount?: number
         mixedTrace?: boolean
     }
-    'adapter:response': {
+    'datasource:response': {
         lane?: 'query' | 'write'
         ok: boolean
         status?: number

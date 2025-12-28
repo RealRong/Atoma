@@ -23,7 +23,7 @@ import type { OrderByRule, Page, QueryParams } from '#protocol'
  * - It does not forward unknown/extra fields (e.g. `include`, `cache`, `traceId`, etc).
  *
  * Where it's used:
- * - `OperationRouter` builds QueryOp params with this helper before calling `/ops`.
+ * - `OperationRouter` builds QueryOp params with this helper before calling `/ops` (ops-only mode).
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)

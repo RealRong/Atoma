@@ -13,7 +13,7 @@ import { resolveObservabilityContext } from '../runtime'
 import type { StoreHandle } from '../../types'
 
 export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
-    const { jotaiStore, atom, adapter, services, indexes, matcher, transform } = handle
+    const { jotaiStore, atom, dataSource, services, indexes, matcher, transform } = handle
 
     const preserveReference = (incoming: T): T => {
         const existing = jotaiStore.get(atom).get((incoming as any).id)
@@ -27,7 +27,7 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
 
         const observabilityContext = resolveObservabilityContext(handle, options)
 
-        const optionsForAdapter = options
+        const optionsForDataSource = options
             ? ({ ...options, explain: undefined } as any as FindManyOptions<T>)
             : options
 
@@ -64,13 +64,13 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
             }
         )
 
-        if (typeof adapter.findMany === 'function') {
+        if (typeof dataSource.findMany === 'function') {
             try {
                 const startedAt = Date.now()
-                const raw = await adapter.findMany(optionsForAdapter, observabilityContext)
+                const raw = await dataSource.findMany(optionsForDataSource, observabilityContext)
                 const durationMs = Date.now() - startedAt
                 const normalized = normalizeFindManyResult<T>(raw)
-                const { data, pageInfo, explain: adapterExplain } = normalized
+                const { data, pageInfo, explain: dataSourceExplain } = normalized
 
                 const transformed = (data || []).map((item: T) => transform(item))
 
@@ -84,12 +84,12 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                         {
                             data: transformed,
                             pageInfo,
-                            ...(adapterExplain !== undefined ? { explain: adapterExplain } : {})
+                            ...(dataSourceExplain !== undefined ? { explain: dataSourceExplain } : {})
                         },
                         {
                             cacheWrite: { writeToCache: false, reason: cachePolicy.reason },
-                            adapter: { ok: true, durationMs },
-                            ...(adapterExplain !== undefined ? { adapterRemoteExplain: adapterExplain } : {})
+                            dataSource: { ok: true, durationMs },
+                            ...(dataSourceExplain !== undefined ? { dataSourceRemoteExplain: dataSourceExplain } : {})
                         }
                     )
                 }
@@ -123,28 +123,28 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                     {
                         data: transformed,
                         pageInfo,
-                        ...(adapterExplain !== undefined ? { explain: adapterExplain } : {})
+                        ...(dataSourceExplain !== undefined ? { explain: dataSourceExplain } : {})
                     },
                     {
                         cacheWrite: { writeToCache: true },
-                        adapter: { ok: true, durationMs },
-                        ...(adapterExplain !== undefined ? { adapterRemoteExplain: adapterExplain } : {})
+                        dataSource: { ok: true, durationMs },
+                        ...(dataSourceExplain !== undefined ? { dataSourceRemoteExplain: dataSourceExplain } : {})
                     }
                 )
             } catch (error) {
-                adapter.onError?.(error as Error, 'findMany')
+                dataSource.onError?.(error as Error, 'findMany')
                 const err = error instanceof Error ? error : new Error(String(error))
                 return withExplain(
                     { data: (localResult as any).data },
-                    { errors: [{ kind: 'adapter', code: 'FIND_MANY_FAILED', message: err.message, traceId: observabilityContext.traceId }] }
+                    { errors: [{ kind: 'datasource', code: 'FIND_MANY_FAILED', message: err.message, traceId: observabilityContext.traceId }] }
                 )
             }
         }
 
         try {
-            const adapterFilter = typeof options?.where === 'function' ? options.where : undefined
+            const dataSourceFilter = typeof options?.where === 'function' ? options.where : undefined
 
-            let remote = await adapter.getAll(adapterFilter as any, observabilityContext)
+            let remote = await dataSource.getAll(dataSourceFilter as any, observabilityContext)
             remote = remote.map(item => transform(item))
 
             if (cachePolicy.effectiveSkipStore) {
@@ -197,7 +197,7 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                 { cacheWrite: { writeToCache: true } }
             )
         } catch (error) {
-            adapter.onError?.(error as Error, 'findMany')
+            dataSource.onError?.(error as Error, 'findMany')
             return localResult
         }
     }

@@ -22,15 +22,15 @@ This folder implements Atoma’s **client-side batching engine** used by adapter
 
 - `BatchEngine.ts`
   - Public surface: `enqueueOp` / `enqueueOps`, `dispose`.
-  - Owns lifecycle and scheduling; network sending is delegated to an injected `executeOps` function (lane scheduling/queues live inside `QueryLane`/`WriteLane`).
+  - Owns lifecycle and scheduling; network sending is delegated to an injected `opsClient` (lane scheduling/queues live inside `QueryLane`/`WriteLane`).
 - `queryLane.ts`
   - Drains QueryOp tasks and sends `POST /ops`.
   - Maintains FIFO batching boundaries (trace is no longer a batching dimension).
 - `writeLane.ts`
   - Drains WriteOp tasks and sends `POST /ops`.
 - `internal.ts`
-  - Internal helpers (config normalization, small utils, adapter debug events fan-out, and `executeOpsTasksBatch` which does payload → executeOps → result mapping/fallback).
-- (Not in this folder) `src/adapters/http/transport/queryParams.ts`
+  - Internal helpers (config normalization, small utils, adapter debug events fan-out, and `executeOpsTasksBatch` which does payload → `opsClient.executeOps` → result mapping/fallback).
+- (Not in this folder) `src/adapters/http/protocol/queryParams.ts`
   - Translates `FindManyOptions<T>` into server `QueryParams` (ops protocol requires `params.page`), used by the HTTP ops router to build QueryOp.
 
 ## How it runs (end-to-end)
@@ -59,7 +59,7 @@ Each drain iteration:
 
 - selects a batch of tasks (query/write FIFO),
 - builds a request payload,
-- sends `POST /ops` via the injected `executeOps`,
+- sends `POST /ops` via the injected `opsClient.executeOps`,
 - maps server results back to individual task promises.
 
 ### 4) Trace and `op.meta` rules

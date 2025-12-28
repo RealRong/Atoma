@@ -1,4 +1,4 @@
-export async function resolveHeaders(
+export async function resolveRequestHeaders(
     getBaseHeaders: () => Promise<Record<string, string>>,
     extraHeaders?: Record<string, string>
 ): Promise<Record<string, string>> {
@@ -6,3 +6,4 @@ export async function resolveHeaders(
     if (!extraHeaders) return base
     return { ...base, ...extraHeaders }
 }
+

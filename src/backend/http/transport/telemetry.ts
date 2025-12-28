@@ -1,22 +1,22 @@
 import type { ObservabilityContext } from '#observability'
 
-export type AdapterRequestEvent = {
+export type DataSourceRequestEvent = {
     method: string
     endpoint: string
     attempt: number
     payloadBytes?: number
 }
 
-export type AdapterResponseEvent = {
+export type DataSourceResponseEvent = {
     ok: boolean
     status?: number
     durationMs?: number
     itemCount?: number
 }
 
-export async function withAdapterEvents<T>(
+export async function withRequestTelemetry<T>(
     ctx: ObservabilityContext | undefined,
-    request: Omit<AdapterRequestEvent, 'attempt'> & { attempt?: number },
+    request: Omit<DataSourceRequestEvent, 'attempt'> & { attempt?: number },
     run: (args: { startedAt: number }) => Promise<{ result: T; response?: Response; itemCount?: number }>
 ): Promise<T> {
     const attempt = typeof request.attempt === 'number' ? request.attempt : 1
@@ -24,7 +24,7 @@ export async function withAdapterEvents<T>(
     const shouldEmit = Boolean(ctx?.active)
     const startedAt = shouldEmit ? Date.now() : 0
 
-    ctx?.emit('adapter:request', {
+    ctx?.emit('datasource:request', {
         method: request.method,
         endpoint: request.endpoint,
         attempt,
@@ -33,7 +33,7 @@ export async function withAdapterEvents<T>(
 
     try {
         const { result, response, itemCount } = await run({ startedAt })
-        ctx?.emit('adapter:response', {
+        ctx?.emit('datasource:response', {
             ok: response?.ok ?? true,
             status: response?.status,
             durationMs: shouldEmit ? (Date.now() - startedAt) : undefined,
@@ -44,7 +44,7 @@ export async function withAdapterEvents<T>(
         const status = typeof (error as any)?.status === 'number'
             ? (error as any).status
             : undefined
-        ctx?.emit('adapter:response', {
+        ctx?.emit('datasource:response', {
             ok: false,
             status,
             durationMs: shouldEmit ? (Date.now() - startedAt) : undefined
@@ -52,4 +52,3 @@ export async function withAdapterEvents<T>(
         throw error
     }
 }
-

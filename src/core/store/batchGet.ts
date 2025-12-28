@@ -12,7 +12,7 @@ type GetOneTask<T> = {
 }
 
 export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
-    const { jotaiStore, atom, adapter, transform, services, indexes } = handle
+    const { jotaiStore, atom, dataSource, transform, services, indexes } = handle
 
     let batchGetOneTaskQueue: GetOneTask<T>[] = []
     let batchFetchOneTaskQueue: GetOneTask<T>[] = []
@@ -45,7 +45,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
 
         for (const group of groups) {
             const ids = Array.from(new Set(group.tasks.map(i => i.id)).values())
-            let fetched = (await adapter.bulkGet(ids, group.observabilityContext)).filter((i): i is T => i !== undefined)
+            let fetched = (await dataSource.bulkGet(ids, group.observabilityContext)).filter((i): i is T => i !== undefined)
             fetched = fetched.map(transform)
 
             fetched.forEach(item => {
@@ -94,7 +94,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
 
         for (const group of groups) {
             const ids = Array.from(new Set(group.tasks.map(i => i.id)).values())
-            let items = (await adapter.bulkGet(ids, group.observabilityContext)).filter((i): i is T => i !== undefined)
+            let items = (await dataSource.bulkGet(ids, group.observabilityContext)).filter((i): i is T => i !== undefined)
             items = items.map(transform)
 
             items.forEach(item => {

@@ -81,7 +81,7 @@ export type AtomaServerConfig<Ctx = unknown> = {
         ops?: { path?: string }
         sync?: {
             enabled?: boolean
-            subscribeVNextPath?: string
+            subscribePath?: string
         }
     }
 

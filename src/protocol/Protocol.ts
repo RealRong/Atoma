@@ -1,23 +1,18 @@
 import { error } from './error'
+import { http } from './http'
 import { ids } from './ids'
 import { ops } from './ops'
-import { encodeWriteIntent } from './ops/encodeWrite'
-import { convertImmerPatchesToJsonPatches, immerPathToJsonPointer } from './jsonPatch/immer'
+import { jsonPatch } from './jsonPatch'
 import { sse } from './sse'
 import { trace } from './trace'
 
 export const Protocol = {
+    http,
     trace,
     error,
     ids,
-    ops: {
-        ...ops,
-        encodeWriteIntent
-    },
-    jsonPatch: {
-        convertImmerPatchesToJsonPatches,
-        immerPathToJsonPointer
-    },
+    ops,
+    jsonPatch,
     sse,
     collab: {}
 } as const

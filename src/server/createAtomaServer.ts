@@ -10,9 +10,6 @@ import { createServerServices } from './services/createServerServices'
 import { handleWithRuntime } from './engine/handleWithRuntime'
 import type { RouteHandler } from './engine/router'
 
-const DEFAULT_OPS_PATH = '/ops'
-const DEFAULT_SYNC_SUBSCRIBE_VNEXT_PATH = '/sync/subscribe-vnext'
-
 function notFound(): HandleResult {
     return {
         status: 404,
@@ -39,10 +36,10 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
     const traceHeader = config.observability?.trace?.traceIdHeader ?? Protocol.trace.headers.TRACE_ID_HEADER
     const requestHeader = config.observability?.trace?.requestIdHeader ?? Protocol.trace.headers.REQUEST_ID_HEADER
 
-    const opsPath = config.routing?.ops?.path ?? DEFAULT_OPS_PATH
+    const opsPath = config.routing?.ops?.path ?? Protocol.http.paths.OPS
     const basePath = config.routing?.basePath
 
-    const syncSubscribeVNextPath = config.routing?.sync?.subscribeVNextPath ?? DEFAULT_SYNC_SUBSCRIBE_VNEXT_PATH
+    const syncSubscribePath = config.routing?.sync?.subscribePath ?? Protocol.http.paths.SYNC_SUBSCRIBE
 
     const formatTopLevelError = createTopLevelErrorFormatter(config)
     const createRuntime = createRuntimeFactory({ config })
@@ -54,8 +51,8 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
 
     const routes: RouteHandler[] = [
         {
-            id: 'sync:subscribe-vnext',
-            match: ({ pathname }) => syncEnabled && normalizePath(pathname) === normalizePath(syncSubscribeVNextPath),
+            id: 'sync:subscribe',
+            match: ({ pathname }) => syncEnabled && normalizePath(pathname) === normalizePath(syncSubscribePath),
             handle: (ctx) => handleWithRuntime<Ctx>({
                 incoming: ctx.incoming,
                 route: { kind: 'sync', name: 'subscribe' },
@@ -73,7 +70,7 @@ export function createAtomaServer<Ctx = unknown>(config: AtomaServerConfig<Ctx>)
                 })(),
                 createRuntime: services.runtime.createRuntime,
                 formatTopLevelError: services.runtime.formatTopLevelError,
-                run: (runtime) => services.sync.subscribeVNext({
+                run: (runtime) => services.sync.subscribe({
                     incoming: ctx.incoming,
                     urlObj: ctx.urlObj,
                     method: ctx.method,

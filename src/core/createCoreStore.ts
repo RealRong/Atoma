@@ -15,7 +15,7 @@ import type { JotaiStore } from './types'
 import type { DebugConfig, DebugEvent } from '#observability'
 import type {
     Entity,
-    IAdapter,
+    IDataSource,
     IStore,
     IndexDefinition,
     LifecycleHooks,
@@ -35,7 +35,7 @@ export interface StoreServices {
 
 export interface CoreStoreConfig<T extends Entity> {
     name: string
-    adapter: IAdapter<T>
+    dataSource: IDataSource<T>
     transformData?: (data: T) => T | undefined
     idGenerator?: () => StoreKey
     store: JotaiStore
@@ -78,7 +78,7 @@ export function createCoreStore<T extends Entity, Relations = {}>(
         }
         : undefined
 
-    const resolvedAdapter = config.adapter
+    const resolvedDataSource = config.dataSource
 
     const jotaiStore = config.store
     const services: StoreServices = {
@@ -91,7 +91,7 @@ export function createCoreStore<T extends Entity, Relations = {}>(
 
     const handle = createStoreHandle<T>({
         atom: objectMapAtom,
-        adapter: resolvedAdapter,
+        dataSource: resolvedDataSource,
         config: {
             transformData: transformData ? (item: T) => transformData(item) ?? item : undefined,
             idGenerator: config.idGenerator,
@@ -185,9 +185,6 @@ export function createCoreStore<T extends Entity, Relations = {}>(
     })()
 
     applyRelations(getRelations)
-
-    // 让 adapter（若支持）绑定 store handle，用于 sync/pull/subscribe 写回
-    resolvedAdapter.attachStoreHandle?.(handle as any)
 
     return coreStore
 }

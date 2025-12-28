@@ -9,6 +9,7 @@ import type {
     WriteItem,
     WriteItemResult,
 } from '#protocol'
+import type { OpsClient } from '../backend/OpsClient'
 
 export type SyncOutboxItem = {
     idempotencyKey: string
@@ -48,10 +49,7 @@ export type SyncWriteReject = {
 }
 
 export interface SyncTransport {
-    executeOps: (args: {
-        ops: Operation[]
-        meta: Meta
-    }) => Promise<OperationResult[]>
+    opsClient: OpsClient
     subscribe: (args: {
         cursor: Cursor
         onBatch: (batch: ChangeBatch) => void
@@ -93,10 +91,7 @@ export type SyncRetryConfig = {
 }
 
 export type SyncConfig = {
-    executeOps: SyncTransport['executeOps']
-    subscribeUrl?: (cursor: Cursor) => string
-    eventSourceFactory?: (url: string) => EventSource
-    subscribeEventName?: string
+    transport: SyncTransport
     onPullChanges?: (changes: Change[]) => Promise<void> | void
     onWriteAck?: (ack: SyncWriteAck) => Promise<void> | void
     onWriteReject?: (reject: SyncWriteReject, conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual') => Promise<void> | void

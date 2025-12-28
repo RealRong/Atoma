@@ -5,7 +5,7 @@ import type {
     Entity,
     HasManyConfig,
     HasOneConfig,
-    IAdapter,
+    IDataSource,
     IStore,
     InferIncludeType,
     KeySelector,
@@ -15,6 +15,8 @@ import type {
     StoreConfig
 } from '#core'
 import type { AtomaClientSyncConfig } from './controllers/SyncController'
+import type { BackendConfig } from './backend'
+import type { BatchQueryConfig } from '../datasources/http/config/types'
 
 type IncludeForRelations<Relations> =
     Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
@@ -139,9 +141,9 @@ export type CreateAtomaStoreOptions<
     Name extends keyof Entities & string,
     Stores = {},
     Relations = {}
-> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations' | 'store'> & {
+> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'dataSource' | 'relations' | 'store'> & {
     name: Name
-    adapter?: IAdapter<Entities[Name]>
+    dataSource?: IDataSource<Entities[Name]>
     relations?: Relations
 }
 
@@ -150,9 +152,9 @@ type CreateAtomaStoreOptionsFactory<
     Name extends keyof Entities & string,
     Stores,
     Relations extends RelationMap<Entities[Name]>
-> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations' | 'store'> & {
+> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'dataSource' | 'relations' | 'store'> & {
     name: Name
-    adapter?: IAdapter<Entities[Name]>
+    dataSource?: IDataSource<Entities[Name]>
     relations?: (dsl: RelationsDsl<Entities, Stores, Entities[Name]>) => Relations
 }
 
@@ -161,9 +163,9 @@ type CreateAtomaStoreOptionsSchema<
     Name extends keyof Entities & string,
     Stores,
     Schema extends RelationsSchema<Entities, Stores, Name>
-> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'adapter' | 'relations' | 'store'> & {
+> = Omit<CoreStoreConfig<Entities[Name]>, 'name' | 'dataSource' | 'relations' | 'store'> & {
     name: Name
-    adapter?: IAdapter<Entities[Name]>
+    dataSource?: IDataSource<Entities[Name]>
     relations?: Schema
 }
 
@@ -223,7 +225,7 @@ export type AtomaClientContext<
     Stores = {}
 > = {
     jotaiStore: JotaiStore
-    defaultAdapterFactory: <Name extends keyof Entities & string>(name: Name) => IAdapter<Entities[Name]>
+    defaultDataSourceFactory: <Name extends keyof Entities & string>(name: Name) => IDataSource<Entities[Name]>
     Store: <Name extends keyof Entities & string>(name: Name) => CoreStore<Entities[Name], InferRelationsFromStoreOverride<Entities, Stores, Name>>
     resolveStore: <Name extends keyof Entities & string>(name: Name) => IStore<Entities[Name], InferRelationsFromStoreOverride<Entities, Stores, Name>>
 }
@@ -231,7 +233,13 @@ export type AtomaClientContext<
 export type DefineClientConfig<
     Entities extends Record<string, Entity>
 > = {
-    defaultAdapterFactory: <Name extends keyof Entities & string>(name: Name) => IAdapter<Entities[Name]>
+    backend: BackendConfig
+    /** Default remote dataSource defaults (applied to all resources). */
+    remote?: {
+        batch?: boolean | BatchQueryConfig
+        usePatchForUpdate?: boolean
+    }
+    defaultDataSourceFactory?: <Name extends keyof Entities & string>(name: Name) => IDataSource<Entities[Name]>
     sync?: AtomaClientSyncConfig
 }
 

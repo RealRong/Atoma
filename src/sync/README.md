@@ -81,7 +81,7 @@ Then:
   - `outbox.peek(max)` to get pending items
   - `buildWriteBatch(...)` groups items by `(resource, action)` into a single write op
   - Marks keys as in-flight (optional store method)
-  - Calls `transport.executeOps({ ops: [writeOp], meta })`
+  - Calls `transport.opsClient.executeOps({ ops: [writeOp], meta })`
   - For each result:
     - OK → `applyWriteAck(...)` then `outbox.ack(keys)`
     - Not OK → `applyWriteReject(...)` then `outbox.reject(keys)`
@@ -97,7 +97,7 @@ Path:
 
 - `SyncEngine.pullNow()` → `PullLane.pullNow()`
   - Reads current cursor (or `initialCursor`, or `'0'`)
-  - Calls `transport.executeOps({ ops: [changes.pull], meta })`
+  - Calls `transport.opsClient.executeOps({ ops: [changes.pull], meta })`
   - Applies `batch.changes` via `applier.applyChanges(...)`
   - Stores `batch.nextCursor` via `cursor.set(...)`
 
@@ -132,7 +132,7 @@ Important: pull & subscribe share the same cursor store. Either can advance it.
 
 ## Transport & Applier (integration points)
 
-- `SyncTransport.executeOps(...)` is the only required server integration.
+- `SyncTransport.opsClient` is the only required server integration (providing `opsClient.executeOps(...)`).
 - Subscription requires `subscribeUrl` (and optionally `eventSourceFactory`).
 - `applier` is a wrapper that delegates to:
   - `onPullChanges(changes)`
@@ -151,4 +151,3 @@ This separation keeps sync logic independent from your actual store/mutation imp
   - Is `setSubscribed(true)` called?
   - Is `subscribeUrl` configured?
   - Is `EventSource` available (or a factory provided)?
-

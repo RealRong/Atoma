@@ -22,15 +22,15 @@
 
 - `BatchEngine.ts`
   - 对外入口：`enqueueOp` / `enqueueOps`、`dispose`。
-  - 负责生命周期与调度；网络发送委托给注入的 `executeOps`（lane 的调度/队列算法在 `QueryLane`/`WriteLane` 内部）。
+  - 负责生命周期与调度；网络发送委托给注入的 `opsClient`（lane 的调度/队列算法在 `QueryLane`/`WriteLane` 内部）。
 - `queryLane.ts`
   - drain QueryOp 任务并发送 `POST /ops`。
   - 保持 FIFO 边界（trace 不再作为拆批维度）。
 - `writeLane.ts`
   - drain WriteOp 任务并发送 `POST /ops`。
 - `internal.ts`
-  - 内部辅助：配置归一化、小工具、adapter 事件 fan-out，以及 `executeOpsTasksBatch`（组 payload → 调用 executeOps → results 映射/兜底）。
-- （不在本目录）`src/adapters/http/transport/queryParams.ts`
+  - 内部辅助：配置归一化、小工具、adapter 事件 fan-out，以及 `executeOpsTasksBatch`（组 payload → 调用 `opsClient.executeOps` → results 映射/兜底）。
+- （不在本目录）`src/adapters/http/protocol/queryParams.ts`
   - 把 `FindManyOptions<T>` 翻译为服务端 ops 协议需要的 `QueryParams`（要求 `params.page`），供 HTTP ops 路由层构造 QueryOp 使用。
 
 ## 运行流程（端到端）
@@ -59,7 +59,7 @@
 
 - 选出一批 task（query/write 各自 FIFO）
 - 构造 payload
-- 通过注入的 `executeOps` 发送 `POST /ops`
+- 通过注入的 `opsClient.executeOps` 发送 `POST /ops`
 - 把服务端 results 映射回每个 task 的 promise
 
 ### 4）trace/requestId 与 op.meta 规则
