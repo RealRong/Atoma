@@ -1,4 +1,4 @@
-import type { AtomaChange, ISyncAdapter, IdempotencyResult } from '../../sync/types'
+import type { AtomaChange, ISyncAdapter, IdempotencyResult } from '../ports'
 import { AtomaPrismaAdapter } from './PrismaAdapter'
 
 type PrismaClientLike = Record<string, any> & {

@@ -2,7 +2,7 @@
 
 这个 demo 展示了：
 
-- 后端：Express + TypeORM + SQLite，通过 `atoma/server` 的 `createAtomaServer` 自动得到 `/api/ops`（ops 统一入口）+ sync subscribe
+- 后端：Express + TypeORM + SQLite，宿主侧自行路由与适配（Express -> Web `Request`），再调用 `atoma/server` 的 `createAtomaHandlers()` 得到 `/api/ops`（ops 统一入口）+ `/api/subscribe`（SSE）
 - 前端：React + `backend + remote.batch`，同一事件循环内的多次写操作会自动合并成一个 `/api/ops` 请求
 
 ## 重要变更（hooks 迁移）

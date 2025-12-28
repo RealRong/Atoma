@@ -20,7 +20,7 @@ import type {
     QueryResultMany,
     QueryResultOne,
     WriteOptions
-} from '../../types'
+} from '../ports'
 
 type OperatorValue = {
     in?: any[]

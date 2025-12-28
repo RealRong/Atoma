@@ -1,6 +1,6 @@
 import { errorStatus, toStandardError } from '../error'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
-import type { HandleResult } from '../http/types'
+import type { HandleResult } from './http'
 import { Protocol } from '#protocol'
 
 export function createTopLevelErrorFormatter<Ctx>(config: AtomaServerConfig<Ctx>) {
@@ -19,3 +19,4 @@ export function createTopLevelErrorFormatter<Ctx>(config: AtomaServerConfig<Ctx>
         return { status, body: Protocol.ops.compose.error(standard, meta) }
     }
 }
+

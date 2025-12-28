@@ -1,15 +1,36 @@
-import { throwError } from '../../error'
-import { validateSyncSubscribeQuery } from '../../sync/validation'
-import type { AtomaServerConfig, AtomaServerRoute } from '../../config'
-import type { ServerRuntime } from '../../engine/runtime'
-import type { AuthzPolicy } from '../../policies/authzPolicy'
-import type { SyncService } from '../types'
+import { throwError } from '../error'
+import type { AtomaServerConfig, AtomaServerRoute } from '../config'
+import type { ServerRuntime } from '../runtime/createRuntime'
+import type { HandleResult } from '../runtime/http'
 import { Protocol } from '#protocol'
 
-export function createSyncService<Ctx>(args: {
+function validateSyncSubscribeQuery(args: { cursor: any }): { cursor: number } {
+    const cursorRaw = args.cursor
+    const cursor = (() => {
+        if (cursorRaw === undefined || cursorRaw === null || cursorRaw === '') return 0
+        const n = Number(cursorRaw)
+        return Number.isFinite(n) && n >= 0 ? Math.floor(n) : NaN
+    })()
+    if (!Number.isFinite(cursor)) {
+        throwError('INVALID_REQUEST', 'Invalid cursor', { kind: 'validation', path: 'cursor' })
+    }
+    return { cursor }
+}
+
+export type SubscribeExecutor<Ctx> = {
+    subscribe: (args: {
+        incoming: any
+        urlObj: URL
+        method: string
+        pathname: string
+        route: AtomaServerRoute
+        runtime: ServerRuntime<Ctx>
+    }) => Promise<HandleResult>
+}
+
+export function createSubscribeExecutor<Ctx>(args: {
     config: AtomaServerConfig<Ctx>
-    authz: AuthzPolicy<Ctx>
-}): SyncService<Ctx> {
+}): SubscribeExecutor<Ctx> {
     const subscribeStream = async function* stream(args2: {
         incoming: any
         startCursor: number
@@ -24,8 +45,6 @@ export function createSyncService<Ctx>(args: {
 
         yield Protocol.sse.format.retry(args2.retryMs)
 
-        const allowCache = new Map<string, boolean>()
-
         while (true) {
             if (args2.incoming?.signal?.aborted === true) return
 
@@ -38,21 +57,12 @@ export function createSyncService<Ctx>(args: {
             const changes = await args.config.adapter.sync!.waitForChanges(cursor, args2.maxHoldMs)
             if (!changes.length) continue
 
-            const filtered = await args.authz.filterChanges({
-                changes,
-                route: args2.route,
-                runtime: args2.runtime,
-                allowCache
-            })
-
             const nextCursor = changes[changes.length - 1].cursor
             cursor = nextCursor
 
-            if (!filtered.length) continue
-
             yield Protocol.sse.format.changes({
                 nextCursor: String(nextCursor),
-                changes: filtered.map((c: any) => ({
+                changes: changes.map((c: any) => ({
                     resource: c.resource,
                     entityId: c.id,
                     kind: c.kind,
@@ -67,6 +77,9 @@ export function createSyncService<Ctx>(args: {
         subscribe: async ({ incoming, urlObj, method, route, runtime }) => {
             if (method !== 'GET') {
                 throwError('METHOD_NOT_ALLOWED', 'GET required', { kind: 'validation', traceId: runtime.traceId, requestId: runtime.requestId })
+            }
+            if (!args.config.adapter.sync) {
+                throwError('INVALID_REQUEST', 'Sync adapter is required', { kind: 'validation', traceId: runtime.traceId, requestId: runtime.requestId })
             }
 
             const { cursor: startCursor } = validateSyncSubscribeQuery({

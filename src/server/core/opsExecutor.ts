@@ -1,15 +1,10 @@
 import pLimit from 'p-limit'
-import { byteLengthUtf8 } from '../../http/body'
-import type { AtomaServerConfig, AtomaServerRoute } from '../../config'
-import type { OpsService } from '../types'
-import type { AuthzPolicy } from '../../policies/authzPolicy'
-import type { ServerRuntime } from '../../engine/runtime'
-import { throwError, toStandardError } from '../../error'
+import { byteLengthUtf8, throwError, toStandardError } from '../error'
+import type { AtomaOpPlugin, AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerConfig, AtomaServerRoute } from '../config'
+import type { ServerRuntime } from '../runtime/createRuntime'
 import { Protocol } from '#protocol'
-import type { IOrmAdapter, QueryParams, QueryResult } from '../../types'
-import { executeWriteItemWithSemantics } from '../../writeSemantics/executeWriteItemWithSemantics'
-import { createGetCurrent } from '../shared/createGetCurrent'
-import { summarizeCreateItem, summarizePatches, summarizeUpdateData } from '../../writeSummary'
+import type { IOrmAdapter, QueryParams, QueryResult } from '../adapters/ports'
+import { executeWriteItemWithSemantics } from './write'
 
 type JsonObject = Record<string, unknown>
 
@@ -284,101 +279,44 @@ function jsonPatchToAtomaPatches(patch: unknown[]): any[] {
     })
 }
 
-async function validateWriteOpForAuthz<Ctx>(args: {
-    config: AtomaServerConfig<Ctx>
-    authz: AuthzPolicy<Ctx>
-    route: AtomaServerRoute
-    runtime: ServerRuntime<Ctx>
-    op: WriteOp
-}) {
-    const { config, authz, route, runtime, op } = args
-
-    const resource = op.write.resource
-    const makeGetCurrent = createGetCurrent(config.adapter.orm as IOrmAdapter, resource)
-    const action = op.write.action
-    const items = Array.isArray(op.write.items) ? op.write.items : []
-
-    await Promise.all(items.map(async (raw: any) => {
-        if (action === 'create') {
-            const summary = summarizeCreateItem(raw?.value)
-            await authz.validateWrite({
-                resource,
-                op,
-                item: raw?.value,
-                changedFields: summary.changedFields,
-                ...(Array.isArray(summary.changedPaths) ? { changedPaths: summary.changedPaths } : {}),
-                getCurrent: async () => undefined,
-                route,
-                runtime
-            })
-            return
-        }
-
-        const entityId = raw?.entityId
-        if (typeof entityId !== 'string' || !entityId) {
-            throwError('INVALID_REQUEST', 'Missing write.item.entityId', { kind: 'validation', opId: op.opId })
-        }
-
-        if (action === 'update') {
-            const summary = summarizeUpdateData(raw?.value)
-            await authz.validateWrite({
-                resource,
-                op,
-                item: raw,
-                changedFields: summary.changedFields,
-                ...(Array.isArray(summary.changedPaths) ? { changedPaths: summary.changedPaths } : {}),
-                getCurrent: makeGetCurrent(entityId),
-                route,
-                runtime
-            })
-            return
-        }
-
-        if (action === 'patch') {
-            const jsonPatch = Array.isArray(raw?.patch) ? raw.patch : undefined
-            if (!jsonPatch) {
-                throwError('INVALID_REQUEST', 'Missing write.item.patch', { kind: 'validation', opId: op.opId })
-            }
-            const patches = jsonPatchToAtomaPatches(jsonPatch)
-            const summary = summarizePatches(patches)
-            await authz.validateWrite({
-                resource,
-                op,
-                item: { ...raw, patches },
-                changedFields: summary.changedFields,
-                ...(Array.isArray(summary.changedPaths) ? { changedPaths: summary.changedPaths } : {}),
-                getCurrent: makeGetCurrent(entityId),
-                route,
-                runtime
-            })
-            return
-        }
-
-        await authz.validateWrite({
-            resource,
-            op,
-            item: raw,
-            changedFields: [],
-            getCurrent: makeGetCurrent(entityId),
-            route,
-            runtime
-        })
-    }))
+export type OpsExecutor<Ctx> = {
+    handle: (args: {
+        incoming: any
+        method: string
+        pathname: string
+        runtime: ServerRuntime<Ctx>
+    }) => Promise<{ status: number; body: any; headers?: Record<string, string> }>
 }
 
-export function createOpsService<Ctx>(args: {
+export function createOpsExecutor<Ctx>(args: {
     config: AtomaServerConfig<Ctx>
-    authz: AuthzPolicy<Ctx>
     readBodyJson: (incoming: any) => Promise<any>
     syncEnabled: boolean
-}): OpsService<Ctx> {
+    opPlugins?: AtomaOpPlugin<Ctx>[]
+}): OpsExecutor<Ctx> {
     const adapter = args.config.adapter.orm as IOrmAdapter
     const syncEnabled = args.syncEnabled === true
     const idempotencyTtlMs = args.config.sync?.push?.idempotencyTtlMs ?? 7 * 24 * 60 * 60 * 1000
+    const opPlugins = Array.isArray(args.opPlugins) ? args.opPlugins : []
 
     const runItem = async <T>(fn: (args: { orm: IOrmAdapter; tx?: unknown }) => Promise<T>): Promise<T> => {
         if (!syncEnabled) return fn({ orm: adapter, tx: undefined })
         return adapter.transaction(async (tx) => fn({ orm: tx.orm, tx: tx.tx }))
+    }
+
+    const runOpPlugins = async (ctx: AtomaOpPluginContext<Ctx>, next: () => Promise<AtomaOpPluginResult>): Promise<AtomaOpPluginResult> => {
+        if (!opPlugins.length) return next()
+
+        const dispatch = opPlugins.reduceRight<() => Promise<AtomaOpPluginResult>>(
+            (nextFn, plugin) => () => plugin(ctx, nextFn),
+            next
+        )
+
+        try {
+            return await dispatch()
+        } catch (err) {
+            return { ok: false, error: err }
+        }
     }
 
     return {
@@ -470,56 +408,22 @@ export function createOpsService<Ctx>(args: {
                 }
             }
 
-            for (const op of ops) {
-                if (op.kind === 'query') {
-                    args.authz.ensureResourceAllowed(op.query.resource, { traceId: runtime.traceId, requestId: runtime.requestId })
-                }
-                if (op.kind === 'write') {
-                    args.authz.ensureResourceAllowed(op.write.resource, { traceId: runtime.traceId, requestId: runtime.requestId })
-                }
-            }
-
             const route: AtomaServerRoute = { kind: 'ops' }
 
-            await Promise.all(ops.map(async (op) => {
-                if (op.kind === 'query') {
-                    await args.authz.authorize({
-                        action: 'query',
-                        resource: op.query.resource,
-                        op,
-                        route,
-                        runtime
-                    })
-                    return
-                }
-
-                if (op.kind === 'write') {
-                    await args.authz.authorize({
-                        action: 'write',
-                        resource: op.write.resource,
-                        op,
-                        route,
-                        runtime
-                    })
-
-                    await validateWriteOpForAuthz({
-                        config: args.config,
-                        authz: args.authz,
-                        route,
-                        runtime,
-                        op
-                    })
-                    return
-                }
-            }))
-
             const resultsByOpId = new Map<string, OperationResult>()
+            const pluginRuntime = {
+                ctx: runtime.ctx as Ctx,
+                traceId: runtime.traceId,
+                requestId: runtime.requestId,
+                logger: runtime.logger
+            }
 
             if (queryOps.length) {
                 const entries = queryOps.map(q => ({ opId: q.opId, resource: q.query.resource, params: q.query.params }))
+                const queryOpById = new Map(queryOps.map(q => [q.opId, q] as const))
                 let didBatch = false
 
-                if (typeof adapter.batchFindMany === 'function') {
+                if (!opPlugins.length && typeof adapter.batchFindMany === 'function') {
                     try {
                         const resList = await adapter.batchFindMany(entries.map(e => ({ resource: e.resource, params: e.params })))
                         for (let i = 0; i < entries.length; i++) {
@@ -538,23 +442,55 @@ export function createOpsService<Ctx>(args: {
                 }
 
                 if (!didBatch) {
-                    const settled = await Promise.allSettled(entries.map(e => adapter.findMany(e.resource, e.params)))
-                    for (let i = 0; i < entries.length; i++) {
-                        const e = entries[i]
-                        const res = settled[i]
-                        if (res.status === 'fulfilled') {
-                            resultsByOpId.set(e.opId, {
-                                opId: e.opId,
-                                ok: true,
-                                data: { items: res.value.data, ...(res.value.pageInfo ? { pageInfo: res.value.pageInfo } : {}) }
-                            })
-                            continue
+                    if (!opPlugins.length) {
+                        const settled = await Promise.allSettled(entries.map(e => adapter.findMany(e.resource, e.params)))
+                        for (let i = 0; i < entries.length; i++) {
+                            const e = entries[i]
+                            const res = settled[i]
+                            if (res.status === 'fulfilled') {
+                                resultsByOpId.set(e.opId, {
+                                    opId: e.opId,
+                                    ok: true,
+                                    data: { items: res.value.data, ...(res.value.pageInfo ? { pageInfo: res.value.pageInfo } : {}) }
+                                })
+                                continue
+                            }
+                            const standard = Protocol.error.withTrace(
+                                toStandardError(res.reason, 'QUERY_FAILED'),
+                                traceMetaForOpId(e.opId)
+                            )
+                            resultsByOpId.set(e.opId, { opId: e.opId, ok: false, error: standard })
                         }
-                        const standard = Protocol.error.withTrace(
-                            toStandardError(res.reason, 'QUERY_FAILED'),
-                            traceMetaForOpId(e.opId)
-                        )
-                        resultsByOpId.set(e.opId, { opId: e.opId, ok: false, error: standard })
+                    } else {
+                        await Promise.all(entries.map(async (e) => {
+                            const op = queryOpById.get(e.opId)
+                            const pluginResult = await runOpPlugins({
+                                opId: e.opId,
+                                kind: 'query',
+                                resource: e.resource,
+                                op,
+                                route,
+                                runtime: pluginRuntime
+                            }, async () => {
+                                try {
+                                    const res = await adapter.findMany(e.resource, e.params)
+                                    return { ok: true, data: { items: res.data, ...(res.pageInfo ? { pageInfo: res.pageInfo } : {}) } }
+                                } catch (err) {
+                                    return { ok: false, error: err }
+                                }
+                            })
+
+                            if (pluginResult.ok) {
+                                resultsByOpId.set(e.opId, { opId: e.opId, ok: true, data: pluginResult.data })
+                                return
+                            }
+
+                            const standard = Protocol.error.withTrace(
+                                toStandardError(pluginResult.error, 'QUERY_FAILED'),
+                                traceMetaForOpId(e.opId)
+                            )
+                            resultsByOpId.set(e.opId, { opId: e.opId, ok: false, error: standard })
+                        }))
                     }
                 }
             }
@@ -568,59 +504,159 @@ export function createOpsService<Ctx>(args: {
                     const action = op.write.action
                     const items = Array.isArray(op.write.items) ? op.write.items : []
 
-                    const itemResults: any[] = new Array(items.length)
+                    const pluginResult = await runOpPlugins({
+                        opId: op.opId,
+                        kind: 'write',
+                        resource,
+                        op,
+                        route,
+                        runtime: pluginRuntime
+                    }, async () => {
+                        const itemResults: any[] = new Array(items.length)
 
-                    for (let i = 0; i < items.length; i++) {
-                        const raw = items[i] as any
-                        const meta = isObject(raw?.meta) ? raw.meta : undefined
-                        const idempotencyKey = meta && typeof meta.idempotencyKey === 'string' ? meta.idempotencyKey : undefined
-                        const timestamp = meta && typeof meta.clientTimeMs === 'number' ? meta.clientTimeMs : undefined
+                        for (let i = 0; i < items.length; i++) {
+                            const raw = items[i] as any
+                            const meta = isObject(raw?.meta) ? raw.meta : undefined
+                            const idempotencyKey = meta && typeof meta.idempotencyKey === 'string' ? meta.idempotencyKey : undefined
+                            const timestamp = meta && typeof meta.clientTimeMs === 'number' ? meta.clientTimeMs : undefined
 
-                        try {
-                            if (action === 'create') {
-                                const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
-                                    orm,
-                                    sync: args.config.adapter.sync,
-                                    tx,
-                                    syncEnabled,
-                                    idempotencyTtlMs,
-                                    meta: opTrace,
-                                    write: {
-                                        kind: 'create',
-                                        resource,
-                                        ...(idempotencyKey ? { idempotencyKey } : {}),
-                                        data: raw?.value
+                            try {
+                                if (action === 'create') {
+                                    const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
+                                        orm,
+                                        sync: args.config.adapter.sync,
+                                        tx,
+                                        syncEnabled,
+                                        idempotencyTtlMs,
+                                        meta: opTrace,
+                                        write: {
+                                            kind: 'create',
+                                            resource,
+                                            ...(idempotencyKey ? { idempotencyKey } : {}),
+                                            data: raw?.value
+                                        }
+                                    }))
+
+                                    if (res.ok) {
+                                        itemResults[i] = {
+                                            index: i,
+                                            ok: true,
+                                            entityId: res.replay.id,
+                                            version: res.replay.serverVersion,
+                                            ...(res.data !== undefined ? { data: res.data } : {})
+                                        }
+                                        continue
                                     }
-                                }))
 
-                                if (res.ok) {
                                     itemResults[i] = {
                                         index: i,
-                                        ok: true,
-                                        entityId: res.replay.id,
-                                        version: res.replay.serverVersion,
-                                        ...(res.data !== undefined ? { data: res.data } : {})
+                                        ok: false,
+                                        error: Protocol.error.withTrace(res.error, opTrace),
+                                        ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
+                                            ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
+                                            : {})
                                     }
                                     continue
                                 }
 
-                                itemResults[i] = {
-                                    index: i,
-                                    ok: false,
-                                    error: Protocol.error.withTrace(res.error, opTrace),
-                                    ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
-                                        ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
-                                        : {})
-                                }
-                                continue
-                            }
+                                if (action === 'update') {
+                                    const entityId = raw?.entityId
+                                    const baseVersion = raw?.baseVersion
+                                    const full = (raw?.value && typeof raw.value === 'object') ? { ...raw.value, id: entityId } : { id: entityId }
+                                    const patches = [{ op: 'replace', path: [entityId], value: full }]
 
-                            if (action === 'update') {
+                                    const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
+                                        orm,
+                                        sync: args.config.adapter.sync,
+                                        tx,
+                                        syncEnabled,
+                                        idempotencyTtlMs,
+                                        meta: opTrace,
+                                        write: {
+                                            kind: 'patch',
+                                            resource,
+                                            ...(idempotencyKey ? { idempotencyKey } : {}),
+                                            id: entityId,
+                                            patches,
+                                            baseVersion
+                                        }
+                                    }))
+
+                                    if (res.ok) {
+                                        itemResults[i] = {
+                                            index: i,
+                                            ok: true,
+                                            entityId: res.replay.id,
+                                            version: res.replay.serverVersion,
+                                            ...(res.data !== undefined ? { data: res.data } : {})
+                                        }
+                                        continue
+                                    }
+
+                                    itemResults[i] = {
+                                        index: i,
+                                        ok: false,
+                                        error: Protocol.error.withTrace(res.error, opTrace),
+                                        ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
+                                            ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
+                                            : {})
+                                    }
+                                    continue
+                                }
+
+                                if (action === 'patch') {
+                                    const entityId = raw?.entityId
+                                    const baseVersion = raw?.baseVersion
+                                    const jsonPatch = Array.isArray(raw?.patch) ? raw.patch : undefined
+                                    if (!jsonPatch) {
+                                        throwError('INVALID_REQUEST', 'Missing patch', { kind: 'validation', opId: op.opId })
+                                    }
+                                    const patches = jsonPatchToAtomaPatches(jsonPatch)
+
+                                    const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
+                                        orm,
+                                        sync: args.config.adapter.sync,
+                                        tx,
+                                        syncEnabled,
+                                        idempotencyTtlMs,
+                                        meta: opTrace,
+                                        write: {
+                                            kind: 'patch',
+                                            resource,
+                                            ...(idempotencyKey ? { idempotencyKey } : {}),
+                                            id: entityId,
+                                            patches,
+                                            baseVersion,
+                                            ...(timestamp !== undefined ? { timestamp } : {})
+                                        }
+                                    }))
+
+                                    if (res.ok) {
+                                        const id = res.replay.id
+                                        const version = res.replay.serverVersion
+                                        itemResults[i] = {
+                                            index: i,
+                                            ok: true,
+                                            entityId: id,
+                                            version,
+                                            ...(res.data !== undefined ? { data: res.data } : {})
+                                        }
+                                        continue
+                                    }
+
+                                    itemResults[i] = {
+                                        index: i,
+                                        ok: false,
+                                        error: Protocol.error.withTrace(res.error, opTrace),
+                                        ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
+                                            ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
+                                            : {})
+                                    }
+                                    continue
+                                }
+
                                 const entityId = raw?.entityId
                                 const baseVersion = raw?.baseVersion
-                                const full = (raw?.value && typeof raw.value === 'object') ? { ...raw.value, id: entityId } : { id: entityId }
-                                const patches = [{ op: 'replace', path: [entityId], value: full }]
-
                                 const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
                                     orm,
                                     sync: args.config.adapter.sync,
@@ -629,11 +665,10 @@ export function createOpsService<Ctx>(args: {
                                     idempotencyTtlMs,
                                     meta: opTrace,
                                     write: {
-                                        kind: 'patch',
+                                        kind: 'delete',
                                         resource,
                                         ...(idempotencyKey ? { idempotencyKey } : {}),
                                         id: entityId,
-                                        patches,
                                         baseVersion
                                     }
                                 }))
@@ -657,112 +692,33 @@ export function createOpsService<Ctx>(args: {
                                         ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
                                         : {})
                                 }
-                                continue
+                            } catch (err) {
+                                const standard = Protocol.error.withTrace(
+                                    toStandardError(err, 'WRITE_FAILED'),
+                                    opTrace
+                                )
+                                itemResults[i] = { index: i, ok: false, error: standard }
                             }
-
-                            if (action === 'patch') {
-                                const entityId = raw?.entityId
-                                const baseVersion = raw?.baseVersion
-                                const jsonPatch = Array.isArray(raw?.patch) ? raw.patch : undefined
-                                if (!jsonPatch) {
-                                    throwError('INVALID_REQUEST', 'Missing patch', { kind: 'validation', opId: op.opId })
-                                }
-                                const patches = jsonPatchToAtomaPatches(jsonPatch)
-
-                                const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
-                                    orm,
-                                    sync: args.config.adapter.sync,
-                                    tx,
-                                    syncEnabled,
-                                    idempotencyTtlMs,
-                                    meta: opTrace,
-                                    write: {
-                                        kind: 'patch',
-                                        resource,
-                                        ...(idempotencyKey ? { idempotencyKey } : {}),
-                                        id: entityId,
-                                        patches,
-                                        baseVersion,
-                                        ...(timestamp !== undefined ? { timestamp } : {})
-                                    }
-                                }))
-
-                                if (res.ok) {
-                                    const id = res.replay.id
-                                    const version = res.replay.serverVersion
-                                    itemResults[i] = {
-                                        index: i,
-                                        ok: true,
-                                        entityId: id,
-                                        version,
-                                        ...(res.data !== undefined ? { data: res.data } : {})
-                                    }
-                                    continue
-                                }
-
-                                itemResults[i] = {
-                                    index: i,
-                                    ok: false,
-                                    error: Protocol.error.withTrace(res.error, opTrace),
-                                    ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
-                                        ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
-                                        : {})
-                                }
-                                continue
-                            }
-
-                            const entityId = raw?.entityId
-                            const baseVersion = raw?.baseVersion
-                            const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
-                                orm,
-                                sync: args.config.adapter.sync,
-                                tx,
-                                syncEnabled,
-                                idempotencyTtlMs,
-                                meta: opTrace,
-                                write: {
-                                    kind: 'delete',
-                                    resource,
-                                    ...(idempotencyKey ? { idempotencyKey } : {}),
-                                    id: entityId,
-                                    baseVersion
-                                }
-                            }))
-
-                            if (res.ok) {
-                                itemResults[i] = {
-                                    index: i,
-                                    ok: true,
-                                    entityId: res.replay.id,
-                                    version: res.replay.serverVersion,
-                                    ...(res.data !== undefined ? { data: res.data } : {})
-                                }
-                                continue
-                            }
-
-                            itemResults[i] = {
-                                index: i,
-                                ok: false,
-                                error: Protocol.error.withTrace(res.error, opTrace),
-                                ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
-                                    ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
-                                    : {})
-                            }
-                        } catch (err) {
-                            const standard = Protocol.error.withTrace(
-                                toStandardError(err, 'WRITE_FAILED'),
-                                opTrace
-                            )
-                            itemResults[i] = { index: i, ok: false, error: standard }
                         }
+
+                        const transactionApplied = syncEnabled
+                        return { ok: true, data: { transactionApplied, results: itemResults } }
+                    })
+
+                    if (pluginResult.ok) {
+                        resultsByOpId.set(op.opId, {
+                            opId: op.opId,
+                            ok: true,
+                            data: pluginResult.data
+                        })
+                        return
                     }
 
-                    const transactionApplied = syncEnabled
-                    resultsByOpId.set(op.opId, {
-                        opId: op.opId,
-                        ok: true,
-                        data: { transactionApplied, results: itemResults }
-                    })
+                    const standard = Protocol.error.withTrace(
+                        toStandardError(pluginResult.error, 'WRITE_FAILED'),
+                        opTrace
+                    )
+                    resultsByOpId.set(op.opId, { opId: op.opId, ok: false, error: standard })
                 })))
             }
 
@@ -774,40 +730,49 @@ export function createOpsService<Ctx>(args: {
             }
 
             for (const op of pullOps) {
-                try {
-                    const cursor = parseCursorV1(op.pull.cursor)
-                    const maxLimit = args.config.sync?.pull?.maxLimit ?? args.config.limits?.syncPull?.maxLimit ?? 200
-                    const limit = Math.min(Math.max(1, Math.floor(op.pull.limit)), maxLimit)
+                const opTrace = traceMetaForOpId(op.opId)
+                const pluginResult = await runOpPlugins({
+                    opId: op.opId,
+                    kind: 'changes.pull',
+                    op,
+                    route,
+                    runtime: pluginRuntime
+                }, async () => {
+                    try {
+                        const cursor = parseCursorV1(op.pull.cursor)
+                        const maxLimit = args.config.sync?.pull?.maxLimit ?? args.config.limits?.syncPull?.maxLimit ?? 200
+                        const limit = Math.min(Math.max(1, Math.floor(op.pull.limit)), maxLimit)
 
-                    const raw = await args.config.adapter.sync!.pullChanges(cursor, limit)
-                    const filtered = await args.authz.filterChanges({
-                        changes: raw,
-                        route: { kind: 'sync', name: 'pull' } as AtomaServerRoute,
-                        runtime
-                    })
-
-                    const nextCursor = raw.length ? raw[raw.length - 1].cursor : cursor
-                    resultsByOpId.set(op.opId, {
-                        opId: op.opId,
-                        ok: true,
-                        data: {
-                            nextCursor: String(nextCursor),
-                            changes: filtered.map((c: any) => ({
-                                resource: c.resource,
-                                entityId: c.id,
-                                kind: c.kind,
-                                version: c.serverVersion,
-                                changedAtMs: c.changedAt
-                            }))
+                        const raw = await args.config.adapter.sync!.pullChanges(cursor, limit)
+                        const nextCursor = raw.length ? raw[raw.length - 1].cursor : cursor
+                        return {
+                            ok: true,
+                            data: {
+                                nextCursor: String(nextCursor),
+                                changes: raw.map((c: any) => ({
+                                    resource: c.resource,
+                                    entityId: c.id,
+                                    kind: c.kind,
+                                    version: c.serverVersion,
+                                    changedAtMs: c.changedAt
+                                }))
+                            }
                         }
-                    })
-                } catch (err) {
-                    const standard = Protocol.error.withTrace(
-                        toStandardError(err, 'SYNC_PULL_FAILED'),
-                        traceMetaForOpId(op.opId)
-                    )
-                    resultsByOpId.set(op.opId, { opId: op.opId, ok: false, error: standard })
+                    } catch (err) {
+                        return { ok: false, error: err }
+                    }
+                })
+
+                if (pluginResult.ok) {
+                    resultsByOpId.set(op.opId, { opId: op.opId, ok: true, data: pluginResult.data })
+                    continue
                 }
+
+                const standard = Protocol.error.withTrace(
+                    toStandardError(pluginResult.error, 'SYNC_PULL_FAILED'),
+                    opTrace
+                )
+                resultsByOpId.set(op.opId, { opId: op.opId, ok: false, error: standard })
             }
 
             const results: OperationResult[] = ops.map((op) => {

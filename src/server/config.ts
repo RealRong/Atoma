@@ -1,11 +1,10 @@
 import type { DebugConfig, DebugEvent } from '#observability'
 import type { AtomaServerLogger } from './logger'
-import type { IOrmAdapter } from './types'
-import type { ISyncAdapter } from './sync/types'
+import type { IOrmAdapter, ISyncAdapter } from './adapters/ports'
 
 export type AtomaServerRoute =
     | { kind: 'ops' }
-    | { kind: 'sync'; name: 'pull' | 'subscribe' }
+    | { kind: 'subscribe' }
 
 export type AtomaServerHookArgs<Ctx> = {
     route: AtomaServerRoute
@@ -15,26 +14,6 @@ export type AtomaServerHookArgs<Ctx> = {
 }
 
 export type AtomaServerHook<TArgs> = (args: TArgs) => void | Promise<void>
-
-export type AtomaAuthorizeHookArgs<Ctx> = AtomaServerHookArgs<Ctx> & {
-    action: 'query' | 'write' | 'sync'
-    resource: string
-    op: unknown
-}
-
-export type AtomaValidateWriteHookArgs<Ctx> = AtomaServerHookArgs<Ctx> & {
-    resource: string
-    op: unknown
-    item: unknown
-    changedFields: string[]
-    changedPaths?: Array<Array<string | number>>
-    getCurrent: (fields: string[]) => Promise<unknown | undefined>
-}
-
-export type AtomaAuthzHooks<Ctx> = {
-    authorize?: Array<(args: AtomaAuthorizeHookArgs<Ctx>) => void | Promise<void>>
-    validateWrite?: Array<(args: AtomaValidateWriteHookArgs<Ctx>) => void | Promise<void>>
-}
 
 export type AtomaServerTraceConfig = {
     traceIdHeader?: string
@@ -46,6 +25,48 @@ export type AtomaServerDebugConfig = {
     scope?: string
     debug?: DebugConfig
     onEvent?: (e: DebugEvent) => void
+}
+
+export type AtomaServerPluginRuntime<Ctx> = {
+    ctx: Ctx
+    traceId?: string
+    requestId: string
+    logger: AtomaServerLogger
+}
+
+export type AtomaOpPluginResult =
+    | { ok: true; data: any }
+    | { ok: false; error: any }
+
+export type AtomaOpsPluginContext<Ctx> = {
+    request: Request
+    route: AtomaServerRoute
+    runtime: AtomaServerPluginRuntime<Ctx>
+}
+
+export type AtomaSubscribePluginContext<Ctx> = {
+    request: Request
+    route: AtomaServerRoute
+    runtime: AtomaServerPluginRuntime<Ctx>
+}
+
+export type AtomaOpPluginContext<Ctx> = {
+    opId: string
+    kind: 'query' | 'write' | 'changes.pull'
+    resource?: string
+    op: unknown
+    route: AtomaServerRoute
+    runtime: AtomaServerPluginRuntime<Ctx>
+}
+
+export type AtomaOpsPlugin<Ctx> = (ctx: AtomaOpsPluginContext<Ctx>, next: () => Promise<Response>) => Promise<Response>
+export type AtomaSubscribePlugin<Ctx> = (ctx: AtomaSubscribePluginContext<Ctx>, next: () => Promise<Response>) => Promise<Response>
+export type AtomaOpPlugin<Ctx> = (ctx: AtomaOpPluginContext<Ctx>, next: () => Promise<AtomaOpPluginResult>) => Promise<AtomaOpPluginResult>
+
+export type AtomaServerPlugins<Ctx> = {
+    ops?: AtomaOpsPlugin<Ctx>[]
+    subscribe?: AtomaSubscribePlugin<Ctx>[]
+    op?: AtomaOpPlugin<Ctx>[]
 }
 
 export type AtomaErrorFormatterArgs<Ctx> = {
@@ -64,7 +85,7 @@ export type AtomaServerConfig<Ctx = unknown> = {
 
     adapter: {
         orm: IOrmAdapter
-        sync: ISyncAdapter
+        sync?: ISyncAdapter
     }
 
     context?: {
@@ -74,26 +95,6 @@ export type AtomaServerConfig<Ctx = unknown> = {
             requestId: string
             logger: AtomaServerLogger
         }) => Promise<Ctx> | Ctx
-    }
-
-    routing?: {
-        basePath?: string
-        ops?: { path?: string }
-        sync?: {
-            enabled?: boolean
-            subscribePath?: string
-        }
-    }
-
-    authz?: {
-        resources?: {
-            allow?: string[]
-            deny?: string[]
-        }
-        hooks?: AtomaAuthzHooks<Ctx>
-        perResource?: Record<string, {
-            hooks?: AtomaAuthzHooks<Ctx>
-        }>
     }
 
     sync?: {
@@ -147,4 +148,6 @@ export type AtomaServerConfig<Ctx = unknown> = {
         exposeInternalDetails?: boolean
         format?: (args: AtomaErrorFormatterArgs<Ctx>) => { status: number; body: unknown }
     }
+
+    plugins?: AtomaServerPlugins<Ctx>
 }

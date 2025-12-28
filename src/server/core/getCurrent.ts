@@ -1,4 +1,4 @@
-import type { IOrmAdapter } from '../../types'
+import type { IOrmAdapter } from '../adapters/ports'
 
 export function createGetCurrent(adapter: IOrmAdapter, resource: string) {
     return (id: any) => {

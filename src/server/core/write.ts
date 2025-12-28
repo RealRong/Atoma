@@ -1,8 +1,61 @@
-import type { AtomaChange } from '../sync/types'
-import { throwError, toStandardError, errorStatus } from '../error'
-import type { IOrmAdapter, StandardError as StandardErrorType } from '../types'
-import type { ISyncAdapter } from '../sync/types'
-import type { StoredWriteReplay, WriteKind } from './types'
+import type { ChangeKind } from '#protocol'
+import { errorStatus, throwError, toStandardError } from '../error'
+import type { AtomaChange, IOrmAdapter, ISyncAdapter, StandardError as StandardErrorType } from '../adapters/ports'
+
+export type WriteChangeSummary = {
+    changedFields: string[]
+    changedPaths?: Array<Array<string | number>>
+}
+
+export function summarizeCreateItem(item: unknown): WriteChangeSummary {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return { changedFields: [] }
+    return { changedFields: Object.keys(item as any) }
+}
+
+export function summarizeUpdateData(data: unknown): WriteChangeSummary {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return { changedFields: [] }
+    return { changedFields: Object.keys(data as any) }
+}
+
+export function summarizePatches(patches: unknown): WriteChangeSummary {
+    const list = Array.isArray(patches) ? patches : []
+    const changedFields: string[] = []
+    const changedPaths: Array<Array<string | number>> = []
+
+    for (const p of list) {
+        const path = (p as any)?.path
+        if (!Array.isArray(path) || !path.length) continue
+        changedPaths.push(path as Array<string | number>)
+        const first = path[0]
+        if (typeof first === 'string' && first && !changedFields.includes(first)) {
+            changedFields.push(first)
+        }
+    }
+
+    return {
+        changedFields,
+        ...(changedPaths.length ? { changedPaths } : {})
+    }
+}
+
+export type WriteKind = 'create' | 'patch' | 'delete'
+
+export type StoredWriteReplay =
+    | {
+        kind: 'ok'
+        resource: string
+        id: string
+        changeKind: ChangeKind
+        serverVersion: number
+        cursor?: number
+        data?: unknown
+    }
+    | {
+        kind: 'error'
+        error: StandardErrorType
+        currentValue?: unknown
+        currentVersion?: number
+    }
 
 type OkReplay = Extract<StoredWriteReplay, { kind: 'ok' }>
 type ErrorReplay = Extract<StoredWriteReplay, { kind: 'error' }>
@@ -134,17 +187,11 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                     return res?.data
                 }
                 const res = await (orm as any).bulkCreate(write.resource, [data], { returning: true } as any)
-                const first = Array.isArray(res?.data) ? res.data[0] : undefined
-                if (Array.isArray(res?.partialFailures) && res.partialFailures.length) {
-                    throw res.partialFailures[0]?.error ?? new Error('bulkCreate failed')
-                }
-                return first
+                if (res?.partialFailures?.length) throw res.partialFailures[0].error
+                return res?.data?.[0]
             })()
 
-            const id = normalizeId((row as any)?.id ?? (data as any).id)
-            if (!id) {
-                throwError('INVALID_WRITE', 'Missing id from create result', { kind: 'adapter', resource: write.resource })
-            }
+            const id = normalizeId((row as any)?.id ?? write.id)
             const serverVersion = typeof (row as any)?.version === 'number' ? (row as any).version : 1
 
             let change: AtomaChange | undefined
@@ -165,7 +212,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                 changeKind: 'upsert',
                 serverVersion,
                 ...(change ? { cursor: change.cursor } : {}),
-                data: row ?? data
+                data: row
             }
             await writeIdempotency(replay, 200)
             return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
@@ -284,3 +331,4 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
         return { ok: false, status, error: standard, replay }
     }
 }
+

@@ -30,8 +30,6 @@ This folder implements Atoma’s **client-side batching engine** used by adapter
   - Drains WriteOp tasks and sends `POST /ops`.
 - `internal.ts`
   - Internal helpers (config normalization, small utils, adapter debug events fan-out, and `executeOpsTasksBatch` which does payload → `opsClient.executeOps` → result mapping/fallback).
-- (Not in this folder) `src/adapters/http/protocol/queryParams.ts`
-  - Translates `FindManyOptions<T>` into server `QueryParams` (ops protocol requires `params.page`), used by the HTTP ops router to build QueryOp.
 
 ## How it runs (end-to-end)
 

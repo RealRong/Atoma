@@ -21,7 +21,7 @@ export type AtomaErrorDetails = {
     [k: string]: any
 }
 
-function byteLengthUtf8(input: string) {
+export function byteLengthUtf8(input: string) {
     if (typeof Buffer !== 'undefined') return Buffer.byteLength(input, 'utf8')
     if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(input).length
     return input.length
@@ -175,4 +175,3 @@ export function errorStatus(error: Pick<StandardError, 'code'>) {
             return 500
     }
 }
-

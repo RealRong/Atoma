@@ -1,9 +1,9 @@
-import { throwError } from '../error'
+import { byteLengthUtf8, throwError } from '../error'
 
-export function byteLengthUtf8(input: string) {
-    if (typeof Buffer !== 'undefined') return Buffer.byteLength(input, 'utf8')
-    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(input).length
-    return input.length
+export type HandleResult = {
+    status: number
+    body: any
+    headers?: Record<string, string>
 }
 
 export async function readJsonBody(incoming: any): Promise<any> {
@@ -65,5 +65,19 @@ export async function readJsonBodyWithLimit(incoming: any, bodyBytesLimit: numbe
     }
 
     return undefined
+}
+
+export function normalizePath(path: string) {
+    return path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path
+}
+
+export function stripBasePath(url: string, basePath: string): string | undefined {
+    const u = new URL(url, 'http://localhost')
+    const pathname = u.pathname
+    const base = normalizePath(basePath)
+    if (!base || base === '/') return u.pathname + u.search
+    if (!pathname.startsWith(base)) return undefined
+    const rest = pathname.slice(base.length) || '/'
+    return (rest.startsWith('/') ? rest : `/${rest}`) + u.search
 }
 

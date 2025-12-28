@@ -1,4 +1,4 @@
-import type { CursorToken, OrderByRule } from '../../types'
+import type { CursorToken, OrderByRule } from '../ports'
 
 type CursorPayload = { v: any[] }
 
@@ -62,4 +62,3 @@ function base64UrlDecode(input: string) {
     }
     return decodeURIComponent(escape(atob(base64)))
 }
-

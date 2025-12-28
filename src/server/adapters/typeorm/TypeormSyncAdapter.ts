@@ -1,5 +1,5 @@
 import type { DataSource, EntityManager } from 'typeorm'
-import type { AtomaChange, ISyncAdapter, IdempotencyResult } from '../../sync/types'
+import type { AtomaChange, ISyncAdapter, IdempotencyResult } from '../ports'
 import { throwError } from '../../error'
 import { AtomaTypeormAdapter } from './TypeormAdapter'
 

@@ -7,7 +7,7 @@ import type {
     QueryResultMany,
     QueryResultOne,
     WriteOptions
-} from '../../types'
+} from '../ports'
 import { applyPatches, enablePatches } from 'immer'
 import {
     compareOpForAfter,

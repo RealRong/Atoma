@@ -30,8 +30,6 @@
   - drain WriteOp 任务并发送 `POST /ops`。
 - `internal.ts`
   - 内部辅助：配置归一化、小工具、adapter 事件 fan-out，以及 `executeOpsTasksBatch`（组 payload → 调用 `opsClient.executeOps` → results 映射/兜底）。
-- （不在本目录）`src/adapters/http/protocol/queryParams.ts`
-  - 把 `FindManyOptions<T>` 翻译为服务端 ops 协议需要的 `QueryParams`（要求 `params.page`），供 HTTP ops 路由层构造 QueryOp 使用。
 
 ## 运行流程（端到端）
 
