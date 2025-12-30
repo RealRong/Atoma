@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Entity, StoreKey } from '../../src/core'
 import { Core } from '../../src/core'
+import { StoreIndexes } from '../../src/core/indexes/StoreIndexes'
 
 type User = Entity & { name: string }
 type SlugUser = User & { slug: string }
@@ -93,6 +94,75 @@ describe('core relations projector', () => {
         expect((out[0] as any).tags.map((t: any) => t.label).sort()).toEqual(['t1', 't3'])
         expect((out[1] as any).tags).toEqual([])
         expect((out[2] as any).tags).toEqual([])
+    })
+
+    it('hasMany: 支持传入 { map, indexes }，避免每次扫完整 target store 建桶', () => {
+        const commentsMap = new Map<StoreKey, Comment>([
+            [1, { id: 1, postId: 1, createdAt: 2 }],
+            [2, { id: 2, postId: 1, createdAt: 1 }],
+            [3, { id: 3, postId: 2, createdAt: 9 }]
+        ])
+
+        const commentsIndexes = new StoreIndexes<Comment>([
+            { field: 'postId', type: 'number' }
+        ])
+        commentsIndexes.applyMapDiff(new Map(), commentsMap)
+
+        const items: Post[] = [
+            { id: 1 },
+            { id: 2 },
+            { id: 3 }
+        ]
+
+        const relations = {
+            comments: Core.relations.hasMany<Post, Comment>('comments', { foreignKey: 'postId' })
+        } as const
+
+        const getStoreMap = (store: string) => {
+            if (store === 'comments') {
+                return { map: commentsMap, indexes: commentsIndexes }
+            }
+            return undefined
+        }
+
+        const out = Core.relations.projectRelationsBatch(items, { comments: true }, relations as any, getStoreMap)
+
+        expect(((out[0] as any).comments as any[]).map(c => c.id).sort()).toEqual([1, 2])
+        expect(((out[1] as any).comments as any[]).map(c => c.id).sort()).toEqual([3])
+        expect((out[2] as any).comments).toEqual([])
+    })
+
+    it('belongsTo: primaryKey != id 时支持传入 { map, indexes } 做索引查找', () => {
+        const usersBySlugMap = new Map<StoreKey, SlugUser>([
+            [10, { id: 10, name: 'u:a', slug: 'a' }],
+            [20, { id: 20, name: 'u:b', slug: 'b' }]
+        ])
+
+        const usersBySlugIndexes = new StoreIndexes<SlugUser>([
+            { field: 'slug', type: 'string' }
+        ])
+        usersBySlugIndexes.applyMapDiff(new Map(), usersBySlugMap)
+
+        const items: Post[] = [
+            { id: 1 },
+            { id: 2 }
+        ]
+
+        const relations = {
+            authorBySlug: Core.relations.belongsTo<Post, SlugUser>('usersBySlug', { foreignKey: () => 'b', primaryKey: 'slug' })
+        } as const
+
+        const getStoreMap = (store: string) => {
+            if (store === 'usersBySlug') {
+                return { map: usersBySlugMap, indexes: usersBySlugIndexes }
+            }
+            return undefined
+        }
+
+        const out = Core.relations.projectRelationsBatch(items, { authorBySlug: true }, relations as any, getStoreMap)
+
+        expect((out[0] as any).authorBySlug?.slug).toBe('b')
+        expect((out[1] as any).authorBySlug?.slug).toBe('b')
     })
 
     it('hasOne: join 后按 orderBy 选 1 条；无匹配为 null', () => {

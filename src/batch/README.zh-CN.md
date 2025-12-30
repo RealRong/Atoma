@@ -66,7 +66,7 @@
 
 - 每个 task 的 `ctx` 只影响它对应的 `op.meta.traceId/requestId`
 - `OpsRequest.meta` 只保留 transport 级字段（例如 `v/clientTimeMs`），不再写入 traceId/requestId
-- 请求头不再注入 `x-atoma-trace-id` / `x-atoma-request-id`
+- 不注入任何 trace header（例如 `x-atoma-trace-id` / `x-atoma-request-id`）；Atoma 也不支持/解析 header trace，跨端关联只走 `op.meta`（以及 subscribe 的 query 参数）。
 - 同一批请求内允许 mixed trace；debug 事件会标记 `mixedTrace: true`
 
 ### 5）adapter 事件（adapter:request / adapter:response）

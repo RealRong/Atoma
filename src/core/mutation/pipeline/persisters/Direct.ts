@@ -7,11 +7,18 @@ type ApplySideEffects<T> = {
     createdResults?: T[]
 }
 
+function stableUpsertKey(op: { mode?: any; merge?: any } | undefined): string {
+    const mode = op?.mode === 'loose' ? 'loose' : (op?.mode === 'strict' ? 'strict' : '')
+    const merge = op?.merge === false ? '0' : (op?.merge === true ? '1' : '')
+    return `${mode}|${merge}`
+}
+
 const applyPatchesViaOperations = async <T extends Entity>(
     dataSource: IDataSource<T>,
     patches: Patch[],
     appliedData: T[],
     operationTypes: StoreDispatchEvent<T>['type'][],
+    operations: StoreDispatchEvent<T>[],
     internalContext?: ObservabilityContext
 ): Promise<ApplySideEffects<T>> => {
     if (operationTypes.length === 1 && operationTypes[0] === 'patches') {
@@ -43,6 +50,7 @@ const applyPatchesViaOperations = async <T extends Entity>(
     }
 
     const createActions: T[] = []
+    const upsertActionsByKey = new Map<string, { items: T[]; options?: { mode?: any; merge?: any } }>()
     const putActions: T[] = []
     const deleteKeys: Array<string | number> = []
 
@@ -51,6 +59,18 @@ const applyPatchesViaOperations = async <T extends Entity>(
         if (!value) return
         if (type === 'add') {
             createActions.push(value)
+            return
+        }
+        if (type === 'upsert') {
+            const op = operations[idx]
+            const upsert = (op && op.type === 'upsert') ? (op as any).upsert : undefined
+            const key = stableUpsertKey(upsert)
+            const entry = upsertActionsByKey.get(key) ?? (() => {
+                const next = { items: [] as T[], options: upsert }
+                upsertActionsByKey.set(key, next)
+                return next
+            })()
+            entry.items.push(value)
             return
         }
         if (type === 'update' || type === 'remove') {
@@ -72,6 +92,17 @@ const applyPatchesViaOperations = async <T extends Entity>(
             }
         } else {
             await dataSource.bulkPut(createActions, internalContext)
+        }
+    }
+
+    if (upsertActionsByKey.size) {
+        for (const entry of upsertActionsByKey.values()) {
+            if (!entry.items.length) continue
+            if (dataSource.bulkUpsert) {
+                await dataSource.bulkUpsert(entry.items, entry.options as any, internalContext)
+            } else {
+                await dataSource.bulkPut(entry.items, internalContext)
+            }
         }
     }
 
@@ -110,6 +141,7 @@ export class DirectPersister implements Persister {
                 args.plan.patches,
                 args.plan.appliedData,
                 args.plan.operationTypes,
+                args.operations,
                 args.observabilityContext
             )
 

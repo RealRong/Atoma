@@ -9,6 +9,8 @@ const ROUTER_METHODS = [
     'put',
     'bulkPut',
     'bulkCreate',
+    'upsert',
+    'bulkUpsert',
     'delete',
     'bulkDelete',
     'get',

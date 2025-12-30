@@ -4,7 +4,6 @@ node_modules/
 # Build output
 dist/
 tsconfig.tsbuildinfo
-docs
 .tmp
 
 # Environment variables
@@ -33,7 +32,7 @@ yarn-error.log*
 coverage/
 
 # Root markdown notes (keep primary docs tracked)
-# /*.md 
+/*.md 
 !/README.md
 # !/ARCHITECTURE.md
 !/HTTP_PROTOCOL.md

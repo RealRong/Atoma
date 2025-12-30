@@ -1,9 +1,9 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import type { StoreDispatchEvent } from '../../types'
-import { normalizeOperationContext } from '../../operationContext'
+import { createActionId, normalizeOperationContext } from '../../operationContext'
 import type { IExecutor } from './types'
-import type { VersionManager } from './VersionManager'
 import type { BeforeDispatchContext, DispatchDecision, PlannedEvent } from '../hooks'
+import type { OperationContext } from '../../types'
 
 type AtomKey = PrimitiveAtom<any>
 
@@ -26,13 +26,13 @@ export class Scheduler {
     constructor(
         private readonly deps: {
             executor: IExecutor
-            versionTracker: VersionManager
         }
     ) { }
 
     private scheduled = false
     private draining = false
     private queueMap = new Map<AtomKey, Array<StoreDispatchEvent<any>>>()
+    private readonly autoActionIdByKey = new Map<string, { actionId: string; timestamp: number }>()
 
     enqueue(event: StoreDispatchEvent<any>) {
         const run = async () => {
@@ -58,9 +58,10 @@ export class Scheduler {
                 ? (decision.event as StoreDispatchEvent<any>)
                 : event
 
+            const normalizedOpContext = this.normalizeOpContext(nextEvent.opContext)
             const normalized = {
                 ...nextEvent,
-                opContext: normalizeOperationContext(nextEvent.opContext)
+                opContext: normalizedOpContext
             } as StoreDispatchEvent<any>
 
             const atom = normalized.handle.atom as any
@@ -113,6 +114,7 @@ export class Scheduler {
             }
         } finally {
             this.draining = false
+            this.autoActionIdByKey.clear()
         }
     }
 
@@ -151,10 +153,7 @@ export class Scheduler {
             : handle.observability.createContext()
 
         const baseOpContext = ops[0].opContext
-        const segmentOpContext = normalizeOperationContext(
-            baseOpContext ? ({ ...(baseOpContext as any), traceId: undefined } as any) : undefined,
-            { traceId: observabilityContext.traceId }
-        )
+        const segmentOpContext = normalizeOperationContext(baseOpContext)
 
         const segmentOps = ops.map(op => ({ ...op, opContext: segmentOpContext }))
 
@@ -177,11 +176,35 @@ export class Scheduler {
             plan: plan as any,
             atom,
             store,
-            versionTracker: this.deps.versionTracker,
             indexes: handle.indexes,
             observabilityContext,
             storeName: handle.storeName,
             opContext: segmentOpContext
+        })
+    }
+
+    private normalizeOpContext(ctx: OperationContext | undefined) {
+        if (typeof ctx?.actionId === 'string' && ctx.actionId) {
+            return normalizeOperationContext(ctx)
+        }
+
+        const scope = typeof ctx?.scope === 'string' && ctx.scope ? ctx.scope : 'default'
+        const origin = (ctx?.origin ?? 'user') as any
+        const key = `${scope}|${origin}`
+
+        const existing = this.autoActionIdByKey.get(key)
+        const entry = existing ?? (() => {
+            const next = { actionId: createActionId(), timestamp: Date.now() }
+            this.autoActionIdByKey.set(key, next)
+            return next
+        })()
+
+        return normalizeOperationContext({
+            scope,
+            origin,
+            actionId: entry.actionId,
+            label: ctx?.label,
+            timestamp: typeof ctx?.timestamp === 'number' ? ctx.timestamp : entry.timestamp
         })
     }
 }

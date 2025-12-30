@@ -10,7 +10,7 @@ There are three independent “lanes”:
 
 1) **Push lane**: local writes are queued into an **outbox** and pushed to the server as `write` operations.
 2) **Pull lane**: fetches `changes.pull` from the server and advances a persistent **cursor**.
-3) **Subscribe lane** (optional): keeps an SSE connection open; each server batch is applied and advances the same cursor.
+3) **Notify lane** (optional): keeps an SSE connection open; each notify message triggers a pull (no pushed changes, no cursor advancement).
 
 All changes are applied by calling user-provided callbacks via a thin `applier` wrapper.
 
@@ -21,7 +21,7 @@ All changes are applied by calling user-provided callbacks via a thin `applier` 
 - Lanes:
   - `lanes/PushLane.ts`
   - `lanes/PullLane.ts`
-  - `lanes/SubscribeLane.ts`
+  - `lanes/NotifyLane.ts`
 - Persistence (IndexedDB KV):
   - `store.ts` (outbox + cursor stores)
   - `kvStore.ts`
@@ -42,7 +42,7 @@ All changes are applied by calling user-provided callbacks via a thin `applier` 
 2) **Outbox is append-only except ack/reject**: once an item is enqueued, it remains until it is acked/rejected.
 3) **In-flight items are not re-picked**: items marked `inFlightAtMs` are skipped by `peek(...)`.
 4) **Stale in-flight recovery**: if an in-flight item “gets stuck” (crash/tab close), it becomes eligible again after `inFlightTimeoutMs`.
-5) **Single instance**: only one active `SyncEngine` should push/pull/subscribe per `outboxKey` (per browser profile) at a time.
+5) **Single instance**: only one active `SyncEngine` should push/pull/notify per `outboxKey` (per browser profile) at a time.
 
 ## Lifecycle (what `start()` really does)
 
@@ -50,13 +50,13 @@ Read `SyncEngine.start()` → `startWithLock()`:
 
 1) Acquire `SingleInstanceLock` (stored in IndexedDB KV under `lockKey`).
 2) If lock acquired and still “should run”:
-   - Start subscribe lane (but only connects if enabled).
+   - Start notify lane (but only connects if enabled).
    - Request a push flush (so queued writes go out quickly).
    - Start periodic pull timer (optional; interval can be disabled).
 
 Stopping (`stop()`):
 
-- Stops subscribe lane
+- Stops notify lane
 - Cancels periodic pull timer
 - Releases lock
 
@@ -95,7 +95,7 @@ Notes:
 
 Path:
 
-- `SyncEngine.pullNow()` → `PullLane.pullNow()`
+- `SyncEngine.pull()` → `PullLane.pull()`
   - Reads current cursor (or `initialCursor`, or `'0'`)
   - Calls `transport.opsClient.executeOps({ ops: [changes.pull], meta })`
   - Applies `batch.changes` via `applier.applyChanges(...)`
@@ -103,22 +103,20 @@ Path:
 
 `SyncEngine` can also schedule periodic pulls with backoff on failure.
 
-### 3) Subscribe changes (SSE)
+### 3) Notify (SSE)
 
 Path:
 
 - `SyncEngine.start()` starts the lane, and `setSubscribed(true)` enables it.
-- `SubscribeLane`:
-  - Reads cursor (same rule as pull)
-  - Opens `transport.subscribe(...)` (implemented by `subscribeChangesSse(...)`)
-  - For each received batch:
-    - Applies changes
-    - Advances cursor
+- `NotifyLane`:
+  - Opens `transport.subscribe(...)` (implemented by `subscribeNotifySse(...)`)
+  - For each message:
+    - Triggers a pull (with internal coalescing)
   - On error:
     - Closes subscription
     - Schedules reconnect with backoff
 
-Important: pull & subscribe share the same cursor store. Either can advance it.
+Important: cursor is advanced only by pull; notify never writes cursor.
 
 ## Retry / Backoff (shared pattern)
 
@@ -127,7 +125,7 @@ Important: pull & subscribe share the same cursor store. Either can advance it.
   - what delay to wait (exponential backoff with jitter)
 - Each lane chooses **how** to wait:
   - Push: `sleepMs(delay)`
-  - Subscribe: `setTimeout(delay)`
+  - Notify: `setTimeout(delay)`
   - Periodic pull: `setTimeout(delay)`
 
 ## Transport & Applier (integration points)
@@ -147,7 +145,7 @@ This separation keeps sync logic independent from your actual store/mutation imp
   - Is `SyncEngine.start()` called?
   - Is the lock being acquired? (check lifecycle events)
   - Does outbox contain items? (`DefaultOutboxStore.size()`)
-- Subscriptions not reconnecting:
+- Notifications not reconnecting:
   - Is `setSubscribed(true)` called?
   - Is `subscribeUrl` configured?
   - Is `EventSource` available (or a factory provided)?

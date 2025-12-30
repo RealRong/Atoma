@@ -43,12 +43,22 @@ export interface IOrmAdapter {
         item: { id: any; patches: any[]; baseVersion?: number; timestamp?: number },
         options?: WriteOptions
     ): Promise<QueryResultOne>
+    upsert?(
+        resource: string,
+        item: { id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean },
+        options?: WriteOptions
+    ): Promise<QueryResultOne>
     delete?(resource: string, whereOrId: any, options?: WriteOptions): Promise<QueryResultOne>
     bulkCreate?(resource: string, items: any[], options?: WriteOptions): Promise<QueryResultMany>
     bulkUpdate?(resource: string, items: Array<{ id: any; data: any; baseVersion?: number }>, options?: WriteOptions): Promise<QueryResultMany>
     bulkPatch?(
         resource: string,
         items: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number }>,
+        options?: WriteOptions
+    ): Promise<QueryResultMany>
+    bulkUpsert?(
+        resource: string,
+        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean }>,
         options?: WriteOptions
     ): Promise<QueryResultMany>
     bulkDelete?(resource: string, ids: any[], options?: WriteOptions): Promise<QueryResultMany>
@@ -88,6 +98,7 @@ export interface ISyncAdapter {
     getIdempotency: (key: string, tx?: SyncTransactionContext) => Promise<IdempotencyResult>
     putIdempotency: (key: string, value: { status: number; body: unknown }, ttlMs?: number, tx?: SyncTransactionContext) => Promise<void>
     appendChange: (change: Omit<AtomaChange, 'cursor'>, tx?: SyncTransactionContext) => Promise<AtomaChange>
+    getLatestCursor: () => Promise<number>
     pullChanges: (cursor: number, limit: number) => Promise<AtomaChange[]>
     waitForChanges: (cursor: number, timeoutMs: number) => Promise<AtomaChange[]>
 }
@@ -95,4 +106,3 @@ export interface ISyncAdapter {
 export type { ChangeKind } from '#protocol'
 export type { CursorToken, OrderByRule, Page, QueryParams, WriteOptions } from '#protocol'
 export type { StandardError } from '#protocol'
-

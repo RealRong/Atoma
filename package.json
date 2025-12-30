@@ -3,6 +3,10 @@
     "version": "1.0.0",
     "type": "module",
     "description": "Atomic state management with universal persistence - built on Jotai and Immer",
+    "workspaces": [
+        "docs",
+        "devtools"
+    ],
     "main": "dist/index.mjs",
     "module": "dist/index.mjs",
     "types": "dist/index.d.mts",
@@ -68,7 +72,7 @@
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
         "test:ui": "vitest --ui",
-        "start:docs": "npm run dev --prefix atoma-docs"
+        "start:docs": "npm run dev --prefix docs"
     },
     "keywords": [
         "react",
@@ -87,7 +91,7 @@
     "peerDependencies": {
         "immer": "^9.0.0 || ^10.0.0",
         "jotai": "^2.0.0",
-        "react": "^18.0.0",
+        "react": "^18.0.0 || ^19.0.0",
         "typeorm": "^0.3.20",
         "@prisma/client": "^5.0.0"
     },
@@ -104,22 +108,23 @@
         "p-limit": "^7.2.0"
     },
     "devDependencies": {
-        "@testing-library/react": "^14.3.1",
+        "@testing-library/react": "^16.3.1",
         "@types/lodash": "^4.14.0",
-        "@types/node": "^20.0.0",
-        "@types/react": "^18.0.0",
-        "@vitejs/plugin-react": "^4.2.1",
+        "@types/node": "^24.10.0",
+        "@types/react": "^19.2.2",
+        "@types/react-dom": "^19.2.2",
+        "@vitejs/plugin-react": "^5.1.2",
         "immer": "^9.0.0 || ^10.0.0",
         "jotai": "^2.0.0",
         "jsdom": "^25.0.0",
-        "react": "^18.0.0",
-        "react-dom": "^18.2.0",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
         "reflect-metadata": "^0.1.13",
         "typeorm": "^0.3.20",
         "tsup": "^8.0.0",
-        "typescript": "^5.0.0",
-        "vite": "^5.2.0",
-        "vitest": "^1.0.0"
+        "typescript": "^5.9.3",
+        "vite": "^7.2.0",
+        "vitest": "^4.0.16"
     },
     "optionalDependencies": {
         "dexie": "^3.2.0 || ^4.0.0"

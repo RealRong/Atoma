@@ -157,6 +157,18 @@ export class AtomaTypeormSyncAdapter implements ISyncAdapter {
         return { ...change, cursor }
     }
 
+    async getLatestCursor(): Promise<number> {
+        const row = await this.executor
+            .createQueryBuilder()
+            .select('MAX(c.cursor)', 'cursor')
+            .from(this.changesTable, 'c')
+            .getRawOne()
+
+        const n = Number((row as any)?.cursor ?? 0)
+        if (!Number.isFinite(n) || n <= 0) return 0
+        return Math.floor(n)
+    }
+
     async pullChanges(cursor: number, limit: number): Promise<AtomaChange[]> {
         const rows = await this.executor
             .createQueryBuilder()

@@ -47,7 +47,27 @@ export function evaluateWithIndexes<T extends Entity>(params: {
             ? Array.from(candidateRes.ids).map(id => mapRef.get(id) as T).filter(Boolean)
             : Array.from(mapRef.values()) as T[]
 
-    const out = applyQuery(source as any, options, { preSorted: false, matcher }) as T[]
+    const shouldSkipWhere =
+        candidateRes.kind === 'candidates'
+        && candidateRes.exactness === 'exact'
+        && options?.where
+        && typeof options.where === 'object'
+        && typeof options.where !== 'function'
+
+    const effectiveOptions = shouldSkipWhere
+        ? ({ ...(options as any), where: undefined } as any)
+        : options
+
+    const shouldSkipApplyQuery =
+        effectiveOptions
+        && !effectiveOptions.where
+        && !effectiveOptions.orderBy
+        && effectiveOptions.limit === undefined
+        && effectiveOptions.offset === undefined
+
+    const out = shouldSkipApplyQuery
+        ? (source as any as T[])
+        : (applyQuery(source as any, effectiveOptions, { preSorted: false, matcher }) as T[])
 
     emit('query:finalize', { inputCount: source.length, outputCount: out.length, params: summarizeFindManyParams(options) })
     if (explain) {

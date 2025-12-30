@@ -101,7 +101,7 @@ sync 启用后（`SyncController.start()`），会安装 `beforePersist` middlew
 - `src/client/controllers/SyncController.ts:1`（`beforePersist` 安装）
 - `src/core/mutation/pipeline/persisters/Outbox.ts:1`（编码 write intent 并 `sync.enqueueWrite`）
 
-### 2.5 Core 缓存：`Map<id, entity>` + 增量写入 + 版本快照
+### 2.5 Core 缓存：`Map<id, entity>` + 增量写入 + 索引维护
 
 Atoma 的“缓存”不是单独的缓存模块，而是每个 store 持有的 **Jotai atom**：
 
@@ -115,9 +115,9 @@ Atoma 的“缓存”不是单独的缓存模块，而是每个 store 持有的 
 - `commitAtomMapUpdateDelta/commitAtomMapUpdate` 负责：
   - `jotaiStore.set(atom, after)`
   - 同步维护索引（`indexes.applyChangedIds/applyMapDiff`）
-  - bump `VersionManager`（给 query/hooks 做“相关字段变更”推断）
+  - （可选优化）读路径优先用索引缩小候选集，避免全表扫描
 
-对应代码：`src/core/store/cacheWriter.ts:1`、`src/core/mutation/pipeline/VersionManager.ts:1`、`src/core/store/runtime.ts:1`。
+对应代码：`src/core/store/cacheWriter.ts:1`、`src/core/indexes/StoreIndexes.ts:1`、`src/core/store/runtime.ts:1`。
 
 为减少 UI 无效刷新，写回时会做“浅层引用复用”：
 
@@ -127,7 +127,7 @@ Atoma 的“缓存”不是单独的缓存模块，而是每个 store 持有的 
 
 同步/远端写回走统一入口：
 
-- `Core.store.writeback.applyStoreWriteback(handle, { upserts, deletes, versionUpdates })`：把远端实体/删除/版本更新写回 map，并维护索引与版本快照
+- `Core.store.writeback.applyStoreWriteback(handle, { upserts, deletes, versionUpdates })`：把远端实体/删除/`entity.version` 字段写回 map，并维护索引
 
 对应代码：`src/core/store/writeback.ts:1`。
 
@@ -232,7 +232,7 @@ Atoma 的 relations 分两件事：
 
 ---
 
-## 5. Sync：push / pull / subscribe（SSE）如何驱动一致性
+## 5. Sync：push / pull / notify（SSE）如何驱动一致性
 
 ### 5.1 触发：SyncController 把 mutation 改为 outbox
 
@@ -252,18 +252,19 @@ Atoma 的 relations 分两件事：
 
 对应代码：`src/sync/lanes/PullLane.ts:1`。
 
-### 5.3 Subscribe：SSE `changes`（流式拉取）
+### 5.3 Notify：SSE `sync.notify`（通知触发 Pull）
 
-`SubscribeLane` 默认用 `EventSource` 订阅：
+`NotifyLane` 默认用 `EventSource` 订阅：
 
-- event 名默认 `Protocol.sse.events.CHANGES`
-- data 解析用 `Protocol.sse.parse.changeBatch`
+- event 名固定 `Protocol.sse.events.NOTIFY`（`event: sync.notify`）
+- data 解析用 `Protocol.sse.parse.notifyMessage`（`NotifyMessage`）
+- 收到通知只触发 `SyncEngine.schedulePull({ cause: 'notify' })`；不 apply、不写 cursor
 
-对应代码：`src/sync/lanes/SubscribeLane.ts:1`、`src/protocol/sse/format.ts:1`。
+对应代码：`src/sync/lanes/NotifyLane.ts:1`、`src/protocol/sse/format.ts:1`。
 
 ### 5.4 Apply：把远端变化写回 core
 
-当收到 changes 或 write ack/reject：
+当收到 pull 的 changes 或 write ack/reject：
 
 - `SyncController.applyPullChanges()`：按 resource 分发到对应 store，触发 `mutation.control.remotePull()` 并批量 `bulkGet` 拉取实体，再写回 cache
 - `applyWriteAck/applyWriteReject`：写回 ticket 状态，并触发 `remoteAck/remoteReject`
@@ -334,13 +335,15 @@ server `opsExecutor` 做的事：
 
 对应代码：`src/server/core/opsExecutor.ts:1`、`src/server/core/write.ts:1`。
 
-### 7.3 subscribe：SSE changes（不做过滤）
+### 7.3 subscribe：SSE notify（不下发 changes）
 
 server `subscribeExecutor`：
 
-- `GET` + `cursor` query
+- `GET` + 可选 `resources` query（逗号分隔或重复参数）
+- `adapter.sync.getLatestCursor()` 作为起始 cursor
 - `adapter.sync.waitForChanges(cursor, maxHoldMs)`
-- 用 `Protocol.sse.format.*` 产出 SSE 字符串流（`retry`/`comment hb`/`event: changes`）
+- 服务端 100ms 合并一次通知（资源名 union）
+- 用 `Protocol.sse.format.*` 产出 SSE 字符串流（`retry`/`comment hb`/`event: sync.notify`）
 
 对应代码：`src/server/core/subscribeExecutor.ts:1`。
 
@@ -354,7 +357,9 @@ Atoma 的“协议一致性”不是靠约定文档，而是靠同一个 `src/pr
 - Ops 类型：`src/protocol/ops/types.ts:1`（`Operation/OperationResult/OpsRequest/OpsResponseData`）
 - Envelope：`src/protocol/envelope/compose.ts:1`、`src/protocol/envelope/parse.ts:1`
 - SSE：`src/protocol/sse/constants.ts:1`、`src/protocol/sse/format.ts:1`
-- Trace headers：`src/protocol/trace/constants.ts:1`（`x-atoma-trace-id`、`x-atoma-request-id`）
+- Trace 传递（禁止 header）：
+  - ops：`op.meta.traceId` / `op.meta.requestId`（op-scoped，支持 batch mixed trace）
+  - subscribe（SSE）：URL query `traceId` / `requestId`
 
 client（datasource/backend/sync）与 server（handlers/executors）都通过 `#protocol` 共享这些类型与 parse/compose 逻辑，从而保证：
 

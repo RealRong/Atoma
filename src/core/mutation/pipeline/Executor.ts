@@ -34,7 +34,7 @@ export class Executor implements IExecutor {
     }
 
     async run<T extends Entity>(args: ExecutorRunArgs<T>) {
-        const { handle, operations, plan, atom, store, versionTracker, indexes } = args
+        const { handle, operations, plan, atom, store, indexes } = args
         const ctx = args.observabilityContext
         const traceId = ctx.traceId
         const mutationHooks = handle.services.mutation.hooks
@@ -63,7 +63,6 @@ export class Executor implements IExecutor {
             store,
             plan,
             originalState,
-            versionTracker,
             indexes
         })
 
@@ -109,7 +108,6 @@ export class Executor implements IExecutor {
                 store,
                 plan,
                 createdResults,
-                versionTracker,
                 indexes
             })
 
@@ -131,7 +129,7 @@ export class Executor implements IExecutor {
                 }
 
                 const payload = plan.appliedData[idx]
-                if (op.type === 'add' || op.type === 'update') {
+                if (op.type === 'add' || op.type === 'update' || op.type === 'upsert') {
                     op.onSuccess?.(payload ?? (op.data as any))
                     return
                 }
@@ -144,7 +142,6 @@ export class Executor implements IExecutor {
                 store,
                 plan,
                 originalState,
-                versionTracker,
                 indexes
             })
             const rolledBackEvent: RolledBackEvent<T> = {

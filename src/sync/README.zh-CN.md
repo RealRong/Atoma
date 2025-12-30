@@ -10,7 +10,7 @@
 
 1) **Push lane**：本地写入先进入 **outbox**，再以 `write` 操作推送到服务端。
 2) **Pull lane**：调用 `changes.pull` 拉取服务端变更，并推进持久化的 **cursor**。
-3) **Subscribe lane**（可选）：保持 SSE 连接；服务端每下发一个 batch，就应用 changes 并推进同一个 cursor。
+3) **Notify lane**（可选）：保持 SSE 连接；服务端下发一次通知，就触发一次 pull（不下发 changes、不推进 cursor）。
 
 所有“应用变更”的动作最终都会通过 `applier` 调用用户传入的回调（只做薄封装，不耦合具体 store 实现）。
 
@@ -21,7 +21,7 @@
 - 三条 lane：
   - `lanes/PushLane.ts`
   - `lanes/PullLane.ts`
-  - `lanes/SubscribeLane.ts`
+  - `lanes/NotifyLane.ts`
 - 持久化（IndexedDB KV）：
   - `store.ts`（outbox + cursor）
   - `kvStore.ts`
@@ -95,7 +95,7 @@
 
 路径：
 
-- `SyncEngine.pullNow()` → `PullLane.pullNow()`
+- `SyncEngine.pull()` → `PullLane.pull()`
   - 读取当前 cursor（没有则用 `initialCursor`，再没有则 `'0'`）
   - `transport.opsClient.executeOps({ ops: [changes.pull], meta })`
   - `applier.applyChanges(batch.changes)`
@@ -108,17 +108,15 @@
 路径：
 
 - `SyncEngine.start()` 会启动 lane；`setSubscribed(true)` 才会启用连接。
-- `SubscribeLane`：
-  - 读取 cursor（规则与 pull 相同）
-  - 通过 `transport.subscribe(...)` 打开订阅（默认实现为 `subscribeChangesSse(...)`）
-  - 每个 batch：
-    - apply changes
-    - 推进 cursor
+- `NotifyLane`：
+  - 通过 `transport.subscribe(...)` 打开订阅（默认实现为 `subscribeNotifySse(...)`）
+  - 每个通知：
+    - 触发一次 pull（内部做合并调度）
   - 出错：
     - close 连接
     - 退避后重连
 
-重要：pull 与 subscribe 共用同一个 cursor store，任何一方推进 cursor 都会影响另一方的起点。
+重要：cursor 只由 pull 推进；notify 不写 cursor。
 
 ## 重试/退避（统一模式）
 

@@ -77,6 +77,10 @@ export class PushLane {
                 try {
                     await Promise.resolve(this.deps.outbox.markInFlight?.(keys, this.deps.now()))
 
+                    const baseOptions = batch.options && typeof batch.options === 'object'
+                        ? batch.options
+                        : undefined
+
                     const op: Operation = {
                         opId,
                         kind: 'write',
@@ -85,6 +89,7 @@ export class PushLane {
                             action,
                             items,
                             options: {
+                                ...(baseOptions ? baseOptions : {}),
                                 returning: this.deps.returning,
                                 ...(this.deps.conflictStrategy ? { conflictStrategy: this.deps.conflictStrategy } : {})
                             }

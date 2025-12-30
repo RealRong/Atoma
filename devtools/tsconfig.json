@@ -8,9 +8,15 @@
         "esModuleInterop": true,
         "skipLibCheck": true,
         "types": [
-            "node"
+            "node",
+            "vite/client"
         ],
         "baseUrl": ".",
+        "paths": {
+            "atoma": [
+                "../dist/index"
+            ]
+        },
         "declaration": true,
         "declarationMap": true,
         "emitDeclarationOnly": false,
@@ -22,4 +28,3 @@
         "tailwind.config.ts"
     ]
 }
-

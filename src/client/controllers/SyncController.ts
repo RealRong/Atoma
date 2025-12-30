@@ -8,10 +8,50 @@ import type { AtomaSync } from '../types'
 import type { ClientRuntime } from '../runtime'
 import { OutboxPersister } from '../../core/mutation/pipeline/persisters/Outbox'
 import type { BeforePersistContext, PersistResult } from '../../core/mutation/hooks'
-import { subscribeChangesSse } from '../../sync/lanes/SubscribeLane'
+import { subscribeNotifySse } from '../../sync/lanes/NotifyLane'
 import type { ResolvedBackend } from '../backend'
 
 export type IdRemapSink = (storeName: string, from: StoreKey, to: StoreKey) => void
+
+const SYNC_INSTANCE_ID_SESSION_KEY = 'atoma:sync:instanceId'
+
+function createSyncInstanceId(): string {
+    const cryptoAny = typeof crypto !== 'undefined' ? (crypto as any) : undefined
+    const uuid = cryptoAny?.randomUUID?.()
+    if (typeof uuid === 'string' && uuid) return `i_${uuid}`
+    return `i_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`
+}
+
+const resolveSyncInstanceId = (() => {
+    let fallback: string | undefined
+
+    const safeFallback = () => {
+        if (!fallback) fallback = createSyncInstanceId()
+        return fallback
+    }
+
+    return (): string => {
+        if (typeof window === 'undefined') return safeFallback()
+
+        let storage: Storage | undefined
+        try {
+            storage = window.sessionStorage
+        } catch {
+            storage = undefined
+        }
+        if (!storage) return safeFallback()
+
+        try {
+            const existing = storage.getItem(SYNC_INSTANCE_ID_SESSION_KEY)
+            if (existing && existing.trim()) return existing.trim()
+            const next = createSyncInstanceId()
+            storage.setItem(SYNC_INSTANCE_ID_SESSION_KEY, next)
+            return next
+        } catch {
+            return safeFallback()
+        }
+    }
+})()
 
 export type AtomaClientSyncConfig =
     | boolean
@@ -19,16 +59,17 @@ export type AtomaClientSyncConfig =
         enabled?: boolean
         /** 是否启用 subscribe（默认：true） */
         subscribe?: boolean
-        /** SSE event name（默认：Protocol.sse.events.CHANGES） */
+        /** SSE event name（默认：Protocol.sse.events.NOTIFY） */
         subscribeEventName?: string
         /** 同步资源过滤（默认：不过滤；服务端返回所有 changes） */
         resources?: string[]
-        /** outbox/cursor 存储 key（默认：基于 backend.key 生成） */
+        /** outbox/cursor 存储 key（默认：基于 backend.key + 标签页 instanceId 生成） */
         outboxKey?: string
         cursorKey?: string
         maxQueueSize?: number
         maxPushItems?: number
         pullLimit?: number
+        pullDebounceMs?: number
         reconnectDelayMs?: number
         periodicPullIntervalMs?: number
         inFlightTimeoutMs?: number
@@ -84,13 +125,17 @@ export function createSyncController(args: {
             syncEngine?.stop()
         },
         status: () => ({ started: syncStarted, configured: Boolean(syncConfig && syncEnabled) }),
-        pullNow: async () => {
+        pull: async () => {
             const engine = ensureSyncEngine()
-            await engine.pullNow()
+            await engine.pull()
         },
         flush: async () => {
             const engine = ensureSyncEngine()
             await engine.flush()
+        },
+        setSubscribed: (enabled: boolean) => {
+            const engine = ensureSyncEngine()
+            engine.setSubscribed(Boolean(enabled))
         }
     }
 
@@ -130,8 +175,9 @@ export function createSyncController(args: {
     // 3) Engine（只做构造与缓存）
     // ---------------------------------------------
     const syncDefaultsKey = args.backend?.key ? String(args.backend.key) : 'default'
-    const defaultOutboxKey = `atoma:sync:${syncDefaultsKey}:outbox`
-    const defaultCursorKey = `atoma:sync:${syncDefaultsKey}:cursor`
+    const syncInstanceId = resolveSyncInstanceId()
+    const defaultOutboxKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:outbox`
+    const defaultCursorKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:cursor`
 
     function ensureSyncEngine(): SyncClient {
         if (syncEngine) return syncEngine
@@ -155,16 +201,16 @@ export function createSyncController(args: {
             opsClient: backend.opsClient,
             subscribe: backend.subscribe
                 ? backend.subscribe
-                : (subArgs: { cursor: Cursor; onBatch: (batch: ChangeBatch) => void; onError: (error: unknown) => void }) => {
-                    return subscribeChangesSse({
-                        cursor: subArgs.cursor,
+                : (subArgs: { resources?: string[]; onMessage: (msg: any) => void; onError: (error: unknown) => void }) => {
+                    return subscribeNotifySse({
+                        resources: subArgs.resources,
                         buildUrl: buildSubscribeUrl,
                         eventSourceFactory: backend.sse?.eventSourceFactory,
                         eventName: syncConfig.subscribeEventName,
-                        onBatch: subArgs.onBatch,
+                        onMessage: subArgs.onMessage,
                         onError: subArgs.onError
                     })
-                }
+            }
         }
 
         syncEngine = Sync.create({
@@ -177,6 +223,7 @@ export function createSyncController(args: {
             maxQueueSize: syncConfig.maxQueueSize,
             maxPushItems: syncConfig.maxPushItems,
             pullLimit: syncConfig.pullLimit,
+            pullDebounceMs: syncConfig.pullDebounceMs,
             resources: syncConfig.resources,
             returning: syncConfig.returning,
             conflictStrategy: syncConfig.conflictStrategy,
@@ -350,12 +397,12 @@ export function createSyncController(args: {
         await Core.store.writeback.applyStoreWriteback(handle as any, { upserts, deletes })
     }
 
-    function buildSubscribeUrl(cursor: Cursor): string {
+    function buildSubscribeUrl(args2?: { resources?: string[] }): string {
         const backend = args.backend
         if (!backend?.sse?.buildUrl) {
             throw new Error('[Atoma] sync: subscribe 已启用，但 backend 未配置 SSE subscribeUrl')
         }
-        const base = backend.sse.buildUrl(cursor)
+        const base = backend.sse.buildUrl({ resources: args2?.resources })
 
         if (!subscribeTraceId) {
             subscribeTraceId = Observability.trace.createId()

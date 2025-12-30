@@ -108,21 +108,22 @@ describe('atoma/server createAtomaHandlers', () => {
             transaction: async (fn: any) => fn({ orm, tx: undefined })
         }
 
-        const handlers = createAtomaHandlers({
-            adapter: {
-                orm: {
-                    findMany: orm.findMany,
-                    transaction: orm.transaction
-                } as any,
-                sync: {
-                    getIdempotency: async () => ({ hit: false }),
-                    putIdempotency: async () => {},
-                    appendChange: async () => ({ cursor: 1, resource: 'todos', id: '1', kind: 'upsert', serverVersion: 1, changedAt: 1 }),
-                    pullChanges: async () => [],
-                    waitForChanges: async () => {
-                        calls++
-                        if (calls === 1) {
-                            return [{ cursor: 1, resource: 'todos', id: '1', kind: 'upsert', serverVersion: 2, changedAt: 1 }]
+		const handlers = createAtomaHandlers({
+			adapter: {
+				orm: {
+					findMany: orm.findMany,
+					transaction: orm.transaction
+				} as any,
+				sync: {
+					getIdempotency: async () => ({ hit: false }),
+					putIdempotency: async () => {},
+					appendChange: async () => ({ cursor: 1, resource: 'todos', id: '1', kind: 'upsert', serverVersion: 1, changedAt: 1 }),
+					getLatestCursor: async () => 0,
+					pullChanges: async () => [],
+					waitForChanges: async () => {
+						calls++
+						if (calls === 1) {
+							return [{ cursor: 1, resource: 'todos', id: '1', kind: 'upsert', serverVersion: 2, changedAt: 1 }]
                         }
                         return []
                     }
@@ -131,13 +132,13 @@ describe('atoma/server createAtomaHandlers', () => {
             sync: {
                 enabled: true,
                 subscribe: { heartbeatMs: 999999, retryMs: 1, maxHoldMs: 1 }
-            }
-        })
+			}
+		})
 
-        const req = new Request('http://localhost/sync/subscribe-vnext?cursor=0', {
-            method: 'GET',
-            signal: ac.signal
-        })
+		const req = new Request('http://localhost/sync/subscribe-vnext', {
+			method: 'GET',
+			signal: ac.signal
+		})
 
         const res = await handlers.subscribe(req)
         expect(res.status).toBe(200)
@@ -150,11 +151,11 @@ describe('atoma/server createAtomaHandlers', () => {
         expect(first.done).toBe(false)
         expect(decoder.decode(first.value)).toContain('retry:')
 
-        const second = await reader.read()
-        expect(second.done).toBe(false)
-        expect(decoder.decode(second.value)).toContain('event: changes')
+		const second = await reader.read()
+		expect(second.done).toBe(false)
+		expect(decoder.decode(second.value)).toContain('event: sync.notify')
 
-        ac.abort()
-        await reader.cancel()
-    })
+		ac.abort()
+		await reader.cancel()
+	})
 })

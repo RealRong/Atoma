@@ -111,19 +111,6 @@ export function applyQuery<T extends Record<string, any>>(
     return end !== undefined ? result.slice(start, end) : result.slice(start)
 }
 
-export function extractQueryFields<T>(options?: FindManyOptions<T>): string[] {
-    if (!options) return []
-    const fields = new Set<string>()
-    if (options.where) {
-        Object.keys(options.where as any).forEach(k => fields.add(k))
-    }
-    if (options.orderBy) {
-        const rules = Array.isArray(options.orderBy) ? options.orderBy : [options.orderBy]
-        rules.forEach(rule => fields.add((rule as any).field))
-    }
-    return Array.from(fields)
-}
-
 export const stableStringify = (obj: any): string => {
     const seen = new WeakSet()
     const helper = (value: any): any => {

@@ -1,4 +1,3 @@
-import { Protocol } from '#protocol'
 import type { AtomaServerConfig, AtomaServerRoute, AtomaOpsPlugin, AtomaSubscribePlugin } from './config'
 import type { HandleResult } from './runtime/http'
 import { createRuntimeFactory } from './runtime/createRuntime'
@@ -101,9 +100,6 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
         throw new Error('AtomaServerConfig.adapter.orm.transaction is required when sync is enabled')
     }
 
-    const traceHeader = config.observability?.trace?.traceIdHeader ?? Protocol.trace.headers.TRACE_ID_HEADER
-    const requestHeader = config.observability?.trace?.requestIdHeader ?? Protocol.trace.headers.REQUEST_ID_HEADER
-
     const formatTopLevelError = createTopLevelErrorFormatter(config)
     const createRuntime = createRuntimeFactory({ config })
     const readBodyJson = (incoming: any) => readJsonBodyWithLimit(incoming, config.limits?.bodyBytes)
@@ -186,16 +182,11 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
             const pathname = urlObj.pathname
             const method = request.method.toUpperCase()
 
-            const initialTraceId = Protocol.trace.parse.getHeader(request.headers, traceHeader)
-            const initialRequestId = Protocol.trace.parse.getHeader(request.headers, requestHeader)
-
             return runWithRuntime({
                 request,
                 route: { kind: 'ops' },
                 method,
                 pathname,
-                initialTraceId,
-                initialRequestId,
                 plugins: config.plugins?.ops,
                 run: async (runtime) => {
                     const incoming = toIncoming(request)
@@ -217,12 +208,12 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
             const initialTraceId = (() => {
                 const q = urlObj.searchParams.get('traceId')
                 if (typeof q === 'string' && q) return q
-                return Protocol.trace.parse.getHeader(request.headers, traceHeader)
+                return undefined
             })()
             const initialRequestId = (() => {
                 const q = urlObj.searchParams.get('requestId')
                 if (typeof q === 'string' && q) return q
-                return Protocol.trace.parse.getHeader(request.headers, requestHeader)
+                return undefined
             })()
 
             return runWithRuntime({

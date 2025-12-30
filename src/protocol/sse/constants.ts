@@ -1,2 +1,1 @@
-export const SSE_EVENT_CHANGES = 'changes'
-
+export const SSE_EVENT_NOTIFY = 'sync.notify'

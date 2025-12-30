@@ -24,7 +24,7 @@ export class PullLane {
         this.disposed = true
     }
 
-    async pullNow(): Promise<ChangeBatch | undefined> {
+    async pull(): Promise<ChangeBatch | undefined> {
         if (this.disposed) throw new Error('PullLane disposed')
         if (this.pulling) return undefined
         this.pulling = true

@@ -10,7 +10,6 @@ import type {
     StoreKey
 } from '../../types'
 import type { StoreIndexes } from '../../indexes/StoreIndexes'
-import type { VersionManager } from './VersionManager'
 import type { Committer as MutationCommitter } from '../types'
 
 export type Plan<T extends Entity> = Readonly<{
@@ -61,7 +60,6 @@ export type ExecutorRunArgs<T extends Entity> = Readonly<{
     plan: Plan<T>
     atom: PrimitiveAtom<Map<any, any>>
     store: any
-    versionTracker: VersionManager
     indexes?: StoreIndexes<T> | null
     observabilityContext: ObservabilityContext
     storeName?: string
@@ -73,7 +71,6 @@ export type CommitOptimisticBeforePersistArgs<T extends Entity> = Readonly<{
     store: any
     plan: Plan<T>
     originalState: Map<any, any>
-    versionTracker: VersionManager
     indexes?: StoreIndexes<T> | null
 }>
 
@@ -82,7 +79,6 @@ export type CommitAfterPersistArgs<T extends Entity> = Readonly<{
     store: any
     plan: Plan<T>
     createdResults?: T[]
-    versionTracker: VersionManager
     indexes?: StoreIndexes<T> | null
 }>
 
@@ -91,7 +87,6 @@ export type RollbackOptimisticArgs<T extends Entity> = Readonly<{
     store: any
     plan: Plan<T>
     originalState: Map<any, any>
-    versionTracker: VersionManager
     indexes?: StoreIndexes<T> | null
 }>
 

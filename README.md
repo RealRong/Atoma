@@ -50,8 +50,11 @@ export function Users() {
 ## Remote protocol (ops + sync)
 
 - Ops endpoint: `POST /ops`
-- Subscribe endpoint (SSE): `GET /sync/subscribe?cursor=...` (`event: changes`)
-- Trace headers: `x-atoma-trace-id`, `x-atoma-request-id`
+- Subscribe endpoint (SSE notify): `GET /sync/subscribe` (`event: sync.notify`, payload: `{"resources":["todos"]}`; optional `resources=...`)
+- Cursor is advanced only by `changes.pull` (SSE never writes cursor).
+- Trace propagation (no headers):
+  - ops: `op.meta.traceId` / `op.meta.requestId` (op-scoped; supports mixed-trace batches)
+  - subscribe (SSE): URL query `traceId` / `requestId` (for GET/SSE without JSON body)
 
 All of the above are defined by the shared `#protocol` module (`src/protocol/*`), used by both client and server.
 
@@ -83,7 +86,7 @@ For Express/Koa, see the demo adapter pattern in `demo/zero-config/src/server/in
 
 ## Docs & demos
 
-- Docs site: `atoma-docs/`
+- Docs site: `docs/`
 - Demo app: `demo/`
 - Zero-config demo: `demo/zero-config/`
 
@@ -96,4 +99,3 @@ For Express/Koa, see the demo adapter pattern in `demo/zero-config/src/server/in
 ## License
 
 MIT
-

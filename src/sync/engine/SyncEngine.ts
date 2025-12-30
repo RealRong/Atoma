@@ -2,9 +2,9 @@ import type { SyncBackoffConfig, SyncClient, SyncConfig, SyncOutboxItem, SyncRet
 import { createApplier, toError } from '../internal'
 import { PushLane } from '../lanes/PushLane'
 import { PullLane } from '../lanes/PullLane'
-import { SubscribeLane } from '../lanes/SubscribeLane'
+import { NotifyLane } from '../lanes/NotifyLane'
 import { createStores } from '../store'
-import type { Cursor, Meta, WriteAction, WriteItem } from '#protocol'
+import type { ChangeBatch, Cursor, Meta, WriteAction, WriteItem, WriteOptions } from '#protocol'
 import { Protocol } from '#protocol'
 import { SingleInstanceLock } from '../policies/singleInstanceLock'
 import { RetryBackoff } from '../policies/retryBackoff'
@@ -19,6 +19,7 @@ type ResolvedSyncConfig = {
     }
     pull: {
         limit: number
+        debounceMs: number
         resources?: string[]
         initialCursor?: Cursor
         periodic: {
@@ -29,7 +30,6 @@ type ResolvedSyncConfig = {
     }
     subscribe: {
         enabled: boolean
-        initialCursor?: Cursor
         reconnectDelayMs: number
         retry: SyncRetryConfig
         backoff: SyncBackoffConfig
@@ -50,7 +50,7 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
     }
 
     const reconnectDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 1000))
-    const periodicPullIntervalMs = Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 5_000))
+    const periodicPullIntervalMs = Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 30_000))
     const periodicPullBackoffBaseDelayMs = Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 1_000))
     const lockBackoffBaseDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 300))
     const retry = config.retry ?? { maxAttempts: 10 }
@@ -66,6 +66,7 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
         },
         pull: {
             limit: Math.max(1, Math.floor(config.pullLimit ?? 200)),
+            debounceMs: Math.max(0, Math.floor(config.pullDebounceMs ?? 200)),
             resources: config.resources,
             initialCursor,
             periodic: {
@@ -75,8 +76,7 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
             }
         },
         subscribe: {
-            enabled: config.subscribe === true,
-            initialCursor,
+            enabled: config.subscribe !== false,
             reconnectDelayMs,
             retry,
             backoff: resolveBackoff({ baseDelayMs: reconnectDelayMs })
@@ -99,12 +99,18 @@ export class SyncEngine implements SyncClient {
 
     private readonly pushLane: PushLane
     private readonly pullLane: PullLane
-    private readonly subscribeLane: SubscribeLane
+    private readonly notifyLane: NotifyLane
     private periodicPullTimer?: ReturnType<typeof setTimeout>
     private readonly periodicPullRetry: RetryBackoff
     private lock?: SingleInstanceLock
     private startInFlight?: Promise<void>
     private readonly transport: SyncTransport
+
+    private pullTimer?: ReturnType<typeof setTimeout>
+    private pulling = false
+    private pullPending = false
+    private pullInFlight?: Promise<ChangeBatch | undefined>
+    private pullWaiters: Array<{ resolve: (batch: ChangeBatch | undefined) => void; reject: (error: unknown) => void }> = []
 
     constructor(private readonly config: SyncConfig) {
         const transport = (config as any)?.transport
@@ -168,14 +174,17 @@ export class SyncEngine implements SyncClient {
             onEvent: config.onEvent
         })
 
-        this.subscribeLane = new SubscribeLane({
-            cursor: this.cursor,
+        this.notifyLane = new NotifyLane({
             transport: this.transport,
-            applier: this.applier,
-            initialCursor: this.resolved.subscribe.initialCursor,
+            resources: this.resolved.pull.resources,
             reconnectDelayMs: this.resolved.subscribe.reconnectDelayMs,
             retry: this.resolved.subscribe.retry,
             backoff: this.resolved.subscribe.backoff,
+            onNotify: (msg) => {
+                void this.schedulePull({ cause: 'notify', resources: msg.resources }).catch(() => {
+                    // error already reported via PullLane.onError
+                })
+            },
             onError: config.onError,
             onEvent: config.onEvent
         })
@@ -195,8 +204,10 @@ export class SyncEngine implements SyncClient {
         if (!this.started && !this.startInFlight && !this.lock) return
         this.started = false
         this.config.onEvent?.({ type: 'lifecycle:stopped' })
-        this.subscribeLane.stop()
+        this.notifyLane.stop()
         this.clearPeriodicPull()
+        this.clearPullTimer()
+        this.rejectPullWaiters(new Error('[Sync] stopped'))
         void this.lock?.release().catch(() => {
             // ignore
         })
@@ -209,13 +220,14 @@ export class SyncEngine implements SyncClient {
         this.stop()
         this.pushLane.dispose()
         this.pullLane.dispose()
-        this.subscribeLane.dispose()
+        this.notifyLane.dispose()
     }
 
     async enqueueWrite(args: {
         resource: string
         action: WriteAction
         items: WriteItem[]
+        options?: WriteOptions
     }) {
         if (this.disposed) throw new Error('SyncEngine disposed')
         const now = this.now()
@@ -226,6 +238,7 @@ export class SyncEngine implements SyncClient {
                 resource: args.resource,
                 action: args.action,
                 item: { ...item, meta },
+                options: args.options,
                 enqueuedAtMs: now
             }
         })
@@ -239,14 +252,14 @@ export class SyncEngine implements SyncClient {
         await this.pushLane.flush()
     }
 
-    async pullNow() {
+    async pull() {
         if (this.disposed) throw new Error('SyncEngine disposed')
-        return this.pullLane.pullNow()
+        return this.schedulePull({ cause: 'manual', debounceMs: 0 })
     }
 
     setSubscribed(enabled: boolean) {
         if (this.disposed) return
-        this.subscribeLane.setEnabled(enabled)
+        this.notifyLane.setEnabled(enabled)
     }
 
     private ensureItemMeta(item: WriteItem) {
@@ -312,8 +325,8 @@ export class SyncEngine implements SyncClient {
             return
         }
 
-        this.subscribeLane.start()
-        this.subscribeLane.setEnabled(this.resolved.subscribe.enabled)
+        this.notifyLane.start()
+        this.notifyLane.setEnabled(this.resolved.subscribe.enabled)
         this.pushLane.requestFlush()
         this.schedulePeriodicPull(0)
         this.config.onEvent?.({ type: 'lifecycle:started' })
@@ -341,7 +354,7 @@ export class SyncEngine implements SyncClient {
         if (this.disposed || !this.started) return
 
         try {
-            await this.pullLane.pullNow()
+            await this.schedulePull({ cause: 'periodic', debounceMs: 0 })
             this.periodicPullRetry.reset()
             this.schedulePeriodicPull(this.resolved.pull.periodic.intervalMs)
         } catch (error) {
@@ -350,6 +363,96 @@ export class SyncEngine implements SyncClient {
             this.config.onEvent?.({ type: 'pull:backoff', attempt, delayMs })
             this.schedulePeriodicPull(delayMs)
         }
+    }
+
+    private clearPullTimer() {
+        if (!this.pullTimer) return
+        clearTimeout(this.pullTimer)
+        this.pullTimer = undefined
+    }
+
+    private rejectPullWaiters(error: Error) {
+        const waiters = this.pullWaiters
+        this.pullWaiters = []
+        waiters.forEach(w => w.reject(error))
+    }
+
+    private shouldPullForResources(resources: unknown): boolean {
+        const allow = this.resolved.pull.resources
+        if (!allow?.length) return true
+        if (!Array.isArray(resources) || !resources.length) return true
+        const allowSet = new Set(allow)
+        for (const r of resources) {
+            if (typeof r === 'string' && allowSet.has(r)) return true
+        }
+        return false
+    }
+
+    private schedulePull(args: { cause: 'manual' | 'periodic' | 'notify'; resources?: string[]; debounceMs?: number }): Promise<ChangeBatch | undefined> {
+        if (this.disposed || !this.started) return Promise.resolve(undefined)
+
+        if (args.cause === 'notify' && !this.shouldPullForResources(args.resources)) {
+            return Promise.resolve(undefined)
+        }
+
+        this.pullPending = true
+        this.config.onEvent?.({ type: 'pull:scheduled', cause: args.cause })
+
+        const delay = Math.max(0, Math.floor(typeof args.debounceMs === 'number' ? args.debounceMs : this.resolved.pull.debounceMs))
+
+        const promise = new Promise<ChangeBatch | undefined>((resolve, reject) => {
+            this.pullWaiters.push({ resolve, reject })
+        })
+
+        if (delay > 0 && !this.pulling) {
+            if (!this.pullTimer) {
+                this.pullTimer = setTimeout(() => {
+                    this.pullTimer = undefined
+                    void this.drainPull().catch(() => {
+                        // waiters are rejected inside drainPull
+                    })
+                }, delay)
+            }
+            return promise
+        }
+
+        this.clearPullTimer()
+        void this.drainPull().catch(() => {
+            // waiters are rejected inside drainPull
+        })
+        return promise
+    }
+
+    private async drainPull(): Promise<ChangeBatch | undefined> {
+        this.clearPullTimer()
+        if (this.pullInFlight) return this.pullInFlight
+
+        const run = async (): Promise<ChangeBatch | undefined> => {
+            this.pulling = true
+            let lastBatch: ChangeBatch | undefined
+            try {
+                while (this.pullPending) {
+                    this.pullPending = false
+                    const batch = await this.pullLane.pull()
+                    if (batch) lastBatch = batch
+                }
+                const waiters = this.pullWaiters
+                this.pullWaiters = []
+                waiters.forEach(w => w.resolve(lastBatch))
+                return lastBatch
+            } catch (error) {
+                const waiters = this.pullWaiters
+                this.pullWaiters = []
+                waiters.forEach(w => w.reject(error))
+                throw error
+            } finally {
+                this.pulling = false
+                this.pullInFlight = undefined
+            }
+        }
+
+        this.pullInFlight = run()
+        return this.pullInFlight
     }
 
     private nextOpId(prefix: 'w' | 'c') {

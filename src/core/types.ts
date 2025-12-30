@@ -48,6 +48,31 @@ export type BaseEntity = IBase
  */
 export type PartialWithId<T> = Partial<T> & { id: StoreKey }
 
+export type UpsertMode = 'strict' | 'loose'
+
+export type UpsertWriteOptions = {
+    mode?: UpsertMode
+    merge?: boolean
+}
+
+export type WriteManyItemOk<T> = {
+    index: number
+    ok: true
+    value: T
+}
+
+export type WriteManyItemErr = {
+    index: number
+    ok: false
+    error: unknown
+    current?: {
+        value?: unknown
+        version?: number
+    }
+}
+
+export type WriteManyResult<T> = Array<WriteManyItemOk<T> | WriteManyItemErr>
+
 /**
  * DataSource interface - abstracts the persistence/remote backend
  */
@@ -68,6 +93,10 @@ export interface IDataSource<T extends Entity> {
     bulkCreate?(items: T[], internalContext?: ObservabilityContext): Promise<T[] | void>
     delete(key: StoreKey, internalContext?: ObservabilityContext): Promise<void>
     bulkDelete(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<void>
+
+    /** Upsert operations (optional). When absent, callers may fall back to put/bulkPut semantics. */
+    upsert?(key: StoreKey, value: T, options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void>
+    bulkUpsert?(items: T[], options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void>
 
     /**
      * Retrieval operations
@@ -125,7 +154,6 @@ export type OperationContext = Readonly<{
     origin: OperationOrigin
     label?: string
     timestamp?: number
-    traceId?: string
 }>
 
 /**
@@ -171,6 +199,12 @@ export type StoreDispatchEvent<T extends Entity> = {
         | {
             type: 'add'
             data: PartialWithId<T>
+            onSuccess?: (o: T) => void
+        }
+        | {
+            type: 'upsert'
+            data: PartialWithId<T>
+            upsert?: UpsertWriteOptions
             onSuccess?: (o: T) => void
         }
         | {
@@ -413,6 +447,8 @@ export type RelationConfig<TSource, TTarget extends Entity = any> =
 
 export type RelationMap<T> = Readonly<Record<string, RelationConfig<T, any>>>
 
+declare const RELATIONS_BRAND: unique symbol
+
 // 根据关系类型推导 include 的取值类型
 export type InferIncludeType<R> =
     R extends BelongsToConfig<any, infer TTarget, infer TR> ? boolean | RelationIncludeOptions<TTarget, Partial<{ [K in keyof TR]: InferIncludeType<TR[K]> }>>
@@ -428,16 +464,34 @@ export interface IStore<T, Relations = {}> {
      * 类型占位（运行时不要求存在）：
      * - 用于在泛型推导时把 Relations 携带在 store 类型上（例如 react hooks 推导 include 结果）
      */
-    readonly __relations?: Relations
+    readonly [RELATIONS_BRAND]?: Relations
 
     /** Add a new item */
     addOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
 
+    /** Add many items (single action) */
+    addMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
+
     /** Update an existing item (Immer recipe) */
     updateOne(id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions): Promise<T>
 
-    /** Delete an item by ID */
-    deleteOneById(id: StoreKey, options?: StoreOperationOptions): Promise<boolean>
+    /** Update many items (single action, per-item results) */
+    updateMany(
+        items: Array<{ id: StoreKey; recipe: (draft: Draft<T>) => void }>,
+        options?: StoreOperationOptions
+    ): Promise<WriteManyResult<T>>
+
+    /** Delete one item by ID */
+    deleteOne(id: StoreKey, options?: StoreOperationOptions): Promise<boolean>
+
+    /** Delete many items by IDs (single action, per-item results) */
+    deleteMany(ids: StoreKey[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>>
+
+    /** Upsert one item (create if missing; update if exists) */
+    upsertOne(item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T>
+
+    /** Upsert many items (single action, per-item results) */
+    upsertMany(items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>>
 
     /** Get one item by ID */
     getOneById(id: StoreKey, options?: StoreReadOptions): Promise<T | undefined>

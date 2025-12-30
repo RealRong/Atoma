@@ -1,4 +1,4 @@
-import { applyPatches, createDraft, finishDraft, Patch, WritableDraft } from 'immer'
+import { applyPatches, createDraft, finishDraft, original, Patch, WritableDraft } from 'immer'
 import { PrimitiveAtom } from 'jotai/vanilla'
 import { StoreDispatchEvent, StoreKey, Entity } from '../../types'
 import { Plan } from './types'
@@ -45,6 +45,53 @@ export class Reducer {
                     appliedData.push(event.data as T)
                     operationTypes.push('add')
                     break
+                case 'upsert': {
+                    const id = event.data.id
+                    if (!draft.has(id)) {
+                        draft.set(id, event.data as any)
+                        appliedData.push(event.data as T)
+                        operationTypes.push('upsert')
+                        break
+                    }
+
+                    const origin = draft.get(id)
+                    if (!origin) {
+                        draft.set(id, event.data as any)
+                        appliedData.push(event.data as T)
+                        operationTypes.push('upsert')
+                        break
+                    }
+
+                    const merge = event.upsert?.merge !== false
+                    const candidate = merge
+                        ? Object.assign({}, origin, event.data, { updatedAt: Date.now() })
+                        : Object.assign({}, event.data, { updatedAt: Date.now() })
+
+                    const nextObj = candidate as any
+                    const originObj = origin as unknown as WritableDraft<any>
+                    const keys = new Set<string>([
+                        ...Object.keys(originObj),
+                        ...Object.keys(nextObj)
+                    ])
+                    keys.forEach(key => {
+                        if (key === 'id') return
+                        const has = Object.prototype.hasOwnProperty.call(nextObj, key)
+                        if (!has) {
+                            if (Object.prototype.hasOwnProperty.call(originObj, key)) {
+                                delete originObj[key]
+                            }
+                            return
+                        }
+                        const nextVal = nextObj[key]
+                        if (originObj[key] !== nextVal) {
+                            originObj[key] = nextVal
+                        }
+                    })
+                    originObj.id = id
+                    appliedData.push(candidate as unknown as T)
+                    operationTypes.push('upsert')
+                    break
+                }
                 case 'update': {
                     if (!draft.has(event.data.id)) {
                         event.onFail?.(new Error(`Item ${event.data.id} not found`))
@@ -87,7 +134,11 @@ export class Reducer {
                 }
                 case 'forceRemove':
                     // 尽量保留被删除的原始值（用于版本/冲突处理、审计、离线队列等）
-                    appliedData.push((draft.get(event.data.id) ?? currentValue.get(event.data.id) ?? event.data) as T)
+                    {
+                        const val = draft.get(event.data.id) ?? currentValue.get(event.data.id) ?? event.data
+                        const base = original(val as any) ?? val
+                        appliedData.push(base as T)
+                    }
                     draft.delete(event.data.id)
                     operationTypes.push('forceRemove')
                     break

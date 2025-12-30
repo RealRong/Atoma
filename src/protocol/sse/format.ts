@@ -1,5 +1,4 @@
-import { SSE_EVENT_CHANGES } from './constants'
-import type { ChangeBatch } from '../changes'
+import { SSE_EVENT_NOTIFY } from './constants'
 
 export function sseComment(text: string) {
     return `:${String(text)}\n\n`
@@ -17,7 +16,6 @@ export function sseEvent(name: string, data: unknown) {
     return `event: ${eventName}\n` + `data: ${json}\n\n`
 }
 
-export function sseChanges(batch: ChangeBatch) {
-    return sseEvent(SSE_EVENT_CHANGES, batch)
+export function sseNotify(msg: unknown) {
+    return sseEvent(SSE_EVENT_NOTIFY, msg)
 }
-

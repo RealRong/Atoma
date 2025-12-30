@@ -1,7 +1,7 @@
 import { Patch, applyPatches } from 'immer'
-import type { FindManyOptions, PageInfo, PatchMetadata, StoreKey } from '#core'
+import type { FindManyOptions, PageInfo, PatchMetadata, StoreKey, UpsertWriteOptions } from '#core'
 import type { ObservabilityContext } from '#observability'
-import type { Operation, OperationResult, QueryResultData, WriteAction, WriteItem, WriteResultData } from '#protocol'
+import type { Operation, OperationResult, QueryResultData, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
 import { Protocol } from '#protocol'
 import { normalizeAtomaServerQueryParams } from '../protocol/queryParams'
 import type { BatchEngine } from '#batch'
@@ -23,6 +23,42 @@ export class OperationRouter<T> {
     private opSeq = 0
 
     constructor(private deps: OperationRouterDeps<T>) {}
+
+    async upsert(key: StoreKey, value: T, options?: UpsertWriteOptions, context?: ObservabilityContext): Promise<void> {
+        const baseVersion = this.resolveOptionalBaseVersion(key, value)
+        const writeOptions = this.buildUpsertWriteOptions(options)
+        const op = this.buildWriteOp('upsert', [{
+            entityId: String(key),
+            ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+            value,
+            meta: this.clientMeta()
+        }], writeOptions)
+        const errorTag = this.deps.batch ? 'upsert(batch)' : 'upsert(ops)'
+        await this.executeWriteAuto(op, context, errorTag)
+    }
+
+    async bulkUpsert(items: T[], options?: UpsertWriteOptions, context?: ObservabilityContext): Promise<void> {
+        if (!items.length) return
+        if (!this.deps.batch) {
+            await Promise.all(items.map(item => this.upsert((item as any).id, item, options, context)))
+            return
+        }
+
+        const writeOptions = this.buildUpsertWriteOptions(options)
+        const writeItems: WriteItem[] = items.map(item => {
+            const id = (item as any).id
+            const baseVersion = this.resolveOptionalBaseVersion(id, item)
+            return {
+                entityId: String(id),
+                ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+                value: item,
+                meta: this.clientMeta()
+            }
+        })
+
+        const op = this.buildWriteOp('upsert', writeItems, writeOptions)
+        await this.executeWriteAuto(op, context, 'bulkUpsert(batch)')
+    }
 
     async put(key: StoreKey, value: T, context?: ObservabilityContext): Promise<void> {
         if (this.deps.batch) {
@@ -213,7 +249,23 @@ export class OperationRouter<T> {
         }
     }
 
-    private buildWriteOp(action: WriteAction, items: WriteItem[]): Operation {
+    private buildUpsertWriteOptions(options?: UpsertWriteOptions): WriteOptions | undefined {
+        const mode = options?.mode
+        const merge = options?.merge
+        const out: WriteOptions = {}
+        if (typeof merge === 'boolean') out.merge = merge
+        if (mode === 'strict' || mode === 'loose') out.upsert = { mode }
+        return Object.keys(out).length ? out : undefined
+    }
+
+    private resolveOptionalBaseVersion(id: StoreKey, value?: any): number | undefined {
+        const v = this.deps.resolveBaseVersion(id, value)
+        if (!(typeof v === 'number' && Number.isFinite(v))) return undefined
+        if (v <= 0) return undefined
+        return v
+    }
+
+    private buildWriteOp(action: WriteAction, items: WriteItem[], options?: WriteOptions): Operation {
         const nextItems: WriteItem[] = items.map(item => this.ensureWriteItemMeta(item))
         return {
             opId: this.nextOpId('w'),
@@ -221,7 +273,8 @@ export class OperationRouter<T> {
             write: {
                 resource: this.deps.resource,
                 action,
-                items: nextItems
+                items: nextItems,
+                ...(options ? { options } : {})
             }
         }
     }

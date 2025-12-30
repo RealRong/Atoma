@@ -4,17 +4,19 @@ import type { ServerRuntime } from '../runtime/createRuntime'
 import type { HandleResult } from '../runtime/http'
 import { Protocol } from '#protocol'
 
-function validateSyncSubscribeQuery(args: { cursor: any }): { cursor: number } {
-    const cursorRaw = args.cursor
-    const cursor = (() => {
-        if (cursorRaw === undefined || cursorRaw === null || cursorRaw === '') return 0
-        const n = Number(cursorRaw)
-        return Number.isFinite(n) && n >= 0 ? Math.floor(n) : NaN
-    })()
-    if (!Number.isFinite(cursor)) {
-        throwError('INVALID_REQUEST', 'Invalid cursor', { kind: 'validation', path: 'cursor' })
-    }
-    return { cursor }
+function parseResourcesQuery(urlObj: URL): string[] | undefined {
+    const values = urlObj.searchParams.getAll('resources')
+    const raw = values.length ? values : [urlObj.searchParams.get('resources')].filter(Boolean) as string[]
+    if (!raw.length) return undefined
+    const out: string[] = []
+    raw.forEach(v => {
+        String(v)
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean)
+            .forEach(s => out.push(s))
+    })
+    return out.length ? out : undefined
 }
 
 export type SubscribeExecutor<Ctx> = {
@@ -33,43 +35,63 @@ export function createSubscribeExecutor<Ctx>(args: {
 }): SubscribeExecutor<Ctx> {
     const subscribeStream = async function* stream(args2: {
         incoming: any
-        startCursor: number
+        resources?: string[]
         route: AtomaServerRoute
         runtime: ServerRuntime<Ctx>
         heartbeatMs: number
         retryMs: number
         maxHoldMs: number
     }) {
-        let cursor = args2.startCursor
+        let cursor = await args.config.adapter.sync!.getLatestCursor()
         let lastBeat = Date.now()
+        const minNotifyIntervalMs = 100
+        let notifyDueAtMs: number | undefined
+        const pendingResources = new Set<string>()
+
+        const allow = args2.resources?.length ? new Set(args2.resources) : null
 
         yield Protocol.sse.format.retry(args2.retryMs)
+        yield Protocol.sse.format.notify({})
 
         while (true) {
             if (args2.incoming?.signal?.aborted === true) return
 
             const now = Date.now()
-            if (now - lastBeat >= args2.heartbeatMs) {
+            if (args2.heartbeatMs > 0 && now - lastBeat >= args2.heartbeatMs) {
                 lastBeat = now
                 yield Protocol.sse.format.comment('hb')
             }
 
-            const changes = await args.config.adapter.sync!.waitForChanges(cursor, args2.maxHoldMs)
+            if (notifyDueAtMs !== undefined && pendingResources.size > 0 && now >= notifyDueAtMs) {
+                const resources = Array.from(pendingResources)
+                pendingResources.clear()
+                notifyDueAtMs = undefined
+                yield Protocol.sse.format.notify({ resources })
+                continue
+            }
+
+            const timeUntilHeartbeatMs = args2.heartbeatMs > 0
+                ? Math.max(0, args2.heartbeatMs - (now - lastBeat))
+                : args2.maxHoldMs
+            const timeUntilNotifyMs = notifyDueAtMs !== undefined && pendingResources.size > 0
+                ? Math.max(0, notifyDueAtMs - now)
+                : args2.maxHoldMs
+            const holdMs = Math.max(0, Math.min(args2.maxHoldMs, timeUntilHeartbeatMs, timeUntilNotifyMs))
+
+            const changes = await args.config.adapter.sync!.waitForChanges(cursor, holdMs)
             if (!changes.length) continue
 
-            const nextCursor = changes[changes.length - 1].cursor
-            cursor = nextCursor
+            cursor = changes[changes.length - 1].cursor
 
-            yield Protocol.sse.format.changes({
-                nextCursor: String(nextCursor),
-                changes: changes.map((c: any) => ({
-                    resource: c.resource,
-                    entityId: c.id,
-                    kind: c.kind,
-                    version: c.serverVersion,
-                    changedAtMs: c.changedAt
-                }))
-            })
+            const resources = Array.from(new Set(changes.map((c: any) => String(c.resource || '')).filter(Boolean)))
+                .filter(r => !allow || allow.has(r))
+
+            if (!resources.length) continue
+
+            resources.forEach(r => pendingResources.add(r))
+            if (notifyDueAtMs === undefined && pendingResources.size > 0) {
+                notifyDueAtMs = Date.now() + minNotifyIntervalMs
+            }
         }
     }
 
@@ -81,10 +103,7 @@ export function createSubscribeExecutor<Ctx>(args: {
             if (!args.config.adapter.sync) {
                 throwError('INVALID_REQUEST', 'Sync adapter is required', { kind: 'validation', traceId: runtime.traceId, requestId: runtime.requestId })
             }
-
-            const { cursor: startCursor } = validateSyncSubscribeQuery({
-                cursor: urlObj.searchParams.get('cursor')
-            })
+            const resources = parseResourcesQuery(urlObj)
 
             const heartbeatMs = args.config.sync?.subscribe?.heartbeatMs ?? 15000
             const retryMs = args.config.sync?.subscribe?.retryMs ?? 2000
@@ -101,7 +120,7 @@ export function createSubscribeExecutor<Ctx>(args: {
                 headers,
                 body: subscribeStream({
                     incoming,
-                    startCursor,
+                    resources,
                     route,
                     runtime,
                     heartbeatMs,

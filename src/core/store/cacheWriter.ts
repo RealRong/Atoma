@@ -14,7 +14,6 @@ export function commitAtomMapUpdate<T extends import('../types').Entity>(params:
 
     jotaiStore.set(atom, after)
     indexes?.applyMapDiff(before, after)
-    handle.services.mutation.versions.bump(handle.atom, new Set())
 }
 
 export function commitAtomMapUpdateDelta<T extends import('../types').Entity>(params: {
@@ -35,5 +34,4 @@ export function commitAtomMapUpdateDelta<T extends import('../types').Entity>(pa
 
     jotaiStore.set(atom, after)
     indexes?.applyChangedIds(before, after, changedIds)
-    handle.services.mutation.versions.bump(handle.atom, new Set())
 }

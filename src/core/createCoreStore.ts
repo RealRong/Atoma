@@ -3,12 +3,17 @@ import type { DevtoolsBridge, StoreSnapshot } from '../devtools/types'
 import { getGlobalDevtools, registerGlobalStore } from '../devtools/global'
 import { createStoreHandle } from './store/runtime'
 import { createAddOne } from './store/addOne'
+import { createAddMany } from './store/addMany'
 import { createBatchGet } from './store/batchGet'
 import { createDeleteOneById } from './store/deleteOneById'
+import { createDeleteMany } from './store/deleteMany'
 import { createFindMany } from './store/findMany/index'
 import { createGetAll } from './store/getAll'
 import { createGetMultipleByIds } from './store/getMultipleByIds'
 import { createUpdateOne } from './store/updateOne'
+import { createUpdateMany } from './store/updateMany'
+import { createUpsertOne } from './store/upsertOne'
+import { createUpsertMany } from './store/upsertMany'
 import { registerStoreHandle } from './storeHandleRegistry'
 import { MutationPipeline } from './mutation'
 import type { JotaiStore } from './types'
@@ -111,8 +116,13 @@ export function createCoreStore<T extends Entity, Relations = {}>(
 
     const store = {
         addOne: createAddOne<T>(handle),
+        addMany: createAddMany<T>(handle),
         updateOne: createUpdateOne<T>(handle),
-        deleteOneById: createDeleteOneById<T>(handle),
+        updateMany: createUpdateMany<T>(handle),
+        deleteOne: createDeleteOneById<T>(handle),
+        deleteMany: createDeleteMany<T>(handle),
+        upsertOne: createUpsertOne<T>(handle),
+        upsertMany: createUpsertMany<T>(handle),
         getAll: createGetAll<T>(handle),
         getMultipleByIds: createGetMultipleByIds<T>(handle),
         getOneById,

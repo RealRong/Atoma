@@ -50,8 +50,11 @@ export function Users() {
 ## 协议（ops + sync）
 
 - Ops：`POST /ops`
-- Subscribe（SSE）：`GET /sync/subscribe?cursor=...`（`event: changes`）
-- Trace header：`x-atoma-trace-id`、`x-atoma-request-id`
+- Subscribe（SSE 通知）：`GET /sync/subscribe`（`event: sync.notify`，payload: `{"resources":["todos"]}`；可选 `resources=...`）
+- cursor 只由 `changes.pull` 推进（SSE 不写 cursor）
+- Trace 传递（禁止 header）：
+  - ops：`op.meta.traceId` / `op.meta.requestId`（op-scoped，支持 batch mixed trace）
+  - subscribe（SSE）：URL query `traceId` / `requestId`（用于无 body 的 GET/SSE）
 
 以上都由 `#protocol`（`src/protocol/*`）统一定义，client 与 server 共享同一份 parse/compose/type。
 
@@ -83,7 +86,7 @@ Express/Koa 的“宿主侧适配”参考：`demo/zero-config/src/server/index.
 
 ## 文档与示例
 
-- 文档站：`atoma-docs/`
+- 文档站：`docs/`
 - Demo：`demo/`
 - Zero-config demo：`demo/zero-config/`
 
@@ -96,4 +99,3 @@ Express/Koa 的“宿主侧适配”参考：`demo/zero-config/src/server/index.
 ## License
 
 MIT
-

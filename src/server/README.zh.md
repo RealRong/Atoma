@@ -39,7 +39,7 @@
 - `createAtomaHandlers(config)`
   - `runtime.createRuntime(...)` 创建 per-request runtime
   - `core.opsExecutor.handle(...)` 执行 ops 并返回标准 envelope
-  - `core.subscribeExecutor.subscribe(...)` 输出 SSE（`event: changes`）
+  - `core.subscribeExecutor.subscribe(...)` 输出 SSE（`event: sync.notify`；仅通知，不下发 changes）
 
 ## 插件模型（中立扩展点）
 

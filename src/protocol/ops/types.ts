@@ -21,7 +21,7 @@ export type QueryOp = OperationBase & {
     }
 }
 
-export type WriteAction = 'create' | 'update' | 'patch' | 'delete'
+export type WriteAction = 'create' | 'update' | 'patch' | 'delete' | 'upsert'
 
 export type WriteItemMeta = {
     idempotencyKey?: string
@@ -37,6 +37,14 @@ export type WriteItemCreate = {
 
 export type WriteItemUpdate = {
     entityId: EntityId
+    baseVersion?: Version
+    value: unknown
+    meta?: WriteItemMeta
+}
+
+export type WriteItemUpsert = {
+    entityId: EntityId
+    /** strict 模式推荐提供；loose 模式可省略 */
     baseVersion?: Version
     value: unknown
     meta?: WriteItemMeta
@@ -60,12 +68,17 @@ export type WriteItem =
     | WriteItemUpdate
     | WriteItemPatch
     | WriteItemDelete
+    | WriteItemUpsert
 
 export type WriteOptions = {
     returning?: boolean
     select?: Record<string, boolean>
     merge?: boolean
     conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
+    upsert?: {
+        /** 默认 'strict' */
+        mode?: 'strict' | 'loose'
+    }
 }
 
 export type WriteOp = OperationBase & {
@@ -127,4 +140,3 @@ export type WriteResultData = {
 }
 
 export type ChangesPullResultData = ChangeBatch
-

@@ -4,14 +4,34 @@ import { Core } from '#core'
 import type { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, RelationIncludeInput, Entity, WithRelations } from '#core'
 import { useRelations } from './useRelations'
 
- type UseFindManyResult<
-    T,
+type UseFindManySelect = 'entities' | 'ids'
+
+type FindManyRemoteState<T extends Entity> = {
+    data: T[]
+    loading: boolean
+    error?: Error
+    isStale: boolean
+    pageInfo?: PageInfo
+}
+
+const stripRuntimeOptions = (options?: any) => {
+    if (!options) return undefined
+    const { fetchPolicy: _fetchPolicy, select: _select, ...rest } = options
+    return rest
+}
+
+const pickByFetchPolicy = <T,>(fetchPolicy: FetchPolicy, local: T[], remote: T[]) => {
+    if (fetchPolicy === 'local') return local
+    if (fetchPolicy === 'remote') return remote
+    return local.length ? local : remote
+}
+
+type UseFindManyEntitiesResult<
+    T extends Entity,
     Relations = {},
     Include extends RelationIncludeInput<Relations> = {}
 > = {
-    data: keyof Include extends never
-    ? T[]
-    : WithRelations<T, Relations, Include>[]
+    data: keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]
     loading: boolean
     error?: Error
     refetch: () => Promise<T[]>
@@ -20,10 +40,30 @@ import { useRelations } from './useRelations'
     fetchMore: (options: FindManyOptions<T>) => Promise<T[]>
 }
 
+type UseFindManyIdsResult<T extends Entity> = {
+    data: Array<T['id']>
+    loading: boolean
+    error?: Error
+    refetch: () => Promise<Array<T['id']>>
+    isStale: boolean
+    pageInfo?: PageInfo
+    fetchMore: (options: FindManyOptions<T>) => Promise<Array<T['id']>>
+}
+
 export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: IStore<T, Relations>,
-    options?: FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy }
-): UseFindManyResult<T, Relations, Include> {
+    options?: FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy; select?: 'entities' }
+): UseFindManyEntitiesResult<T, Relations, Include>
+
+export function useFindMany<T extends Entity, Relations = {}>(
+    store: IStore<T, Relations>,
+    options: Omit<FindManyOptions<T, any>, 'include'> & { include?: never; fetchPolicy?: FetchPolicy; select: 'ids' }
+): UseFindManyIdsResult<T>
+
+export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
+    store: IStore<T, Relations>,
+    options?: (FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy; select?: UseFindManySelect })
+): UseFindManyEntitiesResult<T, Relations, Include> | UseFindManyIdsResult<T> {
     const handle = Core.store.getHandle(store)
     if (!handle) {
         throw new Error('[Atoma] useFindMany: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createCoreStore/createStore 创建')
@@ -35,41 +75,71 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
     const map = useAtomValue(objectMapAtom, { store: jotaiStore })
     const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'local-then-remote'
     const shouldUseLocal = fetchPolicy !== 'remote'
-    const effectiveSkipStore = Boolean(options?.skipStore || (options as any)?.fields?.length)
+    const baseFields = (options as any)?.fields
+    const effectiveSkipStore = Boolean(options?.skipStore || baseFields?.length)
+    const select: UseFindManySelect = (options as any)?.select || 'entities'
 
     const queryKey = useMemo(() => Core.query.stableStringify({ ...(options || {}), fetchPolicy }), [options, fetchPolicy])
-    const fields = useMemo(() => shouldUseLocal ? Core.query.extractQueryFields(options) : [], [shouldUseLocal, queryKey])
-    const fieldsKey = useMemo(() => shouldUseLocal ? versionKey(fields) : '', [fields, shouldUseLocal])
+    const optionsForFindMany = useMemo(() => stripRuntimeOptions(options), [queryKey])
 
-    // Only track version when本地过滤
-    const relevantVersion = useMemo(
-        () => {
-            if (!shouldUseLocal) return 0
-            return handle.services.mutation.versions.getSnapshot(objectMapAtom, fields)
-        },
-        [objectMapAtom, fieldsKey, shouldUseLocal, handle]
-    )
+    type RemoteState = FindManyRemoteState<T>
+    const [remote, setRemote] = useState<RemoteState>(() => ({
+        data: [],
+        pageInfo: undefined,
+        loading: fetchPolicy !== 'local',
+        error: undefined,
+        isStale: false
+    }))
 
-    const [remoteData, setRemoteData] = useState<T[]>([])
-    const [pageInfo, setPageInfo] = useState<PageInfo | undefined>(undefined)
-    const [loading, setLoading] = useState(fetchPolicy !== 'local')
-    const [error, setError] = useState<Error | undefined>(undefined)
-    const [isStale, setIsStale] = useState(false)
+    const patchRemote = (patch: Partial<RemoteState>) => setRemote(prev => ({ ...prev, ...patch }))
+    const resetRemote = (loading: boolean) => setRemote({ data: [], pageInfo: undefined, loading, error: undefined, isStale: false })
 
     // 本地过滤（仅在 local / local-then-remote 使用）
     const filteredIds = useMemo(() => {
         if (!shouldUseLocal) return []
-        const arr = Array.from(map.values())
-        const result = Core.query.applyQuery(arr, options, handle.matcher ? { matcher: handle.matcher } : undefined)
-        return result.map(item => item.id)
-    }, [shouldUseLocal, relevantVersion, queryKey, map, handle.matcher])
+        const indexes = handle.indexes
+        const candidate = indexes?.collectCandidates(options?.where as any)
+
+        if (candidate?.kind === 'empty') return []
+
+        const source =
+            candidate?.kind === 'candidates'
+                ? Array.from(candidate.ids).map(id => map.get(id)).filter(Boolean) as T[]
+                : Array.from(map.values())
+
+        const shouldSkipWhere =
+            candidate?.kind === 'candidates'
+            && candidate.exactness === 'exact'
+            && options?.where
+            && typeof options.where === 'object'
+            && typeof options.where !== 'function'
+
+        const effectiveOptions = shouldSkipWhere
+            ? ({ ...(options as any), where: undefined } as any)
+            : options
+
+        const shouldSkipApplyQuery =
+            effectiveOptions
+            && !effectiveOptions.where
+            && !effectiveOptions.orderBy
+            && effectiveOptions.limit === undefined
+            && effectiveOptions.offset === undefined
+
+        const result: T[] = shouldSkipApplyQuery
+            ? source
+            : (Core.query.applyQuery(source, effectiveOptions, handle.matcher ? { matcher: handle.matcher } : undefined) as T[])
+        return result.map((item: T) => item.id)
+    }, [shouldUseLocal, queryKey, map, handle.matcher, handle.indexes])
 
     const localData = useMemo(() => {
         if (!shouldUseLocal) return [] as T[]
         return filteredIds
-            .map(id => map.get(id))
-            .filter(Boolean) as T[]
+            .map((id: StoreKey) => map.get(id))
+            .filter((v): v is T => Boolean(v))
     }, [filteredIds, map, shouldUseLocal])
+
+    const hasLocalSnapshot = (select === 'ids' ? filteredIds.length > 0 : localData.length > 0)
+    const staleInLocalThenRemote = (fetchPolicy === 'local-then-remote' && hasLocalSnapshot)
 
     const upsertIntoMap = (items: T[]) => {
         if (!items.length) return
@@ -89,46 +159,31 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
 
     useEffect(() => {
         if (fetchPolicy === 'local') {
-            setLoading(false)
-            setRemoteData([])
-            setPageInfo(undefined)
-            setError(undefined)
-            setIsStale(false)
+            resetRemote(false)
             return
         }
 
         let cancelled = false
-        setLoading(true)
-        setError(undefined)
-        setIsStale(false)
-        setRemoteData([])
-        setPageInfo(undefined)
+        resetRemote(true)
 
         const run = async () => {
             if (!store.findMany) {
                 const err = new Error('findMany not implemented')
-                setError(err)
-                setLoading(false)
-                setIsStale(fetchPolicy === 'local-then-remote' && localData.length > 0)
+                patchRemote({ error: err, loading: false, isStale: staleInLocalThenRemote })
                 return
             }
             try {
-                const res = await store.findMany(options)
+                const res = await store.findMany(optionsForFindMany as any)
                 if (cancelled) return
                 const { data, pageInfo } = normalizeResult(res)
                 if (!effectiveSkipStore) {
                     upsertIntoMap(data)
                 }
-                setRemoteData(data)
-                setPageInfo(pageInfo)
-                setLoading(false)
-                setIsStale(fetchPolicy === 'local-then-remote' && localData.length > 0)
+                patchRemote({ data, pageInfo, loading: false, isStale: staleInLocalThenRemote })
             } catch (err) {
                 if (cancelled) return
                 const e = err instanceof Error ? err : new Error(String(err))
-                setLoading(false)
-                setError(e)
-                setIsStale(fetchPolicy === 'local-then-remote' && localData.length > 0)
+                patchRemote({ loading: false, error: e, isStale: staleInLocalThenRemote })
             }
         }
 
@@ -138,46 +193,45 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
     }, [queryKey, fetchPolicy, store])
 
     const refetch = () => {
-        if (fetchPolicy === 'local') return Promise.resolve(localData)
+        if (fetchPolicy === 'local') {
+            return Promise.resolve(select === 'ids' ? (filteredIds as Array<T['id']>) : localData) as any
+        }
         if (!store.findMany) {
             const err = new Error('findMany not implemented')
-            setError(err)
-            setIsStale(fetchPolicy === 'local-then-remote' && localData.length > 0)
-            setLoading(false)
-            return Promise.resolve(fetchPolicy === 'remote' ? remoteData : localData)
+            patchRemote({ error: err, isStale: staleInLocalThenRemote, loading: false })
+            return Promise.resolve(
+                select === 'ids'
+                    ? ((fetchPolicy === 'remote' ? remote.data : localData).map(i => i.id) as Array<T['id']>)
+                    : (fetchPolicy === 'remote' ? remote.data : localData)
+            ) as any
         }
-        setIsStale(false)
-        setLoading(true)
-        return store.findMany(options)
+        patchRemote({ isStale: false, loading: true })
+        return store.findMany(optionsForFindMany as any)
             .then(res => {
                 const { data, pageInfo } = normalizeResult(res)
                 if (!effectiveSkipStore) {
                     upsertIntoMap(data)
                 }
-                setRemoteData(data)
-                setPageInfo(pageInfo)
-                setLoading(false)
-                return data
+                patchRemote({ data, pageInfo, loading: false })
+                return (select === 'ids' ? (data.map(i => i.id) as Array<T['id']>) : data) as any
             })
             .catch(err => {
                 const e = err instanceof Error ? err : new Error(String(err))
-                setLoading(false)
-                setError(e)
-                setIsStale(fetchPolicy === 'local-then-remote' && localData.length > 0)
-                return fetchPolicy === 'remote' ? remoteData : localData
+                patchRemote({ loading: false, error: e, isStale: staleInLocalThenRemote })
+                return (select === 'ids'
+                    ? ((fetchPolicy === 'remote' ? remote.data : localData).map(i => i.id) as Array<T['id']>)
+                    : (fetchPolicy === 'remote' ? remote.data : localData)) as any
             })
     }
 
-    const fetchMore = async (moreOptions: FindManyOptions<T>): Promise<T[]> => {
-        setLoading(true)
+    const fetchMore = async (moreOptions: FindManyOptions<T>): Promise<any> => {
+        patchRemote({ loading: true })
         if (!store.findMany) {
             const err = new Error('findMany not implemented on store')
-            setError(err)
-            setLoading(false)
+            patchRemote({ error: err, loading: false })
             throw err
         }
         try {
-            const baseFields = (options as any)?.fields
             const effectiveOptions: any = {
                 ...moreOptions,
                 fields: (moreOptions as any)?.fields ?? baseFields,
@@ -189,48 +243,58 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
             const { data, pageInfo: newPageInfo } = normalizeResult(res)
 
             if (effectiveSkipStore) {
-                setRemoteData(prev => [...prev, ...data])
+                setRemote(prev => ({
+                    ...prev,
+                    data: [...prev.data, ...data],
+                    pageInfo: newPageInfo,
+                    loading: false
+                }))
             } else {
                 upsertIntoMap(data)
+                patchRemote({ pageInfo: newPageInfo, loading: false })
             }
-
-            setPageInfo(newPageInfo)
-            setLoading(false)
-            return data
+            return select === 'ids' ? (data.map(i => i.id) as Array<T['id']>) : data
         } catch (err) {
             const e = err instanceof Error ? err : new Error(String(err))
-            setLoading(false)
-            setError(e)
+            patchRemote({ loading: false, error: e })
             throw e
         }
     }
 
     // local-then-remote 场景下，优先返回最新的本地缓存（可被 add/update 等立即更新）
-    // remoteData 只在本地为空时兜底，避免远程快照阻塞本地实时更新
-    const data =
-        fetchPolicy === 'local'
-            ? localData
-            : fetchPolicy === 'remote'
-                ? remoteData
-                : (localData.length ? localData : remoteData)
+    // remote.data 只在本地为空时兜底，避免远程快照阻塞本地实时更新
+    if (select === 'ids') {
+        const localIds = filteredIds as Array<T['id']>
+        const remoteIds = remote.data.map(item => item.id) as Array<T['id']>
+        const data = pickByFetchPolicy(fetchPolicy, localIds, remoteIds)
+
+        return {
+            data,
+            loading: remote.loading,
+            error: remote.error,
+            refetch,
+            isStale: remote.isStale,
+            pageInfo: remote.pageInfo,
+            fetchMore
+        } satisfies UseFindManyIdsResult<T>
+    }
+
+    const data = pickByFetchPolicy(fetchPolicy, localData, remote.data)
 
     const relations = handle.relations?.() as Relations | undefined
     const resolveStore = handle.services.resolveStore
-    const effectiveInclude = (options?.include ?? ({} as Include))
+    const effectiveInclude = (options as any)?.include ?? ({} as Include)
     const relationsResult = useRelations<T, Relations, Include>(data, effectiveInclude, relations, resolveStore)
     const finalData = relationsResult.data
-    const combinedError = relationsResult.error ?? error
+    const combinedError = relationsResult.error ?? remote.error
 
     return {
         data: finalData as unknown as (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]),
-        loading: loading || relationsResult.loading,
+        loading: remote.loading || relationsResult.loading,
         error: combinedError,
         refetch,
-        isStale,
-        pageInfo,
+        isStale: remote.isStale,
+        pageInfo: remote.pageInfo,
         fetchMore
-    }
+    } satisfies UseFindManyEntitiesResult<T, Relations, Include>
 }
-
-// simple deterministic key for fields array
-const versionKey = (fields: string[]) => fields.slice().sort().join('|')

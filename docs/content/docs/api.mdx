@@ -1,0 +1,47 @@
+---
+title: API Docs（核心常用项）
+description: 常用 createSyncStore / FindManyOptions / Adapter / StoreRegistry API 速查
+---
+
+## createSyncStore(config)
+- `name: string` 资源名
+- `adapter: IAdapter<T>`
+- `indexes?: IndexDefinition<T>[]`
+- `idGenerator?: () => StoreKey`
+- `schema?: SchemaValidator<T>`
+- `hooks?: LifecycleHooks<T>`
+- `queue?: { enabled?: boolean; mode?: 'optimistic' | 'strict'; debug?: boolean }`
+- 返回 `SyncStore<T>`：CRUD + hooks  
+  - `addOne / updateOne / deleteOneById / getOneById / getMultipleByIds / getAll / fetchOneById / findMany`  
+  - `useValue(id?)`、`useAll()`、`useFindMany(options?)`
+
+## FindManyOptions&lt;T&gt;
+- `where?: WhereOperator<T>`
+- `orderBy?: { field: keyof T; direction: 'asc' | 'desc' } | Array<...>`
+- `limit?: number`, `offset?: number`
+- `after?: string`, `before?: string`, `cursor?: string`（`cursor` 等同 `after`，用于续页 token）
+- `includeTotal?: boolean`（offset 分页时是否返回 total，默认 true）
+- `fetchPolicy?: 'local' | 'remote' | 'local-then-remote'`
+- `skipStore?: boolean`（true 时不写入 atom/索引）
+
+## IAdapter&lt;T&gt;（必需方法）
+- `put/bulkPut/delete/bulkDelete/get/bulkGet/getAll`
+- 可选：`findMany(options)`、`applyPatches(patches, metadata)`
+- 生命周期：`onConnect/onDisconnect/onError`
+
+## 常用适配器（库内）
+- `IndexedDBAdapter(table, options)`
+- `HTTPAdapter(config)` / `HybridAdapter(config)`
+- `SQLiteHttpAdapter({ baseURL, resourceName })`
+
+### HTTPAdapter 对接 Atoma server（分页/序列化）
+- REST（GET）分页字段：`limit/offset/includeTotal/after/before/orderBy/where.*`
+  - 在 `FindManyOptions` 里用 `cursor`（或 `after`）续页时，HTTPAdapter 会序列化成 `after=<token>`
+- Batch（POST /batch）分页字段：`params.page = { mode:'offset'|'cursor', ... }`
+  - 开启方式：`batch: true`（后端需暴露 batch 端点，默认 `/batch`）
+
+## StoreRegistry
+- `registerStore(name, config)` 注册资源配置
+- `setDefaultAdapterFactory(fn)` 为未注册资源提供默认适配器
+- `Store('name')` 获取已注册或工厂创建的 store
+- 适用于多资源集中管理、少样板。 

@@ -20,7 +20,6 @@ export type CreateOpContextArgs = Readonly<{
     scope: string
     origin?: OperationOrigin
     label?: string
-    traceId?: string
 }>
 
 export function createOpContext(args: CreateOpContextArgs): OperationContext {
@@ -29,27 +28,24 @@ export function createOpContext(args: CreateOpContextArgs): OperationContext {
         origin: args.origin ?? 'user',
         actionId: createActionId(),
         label: args.label,
-        timestamp: Date.now(),
-        traceId: args.traceId
+        timestamp: Date.now()
     }
 }
 
 export const normalizeOperationContext = (
     ctx: OperationContext | undefined,
-    options?: { defaultScope?: string; defaultOrigin?: OperationOrigin; traceId?: string }
+    options?: { defaultScope?: string; defaultOrigin?: OperationOrigin }
 ): OperationContext => {
     const scope = (ctx?.scope ?? options?.defaultScope ?? 'default') as string
     const origin = (ctx?.origin ?? options?.defaultOrigin ?? 'user') as OperationOrigin
     const actionId = ctx?.actionId ?? createActionId()
     const timestamp = ctx?.timestamp ?? Date.now()
-    const traceId = ctx?.traceId ?? options?.traceId
 
     return {
         scope,
         origin,
         actionId,
         label: ctx?.label,
-        timestamp,
-        traceId
+        timestamp
     }
 }

@@ -16,8 +16,6 @@ export type AtomaServerHookArgs<Ctx> = {
 export type AtomaServerHook<TArgs> = (args: TArgs) => void | Promise<void>
 
 export type AtomaServerTraceConfig = {
-    traceIdHeader?: string
-    requestIdHeader?: string
     createId?: () => string
 }
 

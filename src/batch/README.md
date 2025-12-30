@@ -66,7 +66,7 @@ To ensure observability does not affect batching performance, tracing is **op-sc
 
 - Each task’s `ctx` only affects its corresponding `op.meta.traceId/requestId`.
 - `OpsRequest.meta` only keeps transport-level fields (e.g. `v/clientTimeMs`) and does not include traceId/requestId.
-- No `x-atoma-trace-id` / `x-atoma-request-id` headers are injected.
+- No trace headers are injected (e.g. `x-atoma-trace-id` / `x-atoma-request-id`); Atoma does not support/parse header trace. Cross-end correlation is op-scoped via `op.meta` (and subscribe uses query params).
 - Mixed traces within the same request are allowed; debug events set `mixedTrace: true`.
 
 ### 5) Debug events (adapter:request/adapter:response)

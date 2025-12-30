@@ -183,7 +183,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 if (id === undefined) throw new Error('delete requires id')
                 const current = await repo.findOne({ where: { [this.idField]: id } as any })
                 if (!current) {
-                    throwError('NOT_FOUND', 'Not found', { kind: 'validation', resource })
+                    throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(id) })
                 }
                 const currentPlain = this.toPlain(current)
                 const currentVersion = (currentPlain as any).version
@@ -228,7 +228,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             }
             const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
             if (!current) {
-                throwError('NOT_FOUND', 'Not found', { kind: 'validation', resource })
+                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
             }
             // TypeORM 返回的是实体实例，Immer 需要可 draft 的 plain object
             const base = this.toPlain(current)
@@ -359,7 +359,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                     throw new Error('bulkPatch item missing id or patches')
                 }
                 const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
-                if (!current) throwError('NOT_FOUND', 'Not found', { kind: 'validation', resource })
+                if (!current) throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
                 const base = this.toPlain(current)
                 const normalized = this.stripIdPrefix(item.patches, item.id)
                 const next = applyPatches(base, normalized)
@@ -373,6 +373,186 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                         })
                         : saved)
                 }
+            } catch (err) {
+                partialFailures.push({ index: i, error: this.toError(err) })
+            }
+        }
+
+        return {
+            data: options.returning === false ? [] : data,
+            partialFailures: partialFailures.length ? partialFailures : undefined,
+            transactionApplied: Boolean(this.manager)
+        }
+    }
+
+    async upsert(
+        resource: string,
+        item: { id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean },
+        options: WriteOptions = {}
+    ): Promise<QueryResultOne> {
+        try {
+            const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
+            if (item?.id === undefined) throw new Error('upsert requires id')
+
+            const mode: 'strict' | 'loose' = item.mode === 'loose' ? 'loose' : 'strict'
+            const merge: boolean = item.merge !== undefined ? item.merge : (options.merge !== false)
+
+            const candidate = (item?.data && typeof item.data === 'object' && !Array.isArray(item.data))
+                ? { ...(item.data as any), [this.idField]: item.id }
+                : { [this.idField]: item.id }
+
+            const ensureCreateVersion = (data: any) => {
+                const v = (data as any)?.version
+                if (!(typeof v === 'number' && Number.isFinite(v) && v >= 1)) return { ...(data as any), version: 1 }
+                return data
+            }
+
+            const readCurrentPlain = async () => {
+                const cur = await repo.findOne({ where: { [this.idField]: item.id } as any })
+                return cur ? this.toPlain(cur) : undefined
+            }
+
+            const insertOrThrow = async (data: any) => {
+                const input = this.pickKnownColumns(repo, data)
+                await repo.insert(input as any)
+            }
+
+            const fetchReturning = async () => {
+                if (options.returning === false) return undefined
+                if (options.select) {
+                    return await repo.findOne({
+                        where: { [this.idField]: item.id } as any,
+                        select: this.buildSelect(options.select, repo.metadata?.columns)
+                    })
+                }
+                return await repo.findOneBy({ [this.idField]: item.id } as any)
+            }
+
+            const saveReturning = async (data: any) => {
+                const input = this.pickKnownColumns(repo, data)
+                const saved = await repo.save(input as any)
+                if (options.returning === false) return undefined
+                if (options.select) {
+                    return await repo.findOne({
+                        where: { [this.idField]: item.id } as any,
+                        select: this.buildSelect(options.select, repo.metadata?.columns)
+                    })
+                }
+                return saved
+            }
+
+            if (mode === 'strict') {
+                const baseVersion = item.baseVersion
+                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion))) {
+                    const current = await readCurrentPlain()
+                    if (current) {
+                        const currentVersion = (current as any)?.version
+                        throwError('CONFLICT', 'Strict upsert requires baseVersion for existing entity', {
+                            kind: 'conflict',
+                            resource,
+                            entityId: String(item.id),
+                            currentVersion,
+                            currentValue: current,
+                            hint: 'rebase'
+                        })
+                    }
+                    await insertOrThrow(ensureCreateVersion(candidate))
+                    const row = await fetchReturning()
+                    return { data: row, transactionApplied: Boolean(this.manager) }
+                }
+
+                const current = await readCurrentPlain()
+                if (!current) {
+                    await insertOrThrow(ensureCreateVersion(candidate))
+                    const row = await fetchReturning()
+                    return { data: row, transactionApplied: Boolean(this.manager) }
+                }
+
+                const currentVersion = (current as any)?.version
+                if (typeof currentVersion !== 'number') {
+                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+                }
+                if (currentVersion !== baseVersion) {
+                    throwError('CONFLICT', 'Version conflict', {
+                        kind: 'conflict',
+                        resource,
+                        currentVersion,
+                        currentValue: current
+                    })
+                }
+
+                const nextVersion = baseVersion + 1
+                const next = merge
+                    ? { ...(current as any), ...(candidate as any), [this.idField]: item.id, version: nextVersion }
+                    : { ...(candidate as any), [this.idField]: item.id, version: nextVersion, createdAt: (current as any)?.createdAt }
+
+                const row = await saveReturning(next)
+                return { data: row, transactionApplied: Boolean(this.manager) }
+            }
+
+            // loose
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const current = await readCurrentPlain()
+                if (!current) {
+                    try {
+                        await insertOrThrow(ensureCreateVersion(candidate))
+                        const row = await fetchReturning()
+                        return { data: row, transactionApplied: Boolean(this.manager) }
+                    } catch (err) {
+                        // 可能 insert 竞争失败：重试为更新（不做 CONFLICT）
+                        continue
+                    }
+                }
+
+                const currentVersion = (current as any)?.version
+                if (typeof currentVersion !== 'number' || !Number.isFinite(currentVersion)) {
+                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+                }
+
+                const nextVersion = currentVersion + 1
+                const next = merge
+                    ? { ...(current as any), ...(candidate as any), [this.idField]: item.id, version: nextVersion }
+                    : { ...(candidate as any), [this.idField]: item.id, version: nextVersion, createdAt: (current as any)?.createdAt }
+
+                const row = await saveReturning(next)
+                return { data: row, transactionApplied: Boolean(this.manager) }
+            }
+
+            // 极端竞争：最后兜底尝试一次更新
+            const current = await readCurrentPlain()
+            if (current) {
+                const currentVersion = (current as any)?.version
+                if (typeof currentVersion !== 'number' || !Number.isFinite(currentVersion)) {
+                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+                }
+                const nextVersion = currentVersion + 1
+                const next = merge
+                    ? { ...(current as any), ...(candidate as any), [this.idField]: item.id, version: nextVersion }
+                    : { ...(candidate as any), [this.idField]: item.id, version: nextVersion, createdAt: (current as any)?.createdAt }
+                const row = await saveReturning(next)
+                return { data: row, transactionApplied: Boolean(this.manager) }
+            }
+
+            await insertOrThrow(ensureCreateVersion(candidate))
+            const row = await fetchReturning()
+            return { data: row, transactionApplied: Boolean(this.manager) }
+        } catch (err) {
+            throw err
+        }
+    }
+
+    async bulkUpsert(
+        resource: string,
+        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean }>,
+        options: WriteOptions = {}
+    ): Promise<QueryResultMany> {
+        const data: any[] = []
+        const partialFailures: Array<{ index: number; error: any }> = []
+
+        for (let i = 0; i < items.length; i++) {
+            try {
+                const res = await this.upsert(resource, items[i], options)
+                if (options.returning !== false && res.data !== undefined) data.push(res.data)
             } catch (err) {
                 partialFailures.push({ index: i, error: this.toError(err) })
             }

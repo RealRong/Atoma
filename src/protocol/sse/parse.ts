@@ -1,31 +1,36 @@
-import type { ChangeBatch } from '../changes'
-import type { Cursor } from '../scalars'
+export type NotifyMessage = {
+    resources?: string[]
+    traceId?: string
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function isCursor(value: unknown): value is Cursor {
-    return typeof value === 'string' && value.length > 0
+function isStringArray(value: unknown): value is string[] {
+    if (!Array.isArray(value)) return false
+    return value.every(v => typeof v === 'string')
 }
 
-export function parseChangeBatchJson(value: unknown): ChangeBatch {
+export function parseNotifyMessageJson(value: unknown): NotifyMessage {
     if (!isRecord(value)) {
-        throw new Error('[Protocol.sse] Invalid ChangeBatch: expected object')
+        throw new Error('[Protocol.sse] Invalid NotifyMessage: expected object')
     }
-    const nextCursor = value.nextCursor
-    const changes = value.changes
-    if (!isCursor(nextCursor)) {
-        throw new Error('[Protocol.sse] Invalid ChangeBatch: missing nextCursor')
+
+    const resources = value.resources
+    if (resources !== undefined && !isStringArray(resources)) {
+        throw new Error('[Protocol.sse] Invalid NotifyMessage: resources must be string[]')
     }
-    if (!Array.isArray(changes)) {
-        throw new Error('[Protocol.sse] Invalid ChangeBatch: missing changes[]')
+
+    const traceId = value.traceId
+    if (traceId !== undefined && typeof traceId !== 'string') {
+        throw new Error('[Protocol.sse] Invalid NotifyMessage: traceId must be string')
     }
-    return value as ChangeBatch
+
+    return value as NotifyMessage
 }
 
-export function parseChangeBatch(data: string): ChangeBatch {
+export function parseNotifyMessage(data: string): NotifyMessage {
     const json = JSON.parse(String(data))
-    return parseChangeBatchJson(json)
+    return parseNotifyMessageJson(json)
 }
-

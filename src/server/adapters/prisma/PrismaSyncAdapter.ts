@@ -118,6 +118,20 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
         }
     }
 
+    async getLatestCursor(): Promise<number> {
+        const model = this.changes(this.client)
+        if (!model?.findFirst) return 0
+
+        const row = await model.findFirst({
+            orderBy: { cursor: 'desc' },
+            select: { cursor: true }
+        })
+
+        const n = Number((row as any)?.cursor ?? 0)
+        if (!Number.isFinite(n) || n <= 0) return 0
+        return Math.floor(n)
+    }
+
     async pullChanges(cursor: number, limit: number): Promise<AtomaChange[]> {
         const model = this.changes(this.client)
         if (!model?.findMany) return []

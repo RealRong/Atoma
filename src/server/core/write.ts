@@ -1,6 +1,7 @@
 import type { ChangeKind } from '#protocol'
 import { errorStatus, throwError, toStandardError } from '../error'
 import type { AtomaChange, IOrmAdapter, ISyncAdapter, StandardError as StandardErrorType } from '../adapters/ports'
+import type { WriteOptions } from '#protocol'
 
 export type WriteChangeSummary = {
     changedFields: string[]
@@ -38,7 +39,7 @@ export function summarizePatches(patches: unknown): WriteChangeSummary {
     }
 }
 
-export type WriteKind = 'create' | 'patch' | 'delete'
+export type WriteKind = 'create' | 'patch' | 'delete' | 'upsert'
 
 export type StoredWriteReplay =
     | {
@@ -77,6 +78,7 @@ type ExecuteArgs = {
         patches?: any[]
         baseVersion?: number
         timestamp?: number
+        options?: WriteOptions
     }
 }
 
@@ -116,6 +118,11 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
     const now = args.now ?? (() => Date.now())
     const { orm, sync, tx, write } = args
     const idempotencyKey = typeof write.idempotencyKey === 'string' && write.idempotencyKey ? write.idempotencyKey : undefined
+    const options: WriteOptions = (write.options && typeof write.options === 'object' && !Array.isArray(write.options))
+        ? (write.options as WriteOptions)
+        : {}
+    const returning = options.returning !== false
+    const select = options.select
 
     if (args.syncEnabled) {
         if (!sync) {
@@ -182,11 +189,11 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
 
             const row = await (async () => {
                 if (typeof orm.create === 'function') {
-                    const res = await orm.create(write.resource, data, { returning: true } as any)
+                    const res = await orm.create(write.resource, data, { returning, ...(select ? { select } : {}) } as any)
                     if (res?.error) throw res.error
                     return res?.data
                 }
-                const res = await (orm as any).bulkCreate(write.resource, [data], { returning: true } as any)
+                const res = await (orm as any).bulkCreate(write.resource, [data], { returning, ...(select ? { select } : {}) } as any)
                 if (res?.partialFailures?.length) throw res.partialFailures[0].error
                 return res?.data?.[0]
             })()
@@ -218,6 +225,66 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
             return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
         }
 
+        if (write.kind === 'upsert') {
+            if (typeof orm.upsert !== 'function') {
+                throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement upsert', { kind: 'adapter' })
+            }
+            if (write.id === undefined) {
+                throwError('INVALID_WRITE', 'Missing id for upsert', { kind: 'validation', resource: write.resource })
+            }
+
+            const mode: 'strict' | 'loose' = (options as any)?.upsert?.mode === 'loose' ? 'loose' : 'strict'
+            const merge: boolean = options.merge !== false
+            const id = normalizeId(write.id)
+
+            const data = (write.data && typeof write.data === 'object' && !Array.isArray(write.data))
+                ? { ...(write.data as any) }
+                : {}
+
+            // upsert 必须能产出 version（即使 options.returning=false），否则协议无法返回 version
+            const res = await orm.upsert(
+                write.resource,
+                {
+                    id,
+                    data,
+                    baseVersion: write.baseVersion,
+                    timestamp: write.timestamp,
+                    mode,
+                    merge
+                } as any,
+                { ...options, returning: true, ...(select ? { select } : {}) } as any
+            )
+            if (res?.error) throw res.error
+
+            const row = res?.data
+            const serverVersion = typeof (row as any)?.version === 'number'
+                ? (row as any).version
+                : (typeof write.baseVersion === 'number' && Number.isFinite(write.baseVersion) ? write.baseVersion + 1 : 1)
+
+            let change: AtomaChange | undefined
+            if (args.syncEnabled) {
+                change = await sync!.appendChange({
+                    resource: write.resource,
+                    id,
+                    kind: 'upsert',
+                    serverVersion,
+                    changedAt
+                }, tx)
+            }
+
+            const replay: OkReplay = {
+                kind: 'ok',
+                resource: write.resource,
+                id,
+                changeKind: 'upsert',
+                serverVersion,
+                ...(change ? { cursor: change.cursor } : {}),
+                ...(returning ? { data: row } : {})
+            }
+            await writeIdempotency(replay, 200)
+            return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
+        }
+
         if (write.kind === 'patch') {
             if (typeof orm.patch !== 'function') {
                 throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement patch', { kind: 'adapter' })
@@ -231,7 +298,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
             const res = await orm.patch(
                 write.resource,
                 { id: write.id, patches: write.patches ?? [], baseVersion: write.baseVersion, timestamp: write.timestamp } as any,
-                { returning: true } as any
+                { returning, ...(select ? { select } : {}) } as any
             )
             if (res?.error) throw res.error
 
@@ -259,7 +326,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                 changeKind: 'upsert',
                 serverVersion,
                 ...(change ? { cursor: change.cursor } : {}),
-                data: row
+                ...(returning ? { data: row } : {})
             }
             await writeIdempotency(replay, 200)
             return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
@@ -331,4 +398,3 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
         return { ok: false, status, error: standard, replay }
     }
 }
-

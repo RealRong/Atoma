@@ -5,6 +5,12 @@ import { fileURLToPath } from 'url'
 
 export default defineConfig({
     plugins: [react()],
+    resolve: {
+        dedupe: ['react', 'react-dom'],
+        alias: {
+            atoma: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/index.mjs')
+        }
+    },
     build: {
         lib: {
             entry: path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'src/index.ts'),

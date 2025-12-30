@@ -8,6 +8,7 @@ import type {
     WriteAction,
     WriteItem,
     WriteItemResult,
+    WriteOptions,
 } from '#protocol'
 import type { OpsClient } from '../backend/OpsClient'
 
@@ -16,6 +17,7 @@ export type SyncOutboxItem = {
     resource: string
     action: WriteAction
     item: WriteItem
+    options?: WriteOptions
     enqueuedAtMs: number
 }
 
@@ -48,16 +50,21 @@ export type SyncWriteReject = {
     result: Extract<WriteItemResult, { ok: false }>
 }
 
+export type NotifyMessage = {
+    resources?: string[]
+    traceId?: string
+}
+
 export interface SyncTransport {
     opsClient: OpsClient
     subscribe: (args: {
-        cursor: Cursor
-        onBatch: (batch: ChangeBatch) => void
+        resources?: string[]
+        onMessage: (msg: NotifyMessage) => void
         onError: (error: unknown) => void
     }) => { close: () => void }
 }
 
-export type SyncPhase = 'push' | 'pull' | 'subscribe' | 'lifecycle'
+export type SyncPhase = 'push' | 'pull' | 'notify' | 'lifecycle'
 
 export type SyncEvent =
     | { type: 'lifecycle:starting' }
@@ -68,12 +75,14 @@ export type SyncEvent =
     | { type: 'push:start' }
     | { type: 'push:idle' }
     | { type: 'push:backoff'; attempt: number; delayMs: number }
+    | { type: 'pull:scheduled'; cause: 'manual' | 'periodic' | 'notify' }
     | { type: 'pull:start' }
     | { type: 'pull:idle' }
     | { type: 'pull:backoff'; attempt: number; delayMs: number }
-    | { type: 'subscribe:connected' }
-    | { type: 'subscribe:backoff'; attempt: number; delayMs: number }
-    | { type: 'subscribe:stopped' }
+    | { type: 'notify:connected' }
+    | { type: 'notify:message'; resources?: string[] }
+    | { type: 'notify:backoff'; attempt: number; delayMs: number }
+    | { type: 'notify:stopped' }
 
 export type SyncOutboxEvents = {
     onQueueChange?: (size: number) => void
@@ -101,6 +110,7 @@ export type SyncConfig = {
     outboxEvents?: SyncOutboxEvents
     maxPushItems?: number
     pullLimit?: number
+    pullDebounceMs?: number
     resources?: string[]
     initialCursor?: Cursor
     returning?: boolean
@@ -127,8 +137,9 @@ export interface SyncClient {
         resource: string
         action: WriteAction
         items: WriteItem[]
+        options?: WriteOptions
     }) => Promise<string[]>
     flush: () => Promise<void>
-    pullNow: () => Promise<ChangeBatch | undefined>
+    pull: () => Promise<ChangeBatch | undefined>
     setSubscribed: (enabled: boolean) => void
 }

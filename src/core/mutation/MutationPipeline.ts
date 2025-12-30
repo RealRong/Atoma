@@ -3,7 +3,6 @@ import { Executor } from './pipeline/Executor'
 import type { IExecutor } from './pipeline/types'
 import { Scheduler } from './pipeline/Scheduler'
 import { TicketTracker } from './pipeline/TicketTracker'
-import { VersionManager } from './pipeline/VersionManager'
 import { createMutationHooks, type Extensions, type MutationHooks } from './hooks'
 
 export type MutationRuntime = Readonly<{
@@ -23,7 +22,6 @@ export type MutationControl = Readonly<{
 export class MutationPipeline {
     readonly runtime: MutationRuntime
     readonly control: MutationControl
-    readonly versions: VersionManager
     readonly hooks: MutationHooks
 
     private readonly executor: IExecutor
@@ -32,9 +30,8 @@ export class MutationPipeline {
 
     constructor() {
         this.hooks = createMutationHooks()
-        this.versions = new VersionManager()
         this.executor = new Executor()
-        this.scheduler = new Scheduler({ executor: this.executor, versionTracker: this.versions })
+        this.scheduler = new Scheduler({ executor: this.executor })
         this.tickets = new TicketTracker()
 
         this.runtime = {

@@ -48,7 +48,7 @@ Note: Atoma intentionally keeps `DebugConfig` as pure data. The actual event sin
 
 For read paths like `findMany`:
 
-- If caller passes `options.traceId`, it’s used as-is.
+- If `traceId` is explicitly provided when creating the `ObservabilityContext` (e.g. `createContext({ traceId })`), it’s used as-is.
 - Otherwise, Atoma allocates a trace only when it’s useful:
   - `options.explain === true`, or
   - debug is enabled and `sample > 0`
@@ -137,7 +137,7 @@ console.log(res.explain)
 ## Notes on IDs and trace propagation
 
 - For ops requests: traceId/requestId are carried in an **op-scoped** form via `op.meta.traceId` / `op.meta.requestId` (especially important for batching: mixed traces are allowed without splitting requests).
-- The `x-atoma-trace-id` / `x-atoma-request-id` headers are optional: the server may still parse them as request-level context (e.g. for top-level errors/logging), but they are no longer the source of truth for op-scoped tracing.
+- **No header trace**: Atoma does not support `x-atoma-trace-id` / `x-atoma-request-id` as a carrier. The server should not parse or depend on them (to avoid incorrectly forcing trace to be request-scoped, which conflicts with mixed-trace batches).
 - `requestId` is derived via `ctx.requestId()` (the runtime maintains a per-trace sequence), which avoids process-global mutable state and supports SSR/concurrency.
 - For `sync/subscribe-vnext` GET/SSE (no JSON body): tracing is passed via URL query params (`traceId`/`requestId`).
 

@@ -37,13 +37,6 @@ const defaultSnowflakeGenerator = (): number => {
 }
 
 /**
- * Set a custom global ID generator.
- */
-export function setDefaultIdGenerator(generator: () => number | string) {
-    customGenerator = generator
-}
-
-/**
  * Get the currently configured ID generator (custom or default).
  */
 export function getIdGenerator(): () => number | string {

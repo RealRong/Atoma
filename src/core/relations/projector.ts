@@ -8,10 +8,16 @@ import type {
     StoreToken,
     VariantsConfig
 } from '../types'
+import type { StoreIndexes } from '../indexes/StoreIndexes'
 import { applyQuery } from '../query'
 import { getValueByPath } from './utils'
 
-export type GetStoreMap = (store: StoreToken) => Map<StoreKey, any> | undefined
+export type StoreRuntime = {
+    map: Map<StoreKey, any>
+    indexes?: StoreIndexes<any> | null
+}
+
+export type GetStoreMap = (store: StoreToken) => Map<StoreKey, any> | StoreRuntime | undefined
 
 type IncludeInput = Record<string, boolean | FindManyOptions<any>> | undefined
 
@@ -179,7 +185,14 @@ function projectStandard<TSource extends Entity>(
 ) {
     const shape = toRelationShape(config, relOpts)
 
-    const map = getStoreMap(shape.store)
+    const runtime = getStoreMap(shape.store)
+    const map = runtime instanceof Map
+        ? runtime
+        : runtime?.map
+    const indexes = runtime instanceof Map
+        ? null
+        : runtime?.indexes ?? null
+
     if (!map) {
         results.forEach(item => {
             ;(item as any)[relName] = getDefaultValue(config)
@@ -197,29 +210,101 @@ function projectStandard<TSource extends Entity>(
             return
         }
 
-        const index = new Map<StoreKey, any>()
-        map.forEach(target => {
-            const key = (target as any)?.[shape.targetKeyField] as StoreKey | undefined | null
-            if (key === undefined || key === null) return
-            if (!index.has(key)) index.set(key, target)
-        })
+        let lookupMode: 'index' | 'scan' | undefined
+        const scannedIndex = new Map<StoreKey, any>()
+        const pickedByKey = new Map<StoreKey, any>()
+
+        const getTargetByKey = (key: StoreKey): any | undefined => {
+            const cached = pickedByKey.get(key)
+            if (cached !== undefined) return cached
+
+            if (!lookupMode && indexes) {
+                const probe = indexes.collectCandidates({ [shape.targetKeyField]: { eq: key } } as any)
+                lookupMode = probe.kind === 'unsupported' ? 'scan' : 'index'
+            }
+
+            if (lookupMode === 'index' && indexes) {
+                const res = indexes.collectCandidates({ [shape.targetKeyField]: { eq: key } } as any)
+                if (res.kind !== 'candidates') {
+                    pickedByKey.set(key, null)
+                    return undefined
+                }
+                for (const id of res.ids) {
+                    const target = map.get(id)
+                    if (target) {
+                        pickedByKey.set(key, target)
+                        return target
+                    }
+                }
+                pickedByKey.set(key, null)
+                return undefined
+            }
+
+            if (lookupMode !== 'scan') lookupMode = 'scan'
+            if (scannedIndex.size === 0) {
+                map.forEach(target => {
+                    const k = (target as any)?.[shape.targetKeyField] as StoreKey | undefined | null
+                    if (k === undefined || k === null) return
+                    if (!scannedIndex.has(k)) scannedIndex.set(k, target)
+                })
+            }
+            const target = scannedIndex.get(key)
+            pickedByKey.set(key, target ?? null)
+            return target
+        }
 
         results.forEach(item => {
             const fk = pickFirstKey(extractKeyValue(item, shape.sourceKeySelector))
-            const target = fk !== undefined ? index.get(fk) : undefined
+            const target = fk !== undefined ? getTargetByKey(fk) : undefined
             ;(item as any)[relName] = target ?? null
         })
         return
     }
 
-    const bucket = new Map<StoreKey, any[]>()
-    map.forEach(target => {
-        const key = (target as any)?.[shape.targetKeyField] as StoreKey | undefined | null
-        if (key === undefined || key === null) return
-        const arr = bucket.get(key) || []
-        arr.push(target)
-        bucket.set(key, arr)
-    })
+    let bucket: Map<StoreKey, any[]> | null = null
+    let keyLookupMode: 'index' | 'scan' | undefined
+    const perKeyCache = new Map<StoreKey, any[]>()
+
+    const getTargetsByKey = (key: StoreKey): any[] => {
+        const cached = perKeyCache.get(key)
+        if (cached) return cached
+
+        if (!keyLookupMode && indexes) {
+            const probe = indexes.collectCandidates({ [shape.targetKeyField]: { eq: key } } as any)
+            keyLookupMode = probe.kind === 'unsupported' ? 'scan' : 'index'
+        }
+
+        if (keyLookupMode === 'index' && indexes) {
+            const res = indexes.collectCandidates({ [shape.targetKeyField]: { eq: key } } as any)
+            if (res.kind !== 'candidates') {
+                perKeyCache.set(key, [])
+                return []
+            }
+            const out: any[] = []
+            for (const id of res.ids) {
+                const target = map.get(id)
+                if (target) out.push(target)
+            }
+            perKeyCache.set(key, out)
+            return out
+        }
+
+        if (keyLookupMode !== 'scan') keyLookupMode = 'scan'
+        if (!bucket) {
+            const next = new Map<StoreKey, any[]>()
+            map.forEach(target => {
+                const k = (target as any)?.[shape.targetKeyField] as StoreKey | undefined | null
+                if (k === undefined || k === null) return
+                const arr = next.get(k) || []
+                arr.push(target)
+                next.set(k, arr)
+            })
+            bucket = next
+        }
+        const out = bucket.get(key) || []
+        perKeyCache.set(key, out)
+        return out
+    }
 
     results.forEach(item => {
         const keyValue = extractKeyValue(item, shape.sourceKeySelector)
@@ -231,20 +316,29 @@ function projectStandard<TSource extends Entity>(
         const keys = Array.isArray(keyValue) ? keyValue : [keyValue]
         const matches: any[] = []
         keys.forEach(k => {
-            const arr = bucket.get(k)
-            if (arr) matches.push(...arr)
+            if (k === undefined || k === null) return
+            const arr = getTargetsByKey(k)
+            if (arr.length) matches.push(...arr)
         })
 
-        const projected = applyQuery(matches, {
-            orderBy: shape.options.orderBy,
-            limit: shape.kind === 'hasOne'
-                ? 1
-                : shape.options.limit
-        })
+        const orderBy = shape.options.orderBy
+        if (shape.kind === 'hasOne' && !orderBy) {
+            ;(item as any)[relName] = matches[0] ?? null
+            return
+        }
+
+        const limit = shape.kind === 'hasOne' ? 1 : shape.options.limit
+        if (!orderBy) {
+            ;(item as any)[relName] = shape.kind === 'hasOne'
+                ? (matches[0] ?? null)
+                : (limit === undefined ? matches : matches.slice(0, limit))
+            return
+        }
+
+        const projected = applyQuery(matches, { orderBy, limit })
 
         ;(item as any)[relName] = shape.kind === 'hasOne'
             ? (projected[0] ?? null)
             : projected
     })
 }
-

@@ -1,8 +1,8 @@
 import { createCoreStore, createStore } from './createCoreStore'
 import { BaseStore } from './BaseStore'
-import { setDefaultIdGenerator, defaultSnowflakeGenerator } from './idGenerator'
+import { defaultSnowflakeGenerator } from './idGenerator'
 import { createActionId, createOpContext, normalizeOperationContext } from './operationContext'
-import { applyQuery, extractQueryFields, stableStringify } from './query'
+import { applyQuery, stableStringify } from './query'
 import { belongsTo, hasMany, hasOne, variants } from './relations/builders'
 import { RelationResolver } from './relations/RelationResolver'
 import { collectRelationStoreTokens, projectRelationsBatch } from './relations/projector'
@@ -32,7 +32,6 @@ export const Core = {
         }
     },
     id: {
-        setDefaultIdGenerator,
         defaultSnowflakeGenerator
     },
     operation: {
@@ -42,7 +41,6 @@ export const Core = {
     },
     query: {
         applyQuery,
-        extractQueryFields,
         stableStringify
     },
     relations: {

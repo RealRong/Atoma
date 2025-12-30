@@ -60,8 +60,14 @@ function typeOnlyAssertions() {
         fetchPolicy: 'local'
     })
 
+    const findManyIds = useFindMany(store, {
+        select: 'ids',
+        fetchPolicy: 'local'
+    })
+
     const _postIsAny: IsAny<typeof post> = false
     const _postsIsAny: IsAny<typeof findMany.data> = false
+    const _idsIsAny: IsAny<typeof findManyIds.data> = false
 
     type PostAuthorOnlyValue = NonNullable<typeof postAuthorOnly>
     type HasComments = 'comments' extends keyof PostAuthorOnlyValue ? true : false
@@ -74,12 +80,17 @@ function typeOnlyAssertions() {
     type CommentValue = PostValue['comments'][number]
     const _commentAuthorIsAny: IsAny<NonNullable<CommentValue['author']>> = false
 
+    type IdItem = typeof findManyIds.data[number]
+    const _idIsNumber: IdItem extends number ? true : false = true
+
     void _postIsAny
     void _postsIsAny
+    void _idsIsAny
     void _authorOnlyHasComments
     void _authorIsAny
     void _commentsIsAny
     void _commentAuthorIsAny
+    void _idIsNumber
 }
 
 describe('atoma/react hooks (types)', () => {

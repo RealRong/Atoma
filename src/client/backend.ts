@@ -1,4 +1,4 @@
-import { Protocol, type Cursor, type Envelope, type OpsResponseData } from '#protocol'
+import { Protocol, type Envelope, type OpsResponseData } from '#protocol'
 import type { OpsClient } from '../backend/OpsClient'
 import { HttpOpsClient } from '../backend/http/HttpOpsClient'
 import type { RetryOptions } from '../backend/http/transport/retryPolicy'
@@ -8,7 +8,7 @@ export type HttpBackendConfig = {
     baseURL: string
     opsPath?: string
     subscribePath?: string
-    subscribeUrl?: (cursor: Cursor) => string
+    subscribeUrl?: (args?: { resources?: string[] }) => string
     eventSourceFactory?: (url: string) => EventSource
 
     headers?: () => Promise<Record<string, string>> | Record<string, string>
@@ -27,14 +27,14 @@ export type HttpBackendConfig = {
 export type BackendConfig =
     | string
     | { key?: string; http: HttpBackendConfig }
-    | { key: string; opsClient: OpsClient; subscribe?: SyncTransport['subscribe']; sse?: { subscribeUrl: (cursor: Cursor) => string; eventSourceFactory?: (url: string) => EventSource } }
+    | { key: string; opsClient: OpsClient; subscribe?: SyncTransport['subscribe']; sse?: { subscribeUrl: (args?: { resources?: string[] }) => string; eventSourceFactory?: (url: string) => EventSource } }
 
 export type ResolvedBackend = {
     key: string
     opsClient: OpsClient
     subscribe?: SyncTransport['subscribe']
     sse?: {
-        buildUrl: (cursor: Cursor) => string
+        buildUrl: (args?: { resources?: string[] }) => string
         eventSourceFactory?: (url: string) => EventSource
     }
 }
@@ -51,10 +51,11 @@ function joinUrl(base: string, path: string): string {
     return `${base}${path}`
 }
 
-function withCursorParam(url: string, cursor: Cursor): string {
-    const encoded = encodeURIComponent(String(cursor))
-    if (url.includes('?')) return `${url}&cursor=${encoded}`
-    return `${url}?cursor=${encoded}`
+function withResourcesParam(url: string, resources?: string[]): string {
+    if (!resources?.length) return url
+    const encoded = encodeURIComponent(resources.join(','))
+    if (url.includes('?')) return `${url}&resources=${encoded}`
+    return `${url}?resources=${encoded}`
 }
 
 function resolveHttpBackend(args: { key?: string; http: HttpBackendConfig }): ResolvedBackend {
@@ -81,9 +82,9 @@ function resolveHttpBackend(args: { key?: string; http: HttpBackendConfig }): Re
 
     const subscribeBaseUrl = http.subscribeUrl
         ? http.subscribeUrl
-        : (cursor: Cursor) => {
+        : (args?: { resources?: string[] }) => {
             const path = http.subscribePath ?? Protocol.http.paths.SYNC_SUBSCRIBE
-            return withCursorParam(joinUrl(baseURL, path), cursor)
+            return withResourcesParam(joinUrl(baseURL, path), args?.resources)
         }
 
     return {
@@ -122,7 +123,7 @@ export function resolveBackend(config: BackendConfig): ResolvedBackend {
         const sse = (config as any).sse
         const sseResolved = (sse && typeof sse === 'object' && !Array.isArray(sse) && typeof sse.subscribeUrl === 'function')
             ? {
-                buildUrl: sse.subscribeUrl as (cursor: Cursor) => string,
+                buildUrl: sse.subscribeUrl as (args?: { resources?: string[] }) => string,
                 eventSourceFactory: typeof sse.eventSourceFactory === 'function'
                     ? (sse.eventSourceFactory as (url: string) => EventSource)
                     : undefined

@@ -274,8 +274,9 @@ export type AtomaSync = {
     start: () => void
     stop: () => void
     status: () => AtomaSyncStatus
-    pullNow: () => Promise<void>
+    pull: () => Promise<void>
     flush: () => Promise<void>
+    setSubscribed: (enabled: boolean) => void
 }
 
 export type AtomaClient<

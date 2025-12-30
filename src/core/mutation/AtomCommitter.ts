@@ -48,7 +48,6 @@ export class AtomCommitter implements Committer {
 
     prepare<T extends Entity>(args: CommitterPrepareArgs<T>) {
         args.store.set(args.atom, args.plan.nextState)
-        args.versionTracker.bump(args.atom, args.plan.changedFields)
         args.indexes?.applyPatches(args.originalState, args.plan.nextState, args.plan.patches)
     }
 
@@ -65,7 +64,6 @@ export class AtomCommitter implements Committer {
 
             if (changed) {
                 args.store.set(args.atom, next)
-                args.versionTracker.bump(args.atom, new Set(['id']))
                 activeIndexes?.applyChangedIds(current as any, next as any, changedIds)
             }
         }

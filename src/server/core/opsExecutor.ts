@@ -36,7 +36,7 @@ type QueryOp = {
     }
 }
 
-type WriteAction = 'create' | 'update' | 'patch' | 'delete'
+type WriteAction = 'create' | 'update' | 'patch' | 'delete' | 'upsert'
 
 type WriteItemMeta = {
     idempotencyKey?: string
@@ -46,6 +46,7 @@ type WriteItemMeta = {
 type WriteItem =
     | { entityId?: string; value: unknown; meta?: WriteItemMeta } // create
     | { entityId: string; baseVersion: number; value: unknown; meta?: WriteItemMeta } // update
+    | { entityId: string; baseVersion?: number; value: unknown; meta?: WriteItemMeta } // upsert
     | { entityId: string; baseVersion: number; patch: unknown[]; meta?: WriteItemMeta } // patch
     | { entityId: string; baseVersion: number; meta?: WriteItemMeta } // delete
 
@@ -172,7 +173,7 @@ function normalizeOperation(value: unknown): Operation {
             throwError('INVALID_REQUEST', 'Missing write.resource', { kind: 'validation', opId })
         }
         const action = readString(value.write, 'action') as WriteAction | undefined
-        if (action !== 'create' && action !== 'update' && action !== 'patch' && action !== 'delete') {
+        if (action !== 'create' && action !== 'update' && action !== 'patch' && action !== 'delete' && action !== 'upsert') {
             throwError('INVALID_REQUEST', 'Invalid write.action', { kind: 'validation', opId })
         }
         const items = Array.isArray(value.write.items) ? value.write.items : undefined
@@ -579,6 +580,52 @@ export function createOpsExecutor<Ctx>(args: {
                                             id: entityId,
                                             patches,
                                             baseVersion
+                                        }
+                                    }))
+
+                                    if (res.ok) {
+                                        itemResults[i] = {
+                                            index: i,
+                                            ok: true,
+                                            entityId: res.replay.id,
+                                            version: res.replay.serverVersion,
+                                            ...(res.data !== undefined ? { data: res.data } : {})
+                                        }
+                                        continue
+                                    }
+
+                                    itemResults[i] = {
+                                        index: i,
+                                        ok: false,
+                                        error: Protocol.error.withTrace(res.error, opTrace),
+                                        ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
+                                            ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
+                                            : {})
+                                    }
+                                    continue
+                                }
+
+                                if (action === 'upsert') {
+                                    const entityId = raw?.entityId
+                                    const baseVersion = raw?.baseVersion
+                                    const value = raw?.value
+
+                                    const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
+                                        orm,
+                                        sync: args.config.adapter.sync,
+                                        tx,
+                                        syncEnabled,
+                                        idempotencyTtlMs,
+                                        meta: opTrace,
+                                        write: {
+                                            kind: 'upsert',
+                                            resource,
+                                            ...(idempotencyKey ? { idempotencyKey } : {}),
+                                            id: entityId,
+                                            baseVersion,
+                                            data: value,
+                                            ...(timestamp !== undefined ? { timestamp } : {}),
+                                            ...(op.write.options !== undefined ? { options: op.write.options as any } : {})
                                         }
                                     }))
 

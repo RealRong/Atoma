@@ -26,6 +26,7 @@ type PrismaDelegate = {
     count?: (args: any) => Promise<number>
     create?: (args: any) => Promise<any>
     update?: (args: any) => Promise<any>
+    upsert?: (args: any) => Promise<any>
     delete?: (args: any) => Promise<any>
     createMany?: (args: any) => Promise<any>
     updateMany?: (args: any) => Promise<any>
@@ -194,7 +195,9 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
 
             const delegate = this.requireDelegateFromClient(this.client, resource, 'delete')
             const current = await this.findOneByKey(this.client, resource, this.idField, id)
-            if (!current) throw new Error('Not found')
+            if (!current) {
+                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(id) })
+            }
             const currentVersion = (current as any).version
             if (typeof currentVersion !== 'number') {
                 throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
@@ -234,7 +237,9 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const run = async (client: PrismaClientLike) => {
             const delegate = this.requireDelegateFromClient(client, resource, 'update')
             const current = await this.findOneByKey(client, resource, this.idField, item.id)
-            if (!current) throw new Error('Not found')
+            if (!current) {
+                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
+            }
 
             if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
                 const currentVersion = (current as any).version
@@ -288,7 +293,9 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                     throw new Error('bulkPatch item missing id or patches')
                 }
                 const current = await this.findOneByKey(this.client, resource, this.idField, item.id)
-                if (!current) throw new Error('Not found')
+                if (!current) {
+                    throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
+                }
 
                 const normalized = this.stripIdPrefix(item.patches, item.id)
                 const next = applyPatches(current, normalized)
@@ -313,7 +320,9 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             }
             const delegate = this.requireDelegate(resource, 'update')
             const current = await this.findOneByKey(this.client, resource, this.idField, item.id)
-            if (!current) throw new Error('Not found')
+            if (!current) {
+                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
+            }
 
             const normalized = this.stripIdPrefix(item.patches, item.id)
             const next = applyPatches(current, normalized)
@@ -324,6 +333,113 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                 select: this.buildSelect(options.select)
             })
             return returning ? row : undefined
+        })
+
+        const settled = await Promise.allSettled(operations.map(op => op()))
+        const data: any[] = []
+        const partialFailures: Array<{ index: number; error: any }> = []
+        settled.forEach((res, idx) => {
+            if (res.status === 'fulfilled') {
+                if (returning && res.value !== undefined) data.push(res.value)
+            } else {
+                partialFailures.push({ index: idx, error: this.toError(res.reason) })
+            }
+        })
+
+        return {
+            data: returning ? data : [],
+            partialFailures: partialFailures.length ? partialFailures : undefined,
+            transactionApplied: false
+        }
+    }
+
+    async upsert(
+        resource: string,
+        item: { id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean },
+        options: WriteOptions = {}
+    ): Promise<QueryResultOne> {
+        const mode: 'strict' | 'loose' = item.mode === 'loose' ? 'loose' : 'strict'
+        const id = item?.id
+        if (id === undefined) throw new Error('upsert requires id')
+
+        const candidate = (item?.data && typeof item.data === 'object' && !Array.isArray(item.data))
+            ? { ...(item.data as any), [this.idField]: id }
+            : { [this.idField]: id }
+
+        const ensureCreateVersion = (data: any) => {
+            const v = (data as any)?.version
+            if (!(typeof v === 'number' && Number.isFinite(v) && v >= 1)) return { ...(data as any), version: 1 }
+            return data
+        }
+
+        if (mode === 'loose') {
+            const delegate = this.requireDelegate(resource, 'upsert')
+            const createData = ensureCreateVersion(candidate)
+            const updateData = this.toUpdateData(candidate, this.idField)
+            const row = await delegate.upsert!({
+                where: { [this.idField]: id },
+                create: createData,
+                update: {
+                    ...updateData,
+                    // loose: LWW，但仍保持 version 单调递增
+                    version: { increment: 1 }
+                },
+                select: this.buildSelect(options.select)
+            })
+            return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
+        }
+
+        const baseVersion = item.baseVersion
+        if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion))) {
+            const current = await this.findOneByKey(this.client, resource, this.idField, id)
+            if (current) {
+                const currentVersion = (current as any)?.version
+                throwError('CONFLICT', 'Strict upsert requires baseVersion for existing entity', {
+                    kind: 'conflict',
+                    resource,
+                    entityId: String(id),
+                    currentVersion,
+                    currentValue: current,
+                    hint: 'rebase'
+                })
+            }
+            return this.create(resource, ensureCreateVersion(candidate), options)
+        }
+
+        try {
+            return await this.patch(resource, {
+                id,
+                patches: [{ op: 'replace', path: [id], value: candidate }],
+                baseVersion,
+                timestamp: item.timestamp
+            }, options)
+        } catch (err) {
+            if (isAtomaError(err) && err.code === 'NOT_FOUND') {
+                return this.create(resource, ensureCreateVersion(candidate), options)
+            }
+            throw err
+        }
+    }
+
+    async bulkUpsert(
+        resource: string,
+        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean }>,
+        options: WriteOptions = {}
+    ): Promise<QueryResultMany> {
+        const returning = options.returning !== false
+
+        if (this.inTransaction) {
+            const updated: any[] = []
+            for (const item of items) {
+                const res = await this.upsert(resource, item, options)
+                if (returning && res.data !== undefined) updated.push(res.data)
+            }
+            return { data: returning ? updated : [], transactionApplied: true }
+        }
+
+        const operations = items.map(item => async () => {
+            const res = await this.upsert(resource, item, options)
+            return returning ? res.data : undefined
         })
 
         const settled = await Promise.allSettled(operations.map(op => op()))

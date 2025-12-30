@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Core } from '#core'
 import type { Entity, IStore, RelationIncludeInput, StoreKey, StoreToken, WithRelations } from '#core'
+import { useShallowStableArray } from './useShallowStableArray'
+
+const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 
 export interface UseRelationsResult<T extends Entity> {
     data: T[]
@@ -34,49 +37,53 @@ export function useRelations<T extends Entity>(
         : include
 
     const includeKey = useMemo(() => Core.query.stableStringify(effectiveInclude), [effectiveInclude])
+    const stableItems = useShallowStableArray(items)
 
-    const [data, setData] = useState<T[]>(items)
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState<Error | undefined>(undefined)
+    type State = { data: T[]; loading: boolean; error?: Error }
+    const [state, setState] = useState<State>(() => ({ data: stableItems, loading: false, error: undefined }))
+    const patchState = (patch: Partial<State>) => setState(prev => ({ ...prev, ...patch }))
 
     const snapshotRef = useRef<Map<StoreKey, Record<string, any>>>(new Map())
     const snapshotNamesRef = useRef<string[]>([])
+    const clearSnapshot = () => {
+        snapshotRef.current = new Map()
+        snapshotNamesRef.current = []
+    }
 
     const { liveInclude, snapshotInclude, snapshotNames } = useMemo(() => {
-        const outLive: Record<string, any> = {}
-        const outSnapshot: Record<string, any> = {}
+        if (!effectiveInclude) return { liveInclude: undefined, snapshotInclude: undefined, snapshotNames: [] as string[] }
 
-        if (effectiveInclude) {
-            Object.entries(effectiveInclude).forEach(([name, opts]) => {
-                if (opts === false || opts === undefined || opts === null) return
-                const live = typeof opts === 'object' ? (opts as any).live !== false : true
-                if (live) outLive[name] = opts
-                else outSnapshot[name] = opts
-            })
-        }
+        const live: Record<string, any> = {}
+        const snapshot: Record<string, any> = {}
+        Object.entries(effectiveInclude).forEach(([name, opts]) => {
+            if (opts === false || opts === undefined || opts === null) return
+            const isLive = typeof opts === 'object' ? (opts as any).live !== false : true
+            ;(isLive ? live : snapshot)[name] = opts
+        })
 
-        const snapNames = Object.keys(outSnapshot)
-
+        const snapshotNames = Object.keys(snapshot)
         return {
-            liveInclude: Object.keys(outLive).length ? outLive : undefined,
-            snapshotInclude: snapNames.length ? outSnapshot : undefined,
-            snapshotNames: snapNames
+            liveInclude: Object.keys(live).length ? live : undefined,
+            snapshotInclude: snapshotNames.length ? snapshot : undefined,
+            snapshotNames
         }
     }, [includeKey])
 
     // include/relations 变化时先清空快照，避免短暂合并旧数据
     useEffect(() => {
-        snapshotRef.current = new Map()
-        snapshotNamesRef.current = []
+        clearSnapshot()
     }, [includeKey, relations])
 
-    const getStoreMap = (storeToken: StoreToken): Map<StoreKey, any> | undefined => {
+    const getStoreMap = (storeToken: StoreToken) => {
         if (!resolveStore) return undefined
         const store = resolveStore(storeToken)
         if (!store) return undefined
         const handle = Core.store.getHandle(store)
         if (!handle || typeof handle.jotaiStore.get !== 'function') return undefined
-        return handle.jotaiStore.get(handle.atom) as Map<StoreKey, any>
+        return {
+            map: handle.jotaiStore.get(handle.atom) as Map<StoreKey, any>,
+            indexes: handle.indexes
+        }
     }
 
     const project = (source: T[]): T[] => {
@@ -101,9 +108,7 @@ export function useRelations<T extends Entity>(
     }
 
     const buildSnapshot = (source: T[]) => {
-        snapshotRef.current = new Map()
-        snapshotNamesRef.current = []
-
+        clearSnapshot()
         if (!snapshotInclude || !snapshotNames.length || !relations || !resolveStore || source.length === 0) return
 
         const projected = Core.relations.projectRelationsBatch(source, snapshotInclude, relations, getStoreMap) as any[]
@@ -121,45 +126,40 @@ export function useRelations<T extends Entity>(
         snapshotNamesRef.current = snapshotNames
     }
 
-    const runPrefetch = async (): Promise<T[]> => {
-        if (!effectiveInclude || !relations || items.length === 0) {
-            snapshotRef.current = new Map()
-            snapshotNamesRef.current = []
-            setError(undefined)
-            setLoading(false)
-            setData(items)
-            return items
+    const prefetchAndProject = async (options?: { cancelled?: () => boolean }): Promise<T[]> => {
+        if (!effectiveInclude || !relations || stableItems.length === 0) {
+            clearSnapshot()
+            setState({ data: stableItems, loading: false, error: undefined })
+            return stableItems
         }
 
         if (!resolveStore) {
             const err = new Error('[Atoma] useRelations: 缺少 resolveStore（StoreToken -> IStore），无法解析 include 关系')
-            setError(err)
-            setLoading(false)
-            setData(items)
-            return items
+            setState({ data: stableItems, loading: false, error: err })
+            return stableItems
         }
 
-        setLoading(true)
-        setError(undefined)
-
+        patchState({ loading: true, error: undefined })
         try {
             await Core.relations.RelationResolver.prefetchBatch(
-                items,
+                stableItems,
                 effectiveInclude,
                 relations,
                 resolveStore,
-                { onError: 'partial', timeout: 5000, maxConcurrency: 10 }
+                DEFAULT_PREFETCH_OPTIONS
             )
         } catch (err: any) {
             const e = err instanceof Error ? err : new Error(String(err))
-            setError(e)
+            patchState({ error: e })
         } finally {
-            setLoading(false)
+            if (!options?.cancelled?.()) patchState({ loading: false })
         }
 
-        buildSnapshot(items)
-        const projected = project(items)
-        setData(projected)
+        if (options?.cancelled?.()) return stableItems
+
+        buildSnapshot(stableItems)
+        const projected = project(stableItems)
+        patchState({ data: projected })
         return projected
     }
 
@@ -168,49 +168,12 @@ export function useRelations<T extends Entity>(
         let cancelled = false
 
         const run = async () => {
-            if (!effectiveInclude || !relations || items.length === 0) {
-                snapshotRef.current = new Map()
-                snapshotNamesRef.current = []
-                setError(undefined)
-                setLoading(false)
-                setData(items)
-                return
-            }
-
-            if (!resolveStore) {
-                const err = new Error('[Atoma] useRelations: 缺少 resolveStore（StoreToken -> IStore），无法解析 include 关系')
-                setError(err)
-                setLoading(false)
-                setData(items)
-                return
-            }
-
-            setLoading(true)
-            setError(undefined)
-
-            try {
-                await Core.relations.RelationResolver.prefetchBatch(
-                    items,
-                    effectiveInclude,
-                    relations,
-                    resolveStore,
-                    { onError: 'partial', timeout: 5000, maxConcurrency: 10 }
-                )
-            } catch (err: any) {
-                const e = err instanceof Error ? err : new Error(String(err))
-                setError(e)
-            } finally {
-                if (!cancelled) setLoading(false)
-            }
-
-            if (cancelled) return
-            buildSnapshot(items)
-            setData(project(items))
+            await prefetchAndProject({ cancelled: () => cancelled })
         }
 
         run()
         return () => { cancelled = true }
-    }, [items, includeKey, relations, resolveStore])
+    }, [stableItems, includeKey, relations, resolveStore])
 
     // live 订阅：监听相关 store map 变化
     const [liveTick, setLiveTick] = useState(0)
@@ -237,10 +200,10 @@ export function useRelations<T extends Entity>(
 
     // liveTick 变化：仅重算 live 投影，并合并 snapshot
     useEffect(() => {
-        setData(project(items))
-    }, [items, includeKey, relations, resolveStore, liveTick])
+        patchState({ data: project(stableItems) })
+    }, [stableItems, includeKey, relations, resolveStore, liveTick])
 
-    const refetch = () => runPrefetch()
+    const refetch = () => prefetchAndProject()
 
-    return { data, loading, error, refetch }
+    return { data: state.data, loading: state.loading, error: state.error, refetch }
 }

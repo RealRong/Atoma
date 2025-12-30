@@ -48,7 +48,7 @@
 
 以 `findMany` 为例：
 
-- 若调用方传了 `options.traceId`，直接沿用。
+- 若创建 `ObservabilityContext` 时显式传入了 `traceId`（例如 `createContext({ traceId })`），直接沿用。
 - 否则只在“确实需要时”分配：
   - `options.explain === true`，或
   - debug 开启且 `sample > 0`
@@ -137,7 +137,7 @@ console.log(res.explain)
 ## 关于 ID 与 trace 传递
 
 - 对于 ops 请求：traceId/requestId 以 **op-scoped** 形式写在 `op.meta.traceId` / `op.meta.requestId`（batch 场景尤其重要：同一请求内允许 mixed trace，不需要为 trace 拆批）。
-- `x-atoma-trace-id` / `x-atoma-request-id` 这两个请求头是可选的：服务端仍可解析它们作为“请求级”上下文（例如顶层错误/日志），但不再作为 op 级 trace 的权威来源。
+- **禁止 Header Trace**：不支持 `x-atoma-trace-id` / `x-atoma-request-id` 作为任何权威或可选 carrier，服务端也不应解析/依赖它们（避免把 trace 错误地 request-scoped 化，并与 batch mixed trace 冲突）。
 - `requestId` 通常通过 `ctx.requestId()`（runtime 内部维护 per-trace 序列）在实例内按 trace 生成序列，避免进程级全局可变状态，更适合 SSR/并发场景。
 - 对于 `sync/subscribe-vnext` 这类 GET/SSE（无 JSON body）：trace 通过 URL query（`traceId`/`requestId`）传递。
 

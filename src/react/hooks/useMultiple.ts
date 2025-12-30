@@ -1,8 +1,10 @@
-import { useAtomValue } from 'jotai'
+import { atom, useAtomValue } from 'jotai'
+import { selectAtom } from 'jotai/utils'
 import { useMemo } from 'react'
 import { Core } from '#core'
 import type { Entity, IStore, RelationIncludeInput, StoreKey, WithRelations } from '#core'
 import { useRelations } from './useRelations'
+import { useShallowStableArray } from './useShallowStableArray'
 
 interface UseMultipleOptions<T, Relations = {}> {
     limit?: number
@@ -26,23 +28,46 @@ export function useMultiple<T extends Entity, Relations = {}, const Include exte
     const objectMapAtom = handle.atom
     const jotaiStore = handle.jotaiStore
 
-    const map = useAtomValue(objectMapAtom, { store: jotaiStore })
     const { limit, unique = true, selector, include } = options || {}
 
-    const baseList = useMemo(() => {
-        const seen = new Set<StoreKey>()
-        const arr: T[] = []
-        ids.forEach(id => {
-            if (unique && seen.has(id)) return
-            const item = map.get(id)
-            if (item) {
+    const stableIds = useShallowStableArray(ids)
+
+    const baseListAtom = useMemo(() => {
+        if (!stableIds.length) return atom([] as T[])
+
+        const idsSnapshot = stableIds.slice()
+
+        const selectList = (map: Map<StoreKey, T>): T[] => {
+            const seen = new Set<StoreKey>()
+            const arr: T[] = []
+
+            for (const id of idsSnapshot) {
+                if (unique && seen.has(id)) continue
+                const item = map.get(id)
+                if (!item) continue
+
                 seen.add(id)
                 arr.push(item)
-            }
-        })
 
-        return limit !== undefined ? arr.slice(0, limit) : arr
-    }, [ids, map, limit, unique])
+                if (limit !== undefined && arr.length >= limit) break
+            }
+
+            return arr
+        }
+
+        const shallowEqual = (a: T[], b: T[]) => {
+            if (a === b) return true
+            if (a.length !== b.length) return false
+            for (let i = 0; i < a.length; i++) {
+                if (a[i] !== b[i]) return false
+            }
+            return true
+        }
+
+        return selectAtom(objectMapAtom, selectList, shallowEqual)
+    }, [objectMapAtom, stableIds, limit, unique])
+
+    const baseList = useAtomValue(baseListAtom, { store: jotaiStore })
 
     const relations = handle.relations?.() as Relations | undefined
     const resolveStore = handle.services.resolveStore

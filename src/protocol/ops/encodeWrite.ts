@@ -12,6 +12,15 @@ export type WriteIntent =
         }>
     }
     | {
+        kind: 'upsert'
+        items: Array<{
+            entityId: string
+            baseVersion?: number
+            value: unknown
+            meta?: WriteItemMeta
+        }>
+    }
+    | {
         kind: 'update'
         items: Array<{
             entityId: string
@@ -46,6 +55,18 @@ export function encodeWriteIntent(intent: WriteIntent): { action: WriteAction; i
             action: 'create',
             items: intent.items.map(i => ({
                 ...(typeof i.entityId === 'string' && i.entityId ? { entityId: i.entityId } : {}),
+                value: i.value,
+                ...(i.meta ? { meta: i.meta } : {})
+            }))
+        }
+    }
+
+    if (intent.kind === 'upsert') {
+        return {
+            action: 'upsert',
+            items: intent.items.map(i => ({
+                entityId: i.entityId,
+                ...(typeof i.baseVersion === 'number' ? { baseVersion: i.baseVersion } : {}),
                 value: i.value,
                 ...(i.meta ? { meta: i.meta } : {})
             }))
