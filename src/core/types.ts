@@ -489,10 +489,10 @@ export interface IStore<T, Relations = {}> {
     upsertMany(items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>>
 
     /** Get one item by ID */
-    getOneById(id: StoreKey, options?: StoreReadOptions): Promise<T | undefined>
+    getOne(id: StoreKey, options?: StoreReadOptions): Promise<T | undefined>
 
     /** Fetch one from backend (bypass cache) */
-    fetchOneById(id: StoreKey, options?: StoreReadOptions): Promise<T | undefined>
+    fetchOne(id: StoreKey, options?: StoreReadOptions): Promise<T | undefined>
 
     /** 
      * Get all items 
@@ -505,7 +505,7 @@ export interface IStore<T, Relations = {}> {
     fetchAll?(): Promise<T[]>
 
     /** Get multiple items by IDs */
-    getMultipleByIds(ids: StoreKey[], cache?: boolean, options?: StoreReadOptions): Promise<T[]>
+    getMany(ids: StoreKey[], cache?: boolean, options?: StoreReadOptions): Promise<T[]>
 
     /** Query with filtering/sorting/paging */
     findMany?(options?: FindManyOptions<T>): Promise<FindManyResult<T>>

@@ -78,8 +78,15 @@ export function applyQuery<T extends Record<string, any>>(
     let result = data
 
     // 1. Apply where filter
-    if (where && Object.keys(where).length > 0) {
-        result = result.filter(item => QueryMatcher.matchesWhere(item, where as any, opts?.matcher))
+    const anyWhere = where as any
+    const shouldFilter =
+        Boolean(anyWhere)
+        && (
+            typeof anyWhere === 'function'
+            || (typeof anyWhere === 'object' && Object.keys(anyWhere).length > 0)
+        )
+    if (shouldFilter) {
+        result = result.filter(item => QueryMatcher.matchesWhere(item, anyWhere, opts?.matcher))
     }
 
     // 2. Apply sorting with Top-K optimization

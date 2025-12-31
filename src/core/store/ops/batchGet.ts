@@ -7,125 +7,195 @@ import type { ObservabilityContext } from '#observability'
 type GetOneTask<T> = {
     id: StoreKey
     resolve: (value: T | undefined) => void
+    reject: (error: unknown) => void
     observabilityContext: ObservabilityContext
 }
 
+type TaskGroup<T> = {
+    observabilityContext: ObservabilityContext
+    tasks: GetOneTask<T>[]
+}
+
+const NO_TRACE = '__no_trace__'
+
+const groupTasksByTrace = <T>(tasks: GetOneTask<T>[]): TaskGroup<T>[] => {
+    if (tasks.length <= 1) {
+        const only = tasks[0]
+        return only ? [{ observabilityContext: only.observabilityContext, tasks: [only] }] : []
+    }
+
+    const firstTraceId = tasks[0].observabilityContext.traceId
+    if (firstTraceId === undefined) {
+        let allNoTrace = true
+        for (let i = 1; i < tasks.length; i++) {
+            if (tasks[i].observabilityContext.traceId !== undefined) {
+                allNoTrace = false
+                break
+            }
+        }
+        if (allNoTrace) {
+            return [{ observabilityContext: tasks[0].observabilityContext, tasks }]
+        }
+    }
+
+    const byTrace = new Map<string, TaskGroup<T>>()
+
+    for (const task of tasks) {
+        const key = task.observabilityContext.traceId ?? NO_TRACE
+        const existing = byTrace.get(key)
+        if (existing) {
+            existing.tasks.push(task)
+            continue
+        }
+        byTrace.set(key, { observabilityContext: task.observabilityContext, tasks: [task] })
+    }
+
+    return Array.from(byTrace.values())
+}
+
+const dedupeTaskIds = <T>(tasks: GetOneTask<T>[]): StoreKey[] => {
+    const ids: StoreKey[] = []
+    const seen = new Set<StoreKey>()
+    for (const task of tasks) {
+        if (seen.has(task.id)) continue
+        seen.add(task.id)
+        ids.push(task.id)
+    }
+    return ids
+}
+
 export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
-    const { jotaiStore, atom, dataSource, transform, services, indexes } = handle
+    const { jotaiStore, atom, dataSource, transform } = handle
 
     let batchGetOneTaskQueue: GetOneTask<T>[] = []
     let batchFetchOneTaskQueue: GetOneTask<T>[] = []
 
-    const processGetOneTaskQueue = async () => {
+    const processGetOneTaskQueue = () => {
         if (!batchGetOneTaskQueue.length) return
 
-        const sliced = batchGetOneTaskQueue.slice()
+        const sliced = batchGetOneTaskQueue
         batchGetOneTaskQueue = []
 
-        const groups = (() => {
-            const byTrace = new Map<string, { observabilityContext: ObservabilityContext; tasks: GetOneTask<T>[] }>()
-            const NO_TRACE = '__no_trace__'
+        const groups = groupTasksByTrace<T>(sliced)
 
-            sliced.forEach(task => {
-                const key = task.observabilityContext.traceId ?? NO_TRACE
-                const cur = byTrace.get(key)
-                if (cur) {
-                    cur.tasks.push(task)
-                    return
+        const processGroup = async (group: TaskGroup<T>) => {
+            const ids = dedupeTaskIds(group.tasks)
+
+            try {
+                const raw = await dataSource.bulkGet(ids, group.observabilityContext)
+
+                const idToItem = new Map<StoreKey, T>()
+                const itemsToCache: T[] = []
+
+                for (const got of raw) {
+                    if (got === undefined) continue
+                    const item = transform(got)
+                    const id = (item as any).id as StoreKey
+                    idToItem.set(id, item)
+                    itemsToCache.push(item)
                 }
-                byTrace.set(key, { observabilityContext: task.observabilityContext, tasks: [task] })
-            })
 
-            return Array.from(byTrace.values())
-        })()
+                const before = jotaiStore.get(atom)
+                const after = itemsToCache.length
+                    ? bulkAdd(itemsToCache as PartialWithId<T>[], before)
+                    : before
 
-        const items: T[] = []
-        const idToItem = new Map<StoreKey, T>()
+                if (before !== after && itemsToCache.length) {
+                    const changedIds = new Set<StoreKey>()
+                    for (const item of itemsToCache) {
+                        const id = (item as any).id as StoreKey
+                        if (before.get(id) !== item) changedIds.add(id)
+                    }
+                    commitAtomMapUpdateDelta({ handle, before, after, changedIds })
+                }
 
-        for (const group of groups) {
-            const ids = Array.from(new Set(group.tasks.map(i => i.id)).values())
-            let fetched = (await dataSource.bulkGet(ids, group.observabilityContext)).filter((i): i is T => i !== undefined)
-            fetched = fetched.map(transform)
-
-            fetched.forEach(item => {
-                const id = (item as any).id as StoreKey
-                idToItem.set(id, item)
-                items.push(item)
-            })
-
-            group.tasks.forEach(task => {
-                task.resolve(idToItem.get(task.id))
-            })
+                const currentMap = after
+                for (const task of group.tasks) {
+                    task.resolve(idToItem.get(task.id) ?? currentMap.get(task.id))
+                }
+            } catch (error) {
+                for (const task of group.tasks) {
+                    task.reject(error)
+                }
+            }
         }
 
-        if (items.length) {
-            const before = jotaiStore.get(atom)
-            const after = bulkAdd(items as PartialWithId<T>[], before)
-            const changedIds = new Set<StoreKey>(items.map(i => (i as any).id as StoreKey))
-            commitAtomMapUpdateDelta({ handle, before, after, changedIds })
+        if (groups.length === 1) {
+            void processGroup(groups[0])
+            return
         }
+
+        void Promise.allSettled(groups.map(processGroup))
     }
 
-    const processFetchOneTaskQueue = async () => {
+    const processFetchOneTaskQueue = () => {
         if (!batchFetchOneTaskQueue.length) return
 
-        const sliced = batchFetchOneTaskQueue.slice()
+        const sliced = batchFetchOneTaskQueue
         batchFetchOneTaskQueue = []
 
-        const groups = (() => {
-            const byTrace = new Map<string, { observabilityContext: ObservabilityContext; tasks: GetOneTask<T>[] }>()
-            const NO_TRACE = '__no_trace__'
+        const groups = groupTasksByTrace<T>(sliced)
 
-            sliced.forEach(task => {
-                const key = task.observabilityContext.traceId ?? NO_TRACE
-                const cur = byTrace.get(key)
-                if (cur) {
-                    cur.tasks.push(task)
-                    return
+        const processGroup = async (group: TaskGroup<T>) => {
+            const ids = dedupeTaskIds(group.tasks)
+            try {
+                const raw = await dataSource.bulkGet(ids, group.observabilityContext)
+
+                const idToItem = new Map<StoreKey, T>()
+                for (const got of raw) {
+                    if (got === undefined) continue
+                    const item = transform(got)
+                    const id = (item as any).id as StoreKey
+                    idToItem.set(id, item)
                 }
-                byTrace.set(key, { observabilityContext: task.observabilityContext, tasks: [task] })
-            })
 
-            return Array.from(byTrace.values())
-        })()
-
-        const idToItem = new Map<StoreKey, T>()
-
-        for (const group of groups) {
-            const ids = Array.from(new Set(group.tasks.map(i => i.id)).values())
-            let items = (await dataSource.bulkGet(ids, group.observabilityContext)).filter((i): i is T => i !== undefined)
-            items = items.map(transform)
-
-            items.forEach(item => {
-                const id = (item as any).id as StoreKey
-                idToItem.set(id, item)
-            })
-
-            group.tasks.forEach(task => {
-                task.resolve(idToItem.get(task.id))
-            })
+                for (const task of group.tasks) {
+                    task.resolve(idToItem.get(task.id))
+                }
+            } catch (error) {
+                for (const task of group.tasks) {
+                    task.reject(error)
+                }
+            }
         }
+
+        if (groups.length === 1) {
+            void processGroup(groups[0])
+            return
+        }
+
+        void Promise.allSettled(groups.map(processGroup))
     }
 
 
-    const handleGetOne = (id: StoreKey, resolve: (v: T | undefined) => void, options?: StoreReadOptions) => {
+    const handleGetOne = (
+        id: StoreKey,
+        resolve: (v: T | undefined) => void,
+        reject: (error: unknown) => void,
+        options?: StoreReadOptions
+    ) => {
         const observabilityContext = resolveObservabilityContext(handle, options)
         if (batchGetOneTaskQueue.length) {
-            batchGetOneTaskQueue.push({ resolve, id, observabilityContext })
+            batchGetOneTaskQueue.push({ resolve, reject, id, observabilityContext })
         } else {
-            batchGetOneTaskQueue = [{ resolve, id, observabilityContext }]
+            batchGetOneTaskQueue = [{ resolve, reject, id, observabilityContext }]
             Promise.resolve().then(() => {
                 processGetOneTaskQueue()
             })
         }
     }
 
-    const handleFetchOne = (id: StoreKey, resolve: (v: T | undefined) => void, options?: StoreReadOptions) => {
+    const handleFetchOne = (
+        id: StoreKey,
+        resolve: (v: T | undefined) => void,
+        reject: (error: unknown) => void,
+        options?: StoreReadOptions
+    ) => {
         const observabilityContext = resolveObservabilityContext(handle, options)
         if (batchFetchOneTaskQueue.length) {
-            batchFetchOneTaskQueue.push({ resolve, id, observabilityContext })
+            batchFetchOneTaskQueue.push({ resolve, reject, id, observabilityContext })
         } else {
-            batchFetchOneTaskQueue = [{ resolve, id, observabilityContext }]
+            batchFetchOneTaskQueue = [{ resolve, reject, id, observabilityContext }]
             Promise.resolve().then(() => {
                 processFetchOneTaskQueue()
             })
@@ -133,19 +203,19 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
     }
 
     return {
-        getOneById: (id: StoreKey, options?: StoreReadOptions) => {
-            return new Promise<T | undefined>(resolve => {
+        getOne: (id: StoreKey, options?: StoreReadOptions) => {
+            return new Promise<T | undefined>((resolve, reject) => {
                 const atomOne = jotaiStore.get(atom).get(id)
-                if (atomOne) {
+                if (atomOne !== undefined) {
                     resolve(atomOne)
-                } else {
-                    handleGetOne(id, resolve, options)
+                    return
                 }
+                handleGetOne(id, resolve, reject, options)
             })
         },
-        fetchOneById: (id: StoreKey, options?: StoreReadOptions) => {
-            return new Promise<T | undefined>(resolve => {
-                handleFetchOne(id, resolve, options)
+        fetchOne: (id: StoreKey, options?: StoreReadOptions) => {
+            return new Promise<T | undefined>((resolve, reject) => {
+                handleFetchOne(id, resolve, reject, options)
             })
         }
     }

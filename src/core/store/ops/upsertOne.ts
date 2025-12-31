@@ -24,12 +24,13 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>) {
                 return await prepareForUpdate<T>(handle, base, item)
             }
 
-            const createdAt = (base as any).createdAt ?? Date.now()
+            const now = Date.now()
+            const createdAt = (base as any).createdAt ?? now
             const candidate: any = {
                 ...(item as any),
                 id,
                 createdAt,
-                updatedAt: Date.now()
+                updatedAt: now
             }
 
             if (candidate.version === undefined && typeof (base as any).version === 'number') {

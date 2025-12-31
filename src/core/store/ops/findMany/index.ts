@@ -3,6 +3,7 @@ import type { Explain } from '#observability'
 import type { Entity, FindManyOptions, FindManyResult, PartialWithId, StoreKey } from '../../../types'
 import { bulkAdd, bulkRemove } from '../../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../../internals/cacheWriter'
+import { toError } from '../../internals/errors'
 import { preserveReferenceShallow } from '../../internals/preserveReference'
 import { resolveCachePolicy } from './cachePolicy'
 import { evaluateWithIndexes } from './localEvaluate'
@@ -13,13 +14,7 @@ import { resolveObservabilityContext } from '../../internals/runtime'
 import type { StoreHandle } from '../../../types'
 
 export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
-    const { jotaiStore, atom, dataSource, services, indexes, matcher, transform } = handle
-
-    const preserveReference = (incoming: T): T => {
-        const existing = jotaiStore.get(atom).get((incoming as any).id)
-        if (!existing) return incoming
-        return preserveReferenceShallow(existing, incoming)
-    }
+    const { jotaiStore, atom, dataSource, indexes, matcher, transform } = handle
 
     return async (options?: FindManyOptions<T>): Promise<FindManyResult<T>> => {
         const explainEnabled = options?.explain === true
@@ -42,27 +37,38 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
             return { ...out, explain: { ...explain, ...(extra || {}) } }
         }
 
-        const map = jotaiStore.get(atom) as Map<StoreKey, T>
         emit('query:start', { params: summarizeFindManyParams(options) })
 
-        const localData = evaluateWithIndexes({
-            mapRef: map,
-            options,
-            indexes,
-            matcher,
-            emit,
-            explain
-        })
+        let localCache: { data: T[]; result: FindManyResult<T> } | null = null
+        const getLocalResult = (): { data: T[]; result: FindManyResult<T> } => {
+            if (localCache) return localCache
 
-        const localResult = withExplain(
-            { data: localData },
-            {
-                cacheWrite: {
-                    writeToCache: !cachePolicy.effectiveSkipStore,
-                    ...(cachePolicy.effectiveSkipStore ? { reason: cachePolicy.reason } : {})
+            const map = jotaiStore.get(atom) as Map<StoreKey, T>
+            const localData = evaluateWithIndexes({
+                mapRef: map,
+                options,
+                indexes,
+                matcher,
+                emit,
+                explain
+            })
+
+            const localResult = withExplain(
+                { data: localData },
+                {
+                    cacheWrite: {
+                        writeToCache: !cachePolicy.effectiveSkipStore,
+                        ...(cachePolicy.effectiveSkipStore ? { reason: cachePolicy.reason } : {})
+                    }
                 }
-            }
-        )
+            )
+
+            localCache = { data: localData, result: localResult }
+            return localCache
+        }
+
+        const shouldEagerEvaluateLocal = typeof dataSource.findMany === 'function' && (explainEnabled || observabilityContext.active)
+        if (shouldEagerEvaluateLocal) getLocalResult()
 
         if (typeof dataSource.findMany === 'function') {
             try {
@@ -72,9 +78,13 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                 const normalized = normalizeFindManyResult<T>(raw)
                 const { data, pageInfo, explain: dataSourceExplain } = normalized
 
-                const transformed = (data || []).map((item: T) => transform(item))
+                const fetched = data || []
 
                 if (cachePolicy.effectiveSkipStore) {
+                    const transformed: T[] = new Array(fetched.length)
+                    for (let i = 0; i < fetched.length; i++) {
+                        transformed[i] = transform(fetched[i] as T)
+                    }
                     emit('query:cacheWrite', {
                         writeToCache: false,
                         reason: cachePolicy.reason,
@@ -94,20 +104,22 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                     )
                 }
 
-                const processed = transformed.map(item => preserveReference(item))
-
                 const existingMap = jotaiStore.get(atom) as Map<StoreKey, T>
                 const changedIds = new Set<StoreKey>()
                 let next: Map<StoreKey, T> | null = null
+                const processed: T[] = new Array(fetched.length)
 
-                processed.forEach((item: T) => {
-                    const id = (item as any).id as StoreKey
-                    const prev = existingMap.get(id)
-                    if (prev === item) return
+                for (let i = 0; i < fetched.length; i++) {
+                    const transformed = transform(fetched[i] as T)
+                    const id = (transformed as any).id as StoreKey
+                    const existing = existingMap.get(id)
+                    const preserved = preserveReferenceShallow(existing, transformed)
+                    processed[i] = preserved
+                    if (existing === preserved) continue
                     changedIds.add(id)
                     if (!next) next = new Map(existingMap)
-                    next.set(id, item)
-                })
+                    next.set(id, preserved)
+                }
 
                 if (next && changedIds.size) {
                     commitAtomMapUpdateDelta({
@@ -121,7 +133,7 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                 emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
                 return withExplain(
                     {
-                        data: transformed,
+                        data: processed,
                         pageInfo,
                         ...(dataSourceExplain !== undefined ? { explain: dataSourceExplain } : {})
                     },
@@ -132,10 +144,11 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                     }
                 )
             } catch (error) {
-                dataSource.onError?.(error as Error, 'findMany')
-                const err = error instanceof Error ? error : new Error(String(error))
+                const err = toError(error, '[Atoma] findMany failed')
+                dataSource.onError?.(err, 'findMany')
+                const { data: localData } = getLocalResult()
                 return withExplain(
-                    { data: (localResult as any).data },
+                    { data: localData },
                     { errors: [{ kind: 'datasource', code: 'FIND_MANY_FAILED', message: err.message, traceId: observabilityContext.traceId }] }
                 )
             }
@@ -154,9 +167,22 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                     params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields }
                 })
 
-                if (options?.where && typeof options.where !== 'function') {
+                const anyWhere = (options as any)?.where
+                const shouldSkipApplyQuery =
+                    !options
+                    || (
+                        (!anyWhere || typeof anyWhere === 'function')
+                        && !options.orderBy
+                        && options.limit === undefined
+                        && options.offset === undefined
+                    )
+
+                if (!shouldSkipApplyQuery) {
+                    const effectiveOptions = typeof options?.where === 'function'
+                        ? ({ ...(options as any), where: undefined } as any)
+                        : options
                     return withExplain(
-                        { data: applyQuery(remote as any, options, { matcher }) as T[] },
+                        { data: applyQuery(remote as any, effectiveOptions, { matcher }) as T[] },
                         { cacheWrite: { writeToCache: false, reason: cachePolicy.reason } }
                     )
                 }
@@ -167,27 +193,46 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                 )
             }
 
-            remote = remote.map(item => preserveReference(item))
-
             const existingMap = jotaiStore.get(atom) as Map<StoreKey, T>
-            const incomingIds = new Set(remote.map(item => (item as any).id as StoreKey))
+            const incomingIds = new Set<StoreKey>()
+            const processed: T[] = new Array(remote.length)
+
+            for (let i = 0; i < remote.length; i++) {
+                const item = remote[i] as T
+                const id = (item as any).id as StoreKey
+                incomingIds.add(id)
+                const existing = existingMap.get(id)
+                processed[i] = preserveReferenceShallow(existing, item)
+            }
             const toRemove: StoreKey[] = []
             existingMap.forEach((_value: T, id: StoreKey) => {
                 if (!incomingIds.has(id)) toRemove.push(id)
             })
 
             const withRemovals = bulkRemove(toRemove, existingMap)
-            const next = bulkAdd(remote as PartialWithId<T>[], withRemovals)
+            const next = processed.length
+                ? bulkAdd(processed as PartialWithId<T>[], withRemovals)
+                : withRemovals
+
             const changedIds = new Set<StoreKey>(toRemove)
-            incomingIds.forEach(id => changedIds.add(id))
+            for (let i = 0; i < processed.length; i++) {
+                const id = (processed[i] as any).id as StoreKey
+                if (!existingMap.has(id) || existingMap.get(id) !== processed[i]) {
+                    changedIds.add(id)
+                }
+            }
+
             commitAtomMapUpdateDelta({ handle, before: existingMap, after: next, changedIds })
 
             emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
+            const effectiveOptions = typeof options?.where === 'function'
+                ? ({ ...(options as any), where: undefined } as any)
+                : options
             return withExplain(
                 {
                     data: evaluateWithIndexes({
-                        mapRef: jotaiStore.get(atom),
-                        options,
+                        mapRef: next,
+                        options: effectiveOptions,
                         indexes,
                         matcher,
                         emit,
@@ -197,8 +242,9 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                 { cacheWrite: { writeToCache: true } }
             )
         } catch (error) {
-            dataSource.onError?.(error as Error, 'findMany')
-            return localResult
+            const err = toError(error, '[Atoma] findMany(getAll fallback) failed')
+            dataSource.onError?.(err, 'findMany')
+            return getLocalResult().result
         }
     }
 }

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { Core } from '../../src/core'
-import { OpsDataSource } from '../../src/datasources/OpsDataSource'
+import { OpsDataSource } from '../../src/datasources'
 import { MemoryOpsClient } from '../../src/backend/local/MemoryOpsClient'
 import { useAll, useValue } from '../../src/react'
 

@@ -1,16 +1,8 @@
 import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, WriteManyResult } from '../../types'
 import { dispatch } from '../internals/dispatch'
+import { toError } from '../internals/errors'
 import { ensureActionId } from '../internals/ensureActionId'
-
-function toError(reason: unknown, fallbackMessage: string): Error {
-    if (reason instanceof Error) return reason
-    if (typeof reason === 'string' && reason) return new Error(reason)
-    try {
-        return new Error(`${fallbackMessage}: ${JSON.stringify(reason)}`)
-    } catch {
-        return new Error(fallbackMessage)
-    }
-}
+import { ignoreTicketRejections } from '../internals/tickets'
 
 export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>) {
     const { services } = handle
@@ -57,12 +49,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>) {
             tasks.push(
                 (confirmation === 'optimistic'
                     ? (() => {
-                        void ticket.enqueued.catch(() => {
-                            // avoid unhandled rejection when optimistic writes never await enqueued
-                        })
-                        void ticket.confirmed.catch(() => {
-                            // avoid unhandled rejection when optimistic writes never await confirmed
-                        })
+                        ignoreTicketRejections(ticket)
                         return resultPromise
                     })()
                     : Promise.all([

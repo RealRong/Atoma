@@ -2,6 +2,7 @@ import type { Entity, StoreOperationOptions, StoreHandle } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { ensureActionId } from '../internals/ensureActionId'
 import { runAfterSave } from '../internals/hooks'
+import { ignoreTicketRejections } from '../internals/tickets'
 import { prepareForAdd } from '../internals/writePipeline'
 
 export function createAddMany<T extends Entity>(handle: StoreHandle<T>) {
@@ -44,12 +45,7 @@ export function createAddMany<T extends Entity>(handle: StoreHandle<T>) {
         const confirmation = options?.confirmation ?? 'optimistic'
         if (confirmation === 'optimistic') {
             tickets.forEach((ticket) => {
-                void ticket.enqueued.catch(() => {
-                    // avoid unhandled rejection when optimistic writes never await enqueued
-                })
-                void ticket.confirmed.catch(() => {
-                    // avoid unhandled rejection when optimistic writes never await confirmed
-                })
+                ignoreTicketRejections(ticket)
             })
             await Promise.all(resultPromises)
             return results

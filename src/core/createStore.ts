@@ -6,10 +6,10 @@ import {
     createAddOne,
     createBatchGet,
     createDeleteMany,
-    createDeleteOneById,
+    createDeleteOne,
     createFindMany,
     createGetAll,
-    createGetMultipleByIds,
+    createGetMany,
     createStoreHandle,
     createUpdateMany,
     createUpdateOne,
@@ -113,7 +113,7 @@ export function createStore<T extends Entity, Relations = {}>(
     })
     void handle.stopIndexDevtools
 
-    const { getOneById, fetchOneById } = createBatchGet(handle)
+    const { getOne, fetchOne } = createBatchGet(handle)
     const findMany = createFindMany<T>(handle)
 
     const store = {
@@ -121,14 +121,14 @@ export function createStore<T extends Entity, Relations = {}>(
         addMany: createAddMany<T>(handle),
         updateOne: createUpdateOne<T>(handle),
         updateMany: createUpdateMany<T>(handle),
-        deleteOne: createDeleteOneById<T>(handle),
+        deleteOne: createDeleteOne<T>(handle),
         deleteMany: createDeleteMany<T>(handle),
         upsertOne: createUpsertOne<T>(handle),
         upsertMany: createUpsertMany<T>(handle),
         getAll: createGetAll<T>(handle),
-        getMultipleByIds: createGetMultipleByIds<T>(handle),
-        getOneById,
-        fetchOneById,
+        getMany: createGetMany<T>(handle),
+        getOne,
+        fetchOne,
         findMany
     } as IStore<T>
 

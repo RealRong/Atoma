@@ -1,24 +1,15 @@
 import { produce } from 'immer'
 import type { Draft } from 'immer'
 import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, WriteManyResult } from '../../types'
-import { add } from '../internals/atomMapOps'
-import { commitAtomMapUpdate } from '../internals/cacheWriter'
+import { bulkAdd } from '../internals/atomMapOps'
+import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { dispatch } from '../internals/dispatch'
+import { toError } from '../internals/errors'
 import { ensureActionId } from '../internals/ensureActionId'
 import { runAfterSave } from '../internals/hooks'
 import { resolveObservabilityContext } from '../internals/runtime'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForUpdate } from '../internals/writePipeline'
-
-function toError(reason: unknown, fallbackMessage: string): Error {
-    if (reason instanceof Error) return reason
-    if (typeof reason === 'string' && reason) return new Error(reason)
-    try {
-        return new Error(`${fallbackMessage}: ${JSON.stringify(reason)}`)
-    } catch {
-        return new Error(fallbackMessage)
-    }
-}
 
 export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
     const { jotaiStore, atom, dataSource, services, hooks, schema, transform } = handle
@@ -62,7 +53,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
 
         if (missing.length) {
             const fetchedList = await dataSource.bulkGet(missing, observabilityContext)
-            let after: Map<StoreKey, T> | null = null
+            const toCache: Array<PartialWithId<T>> = []
 
             for (let i = 0; i < missing.length; i++) {
                 const id = missing[i]
@@ -71,13 +62,21 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
                 const transformed = transform(fetched)
                 const validFetched = await validateWithSchema(transformed, schema)
                 baseById.set(id, validFetched as any)
-
-                const mapRef: Map<StoreKey, T> = after ?? beforeMap
-                after = add(validFetched as any, mapRef)
+                toCache.push(validFetched as any)
             }
 
-            if (after) {
-                commitAtomMapUpdate({ handle, before: beforeMap, after })
+            if (toCache.length) {
+                const after = bulkAdd(toCache, beforeMap)
+                if (after !== beforeMap) {
+                    const changedIds = new Set<StoreKey>()
+                    for (const item of toCache) {
+                        const id = item.id as any as StoreKey
+                        if (!beforeMap.has(id) || beforeMap.get(id) !== (item as any)) {
+                            changedIds.add(id)
+                        }
+                    }
+                    commitAtomMapUpdateDelta({ handle, before: beforeMap, after, changedIds })
+                }
             }
         }
 

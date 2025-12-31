@@ -142,9 +142,9 @@ export class RelationResolver {
             && mergedOptions.include === undefined
             && mergedOptions.where === undefined
 
-        if (shouldUseIdLookup && typeof store.getMultipleByIds === 'function') {
+        if (shouldUseIdLookup && typeof store.getMany === 'function') {
             if (signal.aborted) return
-            await store.getMultipleByIds(uniqueKeys, true)
+            await store.getMany(uniqueKeys, true)
             return
         }
 

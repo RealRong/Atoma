@@ -1,7 +1,8 @@
 import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
+import { ignoreTicketRejections } from '../internals/tickets'
 
-export function createDeleteOneById<T extends Entity>(handle: StoreHandle<T>) {
+export function createDeleteOne<T extends Entity>(handle: StoreHandle<T>) {
     const { services } = handle
     return async (id: StoreKey, options?: StoreOperationOptions) => {
         const { ticket } = services.mutation.runtime.beginWrite()
@@ -24,13 +25,8 @@ export function createDeleteOneById<T extends Entity>(handle: StoreHandle<T>) {
 
         const confirmation = options?.confirmation ?? 'optimistic'
         if (confirmation === 'optimistic') {
-            void ticket.enqueued.catch(() => {
-                // avoid unhandled rejection when optimistic writes never await enqueued
-            })
-            void ticket.confirmed.catch(() => {
-                // avoid unhandled rejection when optimistic writes never await confirmed
-            })
-            return await resultPromise
+            ignoreTicketRejections(ticket)
+            return resultPromise
         }
 
         const [value] = await Promise.all([

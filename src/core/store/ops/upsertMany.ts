@@ -1,19 +1,10 @@
 import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from '../../types'
 import { dispatch } from '../internals/dispatch'
+import { toError } from '../internals/errors'
 import { ensureActionId } from '../internals/ensureActionId'
 import { runAfterSave, runBeforeSave } from '../internals/hooks'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForAdd, prepareForUpdate } from '../internals/writePipeline'
-
-function toError(reason: unknown, fallbackMessage: string): Error {
-    if (reason instanceof Error) return reason
-    if (typeof reason === 'string' && reason) return new Error(reason)
-    try {
-        return new Error(`${fallbackMessage}: ${JSON.stringify(reason)}`)
-    } catch {
-        return new Error(fallbackMessage)
-    }
-}
 
 export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>) {
     const { jotaiStore, atom, services, hooks } = handle
@@ -62,12 +53,13 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>) {
                     validObj = await prepareForUpdate<T>(handle, base, item)
                 } else {
                     action = 'update'
-                    const createdAt = (base as any).createdAt ?? Date.now()
+                    const now = Date.now()
+                    const createdAt = (base as any).createdAt ?? now
                     const candidate: any = {
                         ...(item as any),
                         id,
                         createdAt,
-                        updatedAt: Date.now()
+                        updatedAt: now
                     }
 
                     if (candidate.version === undefined && typeof (base as any).version === 'number') {

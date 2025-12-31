@@ -30,7 +30,7 @@ export function useValue<T extends Entity, Relations = {}, const Include extends
 
         const exists = jotaiStore.get(objectMapAtom).has(id)
         if (!exists) {
-            store.getOneById(id)
+            store.getOne(id)
         }
 
         return selectAtom(objectMapAtom, map => map.get(id))

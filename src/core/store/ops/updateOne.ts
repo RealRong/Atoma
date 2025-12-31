@@ -2,7 +2,7 @@ import { produce } from 'immer'
 import type { Draft } from 'immer'
 import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions } from '../../types'
 import { add } from '../internals/atomMapOps'
-import { commitAtomMapUpdate } from '../internals/cacheWriter'
+import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { dispatch } from '../internals/dispatch'
 import { runAfterSave } from '../internals/hooks'
 import { resolveObservabilityContext } from '../internals/runtime'
@@ -29,7 +29,7 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
             const validFetched = await validateWithSchema(transformed, schema)
             const before = jotaiStore.get(atom)
             const after = add(validFetched as PartialWithId<T>, before)
-            commitAtomMapUpdate({ handle, before, after })
+            commitAtomMapUpdateDelta({ handle, before, after, changedIds: [id] })
             return validFetched as unknown as PartialWithId<T>
         }
 
