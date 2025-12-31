@@ -1,19 +1,21 @@
 import { atom } from 'jotai/vanilla'
 import type { DevtoolsBridge, StoreSnapshot } from '../devtools/types'
 import { getGlobalDevtools, registerGlobalStore } from '../devtools/global'
-import { createStoreHandle } from './store/runtime'
-import { createAddOne } from './store/addOne'
-import { createAddMany } from './store/addMany'
-import { createBatchGet } from './store/batchGet'
-import { createDeleteOneById } from './store/deleteOneById'
-import { createDeleteMany } from './store/deleteMany'
-import { createFindMany } from './store/findMany/index'
-import { createGetAll } from './store/getAll'
-import { createGetMultipleByIds } from './store/getMultipleByIds'
-import { createUpdateOne } from './store/updateOne'
-import { createUpdateMany } from './store/updateMany'
-import { createUpsertOne } from './store/upsertOne'
-import { createUpsertMany } from './store/upsertMany'
+import {
+    createAddMany,
+    createAddOne,
+    createBatchGet,
+    createDeleteMany,
+    createDeleteOneById,
+    createFindMany,
+    createGetAll,
+    createGetMultipleByIds,
+    createStoreHandle,
+    createUpdateMany,
+    createUpdateOne,
+    createUpsertMany,
+    createUpsertOne
+} from './store'
 import { registerStoreHandle } from './storeHandleRegistry'
 import { MutationPipeline } from './mutation'
 import type { JotaiStore } from './types'
@@ -59,15 +61,15 @@ export interface CoreStore<T extends Entity, Relations = {}> extends IStore<T, R
     withRelations: <const NewRelations extends Record<string, RelationConfig<any, any>>>(factory: () => NewRelations) => CoreStore<T, NewRelations>
 }
 
-export function createCoreStore<T extends Entity, const Relations>(
+export function createStore<T extends Entity, const Relations>(
     config: CoreStoreConfig<T> & { relations: () => Relations }
 ): CoreStore<T, Relations>
 
-export function createCoreStore<T extends Entity, const Relations = {}>(
+export function createStore<T extends Entity, const Relations = {}>(
     config: CoreStoreConfig<T> & { relations?: () => Relations }
 ): CoreStore<T, Relations>
 
-export function createCoreStore<T extends Entity, Relations = {}>(
+export function createStore<T extends Entity, Relations = {}>(
     config: CoreStoreConfig<T> & { relations?: () => Relations }
 ): CoreStore<T, Relations> {
     const { name, transformData } = config
@@ -198,5 +200,3 @@ export function createCoreStore<T extends Entity, Relations = {}>(
 
     return coreStore
 }
-
-export const createStore = createCoreStore

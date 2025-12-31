@@ -1,16 +1,16 @@
-import { BaseStore } from '../../BaseStore'
 import { Observability } from '#observability'
 import type { Explain } from '#observability'
-import type { Entity, FindManyOptions, FindManyResult, PartialWithId, StoreKey } from '../../types'
-import { commitAtomMapUpdateDelta } from '../cacheWriter'
-import { preserveReferenceShallow } from '../preserveReference'
+import type { Entity, FindManyOptions, FindManyResult, PartialWithId, StoreKey } from '../../../types'
+import { bulkAdd, bulkRemove } from '../../internals/atomMapOps'
+import { commitAtomMapUpdateDelta } from '../../internals/cacheWriter'
+import { preserveReferenceShallow } from '../../internals/preserveReference'
 import { resolveCachePolicy } from './cachePolicy'
 import { evaluateWithIndexes } from './localEvaluate'
 import { normalizeFindManyResult } from './normalize'
 import { summarizeFindManyParams } from './paramsSummary'
-import { applyQuery } from '../../query'
-import { resolveObservabilityContext } from '../runtime'
-import type { StoreHandle } from '../../types'
+import { applyQuery } from '../../../query'
+import { resolveObservabilityContext } from '../../internals/runtime'
+import type { StoreHandle } from '../../../types'
 
 export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
     const { jotaiStore, atom, dataSource, services, indexes, matcher, transform } = handle
@@ -176,8 +176,8 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
                 if (!incomingIds.has(id)) toRemove.push(id)
             })
 
-            const withRemovals = BaseStore.bulkRemove(toRemove, existingMap)
-            const next = BaseStore.bulkAdd(remote as PartialWithId<T>[], withRemovals)
+            const withRemovals = bulkRemove(toRemove, existingMap)
+            const next = bulkAdd(remote as PartialWithId<T>[], withRemovals)
             const changedIds = new Set<StoreKey>(toRemove)
             incomingIds.forEach(id => changedIds.add(id))
             commitAtomMapUpdateDelta({ handle, before: existingMap, after: next, changedIds })

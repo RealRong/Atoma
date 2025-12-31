@@ -1,12 +1,12 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
-import type { DevtoolsBridge } from '../../devtools/types'
-import { registerGlobalIndex } from '../../devtools/global'
-import { StoreIndexes } from '../indexes/StoreIndexes'
-import type { IndexDefinition, IDataSource, JotaiStore, StoreConfig, StoreHandle, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../types'
-import type { QueryMatcherOptions } from '../query/QueryMatcher'
+import type { DevtoolsBridge } from '../../../devtools/types'
+import { registerGlobalIndex } from '../../../devtools/global'
+import { StoreIndexes } from '../../indexes/StoreIndexes'
+import type { IndexDefinition, IDataSource, JotaiStore, StoreConfig, StoreHandle, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../../types'
+import type { QueryMatcherOptions } from '../../query/QueryMatcher'
 import { Observability } from '#observability'
 import type { ObservabilityContext } from '#observability'
-import type { StoreServices } from '../createCoreStore'
+import type { StoreServices } from '../../createStore'
 
 export function createStoreHandle<T extends Entity>(params: {
     atom: PrimitiveAtom<Map<StoreKey, T>>

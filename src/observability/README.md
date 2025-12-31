@@ -37,7 +37,7 @@ If you want the long-term “optimal architecture” (no hidden carrier, explici
 
 ### 1) User enables debug at store creation
 
-At the public API level, users typically enable debug via `createCoreStore({ debug: ... })`.
+At the public API level, users typically enable debug via `Core.store.createStore({ debug: ... })`.
 
 - If `debug.enabled` is false, **no emitter is created** and all callsites are effectively no-ops.
 - If `debug.sample` is `0` (default), the store will usually **avoid allocating a traceId**, keeping overhead near zero.
@@ -108,7 +108,7 @@ Today, explain contains deterministic, JSON-serializable fields (index/finalize/
 ## Practical example (user-side)
 
 ```ts
-import { createCoreStore, createDevtoolsBridge } from 'atoma'
+import { Core, createDevtoolsBridge } from 'atoma'
 
 const devtools = createDevtoolsBridge()
 devtools.subscribe((evt) => {
@@ -117,7 +117,7 @@ devtools.subscribe((evt) => {
     }
 })
 
-const store = createCoreStore({
+const store = Core.store.createStore({
     name: 'todos',
     adapter: /* ... */,
     devtools,

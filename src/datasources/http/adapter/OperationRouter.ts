@@ -284,10 +284,9 @@ export class OperationRouter<T> {
         metadata: PatchMetadata,
         context: ObservabilityContext | undefined,
         usePatchForUpdates: boolean
-    ): Promise<{ ops: Operation[]; opKinds: Array<'create' | 'update' | 'patch' | 'delete'> } | undefined> {
+    ): Promise<{ ops: Operation[]; opKinds: Array<'create' | 'update' | 'delete'> } | undefined> {
         const createItems: WriteItem[] = []
         const updateItems: WriteItem[] = []
-        const patchItems: WriteItem[] = []
         const deleteItems: WriteItem[] = []
 
         for (const [id, itemPatches] of patchesByItemId.entries()) {
@@ -307,17 +306,6 @@ export class OperationRouter<T> {
                 createItems.push({
                     entityId: String(id),
                     value: rootAdd.value,
-                    meta: this.clientMeta(metadata.timestamp)
-                })
-                continue
-            }
-
-            if (usePatchForUpdates) {
-                const baseVersion = this.deps.resolveBaseVersion(id)
-                patchItems.push({
-                    entityId: String(id),
-                    baseVersion,
-                    patch: Protocol.jsonPatch.convertImmerPatchesToJsonPatches(itemPatches, id as any),
                     meta: this.clientMeta(metadata.timestamp)
                 })
                 continue
@@ -343,7 +331,7 @@ export class OperationRouter<T> {
         }
 
         const ops: Operation[] = []
-        const opKinds: Array<'create' | 'update' | 'patch' | 'delete'> = []
+        const opKinds: Array<'create' | 'update' | 'delete'> = []
 
         if (createItems.length) {
             ops.push(this.buildWriteOp('create', createItems))
@@ -352,10 +340,6 @@ export class OperationRouter<T> {
         if (updateItems.length) {
             ops.push(this.buildWriteOp('update', updateItems))
             opKinds.push('update')
-        }
-        if (patchItems.length) {
-            ops.push(this.buildWriteOp('patch', patchItems))
-            opKinds.push('patch')
         }
         if (deleteItems.length) {
             ops.push(this.buildWriteOp('delete', deleteItems))

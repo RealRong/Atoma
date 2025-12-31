@@ -110,7 +110,6 @@ export class OutboxPersister implements Persister {
 
             const createItems: Array<{ entityId: string; value: unknown }> = []
             const updateItems: Array<{ entityId: string; value: unknown; baseVersion?: number }> = []
-            const patchItems: Array<{ entityId: string; baseVersion: number; patches: Patch[]; rootEntityId: string | number }> = []
             const deleteItems: Array<{ entityId: string; baseVersion?: number }> = []
 
             for (const [id, itemPatches] of patchesByItemId.entries()) {
@@ -136,13 +135,14 @@ export class OutboxPersister implements Persister {
                     continue
                 }
 
-                const cur = args.handle.jotaiStore.get(args.handle.atom).get(id as any)
-                const baseVersion = resolveVersion(cur) ?? 0
-                patchItems.push({
+                const next = args.handle.jotaiStore.get(args.handle.atom).get(id as any)
+                if (!next) {
+                    throw new Error(`[Atoma] outbox: patches item missing in atom (id=${String(id)})`)
+                }
+                updateItems.push({
                     entityId,
-                    baseVersion,
-                    patches: itemPatches,
-                    rootEntityId: id
+                    value: next,
+                    baseVersion: resolveVersion(next)
                 })
             }
 
@@ -163,18 +163,6 @@ export class OutboxPersister implements Persister {
                         entityId: i.entityId,
                         ...(typeof i.baseVersion === 'number' ? { baseVersion: i.baseVersion } : {}),
                         value: i.value,
-                        meta: opMeta
-                    }))
-                })
-            }
-            if (patchItems.length) {
-                await enqueue({
-                    kind: 'patch',
-                    items: patchItems.map(i => ({
-                        entityId: i.entityId,
-                        baseVersion: i.baseVersion,
-                        patches: i.patches,
-                        rootEntityId: i.rootEntityId,
                         meta: opMeta
                     }))
                 })

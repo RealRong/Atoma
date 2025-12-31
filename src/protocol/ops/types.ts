@@ -1,6 +1,5 @@
 import type { PageInfo, QueryParams } from '../query'
 import type { Cursor, EntityId, Version } from '../scalars'
-import type { JsonPatch } from '../jsonPatch'
 import type { Meta } from '../meta'
 import type { StandardError } from '../error'
 import type { ChangeBatch } from '../changes'
@@ -21,7 +20,7 @@ export type QueryOp = OperationBase & {
     }
 }
 
-export type WriteAction = 'create' | 'update' | 'patch' | 'delete' | 'upsert'
+export type WriteAction = 'create' | 'update' | 'delete' | 'upsert'
 
 export type WriteItemMeta = {
     idempotencyKey?: string
@@ -50,13 +49,6 @@ export type WriteItemUpsert = {
     meta?: WriteItemMeta
 }
 
-export type WriteItemPatch = {
-    entityId: EntityId
-    baseVersion: Version
-    patch: JsonPatch[]
-    meta?: WriteItemMeta
-}
-
 export type WriteItemDelete = {
     entityId: EntityId
     baseVersion?: Version
@@ -66,7 +58,6 @@ export type WriteItemDelete = {
 export type WriteItem =
     | WriteItemCreate
     | WriteItemUpdate
-    | WriteItemPatch
     | WriteItemDelete
     | WriteItemUpsert
 

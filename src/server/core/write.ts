@@ -18,28 +18,7 @@ export function summarizeUpdateData(data: unknown): WriteChangeSummary {
     return { changedFields: Object.keys(data as any) }
 }
 
-export function summarizePatches(patches: unknown): WriteChangeSummary {
-    const list = Array.isArray(patches) ? patches : []
-    const changedFields: string[] = []
-    const changedPaths: Array<Array<string | number>> = []
-
-    for (const p of list) {
-        const path = (p as any)?.path
-        if (!Array.isArray(path) || !path.length) continue
-        changedPaths.push(path as Array<string | number>)
-        const first = path[0]
-        if (typeof first === 'string' && first && !changedFields.includes(first)) {
-            changedFields.push(first)
-        }
-    }
-
-    return {
-        changedFields,
-        ...(changedPaths.length ? { changedPaths } : {})
-    }
-}
-
-export type WriteKind = 'create' | 'patch' | 'delete' | 'upsert'
+export type WriteKind = 'create' | 'update' | 'delete' | 'upsert'
 
 export type StoredWriteReplay =
     | {
@@ -75,7 +54,6 @@ type ExecuteArgs = {
         idempotencyKey?: string
         id?: unknown
         data?: unknown
-        patches?: any[]
         baseVersion?: number
         timestamp?: number
         options?: WriteOptions
@@ -285,28 +263,32 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
             return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
         }
 
-        if (write.kind === 'patch') {
-            if (typeof orm.patch !== 'function') {
-                throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement patch', { kind: 'adapter' })
+        if (write.kind === 'update') {
+            if (typeof orm.update !== 'function') {
+                throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement update', { kind: 'adapter' })
             }
             if (write.id === undefined) {
-                throwError('INVALID_WRITE', 'Missing id for patch', { kind: 'validation', resource: write.resource })
+                throwError('INVALID_WRITE', 'Missing id for update', { kind: 'validation', resource: write.resource })
             }
-            if (typeof write.baseVersion !== 'number' || !Number.isFinite(write.baseVersion)) {
-                throwError('INVALID_WRITE', 'Missing baseVersion for patch', { kind: 'validation', resource: write.resource })
-            }
-            const res = await orm.patch(
+
+            const rawId = write.id
+            const id = normalizeId(rawId)
+            const data = (write.data && typeof write.data === 'object' && !Array.isArray(write.data))
+                ? { ...(write.data as any) }
+                : {}
+
+            // update 必须能产出 version（即使 options.returning=false），否则协议无法返回 version
+            const res = await orm.update(
                 write.resource,
-                { id: write.id, patches: write.patches ?? [], baseVersion: write.baseVersion, timestamp: write.timestamp } as any,
-                { returning, ...(select ? { select } : {}) } as any
+                { id: rawId, data, baseVersion: write.baseVersion, timestamp: write.timestamp } as any,
+                { ...options, returning: true, ...(select ? { select } : {}) } as any
             )
             if (res?.error) throw res.error
 
             const row = res?.data
-            const id = normalizeId((row as any)?.id ?? write.id)
             const serverVersion = typeof (row as any)?.version === 'number'
                 ? (row as any).version
-                : write.baseVersion + 1
+                : (typeof write.baseVersion === 'number' && Number.isFinite(write.baseVersion) ? write.baseVersion + 1 : 1)
 
             let change: AtomaChange | undefined
             if (args.syncEnabled) {

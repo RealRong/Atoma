@@ -1,13 +1,13 @@
-import { BaseStore } from '../BaseStore'
 import { produce } from 'immer'
 import type { Draft } from 'immer'
-import type { Entity, PartialWithId, StoreKey, StoreOperationOptions } from '../types'
-import { commitAtomMapUpdate } from './cacheWriter'
-import { runAfterSave } from './hooks'
-import { validateWithSchema } from './validation'
-import { resolveObservabilityContext } from './runtime'
-import { prepareForUpdate } from './writePipeline'
-import type { StoreHandle } from '../types'
+import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions } from '../../types'
+import { add } from '../internals/atomMapOps'
+import { commitAtomMapUpdate } from '../internals/cacheWriter'
+import { dispatch } from '../internals/dispatch'
+import { runAfterSave } from '../internals/hooks'
+import { resolveObservabilityContext } from '../internals/runtime'
+import { validateWithSchema } from '../internals/validation'
+import { prepareForUpdate } from '../internals/writePipeline'
 
 export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
     const { jotaiStore, atom, dataSource, services, hooks, schema, transform } = handle
@@ -28,7 +28,7 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
             const transformed = transform(data)
             const validFetched = await validateWithSchema(transformed, schema)
             const before = jotaiStore.get(atom)
-            const after = BaseStore.add(validFetched as PartialWithId<T>, before)
+            const after = add(validFetched as PartialWithId<T>, before)
             commitAtomMapUpdate({ handle, before, after })
             return validFetched as unknown as PartialWithId<T>
         }
@@ -42,7 +42,7 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
         const { ticket } = services.mutation.runtime.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
-            BaseStore.dispatch({
+            dispatch<T>({
                 type: 'update',
                 handle,
                 data: validObj,

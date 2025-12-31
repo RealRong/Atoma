@@ -14,8 +14,8 @@ const defineStoresInternal = <
         defineClient: (config: DefineClientConfig<Entities>) => {
             const backend = resolveBackend(config.backend)
 
-            const defaultDataSourceFactory = config.defaultDataSourceFactory
-                ? config.defaultDataSourceFactory
+            const defaultDataSourceFactory = config.defaults?.dataSourceFactory
+                ? config.defaults.dataSourceFactory
                 : ((resourceName: string) => {
                     return new HttpDataSource<any>({
                         opsClient: backend.opsClient,
@@ -28,7 +28,10 @@ const defineStoresInternal = <
 
             const runtime = createClientRuntime({
                 stores,
-                defaultDataSourceFactory
+                defaults: {
+                    dataSourceFactory: defaultDataSourceFactory,
+                    idGenerator: config.defaults?.idGenerator
+                }
             })
 
             const historyController = createHistoryController({ runtime })

@@ -1,14 +1,14 @@
-import { BaseStore } from '../BaseStore'
 import { produce } from 'immer'
 import type { Draft } from 'immer'
-import type { Entity, PartialWithId, StoreKey, StoreOperationOptions, WriteManyResult } from '../types'
-import { commitAtomMapUpdate } from './cacheWriter'
-import { runAfterSave } from './hooks'
-import { validateWithSchema } from './validation'
-import { resolveObservabilityContext } from './runtime'
-import { prepareForUpdate } from './writePipeline'
-import type { StoreHandle } from '../types'
-import { ensureActionId } from './ensureActionId'
+import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, WriteManyResult } from '../../types'
+import { add } from '../internals/atomMapOps'
+import { commitAtomMapUpdate } from '../internals/cacheWriter'
+import { dispatch } from '../internals/dispatch'
+import { ensureActionId } from '../internals/ensureActionId'
+import { runAfterSave } from '../internals/hooks'
+import { resolveObservabilityContext } from '../internals/runtime'
+import { validateWithSchema } from '../internals/validation'
+import { prepareForUpdate } from '../internals/writePipeline'
 
 function toError(reason: unknown, fallbackMessage: string): Error {
     if (reason instanceof Error) return reason
@@ -73,7 +73,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
                 baseById.set(id, validFetched as any)
 
                 const mapRef: Map<StoreKey, T> = after ?? beforeMap
-                after = BaseStore.add(validFetched as any, mapRef)
+                after = add(validFetched as any, mapRef)
             }
 
             if (after) {
@@ -111,7 +111,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
             const { ticket } = services.mutation.runtime.beginWrite()
 
             const resultPromise = new Promise<T>((resolve, reject) => {
-                BaseStore.dispatch<T>({
+                dispatch<T>({
                     type: 'update',
                     handle,
                     data: validObj,

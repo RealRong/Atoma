@@ -7,7 +7,6 @@ export type { ErrorKind, StandardErrorDetails, StandardError } from './error'
 export type { EnvelopeOk, EnvelopeErr, Envelope } from './envelope'
 
 export type { OrderByRule, CursorToken, Page, QueryParams, PageInfo } from './query'
-export type { JsonPatchOp, JsonPatch } from './jsonPatch'
 export type { ChangeKind, Change, ChangeBatch } from './changes'
 
 export type {

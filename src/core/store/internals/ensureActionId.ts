@@ -1,5 +1,5 @@
-import { createActionId } from '../operationContext'
-import type { OperationContext } from '../types'
+import { createActionId } from '../../operationContext'
+import type { OperationContext } from '../../types'
 
 export function ensureActionId(opContext: OperationContext | undefined): OperationContext | undefined {
     if (!opContext) {
@@ -15,4 +15,3 @@ export function ensureActionId(opContext: OperationContext | undefined): Operati
         actionId: createActionId()
     }
 }
-

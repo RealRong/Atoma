@@ -1,8 +1,8 @@
-import type { StoreHandle, StoreKey } from '../types'
+import type { StoreHandle, StoreKey } from '../../types'
 
 export type ChangedIds = ReadonlyArray<StoreKey> | ReadonlySet<StoreKey>
 
-export function commitAtomMapUpdate<T extends import('../types').Entity>(params: {
+export function commitAtomMapUpdate<T extends import('../../types').Entity>(params: {
     handle: StoreHandle<T>
     before: Map<StoreKey, T>
     after: Map<StoreKey, T>
@@ -16,7 +16,7 @@ export function commitAtomMapUpdate<T extends import('../types').Entity>(params:
     indexes?.applyMapDiff(before, after)
 }
 
-export function commitAtomMapUpdateDelta<T extends import('../types').Entity>(params: {
+export function commitAtomMapUpdateDelta<T extends import('../../types').Entity>(params: {
     handle: StoreHandle<T>
     before: Map<StoreKey, T>
     after: Map<StoreKey, T>

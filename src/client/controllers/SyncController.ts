@@ -8,6 +8,7 @@ import type { AtomaSync } from '../types'
 import type { ClientRuntime } from '../runtime'
 import { OutboxPersister } from '../../core/mutation/pipeline/persisters/Outbox'
 import type { BeforePersistContext, PersistResult } from '../../core/mutation/hooks'
+import { applyStoreWriteback } from '../../core/store/internals/writeback'
 import { subscribeNotifySse } from '../../sync/lanes/NotifyLane'
 import type { ResolvedBackend } from '../backend'
 
@@ -286,7 +287,7 @@ export function createSyncController(args: {
                 ? (await handle.dataSource.bulkGet(uniqueUpsertKeys, ctx)).filter((i: any): i is any => i !== undefined)
                 : []
 
-            await Core.store.writeback.applyStoreWriteback(handle as any, {
+            await applyStoreWriteback(handle as any, {
                 upserts,
                 deletes: uniqueDeleteKeys
             })
@@ -351,7 +352,7 @@ export function createSyncController(args: {
             }
         }
 
-        await Core.store.writeback.applyStoreWriteback(handle as any, {
+        await applyStoreWriteback(handle as any, {
             upserts,
             deletes,
             versionUpdates
@@ -394,7 +395,7 @@ export function createSyncController(args: {
             upserts.push(current.value)
         }
 
-        await Core.store.writeback.applyStoreWriteback(handle as any, { upserts, deletes })
+        await applyStoreWriteback(handle as any, { upserts, deletes })
     }
 
     function buildSubscribeUrl(args2?: { resources?: string[] }): string {

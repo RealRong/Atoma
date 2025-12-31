@@ -1,6 +1,6 @@
 import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
-import type { StoreServices } from './createCoreStore'
+import type { StoreServices } from './createStore'
 import type { DevtoolsBridge } from '../devtools/types'
 import type { Explain, ObservabilityContext, ObservabilityRuntime } from '#observability'
 import type { QueryMatcherOptions } from './query/QueryMatcher'

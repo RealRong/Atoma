@@ -1,8 +1,7 @@
-import { BaseStore } from '../BaseStore'
-import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
-import { commitAtomMapUpdateDelta } from './cacheWriter'
-import { resolveObservabilityContext } from './runtime'
-import type { StoreHandle } from '../types'
+import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreReadOptions } from '../../types'
+import { bulkAdd, bulkRemove } from '../internals/atomMapOps'
+import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
+import { resolveObservabilityContext } from '../internals/runtime'
 
 export function createGetAll<T extends Entity>(handle: StoreHandle<T>) {
     const { jotaiStore, atom, dataSource, services, indexes, transform } = handle
@@ -22,8 +21,8 @@ export function createGetAll<T extends Entity>(handle: StoreHandle<T>) {
 
         const itemsToCache = cacheFilter ? arr.filter(cacheFilter) : arr
 
-        const withRemovals = BaseStore.bulkRemove(toRemove, existingMap)
-        const next = BaseStore.bulkAdd(itemsToCache as PartialWithId<T>[], withRemovals)
+        const withRemovals = bulkRemove(toRemove, existingMap)
+        const next = bulkAdd(itemsToCache as PartialWithId<T>[], withRemovals)
         const changedIds = new Set<StoreKey>(toRemove)
         incomingIds.forEach(id => changedIds.add(id))
         commitAtomMapUpdateDelta({ handle, before: existingMap, after: next, changedIds })

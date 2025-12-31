@@ -1,3 +1,8 @@
+import { enableMapSet, enablePatches } from 'immer'
+
+enableMapSet()
+enablePatches()
+
 export { AtomCommitter } from './AtomCommitter'
 export type {
     Committer,

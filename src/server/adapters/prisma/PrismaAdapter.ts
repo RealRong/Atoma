@@ -8,7 +8,6 @@ import type {
     QueryResultOne,
     WriteOptions
 } from '../ports'
-import { applyPatches, enablePatches } from 'immer'
 import {
     compareOpForAfter,
     decodeCursorToken,
@@ -18,8 +17,6 @@ import {
     reverseOrderBy
 } from '../shared/keyset'
 import { createError, isAtomaError, throwError } from '../../error'
-
-enablePatches()
 
 type PrismaDelegate = {
     findMany: (args: any) => Promise<any[]>
@@ -169,18 +166,53 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
     }
 
-    async update(resource: string, data: any, options: WriteOptions & { where?: Record<string, any> } = {}): Promise<QueryResultOne> {
-        const delegate = this.requireDelegate(resource, 'update')
-        const where = options.where ?? (data?.id !== undefined ? { id: data.id } : undefined)
-        if (!where) throw new Error('update requires where or id')
-
-        const args: any = {
-            where,
-            data,
-            select: this.buildSelect(options.select)
+    async update(
+        resource: string,
+        item: { id: any; data: any; baseVersion?: number; timestamp?: number },
+        options: WriteOptions = {}
+    ): Promise<QueryResultOne> {
+        if (item?.id === undefined || !item?.data || typeof item.data !== 'object' || Array.isArray(item.data)) {
+            throw new Error('update requires id and data object')
         }
 
-        const row = await delegate.update!(args)
+        const run = async (client: PrismaClientLike) => {
+            const delegate = this.requireDelegateFromClient(client, resource, 'update')
+            const current = await this.findOneByKey(client, resource, this.idField, item.id)
+            if (!current) {
+                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
+            }
+
+            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
+                const currentVersion = (current as any).version
+                if (typeof currentVersion !== 'number') {
+                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+                }
+                if (currentVersion !== item.baseVersion) {
+                    throwError('CONFLICT', 'Version conflict', {
+                        kind: 'conflict',
+                        resource,
+                        currentVersion,
+                        currentValue: current
+                    })
+                }
+            }
+
+            const baseVersion = (current as any).version
+            const next = { ...(item.data as any), [this.idField]: item.id }
+            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion) && typeof baseVersion === 'number') {
+                next.version = baseVersion + 1
+            }
+
+            const data = this.toUpdateData(next, this.idField)
+            const row = await delegate.update!({
+                where: { [this.idField]: item.id },
+                data,
+                select: this.buildSelect(options.select)
+            })
+            return row
+        }
+
+        const row = await run(this.client)
         return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
     }
 
@@ -223,134 +255,6 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         }
         const row = await delegate.delete!(args)
         return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
-    }
-
-    async patch(
-        resource: string,
-        item: { id: any; patches: any[]; baseVersion?: number; timestamp?: number },
-        options: WriteOptions = {}
-    ): Promise<QueryResultOne> {
-        if (item?.id === undefined || !Array.isArray(item?.patches)) {
-            throw new Error('patch requires id and patches[]')
-        }
-
-        const run = async (client: PrismaClientLike) => {
-            const delegate = this.requireDelegateFromClient(client, resource, 'update')
-            const current = await this.findOneByKey(client, resource, this.idField, item.id)
-            if (!current) {
-                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
-            }
-
-            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
-                const currentVersion = (current as any).version
-                if (typeof currentVersion !== 'number') {
-                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
-                }
-                if (currentVersion !== item.baseVersion) {
-                    throwError('CONFLICT', 'Version conflict', {
-                        kind: 'conflict',
-                        resource,
-                        currentVersion,
-                        currentValue: current
-                    })
-                }
-            }
-
-            const normalized = this.stripIdPrefix(item.patches, item.id)
-            const next = applyPatches(current, normalized)
-            const baseVersion = (current as any).version
-            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion) && typeof baseVersion === 'number') {
-                ;(next as any).version = baseVersion + 1
-            }
-            const data = this.toUpdateData(next, this.idField)
-            const updated = await delegate.update!({
-                where: { [this.idField]: item.id },
-                data,
-                select: this.buildSelect(options.select)
-            })
-            return updated
-        }
-
-        const row = await run(this.client)
-        return {
-            data: options.returning === false ? undefined : row,
-            transactionApplied: this.inTransaction
-        }
-    }
-
-    async bulkPatch(
-        resource: string,
-        items: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number }>,
-        options: WriteOptions = {}
-    ): Promise<QueryResultMany> {
-        const returning = options.returning !== false
-
-        if (this.inTransaction) {
-            const delegate = this.requireDelegate(resource, 'update')
-            const updated: any[] = []
-            for (const item of items) {
-                if (item?.id === undefined || !Array.isArray(item?.patches)) {
-                    throw new Error('bulkPatch item missing id or patches')
-                }
-                const current = await this.findOneByKey(this.client, resource, this.idField, item.id)
-                if (!current) {
-                    throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
-                }
-
-                const normalized = this.stripIdPrefix(item.patches, item.id)
-                const next = applyPatches(current, normalized)
-                const data = this.toUpdateData(next, this.idField)
-                const row = await delegate.update!({
-                    where: { [this.idField]: item.id },
-                    data,
-                    select: this.buildSelect(options.select)
-                })
-                if (returning) updated.push(row)
-            }
-
-            return {
-                data: returning ? updated : [],
-                transactionApplied: true
-            }
-        }
-
-        const operations = items.map(item => async () => {
-            if (item?.id === undefined || !Array.isArray(item?.patches)) {
-                throw new Error('bulkPatch item missing id or patches')
-            }
-            const delegate = this.requireDelegate(resource, 'update')
-            const current = await this.findOneByKey(this.client, resource, this.idField, item.id)
-            if (!current) {
-                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
-            }
-
-            const normalized = this.stripIdPrefix(item.patches, item.id)
-            const next = applyPatches(current, normalized)
-            const data = this.toUpdateData(next, this.idField)
-            const row = await delegate.update!({
-                where: { [this.idField]: item.id },
-                data,
-                select: this.buildSelect(options.select)
-            })
-            return returning ? row : undefined
-        })
-
-        const settled = await Promise.allSettled(operations.map(op => op()))
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
-        settled.forEach((res, idx) => {
-            if (res.status === 'fulfilled') {
-                if (returning && res.value !== undefined) data.push(res.value)
-            } else {
-                partialFailures.push({ index: idx, error: this.toError(res.reason) })
-            }
-        })
-
-        return {
-            data: returning ? data : [],
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: false
-        }
     }
 
     async upsert(
@@ -407,9 +311,9 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         }
 
         try {
-            return await this.patch(resource, {
+            return await this.update(resource, {
                 id,
-                patches: [{ op: 'replace', path: [id], value: candidate }],
+                data: candidate,
                 baseVersion,
                 timestamp: item.timestamp
             }, options)
@@ -487,35 +391,39 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         }
     }
 
-    async bulkUpdate(resource: string, items: Array<{ id: any; data: any }>, options: WriteOptions = {}): Promise<QueryResultMany> {
-        const delegate = this.requireDelegate(resource, 'update')
-        const operations = items.map(item => {
-            if (item.id === undefined) throw new Error('bulkUpdate item missing id')
-            return () => delegate.update!({
-                where: { id: item.id },
-                data: item.data,
-                select: this.buildSelect(options.select)
-            })
-        })
+    async bulkUpdate(
+        resource: string,
+        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number }>,
+        options: WriteOptions = {}
+    ): Promise<QueryResultMany> {
+        const returning = options.returning !== false
 
         if (this.inTransaction) {
-            const data: any[] = []
-            for (const op of operations) {
-                const row = await op()
-                if (options.returning !== false) data.push(row)
+            const updated: any[] = []
+            for (const item of items) {
+                const res = await this.update(resource, item, options)
+                if (returning && res.data !== undefined) updated.push(res.data)
             }
-            return { data: options.returning === false ? [] : data, transactionApplied: true }
+            return { data: returning ? updated : [], transactionApplied: true }
         }
+
+        const operations = items.map(item => async () => {
+            const res = await this.update(resource, item, options)
+            return returning ? res.data : undefined
+        })
 
         const settled = await Promise.allSettled(operations.map(op => op()))
         const data: any[] = []
         const partialFailures: Array<{ index: number; error: any }> = []
         settled.forEach((res, idx) => {
-            if (res.status === 'fulfilled') data.push(res.value)
-            else partialFailures.push({ index: idx, error: this.toError(res.reason) })
+            if (res.status === 'fulfilled') {
+                if (returning && res.value !== undefined) data.push(res.value)
+            } else {
+                partialFailures.push({ index: idx, error: this.toError(res.reason) })
+            }
         })
         return {
-            data: options.returning === false ? [] : data,
+            data: returning ? data : [],
             partialFailures: partialFailures.length ? partialFailures : undefined,
             transactionApplied: false
         }
@@ -670,18 +578,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return rest
     }
 
-    private stripIdPrefix(patches: any[], id: any) {
-        return (patches || []).map(patch => {
-            if (!Array.isArray(patch.path) || !patch.path.length) return patch
-            const [head, ...rest] = patch.path
-            // 宽松比较以兼容字符串/数字 id
-            if (head == id) {
-                return { ...patch, path: rest }
-            }
-            return patch
-        })
-    }
-
+    // patch/JSONPatch 已移除：不再需要 stripIdPrefix
     private buildKeysetWhere(params: QueryParams, orderBy: OrderByRule[]) {
         const page = params.page
         if (!page || page.mode !== 'cursor') {

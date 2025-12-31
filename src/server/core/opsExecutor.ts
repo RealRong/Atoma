@@ -36,7 +36,7 @@ type QueryOp = {
     }
 }
 
-type WriteAction = 'create' | 'update' | 'patch' | 'delete' | 'upsert'
+type WriteAction = 'create' | 'update' | 'delete' | 'upsert'
 
 type WriteItemMeta = {
     idempotencyKey?: string
@@ -47,7 +47,6 @@ type WriteItem =
     | { entityId?: string; value: unknown; meta?: WriteItemMeta } // create
     | { entityId: string; baseVersion: number; value: unknown; meta?: WriteItemMeta } // update
     | { entityId: string; baseVersion?: number; value: unknown; meta?: WriteItemMeta } // upsert
-    | { entityId: string; baseVersion: number; patch: unknown[]; meta?: WriteItemMeta } // patch
     | { entityId: string; baseVersion: number; meta?: WriteItemMeta } // delete
 
 type WriteOp = {
@@ -173,7 +172,7 @@ function normalizeOperation(value: unknown): Operation {
             throwError('INVALID_REQUEST', 'Missing write.resource', { kind: 'validation', opId })
         }
         const action = readString(value.write, 'action') as WriteAction | undefined
-        if (action !== 'create' && action !== 'update' && action !== 'patch' && action !== 'delete' && action !== 'upsert') {
+        if (action !== 'create' && action !== 'update' && action !== 'delete' && action !== 'upsert') {
             throwError('INVALID_REQUEST', 'Invalid write.action', { kind: 'validation', opId })
         }
         const items = Array.isArray(value.write.items) ? value.write.items : undefined
@@ -234,50 +233,6 @@ function parseCursorV1(cursor: string): number {
         throwError('INVALID_REQUEST', 'Invalid cursor', { kind: 'validation' })
     }
     return n
-}
-
-function unescapeJsonPointerSegment(value: string): string {
-    return value.replace(/~1/g, '/').replace(/~0/g, '~')
-}
-
-function jsonPointerToPath(pointer: string): Array<string | number> {
-    if (pointer === '') return []
-    if (!pointer.startsWith('/')) {
-        throwError('INVALID_REQUEST', 'JSON Pointer path must start with "/" (or be empty for root)', { kind: 'validation' })
-    }
-    const rawSegments = pointer.split('/').slice(1)
-    return rawSegments.map((raw) => {
-        const seg = unescapeJsonPointerSegment(raw)
-        if (seg.match(/^(0|[1-9][0-9]*)$/)) return Number(seg)
-        return seg
-    })
-}
-
-function jsonPatchToAtomaPatches(patch: unknown[]): any[] {
-    return patch.map((raw) => {
-        if (!isObject(raw)) {
-            throwError('INVALID_REQUEST', 'Invalid patch op', { kind: 'validation' })
-        }
-        const op = readString(raw, 'op')
-        const path = readString(raw, 'path')
-        if (!op || path === undefined) {
-            throwError('INVALID_REQUEST', 'Missing patch op/path', { kind: 'validation' })
-        }
-        if (op !== 'add' && op !== 'replace' && op !== 'remove') {
-            throwError('INVALID_REQUEST', `Unsupported patch op: ${op}`, { kind: 'validation' })
-        }
-        const out: any = {
-            op,
-            path: jsonPointerToPath(path)
-        }
-        if (op === 'add' || op === 'replace') {
-            if (!('value' in raw)) {
-                throwError('INVALID_REQUEST', `Missing value for patch op: ${op}`, { kind: 'validation' })
-            }
-            out.value = (raw as any).value
-        }
-        return out
-    })
 }
 
 export type OpsExecutor<Ctx> = {
@@ -563,8 +518,6 @@ export function createOpsExecutor<Ctx>(args: {
                                 if (action === 'update') {
                                     const entityId = raw?.entityId
                                     const baseVersion = raw?.baseVersion
-                                    const full = (raw?.value && typeof raw.value === 'object') ? { ...raw.value, id: entityId } : { id: entityId }
-                                    const patches = [{ op: 'replace', path: [entityId], value: full }]
 
                                     const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
                                         orm,
@@ -574,11 +527,11 @@ export function createOpsExecutor<Ctx>(args: {
                                         idempotencyTtlMs,
                                         meta: opTrace,
                                         write: {
-                                            kind: 'patch',
+                                            kind: 'update',
                                             resource,
                                             ...(idempotencyKey ? { idempotencyKey } : {}),
                                             id: entityId,
-                                            patches,
+                                            data: raw?.value,
                                             baseVersion
                                         }
                                     }))
@@ -635,57 +588,6 @@ export function createOpsExecutor<Ctx>(args: {
                                             ok: true,
                                             entityId: res.replay.id,
                                             version: res.replay.serverVersion,
-                                            ...(res.data !== undefined ? { data: res.data } : {})
-                                        }
-                                        continue
-                                    }
-
-                                    itemResults[i] = {
-                                        index: i,
-                                        ok: false,
-                                        error: Protocol.error.withTrace(res.error, opTrace),
-                                        ...(res.replay.currentValue !== undefined || res.replay.currentVersion !== undefined
-                                            ? { current: { ...(res.replay.currentValue !== undefined ? { value: res.replay.currentValue } : {}), ...(res.replay.currentVersion !== undefined ? { version: res.replay.currentVersion } : {}) } }
-                                            : {})
-                                    }
-                                    continue
-                                }
-
-                                if (action === 'patch') {
-                                    const entityId = raw?.entityId
-                                    const baseVersion = raw?.baseVersion
-                                    const jsonPatch = Array.isArray(raw?.patch) ? raw.patch : undefined
-                                    if (!jsonPatch) {
-                                        throwError('INVALID_REQUEST', 'Missing patch', { kind: 'validation', opId: op.opId })
-                                    }
-                                    const patches = jsonPatchToAtomaPatches(jsonPatch)
-
-                                    const res = await runItem(({ orm, tx }) => executeWriteItemWithSemantics({
-                                        orm,
-                                        sync: args.config.adapter.sync,
-                                        tx,
-                                        syncEnabled,
-                                        idempotencyTtlMs,
-                                        meta: opTrace,
-                                        write: {
-                                            kind: 'patch',
-                                            resource,
-                                            ...(idempotencyKey ? { idempotencyKey } : {}),
-                                            id: entityId,
-                                            patches,
-                                            baseVersion,
-                                            ...(timestamp !== undefined ? { timestamp } : {})
-                                        }
-                                    }))
-
-                                    if (res.ok) {
-                                        const id = res.replay.id
-                                        const version = res.replay.serverVersion
-                                        itemResults[i] = {
-                                            index: i,
-                                            ok: true,
-                                            entityId: id,
-                                            version,
                                             ...(res.data !== undefined ? { data: res.data } : {})
                                         }
                                         continue

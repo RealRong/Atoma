@@ -45,7 +45,7 @@ function createFailAdapter() {
 describe('core mutation hooks (phase 4): planned/committed/rolledBack observers', () => {
     it('planned + committed: 写入成功时会触发', async () => {
         const adapter = createOkAdapter()
-        const store = Core.store.createCoreStore<Post>({
+        const store = Core.store.createStore<Post>({
             name: 'posts',
             dataSource: adapter,
             store: createJotaiStore()
@@ -76,7 +76,7 @@ describe('core mutation hooks (phase 4): planned/committed/rolledBack observers'
 
     it('rolledBack: 持久化失败会触发 rollback 事件', async () => {
         const adapter = createFailAdapter()
-        const store = Core.store.createCoreStore<Post>({
+        const store = Core.store.createStore<Post>({
             name: 'posts',
             dataSource: adapter,
             store: createJotaiStore()

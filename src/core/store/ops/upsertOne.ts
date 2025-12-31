@@ -1,9 +1,8 @@
-import { BaseStore } from '../BaseStore'
-import type { Entity, PartialWithId, StoreKey, StoreOperationOptions, UpsertWriteOptions } from '../types'
-import { runAfterSave, runBeforeSave } from './hooks'
-import { validateWithSchema } from './validation'
-import { prepareForAdd, prepareForUpdate } from './writePipeline'
-import type { StoreHandle } from '../types'
+import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, UpsertWriteOptions } from '../../types'
+import { dispatch } from '../internals/dispatch'
+import { runAfterSave, runBeforeSave } from '../internals/hooks'
+import { validateWithSchema } from '../internals/validation'
+import { prepareForAdd, prepareForUpdate } from '../internals/writePipeline'
 
 export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>) {
     const { jotaiStore, atom, services, hooks } = handle
@@ -49,7 +48,7 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>) {
         const { ticket } = services.mutation.runtime.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
-            BaseStore.dispatch<T>({
+            dispatch<T>({
                 type: 'upsert',
                 data: validObj,
                 upsert: {
@@ -77,4 +76,3 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>) {
         return resultPromise
     }
 }
-

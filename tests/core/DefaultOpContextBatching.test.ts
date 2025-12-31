@@ -30,7 +30,7 @@ describe('Scheduler: 默认 opContext（actionId）自动合并', () => {
         const adapter = createTestAdapter()
         let nextId = 1
 
-        const store = Core.store.createCoreStore<Post>({
+        const store = Core.store.createStore<Post>({
             name: 'posts',
             dataSource: adapter,
             idGenerator: () => nextId++,
@@ -46,4 +46,3 @@ describe('Scheduler: 默认 opContext（actionId）自动合并', () => {
         expect(store.getCachedAll().length).toBe(10)
     })
 })
-

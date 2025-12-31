@@ -114,7 +114,7 @@ export function createHistoryController(args: {
         const rewrittenInversePatches = rewritePatchesForState(storeName, handle, inversePatches)
 
         await new Promise<void>((resolve, reject) => {
-            Core.store.BaseStore.dispatch({
+            handle.services.mutation.runtime.dispatch({
                 type: 'patches',
                 patches: rewrittenPatches,
                 inversePatches: rewrittenInversePatches,

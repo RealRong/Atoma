@@ -1,4 +1,4 @@
-import type { LifecycleHooks, PartialWithId } from '../types'
+import type { LifecycleHooks, PartialWithId } from '../../types'
 
 export async function runBeforeSave<T>(
     hooks: LifecycleHooks<T> | undefined,
@@ -20,4 +20,3 @@ export async function runAfterSave<T>(
         await hooks.afterSave({ action, item })
     }
 }
-

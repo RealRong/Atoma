@@ -1,7 +1,6 @@
-import { BaseStore } from '../BaseStore'
-import type { Entity, PartialWithId, StoreKey, StoreOperationOptions, WriteManyResult } from '../types'
-import type { StoreHandle } from '../types'
-import { ensureActionId } from './ensureActionId'
+import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, WriteManyResult } from '../../types'
+import { dispatch } from '../internals/dispatch'
+import { ensureActionId } from '../internals/ensureActionId'
 
 function toError(reason: unknown, fallbackMessage: string): Error {
     if (reason instanceof Error) return reason
@@ -43,7 +42,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>) {
             const { ticket } = services.mutation.runtime.beginWrite()
 
             const resultPromise = new Promise<boolean>((resolve, reject) => {
-                BaseStore.dispatch<T>({
+                dispatch<T>({
                     type: options?.force ? 'forceRemove' : 'remove',
                     data: { id } as PartialWithId<T>,
                     handle,
@@ -70,4 +69,3 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>) {
         return results
     }
 }
-

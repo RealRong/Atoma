@@ -3,7 +3,8 @@ import { Core } from '#core'
 import type { AtomaClientContext, CreateAtomaStore, StoresConstraint } from './types'
 
 export const createAtomaStore = ((ctx: any, options: any) => {
-    const dataSource = options.dataSource ?? ctx.defaultDataSourceFactory(options.name)
+    const dataSource = options.dataSource ?? ctx.defaults.dataSourceFactory(options.name)
+    const idGenerator = options.idGenerator ?? ctx.defaults.idGenerator
 
     const createFromDsl = (factory: any) =>
         factory({
@@ -46,9 +47,10 @@ export const createAtomaStore = ((ctx: any, options: any) => {
             : createFromSchema(options.relations)
         : undefined
 
-    return Core.store.createCoreStore<any, any>({
+    return Core.store.createStore<any, any>({
         ...(options as any),
         name: options.name,
+        ...(idGenerator ? { idGenerator } : {}),
         store: ctx.jotaiStore as any,
         dataSource,
         relations: relationsFactory as any,

@@ -1,14 +1,25 @@
-import { BaseStore } from '../BaseStore'
-import type { Entity, PartialWithId } from '../types'
+import { defaultSnowflakeGenerator } from './idGenerator'
+import type { Entity, PartialWithId, StoreKey } from '../../types'
 import { runBeforeSave } from './hooks'
 import { validateWithSchema } from './validation'
-import type { StoreHandle } from '../types'
+import type { StoreHandle } from '../../types'
+
+function initBaseObject<T>(obj: Partial<T>, idGenerator?: () => StoreKey): PartialWithId<T> {
+    const generator = idGenerator || defaultSnowflakeGenerator
+    const now = Date.now()
+    return {
+        ...(obj as any),
+        id: (obj as any).id || generator(),
+        updatedAt: now,
+        createdAt: now
+    } as PartialWithId<T>
+}
 
 export async function prepareForAdd<T extends Entity>(
     runtime: StoreHandle<T>,
     item: Partial<T>
 ): Promise<PartialWithId<T>> {
-    let initedObj = BaseStore.initBaseObject(item, runtime.idGenerator) as unknown as PartialWithId<T>
+    let initedObj = initBaseObject<T>(item, runtime.idGenerator) as unknown as PartialWithId<T>
     initedObj = await runBeforeSave(runtime.hooks, initedObj, 'add')
     initedObj = runtime.transform(initedObj as T) as unknown as PartialWithId<T>
     initedObj = await validateWithSchema(initedObj as T, runtime.schema) as unknown as PartialWithId<T>

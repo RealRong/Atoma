@@ -1,4 +1,4 @@
-import type { SchemaValidator } from '../types'
+import type { SchemaValidator } from '../../types'
 
 export async function validateWithSchema<T>(item: T, schema?: SchemaValidator<T>): Promise<T> {
     if (!schema) return item
@@ -34,4 +34,3 @@ export async function validateWithSchema<T>(item: T, schema?: SchemaValidator<T>
 
     return item
 }
-

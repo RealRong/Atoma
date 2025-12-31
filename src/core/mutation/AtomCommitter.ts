@@ -1,5 +1,5 @@
 import type { Entity } from '../types'
-import { preserveReferenceShallow } from '../store/preserveReference'
+import { preserveReferenceShallow } from '../store/internals/preserveReference'
 import type { Committer, CommitterCommitArgs, CommitterPrepareArgs, CommitterRollbackArgs } from './types'
 
 export class AtomCommitter implements Committer {

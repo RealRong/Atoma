@@ -1,4 +1,4 @@
-import type { CoreStore, IDataSource, IStore, JotaiStore, StoreHandle } from '#core'
+import type { CoreStore, IDataSource, IStore, JotaiStore, StoreHandle, StoreKey } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { createStoreInstance } from './createAtomaStore'
 import type { AtomaClientContext, StoresConstraint } from './types'
@@ -13,7 +13,10 @@ export type ClientRuntime = Readonly<{
 
 export function createClientRuntime(args: {
     stores: StoresConstraint<any>
-    defaultDataSourceFactory: (name: string) => IDataSource<any>
+    defaults: {
+        dataSourceFactory: (name: string) => IDataSource<any>
+        idGenerator?: () => StoreKey
+    }
 }): ClientRuntime {
     const storeCache = new Map<string, CoreStore<any, any>>()
     const jotaiStore: JotaiStore = createJotaiStore()
@@ -56,7 +59,7 @@ export function createClientRuntime(args: {
 
         const ctx: AtomaClientContext<any, any> = {
             jotaiStore,
-            defaultDataSourceFactory: args.defaultDataSourceFactory,
+            defaults: args.defaults,
             Store: rawStore,
             resolveStore: rawStore
         }

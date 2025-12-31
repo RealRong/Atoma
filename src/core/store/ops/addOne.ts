@@ -1,8 +1,7 @@
-import { BaseStore } from '../BaseStore'
-import type { Entity, PartialWithId, StoreOperationOptions } from '../types'
-import { runAfterSave } from './hooks'
-import { prepareForAdd } from './writePipeline'
-import type { StoreHandle } from '../types'
+import type { Entity, PartialWithId, StoreOperationOptions, StoreHandle } from '../../types'
+import { dispatch } from '../internals/dispatch'
+import { runAfterSave } from '../internals/hooks'
+import { prepareForAdd } from '../internals/writePipeline'
 
 export function createAddOne<T extends Entity>(handle: StoreHandle<T>) {
     const { services, hooks } = handle
@@ -11,7 +10,7 @@ export function createAddOne<T extends Entity>(handle: StoreHandle<T>) {
         const { ticket } = services.mutation.runtime.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
-            BaseStore.dispatch<T>({
+            dispatch<T>({
                 type: 'add',
                 data: validObj as PartialWithId<T>,
                 handle,

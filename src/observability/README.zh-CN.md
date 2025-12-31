@@ -37,7 +37,7 @@
 
 ### 1）用户在创建 store 时开启 debug
 
-典型入口是 `createCoreStore({ debug: ... })`：
+典型入口是 `Core.store.createStore({ debug: ... })`：
 
 - `debug.enabled` 关闭时：**不会创建 emitter**，所有埋点点位都会变成近似 0 成本的空操作。
 - `debug.sample` 默认为 `0`：store 通常会**避免分配 traceId**，降低默认开销。
@@ -108,7 +108,7 @@ store 层会把 `DebugEvent` 转换/转发为 devtools 事件：
 ## 实用示例（用户侧）
 
 ```ts
-import { createCoreStore, createDevtoolsBridge } from 'atoma'
+import { Core, createDevtoolsBridge } from 'atoma'
 
 const devtools = createDevtoolsBridge()
 devtools.subscribe((evt) => {
@@ -117,7 +117,7 @@ devtools.subscribe((evt) => {
     }
 })
 
-const store = createCoreStore({
+const store = Core.store.createStore({
     name: 'todos',
     adapter: /* ... */,
     devtools,

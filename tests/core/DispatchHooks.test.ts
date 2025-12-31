@@ -28,7 +28,7 @@ function createTestAdapter() {
 describe('core mutation hooks (phase 3): beforeDispatch middleware', () => {
     it('reject: 直接拒绝写入，不入队、不改 map、不触发 adapter', async () => {
         const adapter = createTestAdapter()
-        const store = Core.store.createCoreStore<Post>({
+        const store = Core.store.createStore<Post>({
             name: 'posts',
             dataSource: adapter,
             store: createJotaiStore()
@@ -51,7 +51,7 @@ describe('core mutation hooks (phase 3): beforeDispatch middleware', () => {
 
     it('transform: 注入 opContext 后写入正常进行', async () => {
         const adapter = createTestAdapter()
-        const store = Core.store.createCoreStore<Post>({
+        const store = Core.store.createStore<Post>({
             name: 'posts',
             dataSource: adapter,
             store: createJotaiStore()

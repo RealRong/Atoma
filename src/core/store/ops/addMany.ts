@@ -1,9 +1,8 @@
-import { BaseStore } from '../BaseStore'
-import type { Entity, StoreOperationOptions } from '../types'
-import { runAfterSave } from './hooks'
-import { prepareForAdd } from './writePipeline'
-import type { StoreHandle } from '../types'
-import { ensureActionId } from './ensureActionId'
+import type { Entity, StoreOperationOptions, StoreHandle } from '../../types'
+import { dispatch } from '../internals/dispatch'
+import { ensureActionId } from '../internals/ensureActionId'
+import { runAfterSave } from '../internals/hooks'
+import { prepareForAdd } from '../internals/writePipeline'
 
 export function createAddMany<T extends Entity>(handle: StoreHandle<T>) {
     const { services, hooks } = handle
@@ -15,7 +14,7 @@ export function createAddMany<T extends Entity>(handle: StoreHandle<T>) {
 
         const tickets = validItems.map(() => services.mutation.runtime.beginWrite().ticket)
         const resultPromises = validItems.map((validObj, idx) => new Promise<void>((resolve, reject) => {
-            BaseStore.dispatch<T>({
+            dispatch<T>({
                 type: 'add',
                 data: validObj as any,
                 handle,
@@ -40,4 +39,3 @@ export function createAddMany<T extends Entity>(handle: StoreHandle<T>) {
         return results
     }
 }
-

@@ -1,5 +1,4 @@
 import type { DataSource, EntityManager, SelectQueryBuilder } from 'typeorm'
-import { applyPatches, enablePatches } from 'immer'
 import {
     compareOpForAfter,
     decodeCursorToken,
@@ -10,7 +9,6 @@ import {
 } from '../shared/keyset'
 import { createError, isAtomaError, throwError } from '../../error'
 
-enablePatches()
 import type {
     IOrmAdapter,
     OrmAdapterOptions,
@@ -157,14 +155,57 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         }
     }
 
-    async update(resource: string, data: any, options: WriteOptions & { where?: Record<string, any> } = {}): Promise<QueryResultOne> {
+    async update(
+        resource: string,
+        item: { id: any; data: any; baseVersion?: number; timestamp?: number },
+        options: WriteOptions = {}
+    ): Promise<QueryResultOne> {
         try {
             const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
-            const target = options.where ?? (data?.id !== undefined ? { [this.idField]: data.id } : undefined)
-            if (!target) throw new Error('update requires where or id in data')
-            await repo.update(target as any, data)
+            if (item?.id === undefined || !item?.data || typeof item.data !== 'object' || Array.isArray(item.data)) {
+                throw new Error('update requires id and data object')
+            }
+
+            const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
+            if (!current) {
+                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
+            }
+
+            const base = this.toPlain(current)
+            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
+                const currentVersion = (base as any).version
+                if (typeof currentVersion !== 'number') {
+                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+                }
+                if (currentVersion !== item.baseVersion) {
+                    throwError('CONFLICT', 'Version conflict', {
+                        kind: 'conflict',
+                        resource,
+                        currentVersion,
+                        currentValue: base
+                    })
+                }
+            }
+
+            const baseVersion = (base as any).version
+            const next = { ...(item.data as any), [this.idField]: item.id }
+            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion) && typeof baseVersion === 'number') {
+                next.version = baseVersion + 1
+            }
+
+            const input = this.pickKnownColumns(repo, next)
+            if (input && typeof input === 'object' && !Array.isArray(input)) {
+                delete (input as any)[this.idField]
+            }
+
+            await repo.update({ [this.idField]: item.id } as any, input as any)
             const returning = options.returning !== false
-            const fetched = returning ? await repo.findOne({ where: target as any, select: this.buildSelect(options.select, repo.metadata?.columns) }) : undefined
+            const fetched = returning
+                ? await repo.findOne({
+                    where: { [this.idField]: item.id } as any,
+                    select: this.buildSelect(options.select, repo.metadata?.columns)
+                })
+                : undefined
             return { data: fetched ?? undefined, transactionApplied: Boolean(this.manager) }
         } catch (err) {
             throw err
@@ -216,59 +257,6 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         }
     }
 
-    async patch(
-        resource: string,
-        item: { id: any; patches: any[]; baseVersion?: number; timestamp?: number },
-        options: WriteOptions = {}
-    ): Promise<QueryResultOne> {
-        try {
-            const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
-            if (item?.id === undefined || !Array.isArray(item?.patches)) {
-                throw new Error('patch requires id and patches[]')
-            }
-            const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
-            if (!current) {
-                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
-            }
-            // TypeORM 返回的是实体实例，Immer 需要可 draft 的 plain object
-            const base = this.toPlain(current)
-            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
-                const currentVersion = (base as any).version
-                if (typeof currentVersion !== 'number') {
-                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
-                }
-                if (currentVersion !== item.baseVersion) {
-                    throwError('CONFLICT', 'Version conflict', {
-                        kind: 'conflict',
-                        resource,
-                        currentVersion,
-                        currentValue: base
-                    })
-                }
-            }
-            const normalized = this.stripIdPrefix(item.patches, item.id)
-            let next = applyPatches(base, normalized)
-            const baseVersion = (base as any).version
-            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion) && typeof baseVersion === 'number') {
-                if (next && typeof next === 'object' && !Array.isArray(next)) {
-                    next = { ...(next as any), version: baseVersion + 1 }
-                }
-            }
-            const input = this.pickKnownColumns(repo, next)
-            const saved = await repo.save(input as any)
-            const returning = options.returning !== false
-            const data = returning
-                ? (options.select ? await repo.findOne({
-                    where: { [this.idField]: item.id } as any,
-                    select: this.buildSelect(options.select, repo.metadata?.columns)
-                }) : saved)
-                : undefined
-            return { data: returning ? data : undefined, transactionApplied: Boolean(this.manager) }
-        } catch (err) {
-            throw err
-        }
-    }
-
     async bulkCreate(resource: string, items: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
         const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
         const data: any[] = []
@@ -291,7 +279,11 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         }
     }
 
-    async bulkUpdate(resource: string, items: Array<{ id: any; data: any }>, options: WriteOptions = {}): Promise<QueryResultMany> {
+    async bulkUpdate(
+        resource: string,
+        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number }>,
+        options: WriteOptions = {}
+    ): Promise<QueryResultMany> {
         const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
         const data: any[] = []
         const partialFailures: Array<{ index: number; error: any }> = []
@@ -300,9 +292,45 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             const item = items[i]
             try {
                 if (item.id === undefined) throw new Error('bulkUpdate item missing id')
-                await repo.update({ [this.idField]: item.id } as any, item.data)
+
+                const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
+                if (!current) throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
+
+                const base = this.toPlain(current)
+                if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
+                    const currentVersion = (base as any).version
+                    if (typeof currentVersion !== 'number') {
+                        throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+                    }
+                    if (currentVersion !== item.baseVersion) {
+                        throwError('CONFLICT', 'Version conflict', {
+                            kind: 'conflict',
+                            resource,
+                            currentVersion,
+                            currentValue: base
+                        })
+                    }
+                }
+
+                const baseVersion = (base as any).version
+                const next = { ...(item.data as any), [this.idField]: item.id }
+                if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion) && typeof baseVersion === 'number') {
+                    next.version = baseVersion + 1
+                }
+
+                const input = this.pickKnownColumns(repo, next)
+                if (input && typeof input === 'object' && !Array.isArray(input)) {
+                    delete (input as any)[this.idField]
+                }
+
+                await repo.update({ [this.idField]: item.id } as any, input as any)
                 if (options.returning !== false) {
-                    const fetched = await repo.findOneBy({ [this.idField]: item.id } as any)
+                    const fetched = options.select
+                        ? await repo.findOne({
+                            where: { [this.idField]: item.id } as any,
+                            select: this.buildSelect(options.select, repo.metadata?.columns)
+                        })
+                        : await repo.findOneBy({ [this.idField]: item.id } as any)
                     if (fetched) data.push(fetched)
                 }
             } catch (err) {
@@ -338,48 +366,6 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
         return {
             data: options.returning === true ? data : [],
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: Boolean(this.manager)
-        }
-    }
-
-    async bulkPatch(
-        resource: string,
-        items: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number }>,
-        options: WriteOptions = {}
-    ): Promise<QueryResultMany> {
-        const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
-
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i]
-            try {
-                if (item.id === undefined || !Array.isArray(item.patches)) {
-                    throw new Error('bulkPatch item missing id or patches')
-                }
-                const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
-                if (!current) throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
-                const base = this.toPlain(current)
-                const normalized = this.stripIdPrefix(item.patches, item.id)
-                const next = applyPatches(base, normalized)
-                const input = this.pickKnownColumns(repo, next)
-                const saved = await repo.save(input as any)
-                if (options.returning !== false) {
-                    data.push(options.select
-                        ? await repo.findOne({
-                            where: { [this.idField]: item.id } as any,
-                            select: this.buildSelect(options.select, repo.metadata?.columns)
-                        })
-                        : saved)
-                }
-            } catch (err) {
-                partialFailures.push({ index: i, error: this.toError(err) })
-            }
-        }
-
-        return {
-            data: options.returning === false ? [] : data,
             partialFailures: partialFailures.length ? partialFailures : undefined,
             transactionApplied: Boolean(this.manager)
         }
@@ -777,7 +763,6 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
     }
 
     private toPlain(obj: any) {
-        // 简单且安全地去掉原型，确保 Immer 可 draft
         return obj ? JSON.parse(JSON.stringify(obj)) : obj
     }
 
@@ -794,18 +779,6 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             }
         }
         return out
-    }
-
-    private stripIdPrefix(patches: any[], id: any) {
-        return (patches || []).map(patch => {
-            if (!Array.isArray(patch.path) || !patch.path.length) return patch
-            const [head, ...rest] = patch.path
-            // 宽松比较以兼容字符串/数字 id
-            if (head == id) {
-                return { ...patch, path: rest }
-            }
-            return patch
-        })
     }
 
     // 事务由 IOrmAdapter.transaction 作为宿主统一管理（不在单个方法内隐式开启事务）

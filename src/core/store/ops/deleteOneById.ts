@@ -1,6 +1,5 @@
-import { BaseStore } from '../BaseStore'
-import type { Entity, PartialWithId, StoreKey, StoreOperationOptions } from '../types'
-import type { StoreHandle } from '../types'
+import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions } from '../../types'
+import { dispatch } from '../internals/dispatch'
 
 export function createDeleteOneById<T extends Entity>(handle: StoreHandle<T>) {
     const { services } = handle
@@ -8,7 +7,7 @@ export function createDeleteOneById<T extends Entity>(handle: StoreHandle<T>) {
         const { ticket } = services.mutation.runtime.beginWrite()
 
         const resultPromise = new Promise<boolean>((resolve, reject) => {
-            BaseStore.dispatch({
+            dispatch<T>({
                 type: options?.force ? 'forceRemove' : 'remove',
                 data: { id } as PartialWithId<T>,
                 handle,

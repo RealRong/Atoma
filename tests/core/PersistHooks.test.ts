@@ -28,7 +28,7 @@ function createTestAdapter() {
 describe('core mutation hooks (phase 2): beforePersist middleware', () => {
     it('beforePersist short-circuit: 不触发 adapter 持久化，但会 enqueued（strict 会超时）', async () => {
         const adapter = createTestAdapter()
-        const store = Core.store.createCoreStore<Post>({
+        const store = Core.store.createStore<Post>({
             name: 'posts',
             dataSource: adapter,
             store: createJotaiStore()
@@ -59,7 +59,7 @@ describe('core mutation hooks (phase 2): beforePersist middleware', () => {
 
     it('默认 direct：会触发 adapter 持久化，并立即 confirmed（strict 直接通过）', async () => {
         const adapter = createTestAdapter()
-        const store = Core.store.createCoreStore<Post>({
+        const store = Core.store.createStore<Post>({
             name: 'posts',
             dataSource: adapter,
             store: createJotaiStore()

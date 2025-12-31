@@ -1,4 +1,4 @@
-import type { Entity, StoreHandle, StoreKey } from '../types'
+import type { Entity, StoreHandle, StoreKey } from '../../types'
 import { commitAtomMapUpdateDelta } from './cacheWriter'
 import { preserveReferenceShallow } from './preserveReference'
 import { validateWithSchema } from './validation'
@@ -96,4 +96,3 @@ export async function applyStoreWriteback<T extends Entity>(
         changedIds
     })
 }
-

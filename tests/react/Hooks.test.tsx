@@ -19,7 +19,7 @@ afterEach(() => {
 })
 
 function createPostsStore() {
-    return Core.store.createCoreStore<Post>({
+    return Core.store.createStore<Post>({
         name: 'posts',
         dataSource: new MemoryDataSource<Post>(),
         store: createJotaiStore()

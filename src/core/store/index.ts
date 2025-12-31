@@ -1,0 +1,15 @@
+export { createAddOne } from './ops/addOne'
+export { createAddMany } from './ops/addMany'
+export { createUpdateOne } from './ops/updateOne'
+export { createUpdateMany } from './ops/updateMany'
+export { createDeleteOneById } from './ops/deleteOneById'
+export { createDeleteMany } from './ops/deleteMany'
+export { createUpsertOne } from './ops/upsertOne'
+export { createUpsertMany } from './ops/upsertMany'
+export { createGetAll } from './ops/getAll'
+export { createGetMultipleByIds } from './ops/getMultipleByIds'
+export { createBatchGet } from './ops/batchGet'
+export { createFindMany } from './ops/findMany'
+
+export { createStoreHandle } from './internals/runtime'
+

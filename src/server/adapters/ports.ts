@@ -37,10 +37,9 @@ export interface IOrmAdapter {
     batchFindMany?(requests: Array<{ resource: string; params: QueryParams }>): Promise<QueryResult[]>
     transaction<T>(fn: (args: OrmTransactionArgs) => Promise<T>): Promise<T>
     create?(resource: string, data: any, options?: WriteOptions): Promise<QueryResultOne>
-    update?(resource: string, data: any, options?: WriteOptions & { where?: Record<string, any> }): Promise<QueryResultOne>
-    patch?(
+    update?(
         resource: string,
-        item: { id: any; patches: any[]; baseVersion?: number; timestamp?: number },
+        item: { id: any; data: any; baseVersion?: number; timestamp?: number },
         options?: WriteOptions
     ): Promise<QueryResultOne>
     upsert?(
@@ -50,12 +49,7 @@ export interface IOrmAdapter {
     ): Promise<QueryResultOne>
     delete?(resource: string, whereOrId: any, options?: WriteOptions): Promise<QueryResultOne>
     bulkCreate?(resource: string, items: any[], options?: WriteOptions): Promise<QueryResultMany>
-    bulkUpdate?(resource: string, items: Array<{ id: any; data: any; baseVersion?: number }>, options?: WriteOptions): Promise<QueryResultMany>
-    bulkPatch?(
-        resource: string,
-        items: Array<{ id: any; patches: any[]; baseVersion?: number; timestamp?: number }>,
-        options?: WriteOptions
-    ): Promise<QueryResultMany>
+    bulkUpdate?(resource: string, items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number }>, options?: WriteOptions): Promise<QueryResultMany>
     bulkUpsert?(
         resource: string,
         items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean }>,

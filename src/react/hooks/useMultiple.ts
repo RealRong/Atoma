@@ -22,7 +22,7 @@ export function useMultiple<T extends Entity, Relations = {}, const Include exte
 
     const handle = Core.store.getHandle(store)
     if (!handle) {
-        throw new Error('[Atoma] useMultiple: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createCoreStore/createStore 创建')
+        throw new Error('[Atoma] useMultiple: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createStore 创建')
     }
 
     const objectMapAtom = handle.atom

@@ -12,6 +12,7 @@ import type {
     JotaiStore,
     RelationIncludeOptions,
     RelationMap,
+    StoreKey,
     StoreConfig
 } from '#core'
 import type { AtomaClientSyncConfig } from './controllers/SyncController'
@@ -225,7 +226,10 @@ export type AtomaClientContext<
     Stores = {}
 > = {
     jotaiStore: JotaiStore
-    defaultDataSourceFactory: <Name extends keyof Entities & string>(name: Name) => IDataSource<Entities[Name]>
+    defaults: {
+        dataSourceFactory: <Name extends keyof Entities & string>(name: Name) => IDataSource<Entities[Name]>
+        idGenerator?: () => StoreKey
+    }
     Store: <Name extends keyof Entities & string>(name: Name) => CoreStore<Entities[Name], InferRelationsFromStoreOverride<Entities, Stores, Name>>
     resolveStore: <Name extends keyof Entities & string>(name: Name) => IStore<Entities[Name], InferRelationsFromStoreOverride<Entities, Stores, Name>>
 }
@@ -239,7 +243,10 @@ export type DefineClientConfig<
         batch?: boolean | BatchQueryConfig
         usePatchForUpdate?: boolean
     }
-    defaultDataSourceFactory?: <Name extends keyof Entities & string>(name: Name) => IDataSource<Entities[Name]>
+    defaults?: {
+        dataSourceFactory?: <Name extends keyof Entities & string>(name: Name) => IDataSource<Entities[Name]>
+        idGenerator?: () => StoreKey
+    }
     sync?: AtomaClientSyncConfig
 }
 

@@ -1,6 +1,4 @@
-import { createCoreStore, createStore } from './createCoreStore'
-import { BaseStore } from './BaseStore'
-import { defaultSnowflakeGenerator } from './idGenerator'
+import { createStore } from './createStore'
 import { createActionId, createOpContext, normalizeOperationContext } from './operationContext'
 import { applyQuery, stableStringify } from './query'
 import { belongsTo, hasMany, hasOne, variants } from './relations/builders'
@@ -9,30 +7,12 @@ import { collectRelationStoreTokens, projectRelationsBatch } from './relations/p
 import { normalizeKey } from './relations/utils'
 import { HistoryManager } from './history/HistoryManager'
 import { getStoreHandle } from './storeHandleRegistry'
-import { commitAtomMapUpdate, commitAtomMapUpdateDelta } from './store/cacheWriter'
-import { validateWithSchema } from './store/validation'
-import { applyStoreWriteback } from './store/writeback'
 import { fuzzySearch } from './search'
 
 export const Core = {
     store: {
-        createCoreStore,
         createStore,
-        BaseStore,
-        getHandle: getStoreHandle,
-        cacheWriter: {
-            commitAtomMapUpdate,
-            commitAtomMapUpdateDelta
-        },
-        writeback: {
-            applyStoreWriteback
-        },
-        validation: {
-            validateWithSchema
-        }
-    },
-    id: {
-        defaultSnowflakeGenerator
+        getHandle: getStoreHandle
     },
     operation: {
         createActionId,
@@ -63,7 +43,7 @@ export const Core = {
 
 export type * from './types'
 
-export type { CoreStore, CoreStoreConfig } from './createCoreStore'
+export type { CoreStore, CoreStoreConfig } from './createStore'
 export type { MutationPipeline, MutationRuntime, MutationControl } from './mutation/MutationPipeline'
 export type {
     AfterPersistEvent,

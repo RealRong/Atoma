@@ -1,4 +1,6 @@
 /**
+ * Internal: default ID generator used by the store write pipeline.
+ *
  * Default Snowflake-like ID generator (number-based, safe within JS number range)
  *
  * Layout (53 bits total to stay within Number safe integer):
@@ -10,9 +12,8 @@ const MAX_SEQUENCE = 0xfff
 
 let lastTimestamp = 0
 let sequence = 0
-let customGenerator: (() => number | string) | undefined
 
-const defaultSnowflakeGenerator = (): number => {
+export const defaultSnowflakeGenerator = (): number => {
     const now = BigInt(Date.now())
 
     if (Number(now) === lastTimestamp) {
@@ -35,12 +36,3 @@ const defaultSnowflakeGenerator = (): number => {
     }
     return asNumber
 }
-
-/**
- * Get the currently configured ID generator (custom or default).
- */
-export function getIdGenerator(): () => number | string {
-    return customGenerator || defaultSnowflakeGenerator
-}
-
-export { defaultSnowflakeGenerator }

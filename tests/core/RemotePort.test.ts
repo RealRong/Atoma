@@ -28,7 +28,7 @@ function createAdapter() {
 describe('core remote port (phase 5): remoteAck settles tickets + emits event', () => {
     it('outbox/enqueued + remoteAck: strict 写入会被确认并返回', async () => {
         const adapter = createAdapter()
-        const store = Core.store.createCoreStore<Post>({
+        const store = Core.store.createStore<Post>({
             name: 'posts',
             dataSource: adapter,
             store: createJotaiStore()

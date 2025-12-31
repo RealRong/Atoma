@@ -1,7 +1,7 @@
 /**
  * Atoma（React-first public API）
  *
- * 约定：用户不直接接触 core 的 createCoreStore/createStore/Core 等低层入口；
+ * 约定：用户不直接接触 core 的 createStore/Core 等低层入口；
  * 对外统一从顶层 client + react hooks 入口进入（defineEntities/createOpContext/useFindMany 等）。
  */
 

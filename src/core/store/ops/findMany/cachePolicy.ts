@@ -1,4 +1,4 @@
-import type { FindManyOptions } from '../../types'
+import type { FindManyOptions } from '../../../types'
 
 export type CacheWriteDecision =
     | { effectiveSkipStore: true; reason: 'skipStore' | 'sparseFields' }
@@ -13,4 +13,3 @@ export function resolveCachePolicy<T>(options?: FindManyOptions<T>): CacheWriteD
         reason: options?.skipStore ? 'skipStore' : 'sparseFields'
     }
 }
-

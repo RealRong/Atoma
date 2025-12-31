@@ -1,4 +1,4 @@
-import type { FindManyOptions } from '../../types'
+import type { FindManyOptions } from '../../../types'
 
 export function summarizeFindManyParams<T>(opts?: FindManyOptions<T>) {
     if (!opts) return {}
@@ -26,4 +26,3 @@ export function summarizeFindManyParams<T>(opts?: FindManyOptions<T>) {
         skipStore: Boolean((opts as any).skipStore)
     }
 }
-

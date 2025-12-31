@@ -1,8 +1,7 @@
-import { BaseStore } from '../BaseStore'
-import type { Entity, PartialWithId, StoreKey, StoreReadOptions } from '../types'
-import { commitAtomMapUpdateDelta } from './cacheWriter'
-import { resolveObservabilityContext } from './runtime'
-import type { StoreHandle } from '../types'
+import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreReadOptions } from '../../types'
+import { bulkAdd } from '../internals/atomMapOps'
+import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
+import { resolveObservabilityContext } from '../internals/runtime'
 
 export function createGetMultipleByIds<T extends Entity>(handle: StoreHandle<T>) {
     const { jotaiStore, atom, dataSource, services, indexes, transform } = handle
@@ -30,7 +29,7 @@ export function createGetMultipleByIds<T extends Entity>(handle: StoreHandle<T>)
 
             if (cache && fetched.some(i => !map.has((i as any).id))) {
                 const before = jotaiStore.get(atom) as Map<StoreKey, T>
-                const after = BaseStore.bulkAdd(fetched as PartialWithId<T>[], before)
+                const after = bulkAdd(fetched as PartialWithId<T>[], before)
                 const changedIds = new Set<StoreKey>(fetched.map(i => (i as any).id as StoreKey))
                 commitAtomMapUpdateDelta({ handle, before, after, changedIds })
             }
