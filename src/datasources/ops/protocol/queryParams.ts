@@ -2,11 +2,11 @@ import type { FindManyOptions } from '#core'
 import type { OrderByRule, Page, QueryParams } from '#protocol'
 
 /**
- * Batch query params normalizer (client-side).
+ * Ops query params normalizer (client-side).
  *
  * Why this exists:
  * - Public querying APIs in Atoma use `FindManyOptions<T>` (developer-friendly shape).
- * - The Atoma server Batch protocol expects `QueryParams` where pagination MUST be expressed via `params.page`.
+ * - The Atoma server ops protocol expects `QueryParams` where pagination MUST be expressed via `params.page`.
  *
  * What it does:
  * - Picks and normalizes only the server-supported query fields:
@@ -23,7 +23,7 @@ import type { OrderByRule, Page, QueryParams } from '#protocol'
  * - It does not forward unknown/extra fields (e.g. `include`, `cache`, `traceId`, etc).
  *
  * Where it's used:
- * - `OperationRouter` builds QueryOp params with this helper before calling `/ops` (ops-only mode).
+ * - `OperationRouter` builds QueryOp params with this helper before calling `/ops`.
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)

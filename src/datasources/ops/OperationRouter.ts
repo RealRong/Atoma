@@ -3,7 +3,7 @@ import type { FindManyOptions, PageInfo, PatchMetadata, StoreKey, UpsertWriteOpt
 import type { ObservabilityContext } from '#observability'
 import type { Operation, OperationResult, QueryResultData, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
 import { Protocol } from '#protocol'
-import { normalizeAtomaServerQueryParams } from '../protocol/queryParams'
+import { normalizeAtomaServerQueryParams } from './protocol/queryParams'
 import type { BatchEngine } from '#batch'
 
 type ResolveBaseVersion = (id: StoreKey, value?: any) => number
@@ -12,7 +12,6 @@ type OperationRouterDeps<T> = {
     resource: string
     batch?: BatchEngine
     opsExecute: (ops: Operation[], context?: ObservabilityContext) => Promise<OperationResult[]>
-    usePatchForUpdate: boolean
     resolveBaseVersion: ResolveBaseVersion
     onError: (error: Error, operation: string) => void
     now?: () => number
@@ -212,8 +211,6 @@ export class OperationRouter<T> {
         metadata: PatchMetadata,
         context?: ObservabilityContext
     ): Promise<{ created?: T[] } | void> {
-        const usePatchForUpdates = this.deps.usePatchForUpdate
-
         const patchesByItemId = new Map<StoreKey, Patch[]>()
         patches.forEach(patch => {
             const itemId = patch.path[0] as StoreKey
@@ -221,7 +218,7 @@ export class OperationRouter<T> {
             patchesByItemId.get(itemId)!.push(patch)
         })
 
-        const built = await this.buildPatchWriteOps(patchesByItemId, metadata, context, usePatchForUpdates)
+        const built = await this.buildPatchWriteOps(patchesByItemId, metadata, context)
         if (!built) return
 
         const errorTag = this.deps.batch ? 'applyPatches(batch)' : 'applyPatches(ops)'
@@ -282,8 +279,7 @@ export class OperationRouter<T> {
     private async buildPatchWriteOps(
         patchesByItemId: Map<StoreKey, Patch[]>,
         metadata: PatchMetadata,
-        context: ObservabilityContext | undefined,
-        usePatchForUpdates: boolean
+        context: ObservabilityContext | undefined
     ): Promise<{ ops: Operation[]; opKinds: Array<'create' | 'update' | 'delete'> } | undefined> {
         const createItems: WriteItem[] = []
         const updateItems: WriteItem[] = []

@@ -17,7 +17,7 @@ import type {
 } from '#core'
 import type { AtomaClientSyncConfig } from './controllers/SyncController'
 import type { BackendConfig } from './backend'
-import type { BatchQueryConfig } from '../datasources/http/config/types'
+import type { BatchQueryConfig } from '../datasources/ops/config/types'
 
 type IncludeForRelations<Relations> =
     Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
@@ -241,7 +241,6 @@ export type DefineClientConfig<
     /** Default remote dataSource defaults (applied to all resources). */
     remote?: {
         batch?: boolean | BatchQueryConfig
-        usePatchForUpdate?: boolean
     }
     defaults?: {
         dataSourceFactory?: <Name extends keyof Entities & string>(name: Name) => IDataSource<Entities[Name]>

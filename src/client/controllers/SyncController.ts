@@ -11,6 +11,7 @@ import type { BeforePersistContext, PersistResult } from '../../core/mutation/ho
 import { applyStoreWriteback } from '../../core/store/internals/writeback'
 import { subscribeNotifySse } from '../../sync/lanes/NotifyLane'
 import type { ResolvedBackend } from '../backend'
+import { OpsDataSource } from '../../datasources/OpsDataSource'
 
 export type IdRemapSink = (storeName: string, from: StoreKey, to: StoreKey) => void
 
@@ -89,6 +90,7 @@ export type AtomaClientSyncConfig =
 export function createSyncController(args: {
     runtime: ClientRuntime
     backend?: ResolvedBackend
+    localBackend?: ResolvedBackend
     syncConfig?: AtomaClientSyncConfig
     idRemapSink?: IdRemapSink
 }): Readonly<{
@@ -247,6 +249,76 @@ export function createSyncController(args: {
     // ---------------------------------------------
     // 4) Writeback（把 pull/ack/reject 写回本地）
     // ---------------------------------------------
+    const createRemoteDataSource = (resource: string) => {
+        const backend = args.backend
+        if (!backend) return null
+        return new OpsDataSource<any>({
+            opsClient: backend.opsClient,
+            resourceName: resource,
+            name: `${backend.key}:remote`,
+            batch: false
+        })
+    }
+
+    const createLocalDataSource = (resource: string) => {
+        const backend = args.localBackend
+        if (!backend) return null
+        return new OpsDataSource<any>({
+            opsClient: backend.opsClient,
+            resourceName: resource,
+            name: `${backend.key}:local`,
+            batch: false
+        })
+    }
+
+    const persistToLocal = async (resource: string, args2: { upserts?: any[]; deletes?: StoreKey[]; versionUpdates?: Array<{ key: StoreKey; version: number }> }) => {
+        const local = createLocalDataSource(resource)
+        if (!local) return
+
+        const upserts = Array.isArray(args2.upserts) ? args2.upserts : []
+        const deletes = Array.isArray(args2.deletes) ? args2.deletes : []
+        const versionUpdates = Array.isArray(args2.versionUpdates) ? args2.versionUpdates : []
+
+        if (upserts.length) {
+            await local.bulkPut(upserts as any[])
+        }
+        if (deletes.length) {
+            await local.bulkDelete(deletes)
+        }
+
+        if (versionUpdates.length) {
+            const versionByKey = new Map<StoreKey, number>()
+            versionUpdates.forEach(v => versionByKey.set(v.key, v.version))
+
+            const upsertedKeys = new Set<StoreKey>()
+            upserts.forEach(u => {
+                const id = (u as any)?.id
+                if (id !== undefined) upsertedKeys.add(id)
+            })
+
+            const toUpdate = Array.from(versionByKey.entries())
+                .filter(([key]) => !upsertedKeys.has(key))
+                .map(([key]) => key)
+
+            if (toUpdate.length) {
+                const current = await local.bulkGet(toUpdate)
+                const patched: any[] = []
+                for (let i = 0; i < toUpdate.length; i++) {
+                    const key = toUpdate[i]
+                    const row = current[i]
+                    const nextVersion = versionByKey.get(key)
+                    if (!row || nextVersion === undefined) continue
+                    if (row && typeof row === 'object') {
+                        patched.push({ ...(row as any), version: nextVersion })
+                    }
+                }
+                if (patched.length) {
+                    await local.bulkPut(patched)
+                }
+            }
+        }
+    }
+
     async function applyPullChanges(changes: Change[]): Promise<void> {
         const byResource = new Map<string, Change[]>()
         for (const change of changes) {
@@ -283,11 +355,17 @@ export function createSyncController(args: {
                 ? handle.createObservabilityContext({})
                 : (undefined as any)
 
-            const upserts = uniqueUpsertKeys.length
-                ? (await handle.dataSource.bulkGet(uniqueUpsertKeys, ctx)).filter((i: any): i is any => i !== undefined)
+            const remote = createRemoteDataSource(resource)
+            const upserts = (remote && uniqueUpsertKeys.length)
+                ? (await remote.bulkGet(uniqueUpsertKeys, ctx)).filter((i: any): i is any => i !== undefined)
                 : []
 
             await applyStoreWriteback(handle as any, {
+                upserts,
+                deletes: uniqueDeleteKeys
+            })
+
+            await persistToLocal(resource, {
                 upserts,
                 deletes: uniqueDeleteKeys
             })
@@ -357,6 +435,12 @@ export function createSyncController(args: {
             deletes,
             versionUpdates
         })
+
+        await persistToLocal(ack.resource, {
+            upserts,
+            deletes,
+            versionUpdates
+        })
     }
 
     async function applyWriteReject(
@@ -396,6 +480,8 @@ export function createSyncController(args: {
         }
 
         await applyStoreWriteback(handle as any, { upserts, deletes })
+
+        await persistToLocal(reject.resource, { upserts, deletes })
     }
 
     function buildSubscribeUrl(args2?: { resources?: string[] }): string {

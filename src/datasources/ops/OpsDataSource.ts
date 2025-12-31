@@ -2,7 +2,7 @@ import type { IDataSource, StoreKey, Entity } from '#core'
 import { BatchEngine, Batch } from '#batch'
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type Meta, type Operation, type OperationResult } from '#protocol'
-import type { BatchQueryConfig, HttpDataSourceConfig } from '../config/types'
+import type { BatchQueryConfig, OpsDataSourceConfig } from './config/types'
 import { OperationRouter } from './OperationRouter'
 
 const ROUTER_METHODS = [
@@ -30,52 +30,57 @@ type ParsedBatchConfig = {
 }
 
 /**
- * HTTP DataSource for ops-based APIs
+ * Protocol DataSource for ops-based APIs
  */
-export class HttpDataSource<T extends Entity> implements IDataSource<T> {
+export class OpsDataSource<T extends Entity> implements IDataSource<T> {
     public readonly name: string
     private batchEngine?: BatchEngine
+    private ownsBatchEngine: boolean
     private router: OperationRouter<T>
     private resourceNameForBatch: string
-    private usePatchForUpdate: boolean
-    private readonly opsClient: HttpDataSourceConfig<T>['opsClient']
+    private readonly opsClient: OpsDataSourceConfig<T>['opsClient']
 
-    constructor(private config: HttpDataSourceConfig<T>) {
+    constructor(private config: OpsDataSourceConfig<T>) {
         if (!config.resourceName) {
-            throw new Error('[HttpDataSource] "resourceName" is required for ops routing')
+            throw new Error('[OpsDataSource] "resourceName" is required for ops routing')
         }
 
         if (!config.opsClient) {
-            throw new Error('[HttpDataSource] "opsClient" is required')
+            throw new Error('[OpsDataSource] "opsClient" is required')
         }
 
-        const batchConfig = this.parseBatchConfig(config.batch)
+        this.ownsBatchEngine = false
         this.resourceNameForBatch = this.normalizeResourceName(config.resourceName)
-        this.usePatchForUpdate = config.usePatchForUpdate ?? false
 
         this.opsClient = config.opsClient
-        this.name = config.name ?? `remote:${this.resourceNameForBatch}`
+        this.name = config.name ?? `ops:${this.resourceNameForBatch}`
 
-        if (batchConfig.enabled) {
-            const endpointPath = batchConfig.endpoint ?? Protocol.http.paths.OPS
-            this.batchEngine = Batch.create({
-                endpoint: endpointPath,
-                maxBatchSize: batchConfig.maxBatchSize,
-                flushIntervalMs: batchConfig.flushIntervalMs,
-                opsClient: this.opsClient,
-                onError: (error, payload) => {
-                    this.onError(error, 'batch')
-                    if (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
-                        console.debug?.('[HttpDataSource:batch] payload failed', payload)
+        if (config.batchEngine) {
+            this.batchEngine = config.batchEngine
+        } else {
+            const batchConfig = this.parseBatchConfig(config.batch)
+            if (batchConfig.enabled) {
+                const endpointPath = batchConfig.endpoint ?? Protocol.http.paths.OPS
+                this.batchEngine = Batch.create({
+                    endpoint: endpointPath,
+                    maxBatchSize: batchConfig.maxBatchSize,
+                    flushIntervalMs: batchConfig.flushIntervalMs,
+                    opsClient: this.opsClient,
+                    onError: (error, payload) => {
+                        this.onError(error, 'batch')
+                        if (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
+                            console.debug?.('[OpsDataSource:batch] payload failed', payload)
+                        }
                     }
-                }
-            })
+                })
+                this.ownsBatchEngine = true
 
-            if (batchConfig.devWarnings && typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
-                console.info(
-                    `[Atoma] BatchQuery enabled for "${this.resourceNameForBatch}" → ${endpointPath}\n` +
-                    'Ensure backend exposes the ops endpoint. Set `batch:false` to disable.'
-                )
+                if (batchConfig.devWarnings && typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
+                    console.info(
+                        `[Atoma] BatchQuery enabled for "${this.resourceNameForBatch}" → ${endpointPath}\n` +
+                        'Ensure backend exposes the ops endpoint. Set `batch:false` to disable.'
+                    )
+                }
             }
         }
 
@@ -83,7 +88,6 @@ export class HttpDataSource<T extends Entity> implements IDataSource<T> {
             resource: this.resourceNameForBatch,
             batch: this.batchEngine,
             opsExecute: this.executeOps.bind(this),
-            usePatchForUpdate: this.usePatchForUpdate,
             resolveBaseVersion: this.resolveLocalBaseVersion.bind(this),
             onError: this.onError.bind(this),
             now: () => Date.now(),
@@ -93,7 +97,9 @@ export class HttpDataSource<T extends Entity> implements IDataSource<T> {
     }
 
     dispose(): void {
-        this.batchEngine?.dispose()
+        if (this.ownsBatchEngine) {
+            this.batchEngine?.dispose()
+        }
     }
 
     private async executeOps(
@@ -149,7 +155,7 @@ export class HttpDataSource<T extends Entity> implements IDataSource<T> {
     }
 
     onError(error: Error, operation: string): void {
-        console.error(`[HttpDataSource:${this.name}] Error in ${operation}:`, error)
+        console.error(`[OpsDataSource:${this.name}] Error in ${operation}:`, error)
     }
 
     private bindRouterMethods() {
@@ -184,4 +190,4 @@ export class HttpDataSource<T extends Entity> implements IDataSource<T> {
     }
 }
 
-export interface HttpDataSource<T extends Entity> extends IDataSource<T> {}
+export interface OpsDataSource<T extends Entity> extends IDataSource<T> {}

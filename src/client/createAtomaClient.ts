@@ -4,7 +4,10 @@ import { createSyncController } from './controllers/SyncController'
 import { createClientRuntime } from './runtime'
 import type { AtomaClient, DefineClientConfig, EntitiesDefinition, StoresConstraint, StoresDefinition } from './types'
 import { resolveBackend } from './backend'
-import { HttpDataSource } from '../datasources/HttpDataSource'
+import { OpsDataSource } from '../datasources/OpsDataSource'
+import type { BatchEngine } from '#batch'
+import { Batch } from '#batch'
+import { Protocol } from '#protocol'
 
 const defineStoresInternal = <
     const Entities extends Record<string, Entity>,
@@ -12,17 +15,54 @@ const defineStoresInternal = <
 >(stores: Stores): StoresDefinition<Entities, Stores> => {
     return {
         defineClient: (config: DefineClientConfig<Entities>) => {
-            const backend = resolveBackend(config.backend)
+            const backends = resolveBackend(config.backend)
+            const dataSourceBackend = backends.dataSource
+
+            const resolveSharedBatchEngine = (() => {
+                let initialized = false
+                let shared: BatchEngine | undefined
+
+                const parse = (batch: any): { enabled: boolean; endpoint?: string; maxBatchSize?: number; flushIntervalMs?: number } => {
+                    if (batch === true) return { enabled: true }
+                    if (batch === false) return { enabled: false }
+                    const cfg = (batch && typeof batch === 'object' && !Array.isArray(batch)) ? batch : {}
+                    return {
+                        enabled: cfg.enabled !== false,
+                        endpoint: typeof cfg.endpoint === 'string' ? cfg.endpoint : undefined,
+                        maxBatchSize: typeof cfg.maxBatchSize === 'number' ? cfg.maxBatchSize : undefined,
+                        flushIntervalMs: typeof cfg.flushIntervalMs === 'number' ? cfg.flushIntervalMs : undefined
+                    }
+                }
+
+                return () => {
+                    if (initialized) return shared
+                    initialized = true
+
+                    const parsed = parse(config.remote?.batch)
+                    if (!parsed.enabled) return undefined
+
+                    shared = Batch.create({
+                        endpoint: parsed.endpoint ?? Protocol.http.paths.OPS,
+                        maxBatchSize: parsed.maxBatchSize,
+                        flushIntervalMs: parsed.flushIntervalMs,
+                        opsClient: dataSourceBackend.opsClient,
+                        onError: (error) => {
+                            // eslint-disable-next-line no-console
+                            console.error('[Atoma] batch request failed', error)
+                        }
+                    })
+                    return shared
+                }
+            })()
 
             const defaultDataSourceFactory = config.defaults?.dataSourceFactory
                 ? config.defaults.dataSourceFactory
                 : ((resourceName: string) => {
-                    return new HttpDataSource<any>({
-                        opsClient: backend.opsClient,
-                        name: backend.key,
+                    return new OpsDataSource<any>({
+                        opsClient: dataSourceBackend.opsClient,
+                        name: dataSourceBackend.key,
                         resourceName,
-                        batch: config.remote?.batch,
-                        usePatchForUpdate: config.remote?.usePatchForUpdate
+                        batchEngine: resolveSharedBatchEngine(),
                     })
                 })
 
@@ -37,7 +77,8 @@ const defineStoresInternal = <
             const historyController = createHistoryController({ runtime })
             const syncController = createSyncController({
                 runtime,
-                backend,
+                backend: backends.sync,
+                localBackend: backends.local,
                 syncConfig: config.sync,
                 idRemapSink: historyController.recordIdRemap
             })

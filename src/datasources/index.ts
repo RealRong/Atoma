@@ -1,6 +1,2 @@
-export { IndexedDBDataSource } from './IndexedDBDataSource'
-export { HttpDataSource } from './HttpDataSource'
-export { HybridDataSource } from './HybridDataSource'
-export type { HttpDataSourceConfig } from './http/config/types'
-export type { HybridDataSourceConfig } from './HybridDataSource'
-export { MemoryDataSource } from './MemoryDataSource'
+export { OpsDataSource } from './OpsDataSource'
+export type { OpsDataSourceConfig } from './ops/config/types'
