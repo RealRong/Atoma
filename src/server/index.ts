@@ -20,7 +20,6 @@ export type {
     IOrmAdapter,
     OrderByRule,
     CursorToken,
-    Page,
     QueryParams,
     QueryResult,
     QueryResultOne,

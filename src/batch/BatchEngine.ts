@@ -1,5 +1,5 @@
 import type { ObservabilityContext } from '#observability'
-import type { OpsClient } from '../backend/OpsClient'
+import type { OpsClient } from '#backend'
 import { QueryLane } from './queryLane'
 import { WriteLane } from './writeLane'
 import { Protocol } from '#protocol'

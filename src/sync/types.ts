@@ -10,7 +10,7 @@ import type {
     WriteItemResult,
     WriteOptions,
 } from '#protocol'
-import type { OpsClient } from '../backend/OpsClient'
+import type { OpsClient } from '#backend'
 
 export type SyncOutboxItem = {
     idempotencyKey: string

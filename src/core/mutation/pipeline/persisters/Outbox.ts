@@ -1,8 +1,7 @@
 import type { Patch } from 'immer'
 import { Protocol } from '#protocol'
-import type { WriteOptions } from '#protocol'
-import type { WriteIntent } from '../../../../protocol/ops/encodeWrite'
-import type { SyncClient } from '../../../../sync'
+import type { WriteOptions, WriteIntent } from '#protocol'
+import type { SyncClient } from '#sync'
 import type { Entity, StoreDispatchEvent, StoreKey } from '../../../types'
 import type { Persister, PersisterPersistArgs, PersisterPersistResult } from '../types'
 

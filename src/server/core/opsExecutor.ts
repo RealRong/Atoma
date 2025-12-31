@@ -183,12 +183,8 @@ function ensureV1(meta: Meta) {
 }
 
 function clampQueryLimit(params: QueryParams, maxLimit: number) {
-    const page = params?.page
-    if (!page || typeof page !== 'object') return
-    if (page.mode === 'offset' || page.mode === 'cursor') {
-        if (typeof page.limit === 'number' && page.limit > maxLimit) {
-            page.limit = maxLimit
-        }
+    if (typeof (params as any)?.limit === 'number' && (params as any).limit > maxLimit) {
+        ;(params as any).limit = maxLimit
     }
 }
 

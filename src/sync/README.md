@@ -109,7 +109,7 @@ Path:
 
 - `SyncEngine.start()` starts the lane, and `setSubscribed(true)` enables it.
 - `NotifyLane`:
-  - Opens `transport.subscribe(...)` (implemented by `subscribeNotifySse(...)`)
+  - Opens `transport.subscribe(...)` (implemented by `Sync.subscribeNotifySse(...)`)
   - For each message:
     - Triggers a pull (with internal coalescing)
   - On error:

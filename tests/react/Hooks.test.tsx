@@ -5,7 +5,7 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { Core } from '../../src/core'
 import { OpsDataSource } from '../../src/datasources'
-import { MemoryOpsClient } from '../../src/backend/local/MemoryOpsClient'
+import { Backend } from '#backend'
 import { useAll, useValue } from '../../src/react'
 
 type Post = {
@@ -23,7 +23,7 @@ function createPostsStore() {
     return Core.store.createStore<Post>({
         name: 'posts',
         dataSource: new OpsDataSource<Post>({
-            opsClient: new MemoryOpsClient(),
+            opsClient: new Backend.MemoryOpsClient(),
             resourceName: 'posts',
             batch: false
         }),

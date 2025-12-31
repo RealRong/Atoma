@@ -109,7 +109,7 @@
 
 - `SyncEngine.start()` 会启动 lane；`setSubscribed(true)` 才会启用连接。
 - `NotifyLane`：
-  - 通过 `transport.subscribe(...)` 打开订阅（默认实现为 `subscribeNotifySse(...)`）
+  - 通过 `transport.subscribe(...)` 打开订阅（默认实现为 `Sync.subscribeNotifySse(...)`）
   - 每个通知：
     - 触发一次 pull（内部做合并调度）
   - 出错：

@@ -37,6 +37,22 @@ type PrismaClientLike = Record<string, any> & {
     }
 }
 
+function normalizeLimit(value: unknown, fallback: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+    return Math.max(0, Math.floor(value))
+}
+
+function normalizeOffset(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+    return Math.max(0, Math.floor(value))
+}
+
+function normalizeFields(fields: unknown): string[] | undefined {
+    if (!Array.isArray(fields) || !fields.length) return undefined
+    const out = fields.filter(f => typeof f === 'string' && f) as string[]
+    return out.length ? out : undefined
+}
+
 export class AtomaPrismaAdapter implements IOrmAdapter {
     private readonly idField: string
     private readonly defaultOrderBy?: OrderByRule[]
@@ -70,31 +86,36 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             throwError('RESOURCE_NOT_ALLOWED', `Resource not allowed: ${resource}`, { kind: 'auth', resource })
         }
 
-        const orderBy = ensureStableOrderBy(params.orderBy, {
+        const inputOrderBy = Array.isArray(params.orderBy)
+            ? params.orderBy
+            : (params.orderBy && typeof params.orderBy === 'object' ? [params.orderBy] : undefined)
+
+        const orderBy = ensureStableOrderBy(inputOrderBy, {
             idField: this.idField,
             defaultOrderBy: this.defaultOrderBy
         })
 
         const baseWhere = this.buildWhere(params.where)
-        const { prismaOrderBy, reverseResult, keysetWhere } = this.buildKeysetWhere(params, orderBy)
+        const beforeToken = (typeof (params as any).before === 'string' && (params as any).before) ? (params as any).before as string : undefined
+        const afterToken = (typeof (params as any).after === 'string' && (params as any).after) ? (params as any).after as string : undefined
+        const afterOrCursor = afterToken
+
+        const cursor = beforeToken || afterOrCursor
+            ? { token: beforeToken ?? afterOrCursor!, before: Boolean(beforeToken) }
+            : undefined
+
+        const { prismaOrderBy, reverseResult, keysetWhere } = this.buildKeysetWhere(cursor, orderBy)
         const where = keysetWhere ? this.andWhere(baseWhere, keysetWhere) : baseWhere
 
-        const { select, project } = this.buildSelectWithProjection(params.select, orderBy)
+        const fields = normalizeFields((params as any).fields)
+        const { select, project } = this.buildSelectWithProjection(fields, orderBy)
 
-        const page = params.page
-        if (!page) {
-            const data = await delegate.findMany({
-                where,
-                orderBy: prismaOrderBy,
-                select
-            })
-            return { data: project ? data.map(project) : data }
-        }
+        const limit = normalizeLimit((params as any).limit, 50)
+        const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
 
-        if (page.mode === 'offset') {
-            const skip = typeof page.offset === 'number' ? page.offset : undefined
-            const take = page.limit
-            const includeTotal = page.includeTotal ?? true
+        if (!cursor) {
+            const skip = normalizeOffset((params as any).offset)
+            const take = limit
 
             if (includeTotal && delegate.count) {
                 const [data, total] = await Promise.all([
@@ -122,7 +143,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         }
 
         // cursor keyset：默认不返回 total
-        const take = page.limit
+        const take = limit
         const data = await delegate.findMany({
             where,
             orderBy: prismaOrderBy,
@@ -134,8 +155,8 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const finalRows = reverseResult ? sliced.reverse() : sliced
 
         const projected = project ? finalRows.map(project) : finalRows
-        const cursorRow = page.before ? finalRows[0] : finalRows[finalRows.length - 1]
-        const cursor = cursorRow
+        const cursorRow = cursor.before ? finalRows[0] : finalRows[finalRows.length - 1]
+        const nextCursor = cursorRow
             ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy))
             : undefined
 
@@ -143,7 +164,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             data: projected,
             pageInfo: {
                 hasNext,
-                cursor
+                cursor: nextCursor
             }
         }
     }
@@ -579,9 +600,8 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     }
 
     // patch/JSONPatch 已移除：不再需要 stripIdPrefix
-    private buildKeysetWhere(params: QueryParams, orderBy: OrderByRule[]) {
-        const page = params.page
-        if (!page || page.mode !== 'cursor') {
+    private buildKeysetWhere(cursor: { token: string; before: boolean } | undefined, orderBy: OrderByRule[]) {
+        if (!cursor?.token) {
             return {
                 prismaOrderBy: this.buildOrderBy(orderBy),
                 reverseResult: false,
@@ -589,24 +609,16 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             }
         }
 
-        const before = Boolean(page.before)
-        const token = page.before ?? page.after
-        if (!token) {
-            return {
-                prismaOrderBy: this.buildOrderBy(orderBy),
-                reverseResult: false,
-                keysetWhere: undefined as any
-            }
-        }
-
+        const before = cursor.before
+        const token = cursor.token
         const queryOrderBy = before ? reverseOrderBy(orderBy) : orderBy
         let values: any[]
         try {
             values = decodeCursorToken(token)
         } catch {
-            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path: before ? 'page.before' : 'page.after' })
+            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path: before ? 'before' : 'after' })
         }
-        const keysetWhere = this.buildPrismaKeysetWhere(queryOrderBy, values, before ? 'page.before' : 'page.after')
+        const keysetWhere = this.buildPrismaKeysetWhere(queryOrderBy, values, before ? 'before' : 'after')
 
         return {
             prismaOrderBy: this.buildOrderBy(queryOrderBy),
@@ -639,17 +651,15 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return a || b
     }
 
-    private buildSelectWithProjection(select: QueryParams['select'], orderBy: OrderByRule[]) {
-        if (!select) {
+    private buildSelectWithProjection(fields: string[] | undefined, orderBy: OrderByRule[]) {
+        if (!fields?.length) {
             return { select: undefined as any, project: undefined as ((row: any) => any) | undefined }
         }
 
         const requiredFields = orderBy.map(r => r.field)
         const prismaSelect: Record<string, boolean> = {}
 
-        Object.entries(select).forEach(([field, enabled]) => {
-            if (enabled) prismaSelect[field] = true
-        })
+        fields.forEach(field => { prismaSelect[field] = true })
         requiredFields.forEach(field => {
             prismaSelect[field] = true
         })
@@ -657,9 +667,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const finalSelect = Object.keys(prismaSelect).length ? prismaSelect : undefined
         const project = (row: any) => {
             const out: any = {}
-            Object.entries(select).forEach(([field, enabled]) => {
-                if (enabled) out[field] = row?.[field]
-            })
+            fields.forEach(field => { out[field] = row?.[field] })
             return out
         }
 

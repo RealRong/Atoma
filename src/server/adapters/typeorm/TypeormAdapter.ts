@@ -33,6 +33,22 @@ type OperatorValue = {
 
 type WhereValue = any | OperatorValue
 
+function normalizeLimit(value: unknown, fallback: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+    return Math.max(0, Math.floor(value))
+}
+
+function normalizeOffset(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+    return Math.max(0, Math.floor(value))
+}
+
+function normalizeFields(fields: unknown): string[] | undefined {
+    if (!Array.isArray(fields) || !fields.length) return undefined
+    const out = fields.filter(f => typeof f === 'string' && f) as string[]
+    return out.length ? out : undefined
+}
+
 export class AtomaTypeormAdapter implements IOrmAdapter {
     private paramIndex = 0
     private readonly idField: string
@@ -77,29 +93,37 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         const alias = this.getAlias(resource)
         const qb = repo.createQueryBuilder(alias)
 
-        const orderBy = ensureStableOrderBy(params.orderBy, {
+        const inputOrderBy = Array.isArray(params.orderBy)
+            ? params.orderBy
+            : (params.orderBy && typeof params.orderBy === 'object' ? [params.orderBy] : undefined)
+
+        const orderBy = ensureStableOrderBy(inputOrderBy, {
             idField: this.idField,
             defaultOrderBy: this.defaultOrderBy
         })
 
         this.applyWhere(qb, params.where, alias)
 
-        const { queryOrderBy, reverseResult } = this.applyKeysetIfNeeded(qb, params.page, orderBy, alias)
+        const beforeToken = (typeof (params as any).before === 'string' && (params as any).before) ? (params as any).before as string : undefined
+        const afterToken = (typeof (params as any).after === 'string' && (params as any).after) ? (params as any).after as string : undefined
+        const afterOrCursor = afterToken
+
+        const cursor = beforeToken || afterOrCursor
+            ? { token: beforeToken ?? afterOrCursor!, before: Boolean(beforeToken) }
+            : undefined
+
+        const { queryOrderBy, reverseResult } = this.applyKeysetIfNeeded(qb, cursor, orderBy, alias)
         this.applyOrderBy(qb, queryOrderBy, alias)
 
-        const { selectFields, project } = this.buildSelectFieldsWithProjection(params.select, orderBy, alias)
+        const fields = normalizeFields((params as any).fields)
+        const { selectFields, project } = this.buildSelectFieldsWithProjection(fields, orderBy, alias)
         if (selectFields) qb.select(selectFields)
 
-        const page = params.page
-        if (!page) {
-            const data = await qb.getMany()
-            return { data: project ? data.map(project) : data }
-        }
+        const limit = normalizeLimit((params as any).limit, 50)
 
-        if (page.mode === 'offset') {
-            const offset = typeof page.offset === 'number' ? page.offset : undefined
-            const limit = page.limit
-            const includeTotal = page.includeTotal ?? true
+        if (!cursor) {
+            const offset = normalizeOffset((params as any).offset) ?? 0
+            const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
 
             if (typeof offset === 'number') qb.skip(offset)
             qb.take(limit)
@@ -121,7 +145,6 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         }
 
         // cursor keyset：默认不返回 total
-        const limit = page.limit
         qb.take(limit + 1)
         const dataPlus = await qb.getMany()
         const hasNext = dataPlus.length > limit
@@ -129,14 +152,14 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         const finalRows = reverseResult ? sliced.reverse() : sliced
         const projected = project ? finalRows.map(project) : finalRows
 
-        const cursorRow = page.before ? finalRows[0] : finalRows[finalRows.length - 1]
-        const cursor = cursorRow
+        const cursorRow = cursor.before ? finalRows[0] : finalRows[finalRows.length - 1]
+        const nextCursor = cursorRow
             ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy))
             : undefined
 
         return {
             data: projected,
-            pageInfo: { hasNext, cursor }
+            pageInfo: { hasNext, cursor: nextCursor }
         }
     }
 
@@ -625,28 +648,24 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     private applyKeysetIfNeeded(
         qb: SelectQueryBuilder<any>,
-        page: QueryParams['page'],
+        cursor: { token: string; before: boolean } | undefined,
         orderBy: OrderByRule[],
         alias: string
     ) {
-        if (!page || page.mode !== 'cursor') {
+        if (!cursor?.token) {
             return { queryOrderBy: orderBy, reverseResult: false }
         }
 
-        const before = Boolean(page.before)
-        const token = page.before ?? page.after
-        if (!token) {
-            return { queryOrderBy: orderBy, reverseResult: false }
-        }
-
+        const before = cursor.before
+        const token = cursor.token
         const queryOrderBy = before ? reverseOrderBy(orderBy) : orderBy
         let values: any[]
         try {
             values = decodeCursorToken(token)
         } catch {
-            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path: before ? 'page.before' : 'page.after' })
+            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path: before ? 'before' : 'after' })
         }
-        this.applyKeysetWhere(qb, queryOrderBy, values, alias, before ? 'page.before' : 'page.after')
+        this.applyKeysetWhere(qb, queryOrderBy, values, alias, before ? 'before' : 'after')
 
         return { queryOrderBy, reverseResult: before }
     }
@@ -695,25 +714,19 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         return fields.length ? fields : undefined
     }
 
-    private buildSelectFieldsWithProjection(select: QueryParams['select'], orderBy: OrderByRule[], alias: string) {
-        if (!select) {
+    private buildSelectFieldsWithProjection(fields: string[] | undefined, orderBy: OrderByRule[], alias: string) {
+        if (!fields?.length) {
             return { selectFields: undefined as string[] | undefined, project: undefined as ((row: any) => any) | undefined }
         }
 
         const merged: Record<string, boolean> = {}
-        Object.entries(select).forEach(([field, enabled]) => {
-            if (enabled) merged[field] = true
-        })
-        orderBy.forEach(r => {
-            merged[r.field] = true
-        })
+        fields.forEach(field => { merged[field] = true })
+        orderBy.forEach(r => { merged[r.field] = true })
 
         const selectFields = this.buildSelectFields(merged, alias)
         const project = (row: any) => {
             const out: any = {}
-            Object.entries(select).forEach(([field, enabled]) => {
-                if (enabled) out[field] = row?.[field]
-            })
+            fields.forEach(field => { out[field] = row?.[field] })
             return out
         }
 

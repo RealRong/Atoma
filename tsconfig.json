@@ -11,6 +11,12 @@
       "#protocol": [
         "src/protocol/index.ts"
       ],
+      "#sync": [
+        "src/sync/index.ts"
+      ],
+      "#backend": [
+        "src/backend/index.ts"
+      ],
       "#batch": [
         "src/batch/index.ts"
       ]

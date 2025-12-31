@@ -83,6 +83,5 @@ export function encodeWriteIntent(intent: WriteIntent): { action: WriteAction; i
         }
     }
 
-    const _exhaustive: never = intent
-    return _exhaustive
+    return intent
 }

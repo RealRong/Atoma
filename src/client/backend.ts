@@ -1,10 +1,6 @@
 import { Protocol, type Envelope, type OpsResponseData } from '#protocol'
-import type { OpsClient } from '../backend/OpsClient'
-import { HttpOpsClient } from '../backend/http/HttpOpsClient'
-import type { RetryOptions } from '../backend/http/transport/retryPolicy'
-import type { SyncTransport } from '../sync'
-import { MemoryOpsClient } from '../backend/local/MemoryOpsClient'
-import { IndexedDBOpsClient } from '../backend/local/IndexedDBOpsClient'
+import { Backend, type OpsClient, type RetryOptions } from '#backend'
+import type { SyncTransport } from '#sync'
 import type { Table } from 'dexie'
 import type { StoreKey } from '#core'
 
@@ -118,7 +114,7 @@ function resolveHttpBackend(args: { key?: string; http: HttpBackendConfig }): Re
 
     const key = String(args.key ?? baseURL)
 
-    const opsClient = new HttpOpsClient({
+    const opsClient = new Backend.HttpOpsClient({
         baseURL,
         opsPath: http.opsPath ?? Protocol.http.paths.OPS,
         headers: http.headers,
@@ -152,7 +148,7 @@ function resolveMemoryBackend(args: { key?: string; memory: MemoryBackendConfig 
     const key = String(args.key ?? 'memory')
     return {
         key,
-        opsClient: new MemoryOpsClient(args.memory)
+        opsClient: new Backend.MemoryOpsClient(args.memory)
     }
 }
 
@@ -160,7 +156,7 @@ function resolveIndexedDBBackend(args: { key?: string; indexeddb: IndexedDBBacke
     const key = String(args.key ?? 'indexeddb')
     return {
         key,
-        opsClient: new IndexedDBOpsClient(args.indexeddb)
+        opsClient: new Backend.IndexedDBOpsClient(args.indexeddb)
     }
 }
 

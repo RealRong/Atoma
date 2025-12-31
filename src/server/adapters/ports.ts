@@ -1,5 +1,5 @@
 import type { AtomaError } from '../error'
-import type { ChangeKind, CursorToken, OrderByRule, Page, PageInfo, QueryParams, WriteOptions } from '#protocol'
+import type { ChangeKind, CursorToken, OrderByRule, PageInfo, QueryParams, WriteOptions } from '#protocol'
 
 export interface QueryResult<T = any> {
     data: T[]
@@ -98,5 +98,5 @@ export interface ISyncAdapter {
 }
 
 export type { ChangeKind } from '#protocol'
-export type { CursorToken, OrderByRule, Page, QueryParams, WriteOptions } from '#protocol'
+export type { CursorToken, OrderByRule, QueryParams, WriteOptions } from '#protocol'
 export type { StandardError } from '#protocol'

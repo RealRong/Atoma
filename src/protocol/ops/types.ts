@@ -65,7 +65,6 @@ export type WriteOptions = {
     returning?: boolean
     select?: Record<string, boolean>
     merge?: boolean
-    conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
     upsert?: {
         /** 默认 'strict' */
         mode?: 'strict' | 'loose'

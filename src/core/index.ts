@@ -43,6 +43,9 @@ export const Core = {
 
 export type * from './types'
 
+export { OutboxPersister } from './mutation/pipeline/persisters/Outbox'
+export { applyStoreWriteback } from './store/internals/writeback'
+
 export type { CoreStore, CoreStoreConfig } from './createStore'
 export type { MutationPipeline, MutationRuntime, MutationControl } from './mutation/MutationPipeline'
 export type {

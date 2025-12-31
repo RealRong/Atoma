@@ -1,21 +1,19 @@
 import type { FindManyOptions } from '#core'
-import type { OrderByRule, Page, QueryParams } from '#protocol'
+import type { OrderByRule, QueryParams } from '#protocol'
 
 /**
  * Ops query params normalizer (client-side).
  *
  * Why this exists:
  * - Public querying APIs in Atoma use `FindManyOptions<T>` (developer-friendly shape).
- * - The Atoma server ops protocol expects `QueryParams` where pagination MUST be expressed via `params.page`.
+ * - The Atoma server ops protocol accepts `QueryParams` that mirrors `FindManyOptions` pagination fields.
  *
  * What it does:
  * - Picks and normalizes only the server-supported query fields:
  *   - `where`   -> `params.where`   (plain object only)
  *   - `orderBy` -> `params.orderBy` (always an array of `{ field, direction }`)
- *   - `fields`  -> `params.select`  (sparse fieldset: `{ [field]: true }`)
- *   - pagination aliases -> `params.page`
- *     - offset pagination: `limit/offset/includeTotal` -> `{ mode:'offset', ... }`
- *     - cursor pagination: `after/before` or legacy `cursor` -> `{ mode:'cursor', ... }`
+ *   - `fields`  -> `params.fields`
+ *   - pagination fields -> `params.limit/offset/includeTotal/after/before`
  *
  * What it does NOT do:
  * - It does not accept/forward raw server `QueryParams` as input.
@@ -44,24 +42,10 @@ function normalizeOrderBy(orderBy: unknown): OrderByRule[] | undefined {
     return rules.length ? rules : undefined
 }
 
-function normalizeSelect(fields: unknown): Record<string, boolean> | undefined {
-    const out: Record<string, boolean> = {}
-
-    if (Array.isArray(fields) && fields.length) {
-        fields.forEach(f => {
-            if (typeof f === 'string' && f) out[f] = true
-        })
-    }
-
-    return Object.keys(out).length ? out : undefined
-}
-
 /**
  * Converts `FindManyOptions<T>` into server `QueryParams` for the Batch protocol.
  *
  * Invariants:
- * - Always returns a `QueryParams` object with `page` populated (Batch requires `params.page`).
- * - Never includes legacy pagination aliases (`limit/offset/includeTotal/after/before/cursor`) on the output root.
  * - Never forwards non-protocol fields from `FindManyOptions` (this is a strict "pick" normalizer).
  */
 export function normalizeAtomaServerQueryParams<T>(input: FindManyOptions<T> | undefined): QueryParams {
@@ -77,30 +61,20 @@ export function normalizeAtomaServerQueryParams<T>(input: FindManyOptions<T> | u
     const orderBy = normalizeOrderBy(i?.orderBy)
     if (orderBy) out.orderBy = orderBy
 
-    const select = normalizeSelect(i?.fields)
-    if (select) out.select = select
-
-    const limit = typeof i?.limit === 'number' ? i.limit : 50
-    const offset = typeof i?.offset === 'number' ? i.offset : undefined
-    const includeTotal = typeof i?.includeTotal === 'boolean' ? i.includeTotal : undefined
-
-    const before = typeof i?.before === 'string' ? i.before : undefined
-    const after = typeof i?.after === 'string' ? i.after : undefined
-    const cursor = typeof i?.cursor === 'string' ? i.cursor : undefined
-
-    if (before || after || cursor) {
-        const page: Extract<Page, { mode: 'cursor' }> = { mode: 'cursor', limit }
-        if (before) page.before = before
-        const afterToken = after ?? cursor
-        if (afterToken) page.after = afterToken
-        out.page = page
-        return out
+    if (Array.isArray(i?.fields) && i!.fields!.length) {
+        out.fields = i!.fields!.filter(f => typeof f === 'string' && f)
     }
 
-    const page: Extract<Page, { mode: 'offset' }> = { mode: 'offset', limit }
-    if (offset !== undefined) page.offset = offset
-    if (includeTotal !== undefined) page.includeTotal = includeTotal
-    out.page = page
+    const limit = (typeof i?.limit === 'number' && Number.isFinite(i.limit)) ? i.limit : 50
+    out.limit = limit
+    if (typeof i?.offset === 'number' && Number.isFinite(i.offset)) out.offset = i.offset
+    if (typeof i?.includeTotal === 'boolean') out.includeTotal = i.includeTotal
+
+    const after = (typeof i?.after === 'string' && i.after) ? i.after : undefined
+    const cursor = (typeof i?.cursor === 'string' && i.cursor) ? i.cursor : undefined
+    const afterOrCursor = after ?? cursor
+    if (afterOrCursor) out.after = afterOrCursor
+    if (typeof i?.before === 'string' && i.before) out.before = i.before
 
     return out
 }

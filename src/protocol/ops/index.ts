@@ -31,4 +31,4 @@ export type {
     ChangesPullResultData
 } from './types'
 
-export { encodeWriteIntent }
+export type { WriteIntent } from './encodeWrite'

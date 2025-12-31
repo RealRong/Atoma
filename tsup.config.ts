@@ -6,6 +6,8 @@ export default defineConfig({
         'core/index': 'src/core/index.ts',
         'observability/index': 'src/observability/index.ts',
         'protocol/index': 'src/protocol/index.ts',
+        'sync/index': 'src/sync/index.ts',
+        'backend/index': 'src/backend/index.ts',
         'datasources/index': 'src/datasources/index.ts',
         'react/index': 'src/react/index.ts',
         'server/index': 'src/server/index.ts',
@@ -25,6 +27,8 @@ export default defineConfig({
             '#core': 'src/core/index.ts',
             '#observability': 'src/observability/index.ts',
             '#protocol': 'src/protocol/index.ts',
+            '#sync': 'src/sync/index.ts',
+            '#backend': 'src/backend/index.ts',
             '#batch': 'src/batch/index.ts'
         }
     },

@@ -1,2 +1,1 @@
-export type { OrderByRule, CursorToken, Page, QueryParams, PageInfo } from './types'
-
+export type { OrderByRule, CursorToken, QueryParams, PageInfo } from './types'

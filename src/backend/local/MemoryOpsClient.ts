@@ -2,8 +2,7 @@ import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import { OpsClient } from '../OpsClient'
 import type { Operation, OperationResult, QueryParams, QueryResultData, StandardError, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
 import type { ChangeBatch } from '#protocol'
-import type { StoreKey } from '#core'
-import { QueryMatcher } from '../../core/query/QueryMatcher'
+import { Core, type StoreKey } from '#core'
 
 type ResourceStore = Map<string, any>
 
@@ -22,21 +21,6 @@ function standardError(args: { code: string; message: string; kind: StandardErro
         message: args.message,
         kind: args.kind,
         ...(args.details !== undefined ? { details: args.details } : {})
-    }
-}
-
-function compareBy(rules: Array<{ field: string; direction: 'asc' | 'desc' }>) {
-    return (a: any, b: any) => {
-        for (const rule of rules) {
-            const av = a?.[rule.field]
-            const bv = b?.[rule.field]
-            if (av === bv) continue
-            if (av === undefined || av === null) return 1
-            if (bv === undefined || bv === null) return -1
-            if (av > bv) return rule.direction === 'desc' ? -1 : 1
-            if (av < bv) return rule.direction === 'desc' ? 1 : -1
-        }
-        return 0
     }
 }
 
@@ -59,6 +43,29 @@ function normalizeWriteOptions(options: unknown): WriteOptions | undefined {
 function normalizeQueryParams(params: unknown): QueryParams | undefined {
     if (!isPlainObject(params)) return undefined
     return params as QueryParams
+}
+
+function normalizeLimit(value: unknown, fallback: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+    return Math.max(0, Math.floor(value))
+}
+
+function normalizeOffset(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+    return Math.max(0, Math.floor(value))
+}
+
+function normalizeFields(fields: unknown): string[] | undefined {
+    if (!Array.isArray(fields) || !fields.length) return undefined
+    const out = fields.filter(f => typeof f === 'string' && f) as string[]
+    return out.length ? out : undefined
+}
+
+function selectFromFields(fields: string[] | undefined): Record<string, boolean> | undefined {
+    if (!fields?.length) return undefined
+    const out: Record<string, boolean> = {}
+    fields.forEach(f => { out[f] = true })
+    return out
 }
 
 export class MemoryOpsClient extends OpsClient {
@@ -166,29 +173,32 @@ export class MemoryOpsClient extends OpsClient {
         const items = Array.from(store.values())
 
         const where = params.where
-        const filtered = (where && isPlainObject(where) && Object.keys(where).length)
-            ? items.filter(item => QueryMatcher.matchesWhere(item, where))
-            : items
-
         const orderBy = Array.isArray(params.orderBy) && params.orderBy.length
             ? params.orderBy
-            : [{ field: 'id', direction: 'asc' as const }]
-        const sorted = filtered.slice().sort(compareBy(orderBy))
+            : (params.orderBy && typeof params.orderBy === 'object' ? [params.orderBy] : [])
+        const normalizedOrderBy = orderBy.length ? orderBy : [{ field: 'id', direction: 'asc' as const }]
+        const sorted = Core.query.applyQuery(items as any, {
+            where: (where && isPlainObject(where) && Object.keys(where).length) ? (where as any) : undefined,
+            orderBy: normalizedOrderBy as any
+        } as any) as any[]
 
-        const select = params.select
+        const fields = normalizeFields((params as any).fields)
+        const select = selectFromFields(fields)
 
-        const page = params.page
-        if (!page) {
-            return { items: sorted.map(i => projectSelect(i, select)) }
-        }
+        const beforeToken = (typeof (params as any).before === 'string' && (params as any).before) ? (params as any).before as string : undefined
+        const afterToken = (typeof (params as any).after === 'string' && (params as any).after) ? (params as any).after as string : undefined
+        const afterOrCursor = afterToken
 
-        if (page.mode === 'offset') {
-            const limit = typeof page.limit === 'number' && Number.isFinite(page.limit) ? Math.max(0, Math.floor(page.limit)) : 0
-            const offset = typeof page.offset === 'number' && Number.isFinite(page.offset) ? Math.max(0, Math.floor(page.offset)) : 0
+        const wantsCursorPaging = Boolean(beforeToken || afterOrCursor)
+
+        if (!wantsCursorPaging) {
+            const limit = normalizeLimit((params as any).limit, 50)
+            const offset = normalizeOffset((params as any).offset) ?? 0
+            const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
+
             const slice = sorted.slice(offset, offset + limit)
             const last = slice[slice.length - 1]
             const hasNext = offset + limit < sorted.length
-            const includeTotal = page.includeTotal !== false
             return {
                 items: slice.map(i => projectSelect(i, select)),
                 pageInfo: {
@@ -199,28 +209,10 @@ export class MemoryOpsClient extends OpsClient {
             }
         }
 
-        // cursor mode (best-effort local emulation)
-        const limit = typeof page.limit === 'number' && Number.isFinite(page.limit) ? Math.max(0, Math.floor(page.limit)) : 0
-        const after = typeof page.after === 'string' && page.after ? page.after : undefined
-        const before = typeof page.before === 'string' && page.before ? page.before : undefined
+        const limit = normalizeLimit((params as any).limit, 50)
 
-        if (after) {
-            const idx = sorted.findIndex(item => String((item as any)?.id) === after)
-            const start = idx >= 0 ? idx + 1 : 0
-            const slice = sorted.slice(start, start + limit)
-            const last = slice[slice.length - 1]
-            const hasNext = start + limit < sorted.length
-            return {
-                items: slice.map(i => projectSelect(i, select)),
-                pageInfo: {
-                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : after,
-                    hasNext
-                }
-            }
-        }
-
-        if (before) {
-            const idx = sorted.findIndex(item => String((item as any)?.id) === before)
+        if (beforeToken) {
+            const idx = sorted.findIndex(item => String((item as any)?.id) === beforeToken)
             const end = idx >= 0 ? idx : sorted.length
             const start = Math.max(0, end - limit)
             const slice = sorted.slice(start, end)
@@ -229,7 +221,22 @@ export class MemoryOpsClient extends OpsClient {
             return {
                 items: slice.map(i => projectSelect(i, select)),
                 pageInfo: {
-                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : before,
+                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : beforeToken,
+                    hasNext
+                }
+            }
+        }
+
+        if (afterOrCursor) {
+            const idx = sorted.findIndex(item => String((item as any)?.id) === afterOrCursor)
+            const start = idx >= 0 ? idx + 1 : 0
+            const slice = sorted.slice(start, start + limit)
+            const last = slice[slice.length - 1]
+            const hasNext = start + limit < sorted.length
+            return {
+                items: slice.map(i => projectSelect(i, select)),
+                pageInfo: {
+                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : afterOrCursor,
                     hasNext
                 }
             }

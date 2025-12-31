@@ -90,8 +90,7 @@ export class PushLane {
                             items,
                             options: {
                                 ...(baseOptions ? baseOptions : {}),
-                                returning: this.deps.returning,
-                                ...(this.deps.conflictStrategy ? { conflictStrategy: this.deps.conflictStrategy } : {})
+                                returning: this.deps.returning
                             }
                         }
                     }

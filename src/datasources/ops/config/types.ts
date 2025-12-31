@@ -1,5 +1,5 @@
 import type { FindManyOptions, PageInfo, StoreKey } from '#core'
-import type { OpsClient } from '../../../backend/OpsClient'
+import type { OpsClient } from '#backend'
 import type { BatchEngine } from '#batch'
 
 export interface QueryConfig<T> {

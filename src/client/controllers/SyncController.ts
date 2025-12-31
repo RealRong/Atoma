@@ -1,15 +1,9 @@
-import type { DeleteItem, StoreKey } from '#core'
-import { Core } from '#core'
-import type { ObservabilityContext } from '#observability'
-import { Observability } from '#observability'
-import { Sync, SyncWriteAck, SyncWriteReject, type SyncClient, type SyncEvent, type SyncPhase } from '../../sync'
-import type { Change, ChangeBatch, Cursor, Meta, Operation, OperationResult } from '#protocol'
+import { Core, OutboxPersister, applyStoreWriteback, type BeforePersistContext, type DeleteItem, type PersistResult, type StoreKey } from '#core'
+import { Observability, type ObservabilityContext } from '#observability'
+import { Sync, type SyncClient, type SyncEvent, type SyncPhase, type SyncWriteAck, type SyncWriteReject } from '#sync'
+import type { Change } from '#protocol'
 import type { AtomaSync } from '../types'
 import type { ClientRuntime } from '../runtime'
-import { OutboxPersister } from '../../core/mutation/pipeline/persisters/Outbox'
-import type { BeforePersistContext, PersistResult } from '../../core/mutation/hooks'
-import { applyStoreWriteback } from '../../core/store/internals/writeback'
-import { subscribeNotifySse } from '../../sync/lanes/NotifyLane'
 import type { ResolvedBackend } from '../backend'
 import { OpsDataSource } from '../../datasources'
 
@@ -205,7 +199,7 @@ export function createSyncController(args: {
             subscribe: backend.subscribe
                 ? backend.subscribe
                 : (subArgs: { resources?: string[]; onMessage: (msg: any) => void; onError: (error: unknown) => void }) => {
-                    return subscribeNotifySse({
+                    return Sync.subscribeNotifySse({
                         resources: subArgs.resources,
                         buildUrl: buildSubscribeUrl,
                         eventSourceFactory: backend.sse?.eventSourceFactory,

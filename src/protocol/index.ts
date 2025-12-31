@@ -6,7 +6,7 @@ export type { Meta } from './meta'
 export type { ErrorKind, StandardErrorDetails, StandardError } from './error'
 export type { EnvelopeOk, EnvelopeErr, Envelope } from './envelope'
 
-export type { OrderByRule, CursorToken, Page, QueryParams, PageInfo } from './query'
+export type { OrderByRule, CursorToken, QueryParams, PageInfo } from './query'
 export type { ChangeKind, Change, ChangeBatch } from './changes'
 
 export type {
@@ -18,6 +18,7 @@ export type {
     WriteItem,
     WriteItemMeta,
     WriteOptions,
+    WriteIntent,
     ChangesPullOp,
     OperationResult,
     OpsRequest,
