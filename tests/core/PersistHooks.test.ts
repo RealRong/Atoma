@@ -48,7 +48,7 @@ describe('core mutation hooks (phase 2): beforePersist middleware', () => {
             store.addOne({ title: 'hello' } as any, { confirmation: 'strict', timeoutMs: 20 })
         ).rejects.toMatchObject({ name: 'WriteTimeoutError' })
 
-        expect((adapter.applyPatches as any).mock.calls.length).toBe(0)
+        expect((adapter.bulkPut as any).mock.calls.length).toBe(0)
         expect(store.getCachedAll().length).toBe(1)
         expect(afterPersistSpy.mock.calls.length).toBe(1)
 
@@ -67,6 +67,6 @@ describe('core mutation hooks (phase 2): beforePersist middleware', () => {
 
         const created = await store.addOne({ title: 'hello' } as any, { confirmation: 'strict', timeoutMs: 50 })
         expect(created.title).toBe('hello')
-        expect((adapter.applyPatches as any).mock.calls.length).toBe(1)
+        expect((adapter.bulkPut as any).mock.calls.length).toBe(1)
     })
 })

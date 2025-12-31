@@ -1,4 +1,4 @@
-import type { StoreKey } from '#core'
+import type { DeleteItem, StoreKey } from '#core'
 import { Core } from '#core'
 import type { ObservabilityContext } from '#observability'
 import { Observability } from '#observability'
@@ -11,7 +11,7 @@ import type { BeforePersistContext, PersistResult } from '../../core/mutation/ho
 import { applyStoreWriteback } from '../../core/store/internals/writeback'
 import { subscribeNotifySse } from '../../sync/lanes/NotifyLane'
 import type { ResolvedBackend } from '../backend'
-import { OpsDataSource } from '../../datasources/OpsDataSource'
+import { OpsDataSource } from '../../datasources'
 
 export type IdRemapSink = (storeName: string, from: StoreKey, to: StoreKey) => void
 
@@ -280,10 +280,24 @@ export function createSyncController(args: {
         const versionUpdates = Array.isArray(args2.versionUpdates) ? args2.versionUpdates : []
 
         if (upserts.length) {
-            await local.bulkPut(upserts as any[])
+            await local.bulkUpsert(upserts as any[], { mode: 'loose', merge: false })
         }
         if (deletes.length) {
-            await local.bulkDelete(deletes)
+            const current = await local.bulkGet(deletes)
+            const deleteItems: DeleteItem[] = []
+            for (let i = 0; i < deletes.length; i++) {
+                const id = deletes[i]
+                const row = current[i]
+                if (!row || typeof row !== 'object') continue
+                const baseVersion = (row as any).version
+                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
+                    throw new Error(`[Atoma] local delete requires baseVersion (missing version for id=${String(id)})`)
+                }
+                deleteItems.push({ id, baseVersion })
+            }
+            if (deleteItems.length) {
+                await local.bulkDelete(deleteItems)
+            }
         }
 
         if (versionUpdates.length) {

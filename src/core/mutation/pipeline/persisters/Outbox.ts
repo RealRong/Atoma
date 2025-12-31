@@ -17,6 +17,12 @@ function resolveVersion(value: unknown): number | undefined {
     return (typeof v === 'number' && Number.isFinite(v)) ? v : undefined
 }
 
+function requireBaseVersion(id: StoreKey, value: unknown): number {
+    const v = resolveVersion(value)
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v
+    throw new Error(`[Atoma] delete requires baseVersion (missing version for id=${String(id)})`)
+}
+
 function stableStringify(value: any): string {
     if (value === null || value === undefined) return String(value)
     if (typeof value !== 'object') return JSON.stringify(value)
@@ -65,14 +71,6 @@ export class OutboxPersister implements Persister {
             // ignore
         }
 
-        const safeResolveVersionFromInverse = (id: StoreKey): number | undefined => {
-            try {
-                return resolveVersion(inverseRootAddsById.get(id))
-            } catch {
-                return undefined
-            }
-        }
-
         const metaForOpIndex = (idx: number) => {
             const ticket = args.operations[idx]?.ticket
             const clientTimeMs = typeof ticket?.clientTimeMs === 'number' ? ticket.clientTimeMs : fallbackClientTimeMs
@@ -117,7 +115,7 @@ export class OutboxPersister implements Persister {
 
                 const isDelete = itemPatches.some(p => p.op === 'remove' && p.path.length === 1)
                 if (isDelete) {
-                    const baseVersion = safeResolveVersionFromInverse(id) ?? 0
+                    const baseVersion = requireBaseVersion(id, inverseRootAddsById.get(id))
                     deleteItems.push({ entityId, baseVersion })
                     continue
                 }
@@ -212,7 +210,7 @@ export class OutboxPersister implements Persister {
             if (type === 'forceRemove') {
                 const id = toStoreKey((value as any)?.id)
                 if (id === null) continue
-                const baseVersion = safeResolveVersionFromInverse(id) ?? 0
+                const baseVersion = requireBaseVersion(id, inverseRootAddsById.get(id))
                 deleteItems.push({ entityId: String(id), baseVersion, meta })
                 continue
             }

@@ -26,7 +26,7 @@ function createTestAdapter() {
 }
 
 describe('Scheduler: 默认 opContext（actionId）自动合并', () => {
-    it('同一轮事件循环内多次 addOne：只触发一次 adapter.applyPatches', async () => {
+    it('同一轮事件循环内多次 addOne：只触发一次 adapter.bulkPut', async () => {
         const adapter = createTestAdapter()
         let nextId = 1
 
@@ -42,7 +42,7 @@ describe('Scheduler: 默认 opContext（actionId）自动合并', () => {
         })
         await Promise.all(writes)
 
-        expect((adapter.applyPatches as any).mock.calls.length).toBe(1)
+        expect((adapter.bulkPut as any).mock.calls.length).toBe(1)
         expect(store.getCachedAll().length).toBe(10)
     })
 })

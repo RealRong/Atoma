@@ -1,10 +1,20 @@
 import type { Patch } from 'immer'
 import type { ObservabilityContext } from '#observability'
-import type { Entity, IDataSource, StoreDispatchEvent } from '../../../types'
+import type { DeleteItem, Entity, IDataSource, StoreDispatchEvent, StoreKey } from '../../../types'
 import type { Persister, PersisterPersistArgs, PersisterPersistResult } from '../types'
 
 type ApplySideEffects<T> = {
     createdResults?: T[]
+}
+
+function isStoreKey(v: unknown): v is StoreKey {
+    return typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v))
+}
+
+function requireBaseVersion(id: StoreKey, value: unknown): number {
+    const v = value && typeof value === 'object' ? (value as any).version : undefined
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v
+    throw new Error(`[Atoma] delete requires baseVersion (missing version for id=${String(id)})`)
 }
 
 function stableUpsertKey(op: { mode?: any; merge?: any } | undefined): string {
@@ -13,46 +23,17 @@ function stableUpsertKey(op: { mode?: any; merge?: any } | undefined): string {
     return `${mode}|${merge}`
 }
 
-const applyPatchesViaOperations = async <T extends Entity>(
+const applyOperations = async <T extends Entity>(
     dataSource: IDataSource<T>,
-    patches: Patch[],
     appliedData: T[],
     operationTypes: StoreDispatchEvent<T>['type'][],
     operations: StoreDispatchEvent<T>[],
     internalContext?: ObservabilityContext
 ): Promise<ApplySideEffects<T>> => {
-    if (operationTypes.length === 1 && operationTypes[0] === 'patches') {
-        const putActions: T[] = []
-        const deleteKeys: Array<string | number> = []
-
-        patches.forEach(p => {
-            if (p.path.length !== 1) return
-            const id = p.path[0] as any
-            if (p.op === 'remove') {
-                deleteKeys.push(id)
-                return
-            }
-            if (p.op === 'add' || p.op === 'replace') {
-                const val = (p as any).value
-                if (val && typeof val === 'object') {
-                    putActions.push(val as T)
-                }
-            }
-        })
-
-        if (putActions.length) {
-            await dataSource.bulkPut(putActions, internalContext)
-        }
-        if (deleteKeys.length) {
-            await dataSource.bulkDelete(deleteKeys, internalContext)
-        }
-        return { createdResults: undefined }
-    }
-
     const createActions: T[] = []
     const upsertActionsByKey = new Map<string, { items: T[]; options?: { mode?: any; merge?: any } }>()
     const putActions: T[] = []
-    const deleteKeys: Array<string | number> = []
+    const deleteItems: DeleteItem[] = []
 
     operationTypes.forEach((type, idx) => {
         const value = appliedData[idx]
@@ -78,7 +59,10 @@ const applyPatchesViaOperations = async <T extends Entity>(
             return
         }
         if (type === 'forceRemove') {
-            deleteKeys.push((value as any).id as any)
+            const id = (value as any)?.id
+            if (!isStoreKey(id)) return
+            const baseVersion = requireBaseVersion(id, value)
+            deleteItems.push({ id, baseVersion })
         }
     })
 
@@ -109,11 +93,65 @@ const applyPatchesViaOperations = async <T extends Entity>(
     if (putActions.length) {
         await dataSource.bulkPut(putActions, internalContext)
     }
-    if (deleteKeys.length) {
-        await dataSource.bulkDelete(deleteKeys, internalContext)
+    if (deleteItems.length) {
+        await dataSource.bulkDelete(deleteItems, internalContext)
     }
     return {
         createdResults: Array.isArray(createdResults) ? createdResults : undefined
+    }
+}
+
+const persistPatchesByRestoreReplace = async <T extends Entity>(args: {
+    dataSource: IDataSource<T>
+    plan: { patches: Patch[]; inversePatches: Patch[]; nextState: Map<StoreKey, T> }
+    internalContext?: ObservabilityContext
+}): Promise<void> => {
+    const { dataSource, plan, internalContext } = args
+
+    const touchedIds = new Set<StoreKey>()
+    plan.patches.forEach(p => {
+        const root = (p as any)?.path?.[0]
+        if (isStoreKey(root)) touchedIds.add(root)
+    })
+
+    if (touchedIds.size === 0) return
+
+    const baseVersionByDeletedId = new Map<StoreKey, number>()
+    plan.inversePatches.forEach(p => {
+        if (p.op !== 'add') return
+        if (!Array.isArray((p as any).path) || (p as any).path.length !== 1) return
+        const id = (p as any).path[0]
+        if (!isStoreKey(id)) return
+        const value = (p as any).value
+        const baseVersion = requireBaseVersion(id, value)
+        baseVersionByDeletedId.set(id, baseVersion)
+    })
+
+    const upserts: T[] = []
+    const deletes: DeleteItem[] = []
+
+    for (const id of touchedIds.values()) {
+        if (plan.nextState.has(id)) {
+            const value = plan.nextState.get(id)
+            if (value) upserts.push(value)
+            continue
+        }
+
+        const baseVersion = baseVersionByDeletedId.get(id)
+        if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
+            throw new Error(`[Atoma] restore/replace delete requires baseVersion (id=${String(id)})`)
+        }
+        deletes.push({ id, baseVersion })
+    }
+
+    if (upserts.length) {
+        if (!dataSource.bulkUpsert) {
+            throw new Error('[Atoma] restore/replace requires dataSource.bulkUpsert')
+        }
+        await dataSource.bulkUpsert(upserts, { mode: 'loose', merge: false }, internalContext)
+    }
+    if (deletes.length) {
+        await dataSource.bulkDelete(deletes, internalContext)
     }
 }
 
@@ -122,23 +160,17 @@ export class DirectPersister implements Persister {
         const dataSource = args.handle.dataSource
 
         try {
-            if (dataSource.applyPatches) {
-                const res = await dataSource.applyPatches(
-                    args.plan.patches,
-                    args.metadata,
-                    args.observabilityContext
-                )
-
-                const created = (res && typeof res === 'object' && Array.isArray((res as any).created))
-                    ? ((res as any).created as T[])
-                    : undefined
-
-                return created && created.length ? { created } : undefined
+            if (args.plan.operationTypes.length === 1 && args.plan.operationTypes[0] === 'patches') {
+                await persistPatchesByRestoreReplace({
+                    dataSource,
+                    plan: args.plan as any,
+                    internalContext: args.observabilityContext
+                })
+                return
             }
 
-            const sideEffects = await applyPatchesViaOperations(
+            const sideEffects = await applyOperations(
                 dataSource,
-                args.plan.patches,
                 args.plan.appliedData,
                 args.plan.operationTypes,
                 args.operations,
@@ -149,7 +181,7 @@ export class DirectPersister implements Persister {
             return created && created.length ? { created } : undefined
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error))
-            dataSource.onError?.(err, 'applyPatches')
+            dataSource.onError?.(err, 'persist')
             throw err
         }
     }

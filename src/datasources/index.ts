@@ -1,2 +1,7 @@
-export { OpsDataSource } from './OpsDataSource'
-export type { OpsDataSourceConfig } from './ops/config/types'
+export type {
+    OpsDataSourceConfig,
+    BatchQueryConfig,
+    QueryConfig,
+} from './ops/config/types'
+
+export { OpsDataSource } from './ops/OpsDataSource'

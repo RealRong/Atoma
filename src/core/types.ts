@@ -73,6 +73,11 @@ export type WriteManyItemErr = {
 
 export type WriteManyResult<T> = Array<WriteManyItemOk<T> | WriteManyItemErr>
 
+export type DeleteItem = {
+    id: StoreKey
+    baseVersion: number
+}
+
 /**
  * DataSource interface - abstracts the persistence/remote backend
  */
@@ -85,14 +90,14 @@ export interface IDataSource<T extends Entity> {
      * - Only data sources that perform I/O (e.g. HTTP) need to actually consume it.
      * - Other data sources can safely ignore the extra param.
      */
-    /**  
+    /**
      * Persistence operations
      */
     put(key: StoreKey, value: T, internalContext?: ObservabilityContext): Promise<void>
     bulkPut(items: T[], internalContext?: ObservabilityContext): Promise<void>
     bulkCreate?(items: T[], internalContext?: ObservabilityContext): Promise<T[] | void>
-    delete(key: StoreKey, internalContext?: ObservabilityContext): Promise<void>
-    bulkDelete(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<void>
+    delete(item: DeleteItem, internalContext?: ObservabilityContext): Promise<void>
+    bulkDelete(items: DeleteItem[], internalContext?: ObservabilityContext): Promise<void>
 
     /** Upsert operations (optional). When absent, callers may fall back to put/bulkPut semantics. */
     upsert?(key: StoreKey, value: T, options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void>
@@ -110,17 +115,6 @@ export interface IDataSource<T extends Entity> {
         options?: FindManyOptions<T>,
         internalContext?: ObservabilityContext
     ): Promise<{ data: T[]; pageInfo?: PageInfo; explain?: unknown }>
-
-    /**
-     * Patch-based update (optional, falls back to put) 
-     */
-    applyPatches?(patches: Patch[], metadata: PatchMetadata, internalContext?: ObservabilityContext): Promise<void | { created?: any[] }>
-
-    /**
-     * Lifecycle hooks
-     */
-    onConnect?(): Promise<void>
-    onDisconnect?(): void
 
     /**
      * Error handling
@@ -226,7 +220,8 @@ export type StoreDispatchEvent<T extends Entity> = {
         | {
             /**
              * Patch-based mutation (用于 history undo/redo 或其他高级场景)
-             * - 需要 adapter.applyPatches 支持；否则会尝试降级为 bulkPut/bulkDelete（仅支持 Map 顶层 add/replace/remove）。
+             * - direct：不会逐条把 patches 应用到后端，而是按受影响 id 做 restore/replace（bulkUpsert merge=false + 版本化 bulkDelete）。
+             * - outbox：会将 patches 归并为按 id 的 create/update/delete 意图后入队。
              */
             type: 'patches'
             patches: Patch[]

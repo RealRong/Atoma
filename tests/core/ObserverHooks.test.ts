@@ -28,11 +28,11 @@ function createOkAdapter() {
 function createFailAdapter() {
     const adapter: IDataSource<Post> = {
         name: 'fail',
-        applyPatches: vi.fn(async () => {
+        applyPatches: vi.fn(async () => { }),
+        put: vi.fn(async () => { }),
+        bulkPut: vi.fn(async () => {
             throw new Error('persist failed')
         }),
-        put: vi.fn(async () => { }),
-        bulkPut: vi.fn(async () => { }),
         delete: vi.fn(async () => { }),
         bulkDelete: vi.fn(async () => { }),
         get: vi.fn(async () => undefined),

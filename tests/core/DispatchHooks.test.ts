@@ -46,7 +46,7 @@ describe('core mutation hooks (phase 3): beforeDispatch middleware', () => {
 
         await expect(store.addOne({ title: 'hello' } as any)).rejects.toThrow('missing opContext')
         expect(store.getCachedAll().length).toBe(0)
-        expect((adapter.applyPatches as any).mock.calls.length).toBe(0)
+        expect((adapter.bulkPut as any).mock.calls.length).toBe(0)
     })
 
     it('transform: 注入 opContext 后写入正常进行', async () => {
@@ -78,6 +78,6 @@ describe('core mutation hooks (phase 3): beforeDispatch middleware', () => {
         const created = await store.addOne({ title: 'hello' } as any, { confirmation: 'strict', timeoutMs: 50 })
         expect(created.title).toBe('hello')
         expect(store.getCachedAll().length).toBe(1)
-        expect((adapter.applyPatches as any).mock.calls.length).toBe(1)
+        expect((adapter.bulkPut as any).mock.calls.length).toBe(1)
     })
 })

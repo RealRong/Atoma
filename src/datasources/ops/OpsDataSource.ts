@@ -1,4 +1,4 @@
-import type { Entity, FindManyOptions, IDataSource, PageInfo, StoreKey, UpsertWriteOptions } from '#core'
+import type { DeleteItem, Entity, FindManyOptions, IDataSource, PageInfo, StoreKey, UpsertWriteOptions } from '#core'
 import { Batch, type BatchEngine } from '#batch'
 import type { ObservabilityContext } from '#observability'
 import { Protocol } from '#protocol'
@@ -108,19 +108,19 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
         return created.length ? created : undefined
     }
 
-    async delete(key: StoreKey, internalContext?: ObservabilityContext): Promise<void> {
+    async delete(item: DeleteItem, internalContext?: ObservabilityContext): Promise<void> {
         const op = this.buildWriteOp('delete', [{
-            entityId: String(key),
-            baseVersion: this.resolveBaseVersion(key)
+            entityId: String(item.id),
+            baseVersion: item.baseVersion
         }])
         await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'delete(batch)' : 'delete(ops)')
     }
 
-    async bulkDelete(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<void> {
-        if (!keys.length) return
-        const writeItems: WriteItem[] = keys.map(key => ({
-            entityId: String(key),
-            baseVersion: this.resolveBaseVersion(key)
+    async bulkDelete(items: DeleteItem[], internalContext?: ObservabilityContext): Promise<void> {
+        if (!items.length) return
+        const writeItems: WriteItem[] = items.map(item => ({
+            entityId: String(item.id),
+            baseVersion: item.baseVersion
         }))
         const op = this.buildWriteOp('delete', writeItems)
         await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkDelete(batch)' : 'bulkDelete(ops)')
@@ -199,14 +199,6 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
             this.batchEngine ? 'findMany(batch)' : 'findMany(ops)'
         )
         return { data, pageInfo }
-    }
-
-    async onConnect(): Promise<void> {
-        // HTTP connects on-demand, nothing to do
-    }
-
-    onDisconnect(): void {
-        // HTTP disconnects automatically
     }
 
     onError(error: Error, operation: string): void {
