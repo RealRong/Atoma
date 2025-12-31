@@ -1,4 +1,4 @@
-import type { Entity, PartialWithId, StoreOperationOptions, StoreHandle } from '../../types'
+import type { Entity, StoreOperationOptions, StoreHandle } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { runAfterSave } from '../internals/hooks'
 import { prepareForAdd } from '../internals/writePipeline'
@@ -12,25 +12,41 @@ export function createAddOne<T extends Entity>(handle: StoreHandle<T>) {
         const resultPromise = new Promise<T>((resolve, reject) => {
             dispatch<T>({
                 type: 'add',
-                data: validObj as PartialWithId<T>,
+                data: validObj,
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                onSuccess: async o => {
-                    await runAfterSave(hooks, validObj, 'add')
-                    resolve(o)
+                onSuccess: (o) => {
+                    void runAfterSave(hooks, validObj, 'add')
+                        .then(() => {
+                            resolve(o)
+                        })
+                        .catch((error) => {
+                            reject(error instanceof Error ? error : new Error(String(error)))
+                        })
                 },
                 onFail: (error) => {
-                    reject(error || new Error(`Failed to add item with id ${(validObj as any).id}`))
+                    reject(error || new Error(`Failed to add item with id ${String((validObj as any).id)}`))
                 }
             })
         })
 
-        await Promise.all([
-            services.mutation.runtime.await(ticket, options),
-            resultPromise
+        const confirmation = options?.confirmation ?? 'optimistic'
+        if (confirmation === 'optimistic') {
+            void ticket.enqueued.catch(() => {
+                // avoid unhandled rejection when optimistic writes never await enqueued
+            })
+            void ticket.confirmed.catch(() => {
+                // avoid unhandled rejection when optimistic writes never await confirmed
+            })
+            return await resultPromise
+        }
+
+        const [value] = await Promise.all([
+            resultPromise,
+            services.mutation.runtime.await(ticket, options)
         ])
 
-        return resultPromise
+        return value
     }
 }

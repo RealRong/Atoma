@@ -12,24 +12,48 @@ export function createAddMany<T extends Entity>(handle: StoreHandle<T>) {
         const validItems = await Promise.all(items.map(item => prepareForAdd<T>(handle, item)))
         const results: T[] = new Array(validItems.length)
 
-        const tickets = validItems.map(() => services.mutation.runtime.beginWrite().ticket)
-        const resultPromises = validItems.map((validObj, idx) => new Promise<void>((resolve, reject) => {
-            dispatch<T>({
-                type: 'add',
-                data: validObj as any,
-                handle,
-                opContext,
-                ticket: tickets[idx],
-                onSuccess: async (o) => {
-                    await runAfterSave(hooks, validObj as any, 'add')
-                    results[idx] = o
-                    resolve()
-                },
-                onFail: (error) => {
-                    reject(error || new Error(`Failed to add item at index ${idx}`))
-                }
+        const tickets = new Array(validItems.length)
+        const resultPromises = validItems.map((validObj, idx) => {
+            const { ticket } = services.mutation.runtime.beginWrite()
+            tickets[idx] = ticket
+
+            return new Promise<void>((resolve, reject) => {
+                dispatch<T>({
+                    type: 'add',
+                    data: validObj as any,
+                    handle,
+                    opContext,
+                    ticket,
+                    onSuccess: (o) => {
+                        void runAfterSave(hooks, validObj as any, 'add')
+                            .then(() => {
+                                results[idx] = o
+                                resolve()
+                            })
+                            .catch((error) => {
+                                reject(error instanceof Error ? error : new Error(String(error)))
+                            })
+                    },
+                    onFail: (error) => {
+                        reject(error || new Error(`Failed to add item at index ${idx}`))
+                    }
+                })
             })
-        }))
+        })
+
+        const confirmation = options?.confirmation ?? 'optimistic'
+        if (confirmation === 'optimistic') {
+            tickets.forEach((ticket) => {
+                void ticket.enqueued.catch(() => {
+                    // avoid unhandled rejection when optimistic writes never await enqueued
+                })
+                void ticket.confirmed.catch(() => {
+                    // avoid unhandled rejection when optimistic writes never await confirmed
+                })
+            })
+            await Promise.all(resultPromises)
+            return results
+        }
 
         await Promise.all([
             ...tickets.map(ticket => services.mutation.runtime.await(ticket, options)),

@@ -17,6 +17,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>) {
 
     return async (ids: StoreKey[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
         const opContext = ensureActionId(options?.opContext)
+        const confirmation = options?.confirmation ?? 'optimistic'
         const results: WriteManyResult<boolean> = new Array(ids.length)
 
         const firstIndexById = new Map<StoreKey, number>()
@@ -54,10 +55,21 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>) {
             })
 
             tasks.push(
-                Promise.all([
-                    services.mutation.runtime.await(ticket, options),
-                    resultPromise
-                ]).then(([_awaited, value]) => {
+                (confirmation === 'optimistic'
+                    ? (() => {
+                        void ticket.enqueued.catch(() => {
+                            // avoid unhandled rejection when optimistic writes never await enqueued
+                        })
+                        void ticket.confirmed.catch(() => {
+                            // avoid unhandled rejection when optimistic writes never await confirmed
+                        })
+                        return resultPromise
+                    })()
+                    : Promise.all([
+                        services.mutation.runtime.await(ticket, options),
+                        resultPromise
+                    ]).then(([_awaited, value]) => value)
+                ).then((value) => {
                     results[index] = { index, ok: true, value }
                 }).catch((error) => {
                     results[index] = { index, ok: false, error: toError(error, `Failed to delete item with id ${String(id)}`) }

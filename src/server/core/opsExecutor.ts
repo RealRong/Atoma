@@ -3,80 +3,26 @@ import { byteLengthUtf8, throwError, toStandardError } from '../error'
 import type { AtomaOpPlugin, AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerConfig, AtomaServerRoute } from '../config'
 import type { ServerRuntime } from '../runtime/createRuntime'
 import { Protocol } from '#protocol'
+import type {
+    ChangesPullOp,
+    Meta,
+    Operation,
+    OperationResult,
+    QueryOp,
+    WriteAction,
+    WriteItem,
+    WriteOp,
+    WriteOptions
+} from '#protocol'
 import type { IOrmAdapter, QueryParams, QueryResult } from '../adapters/ports'
 import { executeWriteItemWithSemantics } from './write'
 
 type JsonObject = Record<string, unknown>
 
-type Meta = {
-    v: number
-    deviceId?: string
-    traceId?: string
-    requestId?: string
-    clientTimeMs?: number
-}
-
 type OpsRequest = {
     meta: Meta
     ops: unknown[]
 }
-
-type OpMeta = {
-    traceId?: string
-    requestId?: string
-}
-
-type QueryOp = {
-    opId: string
-    kind: 'query'
-    meta?: OpMeta
-    query: {
-        resource: string
-        params: QueryParams
-    }
-}
-
-type WriteAction = 'create' | 'update' | 'delete' | 'upsert'
-
-type WriteItemMeta = {
-    idempotencyKey?: string
-    clientTimeMs?: number
-}
-
-type WriteItem =
-    | { entityId?: string; value: unknown; meta?: WriteItemMeta } // create
-    | { entityId: string; baseVersion: number; value: unknown; meta?: WriteItemMeta } // update
-    | { entityId: string; baseVersion?: number; value: unknown; meta?: WriteItemMeta } // upsert
-    | { entityId: string; baseVersion: number; meta?: WriteItemMeta } // delete
-
-type WriteOp = {
-    opId: string
-    kind: 'write'
-    meta?: OpMeta
-    write: {
-        resource: string
-        action: WriteAction
-        items: WriteItem[]
-        options?: unknown
-    }
-}
-
-type ChangesPullOp = {
-    opId: string
-    kind: 'changes.pull'
-    meta?: OpMeta
-    pull: {
-        cursor: string
-        limit: number
-        resources?: string[]
-    }
-}
-
-type Operation = QueryOp | WriteOp | ChangesPullOp
-
-type OperationResult =
-    | { opId: string; ok: true; data: unknown }
-    | { opId: string; ok: false; error: unknown }
 
 function isObject(value: unknown): value is JsonObject {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -125,12 +71,17 @@ function normalizeOpsRequest(value: unknown): OpsRequest {
     return { meta, ops }
 }
 
-function normalizeOpMeta(value: unknown): OpMeta | undefined {
+function normalizeOpMeta(value: unknown): Meta | undefined {
     if (!isObject(value)) return undefined
     const traceId = readString(value, 'traceId')
     const requestId = readString(value, 'requestId')
     if (!traceId && !requestId) return undefined
-    return { ...(traceId ? { traceId } : {}), ...(requestId ? { requestId } : {}) }
+    const v = readNumber(value, 'v')
+    return {
+        v: v === undefined ? 1 : v,
+        ...(traceId ? { traceId } : {}),
+        ...(requestId ? { requestId } : {})
+    }
 }
 
 function normalizeOperation(value: unknown): Operation {
@@ -160,7 +111,12 @@ function normalizeOperation(value: unknown): Operation {
         if (!isObject(params)) {
             throwError('INVALID_REQUEST', 'Missing query.params', { kind: 'validation', opId })
         }
-        return { opId, kind: 'query', ...(meta ? { meta } : {}), query: { resource, params: params as QueryParams } }
+        return {
+            opId,
+            kind: 'query',
+            ...(meta ? { meta } : {}),
+            query: { resource, params: params as QueryParams }
+        } satisfies QueryOp
     }
 
     if (kind === 'write') {
@@ -179,12 +135,19 @@ function normalizeOperation(value: unknown): Operation {
         if (!items) {
             throwError('INVALID_REQUEST', 'Missing write.items', { kind: 'validation', opId })
         }
+        const optionsRaw = value.write.options
+        const options = optionsRaw !== undefined ? (optionsRaw as unknown as WriteOptions) : undefined
         return {
             opId,
             kind: 'write',
             ...(meta ? { meta } : {}),
-            write: { resource, action, items: items as any[], ...(value.write.options !== undefined ? { options: value.write.options } : {}) }
-        }
+            write: {
+                resource,
+                action,
+                items: items as unknown as WriteItem[],
+                ...(options ? { options } : {})
+            }
+        } satisfies WriteOp
     }
 
     if (kind === 'changes.pull') {
@@ -199,7 +162,12 @@ function normalizeOperation(value: unknown): Operation {
         const resources = Array.isArray((value.pull as any).resources)
             ? (value.pull as any).resources.filter((r: any) => typeof r === 'string')
             : undefined
-        return { opId, kind: 'changes.pull', ...(meta ? { meta } : {}), pull: { cursor, limit, ...(resources ? { resources } : {}) } }
+        return {
+            opId,
+            kind: 'changes.pull',
+            ...(meta ? { meta } : {}),
+            pull: { cursor, limit, ...(resources ? { resources } : {}) }
+        } satisfies ChangesPullOp
     }
 
     throwError('INVALID_REQUEST', `Unsupported op kind: ${kind}`, { kind: 'validation', opId })

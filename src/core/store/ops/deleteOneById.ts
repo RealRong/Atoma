@@ -17,16 +17,27 @@ export function createDeleteOneById<T extends Entity>(handle: StoreHandle<T>) {
                     resolve(true)
                 },
                 onFail: (error) => {
-                    reject(error || new Error(`Failed to delete item with id ${id}`))
+                    reject(error || new Error(`Failed to delete item with id ${String(id)}`))
                 }
             })
         })
 
-        await Promise.all([
-            services.mutation.runtime.await(ticket, options),
-            resultPromise
+        const confirmation = options?.confirmation ?? 'optimistic'
+        if (confirmation === 'optimistic') {
+            void ticket.enqueued.catch(() => {
+                // avoid unhandled rejection when optimistic writes never await enqueued
+            })
+            void ticket.confirmed.catch(() => {
+                // avoid unhandled rejection when optimistic writes never await confirmed
+            })
+            return await resultPromise
+        }
+
+        const [value] = await Promise.all([
+            resultPromise,
+            services.mutation.runtime.await(ticket, options)
         ])
 
-        return resultPromise
+        return value
     }
 }
