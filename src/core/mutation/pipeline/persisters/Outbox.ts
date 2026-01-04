@@ -19,7 +19,7 @@ function resolveVersion(value: unknown): number | undefined {
 function requireBaseVersion(id: StoreKey, value: unknown): number {
     const v = resolveVersion(value)
     if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v
-    throw new Error(`[Atoma] delete requires baseVersion (missing version for id=${String(id)})`)
+    throw new Error(`[Atoma] write requires baseVersion (missing version for id=${String(id)})`)
 }
 
 function stableStringify(value: any): string {
@@ -92,6 +92,9 @@ export class OutboxPersister implements Persister {
         }
 
         const types = args.plan.operationTypes
+        if (types.includes('create' as any)) {
+            throw new Error('[Atoma] server-assigned create cannot be persisted via outbox')
+        }
 
         if (types.length === 1 && types[0] === 'patches') {
             const patches = args.plan.patches
@@ -106,8 +109,8 @@ export class OutboxPersister implements Persister {
             const opMeta = metaForOpIndex(0)
 
             const createItems: Array<{ entityId: string; value: unknown }> = []
-            const updateItems: Array<{ entityId: string; value: unknown; baseVersion?: number }> = []
-            const deleteItems: Array<{ entityId: string; baseVersion?: number }> = []
+            const updateItems: Array<{ entityId: string; value: unknown; baseVersion: number }> = []
+            const deleteItems: Array<{ entityId: string; baseVersion: number }> = []
 
             for (const [id, itemPatches] of patchesByItemId.entries()) {
                 const entityId = String(id)
@@ -128,7 +131,7 @@ export class OutboxPersister implements Persister {
                 const rootReplace = itemPatches.find(p => (p.op === 'add' || p.op === 'replace') && p.path.length === 1)
                 if (rootReplace) {
                     const val = (rootReplace as any).value
-                    updateItems.push({ entityId, value: val, baseVersion: resolveVersion(val) })
+                    updateItems.push({ entityId, value: val, baseVersion: requireBaseVersion(id, val) })
                     continue
                 }
 
@@ -139,7 +142,7 @@ export class OutboxPersister implements Persister {
                 updateItems.push({
                     entityId,
                     value: next,
-                    baseVersion: resolveVersion(next)
+                    baseVersion: requireBaseVersion(id, next)
                 })
             }
 
@@ -158,7 +161,7 @@ export class OutboxPersister implements Persister {
                     kind: 'update',
                     items: updateItems.map(i => ({
                         entityId: i.entityId,
-                        ...(typeof i.baseVersion === 'number' ? { baseVersion: i.baseVersion } : {}),
+                        baseVersion: i.baseVersion,
                         value: i.value,
                         meta: opMeta
                     }))
@@ -169,7 +172,7 @@ export class OutboxPersister implements Persister {
                     kind: 'delete',
                     items: deleteItems.map(i => ({
                         entityId: i.entityId,
-                        ...(typeof i.baseVersion === 'number' ? { baseVersion: i.baseVersion } : {}),
+                        baseVersion: i.baseVersion,
                         meta: opMeta
                     }))
                 })
@@ -179,8 +182,8 @@ export class OutboxPersister implements Persister {
         }
 
         const createItems: Array<{ entityId: string; value: unknown; meta?: any }> = []
-        const updateItems: Array<{ entityId: string; value: unknown; baseVersion?: number; meta?: any }> = []
-        const deleteItems: Array<{ entityId: string; baseVersion?: number; meta?: any }> = []
+        const updateItems: Array<{ entityId: string; value: unknown; baseVersion: number; meta?: any }> = []
+        const deleteItems: Array<{ entityId: string; baseVersion: number; meta?: any }> = []
         const upsertItemsByOptions = new Map<string, {
             options?: WriteOptions
             items: Array<{ entityId: string; value: unknown; baseVersion?: number; meta?: any }>
@@ -202,7 +205,7 @@ export class OutboxPersister implements Persister {
             if (type === 'update' || type === 'remove') {
                 const id = toStoreKey((value as any)?.id)
                 if (id === null) continue
-                updateItems.push({ entityId: String(id), value, baseVersion: resolveVersion(value), meta })
+                updateItems.push({ entityId: String(id), value, baseVersion: requireBaseVersion(id, value), meta })
                 continue
             }
 
@@ -274,7 +277,7 @@ export class OutboxPersister implements Persister {
                 kind: 'update',
                 items: updateItems.map(i => ({
                     entityId: i.entityId,
-                    ...(typeof i.baseVersion === 'number' ? { baseVersion: i.baseVersion } : {}),
+                    baseVersion: i.baseVersion,
                     value: i.value,
                     meta: i.meta
                 }))
@@ -285,7 +288,7 @@ export class OutboxPersister implements Persister {
                 kind: 'delete',
                 items: deleteItems.map(i => ({
                     entityId: i.entityId,
-                    ...(typeof i.baseVersion === 'number' ? { baseVersion: i.baseVersion } : {}),
+                    baseVersion: i.baseVersion,
                     meta: i.meta
                 }))
             })

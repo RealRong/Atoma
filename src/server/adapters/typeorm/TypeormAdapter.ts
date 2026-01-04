@@ -74,13 +74,6 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             await runner.commitTransaction()
             return out
         } catch (err) {
-            const debug = typeof process !== 'undefined'
-                && process?.env
-                && (process.env.ATOMA_DEBUG_ERRORS === '1' || process.env.ATOMA_DEBUG_ERRORS === 'true')
-            if (debug) {
-                // eslint-disable-next-line no-console
-                console.error('[atoma] typeorm transaction failed', err)
-            }
             await runner.rollbackTransaction()
             throw err
         } finally {
@@ -282,24 +275,20 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     async bulkCreate(resource: string, items: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
         const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
+        const returning = options.returning !== false
+        const resultsByIndex: any[] = new Array(items.length)
 
         for (let i = 0; i < items.length; i++) {
             try {
                 const input = this.pickKnownColumns(repo, items[i])
                 const saved = await repo.save(input)
-                if (options.returning !== false) data.push(saved)
+                resultsByIndex[i] = { ok: true, ...(returning ? { data: saved } : {}) }
             } catch (err) {
-                partialFailures.push({ index: i, error: this.toError(err) })
+                resultsByIndex[i] = { ok: false, error: this.toError(err) }
             }
         }
 
-        return {
-            data: options.returning === false ? [] : data,
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: Boolean(this.manager)
-        }
+        return { resultsByIndex, transactionApplied: Boolean(this.manager) }
     }
 
     async bulkUpdate(
@@ -308,8 +297,8 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
         const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
+        const returning = options.returning !== false
+        const resultsByIndex: any[] = new Array(items.length)
 
         for (let i = 0; i < items.length; i++) {
             const item = items[i]
@@ -347,51 +336,40 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 }
 
                 await repo.update({ [this.idField]: item.id } as any, input as any)
-                if (options.returning !== false) {
+                if (returning) {
                     const fetched = options.select
                         ? await repo.findOne({
                             where: { [this.idField]: item.id } as any,
                             select: this.buildSelect(options.select, repo.metadata?.columns)
                         })
                         : await repo.findOneBy({ [this.idField]: item.id } as any)
-                    if (fetched) data.push(fetched)
+                    resultsByIndex[i] = { ok: true, data: fetched }
+                } else {
+                    resultsByIndex[i] = { ok: true }
                 }
             } catch (err) {
-                partialFailures.push({ index: i, error: this.toError(err) })
+                resultsByIndex[i] = { ok: false, error: this.toError(err) }
             }
         }
 
-        return {
-            data: options.returning === false ? [] : data,
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: Boolean(this.manager)
-        }
+        return { resultsByIndex, transactionApplied: Boolean(this.manager) }
     }
 
-    async bulkDelete(resource: string, ids: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
-        const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
+    async bulkDelete(resource: string, items: Array<{ id: any; baseVersion?: number }>, options: WriteOptions = {}): Promise<QueryResultMany> {
+        const returning = options.returning === true
+        const resultsByIndex: any[] = new Array(items.length)
 
-        for (let i = 0; i < ids.length; i++) {
-            const id = ids[i]
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i]
             try {
-                const returning = options.returning === true
-                if (returning) {
-                    const fetched = await repo.findOneBy({ [this.idField]: id } as any)
-                    if (fetched) data.push(fetched)
-                }
-                await repo.delete({ [this.idField]: id } as any)
+                const res = await this.delete(resource, { id: item.id, baseVersion: item.baseVersion }, options)
+                resultsByIndex[i] = { ok: true, ...(returning ? { data: res.data } : {}) }
             } catch (err) {
-                partialFailures.push({ index: i, error: this.toError(err) })
+                resultsByIndex[i] = { ok: false, error: this.toError(err) }
             }
         }
 
-        return {
-            data: options.returning === true ? data : [],
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: Boolean(this.manager)
-        }
+        return { resultsByIndex, transactionApplied: Boolean(this.manager) }
     }
 
     async upsert(
@@ -555,23 +533,19 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean }>,
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
+        const returning = options.returning !== false
+        const resultsByIndex: any[] = new Array(items.length)
 
         for (let i = 0; i < items.length; i++) {
             try {
                 const res = await this.upsert(resource, items[i], options)
-                if (options.returning !== false && res.data !== undefined) data.push(res.data)
+                resultsByIndex[i] = { ok: true, ...(returning ? { data: res.data } : {}) }
             } catch (err) {
-                partialFailures.push({ index: i, error: this.toError(err) })
+                resultsByIndex[i] = { ok: false, error: this.toError(err) }
             }
         }
 
-        return {
-            data: options.returning === false ? [] : data,
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: Boolean(this.manager)
-        }
+        return { resultsByIndex, transactionApplied: Boolean(this.manager) }
     }
 
     private applyWhere(qb: SelectQueryBuilder<any>, where: QueryParams['where'], alias: string) {

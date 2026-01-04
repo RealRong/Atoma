@@ -9,7 +9,8 @@ type AtomKey = PrimitiveAtom<any>
 
 function segmentKey(op: StoreDispatchEvent<any>) {
     const c = op.opContext
-    return `${c?.scope ?? 'default'}|${c?.origin ?? 'user'}|${c?.actionId ?? ''}`
+    const persist = (op as any)?.__persist ?? ''
+    return `${c?.scope ?? 'default'}|${c?.origin ?? 'user'}|${c?.actionId ?? ''}|${persist}`
 }
 
 function toError(reason: unknown, fallbackMessage: string): Error {

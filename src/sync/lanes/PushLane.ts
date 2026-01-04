@@ -1,4 +1,4 @@
-import { buildWriteBatch } from '../policies/batchPolicy'
+import { buildWriteBatchCompacted } from '../policies/batchPolicy'
 import type { OutboxStore, SyncEvent, SyncOutboxItem, SyncPhase, SyncTransport, SyncWriteAck, SyncWriteReject } from '../types'
 import type {
     Meta,
@@ -69,8 +69,12 @@ export class PushLane {
                 const batch = await this.peekWriteBatch()
                 if (!batch) break
 
-                const { resource, action, items, entries } = batch
-                const keys = entries.map(e => e.idempotencyKey)
+                const { resource, action, items, entries, representedEntries } = batch
+                const represented = representedEntries && Array.isArray(representedEntries) && representedEntries.length === entries.length
+                    ? representedEntries
+                    : entries.map(e => [e])
+                const allEntries: SyncOutboxItem[] = represented.flat()
+                const keys = allEntries.map(e => e.idempotencyKey)
                 const opId = this.deps.nextOpId('w')
                 const meta = this.deps.buildMeta()
 
@@ -108,7 +112,7 @@ export class PushLane {
                             if (stop) break
                             continue
                         }
-                        const rejected = await this.rejectAllFromOpError(opResult, entries)
+                        const rejected = await this.rejectAllFromOpError(opResult, allEntries)
                         await this.deps.outbox.reject(rejected)
                         this.retry.reset()
                         continue
@@ -118,19 +122,38 @@ export class PushLane {
                     const mapped = indexWriteResults(writeData.results)
                     const acked: string[] = []
                     const rejected: string[] = []
+                    const rebaseByEntityId = new Map<string, { resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs: number }>()
 
                     for (let i = 0; i < entries.length; i++) {
                         const outboxItem = entries[i]
+                        const covered = represented[i] ?? [outboxItem]
                         const res = mapped.get(i)
                         if (res && res.ok === true) {
-                            const ack: SyncWriteAck = {
-                                resource,
-                                action,
-                                item: outboxItem.item,
-                                result: res
+                            for (const coveredItem of covered) {
+                                const ack: SyncWriteAck = {
+                                    resource,
+                                    action,
+                                    item: coveredItem.item,
+                                    result: res
+                                }
+                                await Promise.resolve(this.deps.applier.applyWriteAck(ack))
+                                acked.push(coveredItem.idempotencyKey)
                             }
-                            await Promise.resolve(this.deps.applier.applyWriteAck(ack))
-                            acked.push(outboxItem.idempotencyKey)
+
+                            const entityId = String(res.entityId)
+                            const version = res.version
+                            if (typeof version === 'number' && Number.isFinite(version) && version > 0) {
+                                const existing = rebaseByEntityId.get(entityId)
+                                const afterEnqueuedAtMs = outboxItem.enqueuedAtMs
+                                if (!existing || afterEnqueuedAtMs > existing.afterEnqueuedAtMs) {
+                                    rebaseByEntityId.set(entityId, {
+                                        resource,
+                                        entityId,
+                                        baseVersion: version,
+                                        afterEnqueuedAtMs
+                                    })
+                                }
+                            }
                             continue
                         }
 
@@ -141,18 +164,24 @@ export class PushLane {
                                 ok: false as const,
                                 error: { code: 'WRITE_FAILED', message: 'Missing write item result', kind: 'internal' as const }
                         }
-                        const reject: SyncWriteReject = {
-                            resource,
-                            action,
-                            item: outboxItem.item,
-                            result: rejectRes
+                        for (const coveredItem of covered) {
+                            const reject: SyncWriteReject = {
+                                resource,
+                                action,
+                                item: coveredItem.item,
+                                result: rejectRes
+                            }
+                            await Promise.resolve(this.deps.applier.applyWriteReject(reject, this.deps.conflictStrategy))
+                            rejected.push(coveredItem.idempotencyKey)
                         }
-                        await Promise.resolve(this.deps.applier.applyWriteReject(reject, this.deps.conflictStrategy))
-                        rejected.push(outboxItem.idempotencyKey)
                     }
 
                     await this.deps.outbox.ack(acked)
                     await this.deps.outbox.reject(rejected)
+
+                    for (const rebase of rebaseByEntityId.values()) {
+                        await Promise.resolve(this.deps.outbox.rebase?.(rebase))
+                    }
                     this.retry.reset()
                 } catch (error) {
                     const err = toError(error)
@@ -174,8 +203,9 @@ export class PushLane {
 
     private async peekWriteBatch() {
         const max = Math.max(1, Math.floor(this.deps.maxPushItems))
-        const pending = await this.deps.outbox.peek(max)
-        return buildWriteBatch(pending)
+        const scan = Math.min(5000, Math.max(max, max * 20))
+        const pending = await this.deps.outbox.peek(scan)
+        return buildWriteBatchCompacted(pending, max)
     }
 
     private async retryBackoff(): Promise<boolean> {

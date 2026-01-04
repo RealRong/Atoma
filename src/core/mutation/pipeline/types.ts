@@ -5,6 +5,7 @@ import type {
     Entity,
     OperationContext,
     PatchMetadata,
+    PersistWriteback,
     StoreDispatchEvent,
     StoreHandle,
     StoreKey
@@ -17,7 +18,7 @@ export type Plan<T extends Entity> = Readonly<{
     patches: Patch[]
     inversePatches: Patch[]
     changedFields: Set<string>
-    appliedData: T[]
+    appliedData: any[]
     operationTypes: StoreDispatchEvent<T>['type'][]
     atom: PrimitiveAtom<Map<StoreKey, T>>
 }>
@@ -37,7 +38,7 @@ export type PersisterPersistArgs<T extends Entity> = Readonly<{
     observabilityContext: ObservabilityContext
 }>
 
-export type PersisterPersistResult<T extends Entity> = { created?: T[] } | void
+export type PersisterPersistResult<T extends Entity> = { created?: T[]; writeback?: PersistWriteback<T> } | void
 
 export interface Persister {
     persist: <T extends Entity>(args: PersisterPersistArgs<T>) => Promise<PersisterPersistResult<T>>
@@ -79,6 +80,7 @@ export type CommitAfterPersistArgs<T extends Entity> = Readonly<{
     store: any
     plan: Plan<T>
     createdResults?: T[]
+    writeback?: PersistWriteback<T>
     indexes?: StoreIndexes<T> | null
 }>
 

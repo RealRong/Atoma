@@ -326,25 +326,24 @@ export class MemoryOpsClient extends OpsClient {
 
                     const baseVersion = (raw as any)?.baseVersion
                     const currentVersion = (current as any)?.version
-                    if (typeof baseVersion === 'number' && Number.isFinite(baseVersion)) {
-                        if (typeof currentVersion !== 'number') {
-                            return { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
-                        }
-                        if (currentVersion !== baseVersion) {
-                            return {
-                                index,
-                                ok: false,
-                                error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
-                                current: { value: current, ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
-                            }
+                    if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
+                        return { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for update', kind: 'validation', details: { resource, entityId: id } }) }
+                    }
+                    if (typeof currentVersion !== 'number') {
+                        return { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
+                    }
+                    if (currentVersion !== baseVersion) {
+                        return {
+                            index,
+                            ok: false,
+                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
+                            current: { value: current, ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
                         }
                     }
 
                     const value = (raw as any)?.value
                     const next = isPlainObject(value) ? { ...(value as any) } : value
-                    const nextVersion = (typeof baseVersion === 'number' && Number.isFinite(baseVersion))
-                        ? baseVersion + 1
-                        : (typeof currentVersion === 'number' && Number.isFinite(currentVersion) ? currentVersion + 1 : 1)
+                    const nextVersion = baseVersion + 1
                     if (isPlainObject(next)) {
                         next.id = toStoreKey(id)
                         next.version = nextVersion
@@ -456,22 +455,21 @@ export class MemoryOpsClient extends OpsClient {
                 }
                 const baseVersion = (raw as any)?.baseVersion
                 const currentVersion = (current as any)?.version
-                if (typeof baseVersion === 'number' && Number.isFinite(baseVersion)) {
-                    if (typeof currentVersion !== 'number') {
-                        return { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
-                    }
-                    if (currentVersion !== baseVersion) {
-                        return {
-                            index,
-                            ok: false,
-                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
-                            current: { value: current, ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
-                        }
+                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
+                    return { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for delete', kind: 'validation', details: { resource, entityId: id } }) }
+                }
+                if (typeof currentVersion !== 'number') {
+                    return { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
+                }
+                if (currentVersion !== baseVersion) {
+                    return {
+                        index,
+                        ok: false,
+                        error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
+                        current: { value: current, ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
                     }
                 }
-                const nextVersion = (typeof baseVersion === 'number' && Number.isFinite(baseVersion))
-                    ? baseVersion + 1
-                    : (typeof currentVersion === 'number' && Number.isFinite(currentVersion) ? currentVersion + 1 : 1)
+                const nextVersion = baseVersion + 1
                 store.delete(id)
                 return {
                     index,

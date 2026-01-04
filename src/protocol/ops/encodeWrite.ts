@@ -23,7 +23,7 @@ export type WriteIntent =
         items: Array<{
             entityId: string
             value: unknown
-            baseVersion?: number
+            baseVersion: number
             meta?: WriteItemMeta
         }>
     }
@@ -31,7 +31,7 @@ export type WriteIntent =
         kind: 'delete'
         items: Array<{
             entityId: string
-            baseVersion?: number
+            baseVersion: number
             meta?: WriteItemMeta
         }>
     }
@@ -66,7 +66,7 @@ export function encodeWriteIntent(intent: WriteIntent): { action: WriteAction; i
             items: intent.items.map(i => ({
                 entityId: i.entityId,
                 value: i.value,
-                ...(typeof i.baseVersion === 'number' ? { baseVersion: i.baseVersion } : {}),
+                baseVersion: i.baseVersion,
                 ...(i.meta ? { meta: i.meta } : {})
             }))
         }
@@ -77,7 +77,7 @@ export function encodeWriteIntent(intent: WriteIntent): { action: WriteAction; i
             action: 'delete',
             items: intent.items.map(i => ({
                 entityId: i.entityId,
-                ...(typeof i.baseVersion === 'number' ? { baseVersion: i.baseVersion } : {}),
+                baseVersion: i.baseVersion,
                 ...(i.meta ? { meta: i.meta } : {})
             }))
         }

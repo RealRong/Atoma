@@ -5,8 +5,11 @@ import {
     createAddMany,
     createAddOne,
     createBatchGet,
+    createCreateServerAssignedMany,
+    createCreateServerAssignedOne,
     createDeleteMany,
     createDeleteOne,
+    createFetchAll,
     createFindMany,
     createGetAll,
     createGetMany,
@@ -115,10 +118,13 @@ export function createStore<T extends Entity, Relations = {}>(
 
     const { getOne, fetchOne } = createBatchGet(handle)
     const findMany = createFindMany<T>(handle)
+    const fetchAll = createFetchAll<T>(handle)
 
     const store = {
         addOne: createAddOne<T>(handle),
         addMany: createAddMany<T>(handle),
+        createServerAssignedOne: createCreateServerAssignedOne<T>(handle),
+        createServerAssignedMany: createCreateServerAssignedMany<T>(handle),
         updateOne: createUpdateOne<T>(handle),
         updateMany: createUpdateMany<T>(handle),
         deleteOne: createDeleteOne<T>(handle),
@@ -129,6 +135,7 @@ export function createStore<T extends Entity, Relations = {}>(
         getMany: createGetMany<T>(handle),
         getOne,
         fetchOne,
+        fetchAll,
         findMany
     } as IStore<T>
 

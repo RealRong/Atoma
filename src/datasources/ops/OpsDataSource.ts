@@ -1,4 +1,4 @@
-import type { DeleteItem, Entity, FindManyOptions, IDataSource, PageInfo, StoreKey, UpsertWriteOptions } from '#core'
+import type { DeleteItem, Entity, FindManyOptions, IDataSource, PageInfo, PersistWriteback, StoreKey, UpsertWriteOptions } from '#core'
 import { Batch, type BatchEngine } from '#batch'
 import type { ObservabilityContext } from '#observability'
 import { Protocol } from '#protocol'
@@ -96,6 +96,19 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
         await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkPut(batch)' : 'bulkPut(ops)')
     }
 
+    async bulkPutReturning(items: T[], internalContext?: ObservabilityContext): Promise<PersistWriteback<T> | void> {
+        if (!items.length) return
+        const keys: StoreKey[] = items.map(item => (item as any).id as StoreKey)
+        const writeItems: WriteItem[] = items.map(item => ({
+            entityId: String((item as any).id),
+            baseVersion: this.resolveBaseVersion((item as any).id, item),
+            value: item
+        }))
+        const op = this.buildWriteOp('update', writeItems)
+        const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkPutReturning(batch)' : 'bulkPutReturning(ops)')
+        return this.collectPersistWriteback(keys, data)
+    }
+
     async bulkCreate(items: T[], internalContext?: ObservabilityContext): Promise<T[] | void> {
         if (!items.length) return
         const writeItems: WriteItem[] = items.map(item => ({
@@ -104,6 +117,23 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
         }))
         const op = this.buildWriteOp('create', writeItems)
         const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkCreate(batch)' : 'bulkCreate(ops)')
+        const created = this.collectCreatedItems(data)
+        return created.length ? created : undefined
+    }
+
+    async bulkCreateServerAssigned(items: Array<Partial<T>>, internalContext?: ObservabilityContext): Promise<T[] | void> {
+        if (!items.length) return
+        for (const item of items) {
+            const id = (item as any)?.id
+            if (id !== undefined && id !== null) {
+                throw new Error('[OpsDataSource] bulkCreateServerAssigned does not allow client-provided id')
+            }
+        }
+        const writeItems: WriteItem[] = items.map(item => ({
+            value: item
+        }))
+        const op = this.buildWriteOp('create', writeItems)
+        const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkCreateServerAssigned(batch)' : 'bulkCreateServerAssigned(ops)')
         const created = this.collectCreatedItems(data)
         return created.length ? created : undefined
     }
@@ -124,6 +154,18 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
         }))
         const op = this.buildWriteOp('delete', writeItems)
         await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkDelete(batch)' : 'bulkDelete(ops)')
+    }
+
+    async bulkDeleteReturning(items: DeleteItem[], internalContext?: ObservabilityContext): Promise<PersistWriteback<T> | void> {
+        if (!items.length) return
+        const keys: StoreKey[] = items.map(item => item.id)
+        const writeItems: WriteItem[] = items.map(item => ({
+            entityId: String(item.id),
+            baseVersion: item.baseVersion
+        }))
+        const op = this.buildWriteOp('delete', writeItems)
+        const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkDeleteReturning(batch)' : 'bulkDeleteReturning(ops)')
+        return this.collectPersistWriteback(keys, data)
     }
 
     async upsert(key: StoreKey, value: T, options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void> {
@@ -151,6 +193,28 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
         })
         const op = this.buildWriteOp('upsert', writeItems, writeOptions)
         await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkUpsert(batch)' : 'bulkUpsert(ops)')
+    }
+
+    async bulkUpsertReturning(
+        items: T[],
+        options?: UpsertWriteOptions,
+        internalContext?: ObservabilityContext
+    ): Promise<PersistWriteback<T> | void> {
+        if (!items.length) return
+        const keys: StoreKey[] = items.map(item => (item as any).id as StoreKey)
+        const writeOptions = this.buildUpsertWriteOptions(options)
+        const writeItems: WriteItem[] = items.map(item => {
+            const id = (item as any).id
+            const baseVersion = this.resolveOptionalBaseVersion(id, item)
+            return {
+                entityId: String(id),
+                ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+                value: item
+            }
+        })
+        const op = this.buildWriteOp('upsert', writeItems, writeOptions)
+        const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkUpsertReturning(batch)' : 'bulkUpsertReturning(ops)')
+        return this.collectPersistWriteback(keys, data)
     }
 
     async get(key: StoreKey, internalContext?: ObservabilityContext): Promise<T | undefined> {
@@ -270,15 +334,14 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
 
     private resolveBaseVersion(id: StoreKey, value?: any): number {
         const versionFromValue = value && typeof value === 'object' ? (value as any).version : undefined
-        if (typeof versionFromValue === 'number' && Number.isFinite(versionFromValue)) return versionFromValue
-        return 0
+        if (typeof versionFromValue === 'number' && Number.isFinite(versionFromValue) && versionFromValue > 0) return versionFromValue
+        throw new Error(`[OpsDataSource:${this.name}] update requires baseVersion (missing/invalid version for id=${String(id)})`)
     }
 
     private resolveOptionalBaseVersion(id: StoreKey, value?: any): number | undefined {
-        const v = this.resolveBaseVersion(id, value)
-        if (!(typeof v === 'number' && Number.isFinite(v))) return undefined
-        if (v <= 0) return undefined
-        return v
+        const versionFromValue = value && typeof value === 'object' ? (value as any).version : undefined
+        if (typeof versionFromValue === 'number' && Number.isFinite(versionFromValue) && versionFromValue > 0) return versionFromValue
+        return undefined
     }
 
     private nextOpId(prefix: 'q' | 'w') {
@@ -383,6 +446,37 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
             }
         })
         return out
+    }
+
+    private collectPersistWriteback(keys: StoreKey[], data: WriteResultData): PersistWriteback<T> | void {
+        if (!data || !Array.isArray(data.results)) return
+
+        const versionUpdates: Array<{ key: StoreKey; version: number }> = []
+        const upserts: T[] = []
+
+        data.results.forEach((res: any) => {
+            if (!res || res.ok !== true) return
+
+            const index = typeof res.index === 'number' ? res.index : -1
+            const key = index >= 0 ? keys[index] : undefined
+            const version = res.version
+
+            if (key !== undefined && typeof version === 'number' && Number.isFinite(version) && version > 0) {
+                versionUpdates.push({ key, version })
+            }
+
+            const value = res.data
+            if (value && typeof value === 'object') {
+                upserts.push(value as T)
+            }
+        })
+
+        if (!versionUpdates.length && !upserts.length) return
+
+        return {
+            ...(upserts.length ? { upserts } : {}),
+            ...(versionUpdates.length ? { versionUpdates } : {})
+        }
     }
 }
 

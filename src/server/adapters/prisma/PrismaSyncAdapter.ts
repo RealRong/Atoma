@@ -74,21 +74,39 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
     async putIdempotency(key: string, value: { status: number; body: unknown }, ttlMs?: number, tx?: unknown): Promise<void> {
         const client = this.clientFor(tx)
         const model = this.idempotency(client)
-        if (!model?.createMany) return
+        if (!model?.createMany && !model?.create) return
 
         const now = Date.now()
         const expiresAt = now + Math.max(0, Math.floor(ttlMs ?? 0))
 
-        await model.createMany({
-            data: [{
-                idempotencyKey: key,
-                status: value.status,
-                bodyJson: JSON.stringify(value.body ?? null),
-                createdAt: now,
-                expiresAt
-            }],
-            skipDuplicates: true
-        })
+        const data = {
+            idempotencyKey: key,
+            status: value.status,
+            bodyJson: JSON.stringify(value.body ?? null),
+            createdAt: now,
+            expiresAt
+        }
+
+        const isUniqueViolation = (err: any) => {
+            return Boolean(err && typeof err === 'object' && (err as any).code === 'P2002')
+        }
+
+        if (typeof model.create === 'function') {
+            try {
+                await model.create({ data })
+                return
+            } catch (err) {
+                if (isUniqueViolation(err)) return
+                throw err
+            }
+        }
+
+        try {
+            await model.createMany({ data: [data] })
+        } catch (err) {
+            if (isUniqueViolation(err)) return
+            throw err
+        }
     }
 
     async appendChange(change: Omit<AtomaChange, 'cursor'>, tx?: unknown): Promise<AtomaChange> {

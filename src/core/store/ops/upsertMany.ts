@@ -3,6 +3,7 @@ import { dispatch } from '../internals/dispatch'
 import { toError } from '../internals/errors'
 import { ensureActionId } from '../internals/ensureActionId'
 import { runAfterSave, runBeforeSave } from '../internals/hooks'
+import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForAdd, prepareForUpdate } from '../internals/writePipeline'
 
@@ -14,6 +15,7 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>) {
         options?: StoreOperationOptions & UpsertWriteOptions
     ): Promise<WriteManyResult<T>> => {
         const opContext = ensureActionId(options?.opContext)
+        const confirmation = options?.confirmation ?? 'optimistic'
         const results: WriteManyResult<T> = new Array(items.length)
 
         const firstIndexById = new Map<StoreKey, number>()
@@ -92,6 +94,7 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>) {
                     handle,
                     opContext,
                     ticket,
+                    __persist: options?.__atoma?.persist,
                     onSuccess: async (o) => {
                         await runAfterSave(hooks, validObj, action)
                         resolve(o)
@@ -103,10 +106,16 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>) {
             })
 
             tasks.push(
-                Promise.all([
-                    services.mutation.runtime.await(ticket, options),
-                    resultPromise
-                ]).then(([_awaited, value]) => {
+                (confirmation === 'optimistic'
+                    ? (() => {
+                        ignoreTicketRejections(ticket)
+                        return resultPromise
+                    })()
+                    : Promise.all([
+                        resultPromise,
+                        services.mutation.runtime.await(ticket, options)
+                    ]).then(([value]) => value)
+                ).then((value) => {
                     results[index] = { index, ok: true, value }
                 }).catch((error) => {
                     results[index] = { index, ok: false, error: toError(error, `Failed to upsert item with id ${String(id)}`) }

@@ -89,11 +89,15 @@ export class Executor implements IExecutor {
                 const createdResults = (res && typeof res === 'object' && Array.isArray((res as any).created))
                     ? ((res as any).created as T[])
                     : undefined
+                const writeback = (res && typeof res === 'object' && (res as any).writeback && typeof (res as any).writeback === 'object')
+                    ? ((res as any).writeback as any)
+                    : undefined
 
                 return {
                     mode: 'direct',
                     status: 'confirmed',
-                    ...(createdResults ? { created: createdResults } : {})
+                    ...(createdResults ? { created: createdResults } : {}),
+                    ...(writeback ? { writeback } : {})
                 }
             }
 
@@ -102,12 +106,14 @@ export class Executor implements IExecutor {
             await mutationHooks.events.afterPersist.emit({ ctx: persistCtx, result: persistResult })
 
             const createdResults = persistResult.created
+            const writeback = persistResult.writeback
 
             this.committer.commit({
                 atom,
                 store,
                 plan,
                 createdResults,
+                writeback,
                 indexes
             })
 
@@ -129,7 +135,7 @@ export class Executor implements IExecutor {
                 }
 
                 const payload = plan.appliedData[idx]
-                if (op.type === 'add' || op.type === 'update' || op.type === 'upsert') {
+                if (op.type === 'add' || op.type === 'create' || op.type === 'update' || op.type === 'upsert') {
                     op.onSuccess?.(payload ?? (op.data as any))
                     return
                 }

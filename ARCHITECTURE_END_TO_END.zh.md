@@ -333,7 +333,7 @@ server `opsExecutor` 做的事：
 - `changes.pull` → `adapter.sync.pullChanges(cursor, limit)`
 - 返回：`Protocol.ops.compose.ok({ results }, metaOut)`
 
-对应代码：`src/server/core/opsExecutor.ts:1`、`src/server/core/write.ts:1`。
+对应代码：`src/server/core/opsExecutor/index.ts:1`、`src/server/core/opsExecutor/write.ts:1`、`src/server/core/write.ts:1`。
 
 ### 7.3 subscribe：SSE notify（不下发 changes）
 

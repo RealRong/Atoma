@@ -36,7 +36,7 @@ export type WriteItemCreate = {
 
 export type WriteItemUpdate = {
     entityId: EntityId
-    baseVersion?: Version
+    baseVersion: Version
     value: unknown
     meta?: WriteItemMeta
 }
@@ -51,7 +51,7 @@ export type WriteItemUpsert = {
 
 export type WriteItemDelete = {
     entityId: EntityId
-    baseVersion?: Version
+    baseVersion: Version
     meta?: WriteItemMeta
 }
 

@@ -17,11 +17,19 @@ export interface QueryResultOne<T = any> {
 }
 
 export interface QueryResultMany<T = any> {
-    data: T[]
     /**
-     * partialFailures.error 同样要求 AtomaError。
+     * 与输入 items 的 index 一一对应（resultsByIndex.length 必须等于 items.length）。
      */
-    partialFailures?: Array<{ index: number; error: AtomaError }>
+    resultsByIndex: Array<
+        | { ok: true; data?: T }
+        | {
+            ok: false
+            /**
+             * errors 同样要求 AtomaError。
+             */
+            error: AtomaError
+        }
+    >
     transactionApplied?: boolean
 }
 
@@ -55,7 +63,7 @@ export interface IOrmAdapter {
         items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean }>,
         options?: WriteOptions
     ): Promise<QueryResultMany>
-    bulkDelete?(resource: string, ids: any[], options?: WriteOptions): Promise<QueryResultMany>
+    bulkDelete?(resource: string, items: Array<{ id: any; baseVersion?: number }>, options?: WriteOptions): Promise<QueryResultMany>
 }
 
 export interface OrmAdapterOptions {

@@ -13,6 +13,23 @@ export class Reducer {
     ): Plan<T> {
         const atom = operations[0]?.handle.atom as PrimitiveAtom<Map<StoreKey, T>>
 
+        const hasCreate = operations.some(o => o.type === 'create')
+        if (hasCreate) {
+            if (operations.some(o => o.type !== 'create')) {
+                throw new Error('[Atoma] create 操作不能与其他操作混合批处理')
+            }
+
+            return {
+                nextState: currentValue,
+                patches: [],
+                inversePatches: [],
+                changedFields: new Set(),
+                appliedData: operations.map(o => (o as any).data),
+                operationTypes: operations.map(() => 'create' as any),
+                atom
+            }
+        }
+
         if (operations.length === 1 && operations[0]?.type === 'patches') {
             const op = operations[0]
             const patches = op.patches
@@ -35,7 +52,7 @@ export class Reducer {
         }
 
         const draft = createDraft(currentValue)
-        const appliedData: T[] = []
+        const appliedData: any[] = []
         const operationTypes: StoreDispatchEvent<T>['type'][] = []
 
         operations.forEach(event => {
@@ -149,6 +166,12 @@ export class Reducer {
                     draft.set(event.data.id, newObj as any)
                     appliedData.push(newObj as T)
                     operationTypes.push('remove')
+                    break
+                }
+                case 'create': {
+                    // 已在函数开头处理 create-only batch，这里只是类型收敛的兜底
+                    appliedData.push((event as any).data)
+                    operationTypes.push('create')
                     break
                 }
             }

@@ -5,65 +5,66 @@
     "description": "Atomic state management with universal persistence - built on Jotai and Immer",
     "workspaces": [
         "docs",
-        "devtools"
+        "devtools",
+        "demo/server"
     ],
-    "main": "dist/index.mjs",
-    "module": "dist/index.mjs",
-    "types": "dist/index.d.mts",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
     "exports": {
         ".": {
-            "types": "./dist/index.d.mts",
-            "import": "./dist/index.mjs"
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
         },
         "./react": {
-            "types": "./dist/react/index.d.mts",
-            "import": "./dist/react/index.mjs"
+            "types": "./dist/react/index.d.ts",
+            "import": "./dist/react/index.js"
         },
         "./datasources": {
-            "types": "./dist/datasources/index.d.mts",
-            "import": "./dist/datasources/index.mjs"
+            "types": "./dist/datasources/index.d.ts",
+            "import": "./dist/datasources/index.js"
         },
         "./server": {
-            "types": "./dist/server/index.d.mts",
-            "import": "./dist/server/index.mjs"
+            "types": "./dist/server/index.d.ts",
+            "import": "./dist/server/index.js"
         },
         "./server/adapters": {
-            "types": "./dist/server/adapters.d.mts",
-            "import": "./dist/server/adapters.mjs"
+            "types": "./dist/server/adapters.d.ts",
+            "import": "./dist/server/adapters.js"
         },
         "./server/adapters/typeorm": {
-            "types": "./dist/server/adapters/typeorm.d.mts",
-            "import": "./dist/server/adapters/typeorm.mjs"
+            "types": "./dist/server/adapters/typeorm.d.ts",
+            "import": "./dist/server/adapters/typeorm.js"
         },
         "./server/adapters/prisma": {
-            "types": "./dist/server/adapters/prisma.d.mts",
-            "import": "./dist/server/adapters/prisma.mjs"
+            "types": "./dist/server/adapters/prisma.d.ts",
+            "import": "./dist/server/adapters/prisma.js"
         }
     },
     "imports": {
         "#core": {
-            "types": "./dist/core/index.d.mts",
-            "import": "./dist/core/index.mjs"
+            "types": "./dist/core/index.d.ts",
+            "import": "./dist/core/index.js"
         },
         "#observability": {
-            "types": "./dist/observability/index.d.mts",
-            "import": "./dist/observability/index.mjs"
+            "types": "./dist/observability/index.d.ts",
+            "import": "./dist/observability/index.js"
         },
         "#protocol": {
-            "types": "./dist/protocol/index.d.mts",
-            "import": "./dist/protocol/index.mjs"
+            "types": "./dist/protocol/index.d.ts",
+            "import": "./dist/protocol/index.js"
         },
         "#sync": {
-            "types": "./dist/sync/index.d.mts",
-            "import": "./dist/sync/index.mjs"
+            "types": "./dist/sync/index.d.ts",
+            "import": "./dist/sync/index.js"
         },
         "#backend": {
-            "types": "./dist/backend/index.d.mts",
-            "import": "./dist/backend/index.mjs"
+            "types": "./dist/backend/index.d.ts",
+            "import": "./dist/backend/index.js"
         },
         "#batch": {
-            "types": "./dist/batch/index.d.mts",
-            "import": "./dist/batch/index.mjs"
+            "types": "./dist/batch/index.d.ts",
+            "import": "./dist/batch/index.js"
         }
     },
     "files": [
@@ -75,6 +76,8 @@
     "scripts": {
         "build": "tsup",
         "dev:lib": "tsup --watch",
+        "demo:web": "vite --config demo/web/vite.config.ts",
+        "demo:server": "npm -w atoma-demo-server run dev",
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
         "test:ui": "vitest --ui",

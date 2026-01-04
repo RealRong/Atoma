@@ -8,6 +8,7 @@ import { toError } from '../internals/errors'
 import { ensureActionId } from '../internals/ensureActionId'
 import { runAfterSave } from '../internals/hooks'
 import { resolveObservabilityContext } from '../internals/runtime'
+import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForUpdate } from '../internals/writePipeline'
 
@@ -19,6 +20,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>> => {
         const opContext = ensureActionId(options?.opContext)
+        const confirmation = options?.confirmation ?? 'optimistic'
         const observabilityContext = resolveObservabilityContext(handle, options)
 
         const results: WriteManyResult<T> = new Array(items.length)
@@ -52,30 +54,45 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
         }
 
         if (missing.length) {
-            const fetchedList = await dataSource.bulkGet(missing, observabilityContext)
-            const toCache: Array<PartialWithId<T>> = []
-
-            for (let i = 0; i < missing.length; i++) {
-                const id = missing[i]
-                const fetched = fetchedList[i]
-                if (!fetched) continue
-                const transformed = transform(fetched)
-                const validFetched = await validateWithSchema(transformed, schema)
-                baseById.set(id, validFetched as any)
-                toCache.push(validFetched as any)
-            }
-
-            if (toCache.length) {
-                const after = bulkAdd(toCache, beforeMap)
-                if (after !== beforeMap) {
-                    const changedIds = new Set<StoreKey>()
-                    for (const item of toCache) {
-                        const id = item.id as any as StoreKey
-                        if (!beforeMap.has(id) || beforeMap.get(id) !== (item as any)) {
-                            changedIds.add(id)
-                        }
+            const allowImplicitFetchForWrite = typeof options?.__atoma?.allowImplicitFetchForWrite === 'boolean'
+                ? options.__atoma.allowImplicitFetchForWrite
+                : handle.writePolicies?.allowImplicitFetchForWrite !== false
+            if (!allowImplicitFetchForWrite) {
+                for (const id of missing) {
+                    const firstIndex = firstIndexById.get(id)
+                    if (typeof firstIndex !== 'number') continue
+                    results[firstIndex] = {
+                        index: firstIndex,
+                        ok: false,
+                        error: new Error(`[Atoma] updateMany: 缓存缺失且当前写入模式禁止补读，请先 fetch 再 update（id=${String(id)}）`)
                     }
-                    commitAtomMapUpdateDelta({ handle, before: beforeMap, after, changedIds })
+                }
+            } else {
+                const fetchedList = await dataSource.bulkGet(missing, observabilityContext)
+                const toCache: Array<PartialWithId<T>> = []
+
+                for (let i = 0; i < missing.length; i++) {
+                    const id = missing[i]
+                    const fetched = fetchedList[i]
+                    if (!fetched) continue
+                    const transformed = transform(fetched)
+                    const validFetched = await validateWithSchema(transformed, schema)
+                    baseById.set(id, validFetched as any)
+                    toCache.push(validFetched as any)
+                }
+
+                if (toCache.length) {
+                    const after = bulkAdd(toCache, beforeMap)
+                    if (after !== beforeMap) {
+                        const changedIds = new Set<StoreKey>()
+                        for (const item of toCache) {
+                            const id = item.id as any as StoreKey
+                            if (!beforeMap.has(id) || beforeMap.get(id) !== (item as any)) {
+                                changedIds.add(id)
+                            }
+                        }
+                        commitAtomMapUpdateDelta({ handle, before: beforeMap, after, changedIds })
+                    }
                 }
             }
         }
@@ -116,6 +133,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
                     data: validObj,
                     opContext,
                     ticket,
+                    __persist: options?.__atoma?.persist,
                     onSuccess: async (updated) => {
                         await runAfterSave(hooks, validObj, 'update')
                         resolve(updated)
@@ -127,10 +145,16 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
             })
 
             tasks.push(
-                Promise.all([
-                    services.mutation.runtime.await(ticket, options),
-                    resultPromise
-                ]).then(([_awaited, value]) => {
+                (confirmation === 'optimistic'
+                    ? (() => {
+                        ignoreTicketRejections(ticket)
+                        return resultPromise
+                    })()
+                    : Promise.all([
+                        resultPromise,
+                        services.mutation.runtime.await(ticket, options)
+                    ]).then(([value]) => value)
+                ).then((value) => {
                     results[index] = { index, ok: true, value }
                 }).catch((error) => {
                     results[index] = { index, ok: false, error: toError(error, `Failed to update item with id ${String(id)}`) }

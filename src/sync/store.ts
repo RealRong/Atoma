@@ -86,6 +86,42 @@ export class DefaultOutboxStore implements OutboxStore {
         await this.removeByKeys(idempotencyKeys)
     }
 
+    async rebase(args: { resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs?: number }) {
+        await this.initialized
+        const nextBaseVersion = args.baseVersion
+        if (!(typeof nextBaseVersion === 'number' && Number.isFinite(nextBaseVersion) && nextBaseVersion > 0)) return
+
+        const resource = String(args.resource || '')
+        const entityId = String(args.entityId || '')
+        const afterEnqueuedAtMs = typeof args.afterEnqueuedAtMs === 'number' && Number.isFinite(args.afterEnqueuedAtMs)
+            ? args.afterEnqueuedAtMs
+            : undefined
+
+        if (!resource || !entityId) return
+
+        let changed = false
+
+        for (const item of this.queue) {
+            if (typeof item.inFlightAtMs === 'number') continue
+            if (item.resource !== resource) continue
+            if (afterEnqueuedAtMs !== undefined && item.enqueuedAtMs <= afterEnqueuedAtMs) continue
+
+            const writeItem: any = item.item as any
+            const curEntityId = writeItem?.entityId
+            if (typeof curEntityId !== 'string' || curEntityId !== entityId) continue
+
+            if (typeof writeItem.baseVersion === 'number' && Number.isFinite(writeItem.baseVersion) && writeItem.baseVersion > 0) {
+                if (writeItem.baseVersion === nextBaseVersion) continue
+                if (writeItem.baseVersion < nextBaseVersion) {
+                    writeItem.baseVersion = nextBaseVersion
+                    changed = true
+                }
+            }
+        }
+
+        if (changed) await this.persist()
+    }
+
     async markInFlight(idempotencyKeys: string[], atMs: number) {
         await this.initialized
         if (!idempotencyKeys.length) return

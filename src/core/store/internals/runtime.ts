@@ -57,6 +57,9 @@ export function createStoreHandle<T extends Entity>(params: {
         schema: config.schema,
         idGenerator: config.idGenerator,
         transform,
+        writePolicies: {
+            allowImplicitFetchForWrite: true
+        },
         stopIndexDevtools
     }
 }

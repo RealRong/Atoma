@@ -1,6 +1,7 @@
 import type { Entity, IStore, StoreHandle } from './types'
 
 const REGISTRY_KEY = Symbol.for('atoma.storeHandleRegistry')
+const HANDLE_KEY = Symbol.for('atoma.storeHandle')
 
 function getGlobalRegistry(): WeakMap<IStore<any, any>, StoreHandle<any>> {
     const anyGlobal = globalThis as any
@@ -22,5 +23,9 @@ export const getStoreHandle = <T extends Entity, Relations>(
     store: IStore<T, Relations> | undefined
 ): StoreHandle<T> | null => {
     if (!store) return null
-    return (getGlobalRegistry().get(store) as StoreHandle<T> | undefined) ?? null
+    const fromRegistry = (getGlobalRegistry().get(store) as StoreHandle<T> | undefined)
+    if (fromRegistry) return fromRegistry
+    const anyStore: any = store as any
+    const fromAttached = anyStore && typeof anyStore === 'object' ? (anyStore[HANDLE_KEY] as StoreHandle<T> | undefined) : undefined
+    return fromAttached ?? null
 }

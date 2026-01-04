@@ -2,6 +2,7 @@ import type { ChangeKind } from '#protocol'
 import { errorStatus, throwError, toStandardError } from '../error'
 import type { AtomaChange, IOrmAdapter, ISyncAdapter, StandardError as StandardErrorType } from '../adapters/ports'
 import type { WriteOptions } from '#protocol'
+import type { AtomaServerLogger } from '../logger'
 
 export type WriteChangeSummary = {
     changedFields: string[]
@@ -48,6 +49,7 @@ type ExecuteArgs = {
     syncEnabled: boolean
     now?: () => number
     meta?: { traceId?: string; requestId?: string; opId?: string }
+    logger?: AtomaServerLogger
     write: {
         kind: WriteKind
         resource: string
@@ -92,6 +94,40 @@ function extractConflictMeta(error: StandardErrorType) {
     }
 }
 
+function isPlainObject(value: any): value is Record<string, any> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function serializeErrorForLog(error: unknown) {
+    if (error instanceof Error) {
+        const anyErr = error as any
+        return {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            ...(anyErr?.cause !== undefined ? { cause: anyErr.cause } : {})
+        }
+    }
+    return { value: error }
+}
+
+function ensureSelect(select: Record<string, boolean> | undefined, required: string[]): Record<string, boolean> | undefined {
+    if (!select) return undefined
+    const out: Record<string, boolean> = { ...select }
+    required.forEach(key => { out[key] = true })
+    return out
+}
+
+function requiredSelectFields(kind: WriteKind, args: { returningRequested: boolean }): string[] {
+    if (kind === 'create') return ['id', 'version']
+    if (kind === 'update') return ['version']
+    if (kind === 'upsert') {
+        // 即使 returning=false，我们也需要 version 来正确返回 WriteItemResult.version（尤其 loose upsert）
+        return ['version']
+    }
+    return []
+}
+
 export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<ExecuteWriteItemResult> {
     const now = args.now ?? (() => Date.now())
     const { orm, sync, tx, write } = args
@@ -99,8 +135,12 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
     const options: WriteOptions = (write.options && typeof write.options === 'object' && !Array.isArray(write.options))
         ? (write.options as WriteOptions)
         : {}
-    const returning = options.returning !== false
+    const returningRequested = options.returning !== false
     const select = options.select
+    const internalSelect = ensureSelect(
+        isPlainObject(select) ? select : undefined,
+        requiredSelectFields(write.kind, { returningRequested })
+    )
 
     if (args.syncEnabled) {
         if (!sync) {
@@ -167,16 +207,34 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
 
             const row = await (async () => {
                 if (typeof orm.create === 'function') {
-                    const res = await orm.create(write.resource, data, { returning, ...(select ? { select } : {}) } as any)
+                    const res = await orm.create(write.resource, data, { returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any)
                     if (res?.error) throw res.error
                     return res?.data
                 }
-                const res = await (orm as any).bulkCreate(write.resource, [data], { returning, ...(select ? { select } : {}) } as any)
-                if (res?.partialFailures?.length) throw res.partialFailures[0].error
-                return res?.data?.[0]
+                const res = await (orm as any).bulkCreate(write.resource, [data], { returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any)
+                const r0 = res?.resultsByIndex?.[0]
+                if (!r0) throw new Error('bulkCreate returned empty resultsByIndex')
+                if (!r0.ok) throw r0.error
+                return r0.data
             })()
 
-            const id = normalizeId((row as any)?.id ?? write.id)
+            const expectedId = write.id !== undefined ? normalizeId(write.id) : ''
+            const actualId = normalizeId((row as any)?.id)
+
+            if (write.id !== undefined && actualId && expectedId && actualId !== expectedId) {
+                throwError('INTERNAL', `Create returned mismatched id (expected=${expectedId}, actual=${actualId})`, {
+                    kind: 'internal',
+                    resource: write.resource
+                })
+            }
+
+            if (write.id === undefined && !actualId) {
+                throwError('INTERNAL', 'Create returned missing id', { kind: 'internal', resource: write.resource })
+            }
+
+            const id = write.id !== undefined
+                ? expectedId
+                : actualId
             const serverVersion = typeof (row as any)?.version === 'number' ? (row as any).version : 1
 
             let change: AtomaChange | undefined
@@ -230,14 +288,18 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                     mode,
                     merge
                 } as any,
-                { ...options, returning: true, ...(select ? { select } : {}) } as any
+                { ...options, returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any
             )
             if (res?.error) throw res.error
 
             const row = res?.data
-            const serverVersion = typeof (row as any)?.version === 'number'
-                ? (row as any).version
-                : (typeof write.baseVersion === 'number' && Number.isFinite(write.baseVersion) ? write.baseVersion + 1 : 1)
+            const rowVersion = typeof (row as any)?.version === 'number' ? (row as any).version : undefined
+            const serverVersion = (() => {
+                if (typeof rowVersion === 'number' && Number.isFinite(rowVersion) && rowVersion >= 1) return rowVersion
+                if (typeof write.baseVersion === 'number' && Number.isFinite(write.baseVersion)) return write.baseVersion + 1
+                if (mode === 'strict') return 1
+                throwError('INTERNAL', 'Upsert returned missing version', { kind: 'internal', resource: write.resource })
+            })()
 
             let change: AtomaChange | undefined
             if (args.syncEnabled) {
@@ -257,7 +319,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                 changeKind: 'upsert',
                 serverVersion,
                 ...(change ? { cursor: change.cursor } : {}),
-                ...(returning ? { data: row } : {})
+                ...(returningRequested ? { data: row } : {})
             }
             await writeIdempotency(replay, 200)
             return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
@@ -270,6 +332,9 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
             if (write.id === undefined) {
                 throwError('INVALID_WRITE', 'Missing id for update', { kind: 'validation', resource: write.resource })
             }
+            if (typeof write.baseVersion !== 'number' || !Number.isFinite(write.baseVersion) || write.baseVersion <= 0) {
+                throwError('INVALID_WRITE', 'Missing baseVersion for update', { kind: 'validation', resource: write.resource })
+            }
 
             const rawId = write.id
             const id = normalizeId(rawId)
@@ -281,7 +346,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
             const res = await orm.update(
                 write.resource,
                 { id: rawId, data, baseVersion: write.baseVersion, timestamp: write.timestamp } as any,
-                { ...options, returning: true, ...(select ? { select } : {}) } as any
+                { ...options, returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any
             )
             if (res?.error) throw res.error
 
@@ -308,7 +373,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                 changeKind: 'upsert',
                 serverVersion,
                 ...(change ? { cursor: change.cursor } : {}),
-                ...(returning ? { data: row } : {})
+                data: row
             }
             await writeIdempotency(replay, 200)
             return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
@@ -356,24 +421,27 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
 
         throwError('INVALID_WRITE', 'Unsupported write kind', { kind: 'validation', resource: write.resource })
     } catch (err: any) {
-        const debug = typeof process !== 'undefined'
-            && process?.env
-            && (process.env.ATOMA_DEBUG_ERRORS === '1' || process.env.ATOMA_DEBUG_ERRORS === 'true')
-        if (debug) {
-            // eslint-disable-next-line no-console
-            console.error('[atoma] executeWriteItemWithSemantics failed', {
-                meta: args.meta,
-                write: {
-                    kind: write.kind,
-                    resource: write.resource,
-                    idempotencyKey,
-                    id: write.id,
-                    baseVersion: write.baseVersion,
-                    timestamp: write.timestamp
-                }
-            }, err)
-        }
         const standard = toStandardError(err, 'WRITE_FAILED')
+        const logMeta = {
+            meta: args.meta,
+            write: {
+                kind: write.kind,
+                resource: write.resource,
+                idempotencyKey,
+                id: write.id,
+                baseVersion: write.baseVersion,
+                timestamp: write.timestamp
+            },
+            error: serializeErrorForLog(err),
+            standard
+        }
+
+        if (standard.kind === 'validation' || standard.code === 'CONFLICT') {
+            args.logger?.warn?.('write item failed', logMeta)
+        } else {
+            args.logger?.error?.('write item failed', logMeta)
+        }
+
         const status = errorStatus(standard)
         const replay: ErrorReplay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
         await writeIdempotency(replay, status)

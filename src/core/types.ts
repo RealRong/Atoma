@@ -79,6 +79,16 @@ export type DeleteItem = {
 }
 
 /**
+ * Persist writeback (direct confirmed result):
+ * - 用于把服务端确认后的 version（以及可选 data）写回本地 store
+ */
+export type PersistWriteback<T extends Entity> = Readonly<{
+    upserts?: T[]
+    deletes?: StoreKey[]
+    versionUpdates?: Array<{ key: StoreKey; version: number }>
+}>
+
+/**
  * DataSource interface - abstracts the persistence/remote backend
  */
 export interface IDataSource<T extends Entity> {
@@ -95,13 +105,27 @@ export interface IDataSource<T extends Entity> {
      */
     put(key: StoreKey, value: T, internalContext?: ObservabilityContext): Promise<void>
     bulkPut(items: T[], internalContext?: ObservabilityContext): Promise<void>
+    bulkPutReturning?(items: T[], internalContext?: ObservabilityContext): Promise<PersistWriteback<T> | void>
     bulkCreate?(items: T[], internalContext?: ObservabilityContext): Promise<T[] | void>
+    /**
+     * Server-assigned create (optional):
+     * - 输入允许缺省 id（Partial<T>）
+     * - 必须 returning 最终实体（包含 id/version 等）
+     * - 仅供 createServerAssigned* 使用（在线 strict + direct）
+     */
+    bulkCreateServerAssigned?(items: Array<Partial<T>>, internalContext?: ObservabilityContext): Promise<T[] | void>
     delete(item: DeleteItem, internalContext?: ObservabilityContext): Promise<void>
     bulkDelete(items: DeleteItem[], internalContext?: ObservabilityContext): Promise<void>
+    bulkDeleteReturning?(items: DeleteItem[], internalContext?: ObservabilityContext): Promise<PersistWriteback<T> | void>
 
     /** Upsert operations (optional). When absent, callers may fall back to put/bulkPut semantics. */
     upsert?(key: StoreKey, value: T, options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void>
     bulkUpsert?(items: T[], options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void>
+    bulkUpsertReturning?(
+        items: T[],
+        options?: UpsertWriteOptions,
+        internalContext?: ObservabilityContext
+    ): Promise<PersistWriteback<T> | void>
 
     /**
      * Retrieval operations
@@ -189,10 +213,22 @@ export type StoreDispatchEvent<T extends Entity> = {
     opContext?: OperationContext
     onFail?: (error?: Error) => void  // Accept error object for rejection
     ticket?: WriteTicket
+    /** 内部：显式持久化路径选择（默认 direct）。用于 Sync.Store 这类封装。 */
+    __persist?: 'direct' | 'outbox'
 } & (
         | {
             type: 'add'
             data: PartialWithId<T>
+            onSuccess?: (o: T) => void
+        }
+        | {
+            /**
+             * Server-assigned create (non-optimistic):
+             * - 不要求 data.id 存在
+             * - 仅用于 createServerAssigned*（在线 strict + direct），真正写入发生在 persist 后的 commit 阶段
+             */
+            type: 'create'
+            data: Partial<T>
             onSuccess?: (o: T) => void
         }
         | {
@@ -235,6 +271,15 @@ export type StoreDispatchEvent<T extends Entity> = {
  */
 export interface StoreOperationOptions {
     force?: boolean
+    /**
+     * 内部选项（仅框架/封装层使用；业务侧不应依赖）。
+     * - 用于显式选择写入路径（direct vs outbox），避免全局 sync 开关导致的语义漂移
+     * - 用于覆盖写入时“隐式补读”策略（direct 可允许；outbox 必须禁止）
+     */
+    __atoma?: {
+        persist?: 'direct' | 'outbox'
+        allowImplicitFetchForWrite?: boolean
+    }
     /**
      * `await` 完成语义（默认 optimistic）
      * - 注意：不影响 UI 是否立即更新（UI 仍默认 optimistic commit）
@@ -467,6 +512,18 @@ export interface IStore<T, Relations = {}> {
     /** Add many items (single action) */
     addMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
 
+    /**
+     * Create one item with server-assigned id (non-optimistic).
+     * - 强语义：在线 + strict + direct（禁止 sync/outbox）；仅在服务端返回最终实体后才写入本地并 resolve。
+     */
+    createServerAssignedOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
+
+    /**
+     * Create many items with server-assigned ids (non-optimistic).
+     * - 强语义：在线 + strict + direct（禁止 sync/outbox）；仅在服务端返回最终实体后才写入本地并 resolve。
+     */
+    createServerAssignedMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
+
     /** Update an existing item (Immer recipe) */
     updateOne(id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions): Promise<T>
 
@@ -598,6 +655,18 @@ export interface IEventEmitter {
 export type JotaiStore = ReturnType<typeof import('jotai/vanilla').createStore>
 
 /**
+ * Store 内部写入策略（仅影响“隐式行为”）
+ */
+export type StoreWritePolicies = {
+    /**
+     * 写入时遇到 cache 缺失，是否允许自动补读（bulkGet/get）：
+     * - direct：通常允许（提升 DX）
+     * - sync/outbox：必须禁止（enqueue 阶段不触网），需由上层显式 fetch
+     */
+    allowImplicitFetchForWrite: boolean
+}
+
+/**
  * Store internal handle bindings exposed across layers.
  * - Internal store operations use it as the only runtime object.
  * - React/client/adapters use it to access atom/jotaiStore/context/indexes, without bloating IStore.
@@ -619,4 +688,7 @@ export type StoreHandle<T extends Entity = any> = {
     idGenerator: StoreConfig<T>['idGenerator']
     transform: (item: T) => T
     stopIndexDevtools?: () => void
+
+    /** 运行时写入策略（允许被 client/controller 动态切换） */
+    writePolicies?: StoreWritePolicies
 }

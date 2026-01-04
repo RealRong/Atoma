@@ -352,27 +352,27 @@ export class IndexedDBOpsClient extends OpsClient {
 
                     const baseVersion = raw?.baseVersion
                     const currentVersion = (current as any)?.version
-                    if (typeof baseVersion === 'number' && Number.isFinite(baseVersion)) {
-                        if (typeof currentVersion !== 'number') {
-                            results[index] = { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
-                            continue
+                    if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
+                        results[index] = { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for update', kind: 'validation', details: { resource, entityId: id } }) }
+                        continue
+                    }
+                    if (typeof currentVersion !== 'number') {
+                        results[index] = { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
+                        continue
+                    }
+                    if (currentVersion !== baseVersion) {
+                        results[index] = {
+                            index,
+                            ok: false,
+                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
+                            current: { value: clonePlain(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
                         }
-                        if (currentVersion !== baseVersion) {
-                            results[index] = {
-                                index,
-                                ok: false,
-                                error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
-                                current: { value: clonePlain(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
-                            }
-                            continue
-                        }
+                        continue
                     }
 
                     const value = raw?.value
                     const next = isPlainObject(value) ? { ...(value as any) } : value
-                    const nextVersion = (typeof baseVersion === 'number' && Number.isFinite(baseVersion))
-                        ? baseVersion + 1
-                        : (typeof currentVersion === 'number' && Number.isFinite(currentVersion) ? currentVersion + 1 : 1)
+                    const nextVersion = baseVersion + 1
                     if (isPlainObject(next)) {
                         next.id = key
                         next.version = nextVersion
@@ -493,24 +493,24 @@ export class IndexedDBOpsClient extends OpsClient {
                 }
                 const baseVersion = raw?.baseVersion
                 const currentVersion = (current as any)?.version
-                if (typeof baseVersion === 'number' && Number.isFinite(baseVersion)) {
-                    if (typeof currentVersion !== 'number') {
-                        results[index] = { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
-                        continue
-                    }
-                    if (currentVersion !== baseVersion) {
-                        results[index] = {
-                            index,
-                            ok: false,
-                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
-                            current: { value: clonePlain(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
-                        }
-                        continue
-                    }
+                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
+                    results[index] = { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for delete', kind: 'validation', details: { resource, entityId: id } }) }
+                    continue
                 }
-                const nextVersion = (typeof baseVersion === 'number' && Number.isFinite(baseVersion))
-                    ? baseVersion + 1
-                    : (typeof currentVersion === 'number' && Number.isFinite(currentVersion) ? currentVersion + 1 : 1)
+                if (typeof currentVersion !== 'number') {
+                    results[index] = { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
+                    continue
+                }
+                if (currentVersion !== baseVersion) {
+                    results[index] = {
+                        index,
+                        ok: false,
+                        error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
+                        current: { value: clonePlain(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
+                    }
+                    continue
+                }
+                const nextVersion = baseVersion + 1
                 await table.delete(key as any)
                 results[index] = { index, ok: true, entityId: id, version: nextVersion }
             } catch (err: any) {

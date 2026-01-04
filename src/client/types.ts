@@ -285,13 +285,22 @@ export type AtomaSync = {
     setSubscribed: (enabled: boolean) => void
 }
 
+export type AtomaSyncNamespace<
+    Entities extends Record<string, Entity>,
+    Stores extends StoresConstraint<Entities> = {}
+> = AtomaSync & {
+    Store: <Name extends keyof Entities & string>(
+        name: Name
+    ) => CoreStore<Entities[Name], InferRelationsFromStoreOverride<Entities, Stores, Name>>
+}
+
 export type AtomaClient<
     Entities extends Record<string, Entity>,
     Stores extends StoresConstraint<Entities> = {}
 > = {
     Store: <Name extends keyof Entities & string>(name: Name) => CoreStore<Entities[Name], InferRelationsFromStoreOverride<Entities, Stores, Name>>
-    sync: AtomaSync
-    history: AtomaHistory
+    Sync: AtomaSyncNamespace<Entities, Stores>
+    History: AtomaHistory
 }
 
 export type StoresDefinition<

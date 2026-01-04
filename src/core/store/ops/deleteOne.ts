@@ -14,6 +14,7 @@ export function createDeleteOne<T extends Entity>(handle: StoreHandle<T>) {
                 handle,
                 opContext: options?.opContext,
                 ticket,
+                __persist: options?.__atoma?.persist,
                 onSuccess: () => {
                     resolve(true)
                 },

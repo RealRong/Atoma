@@ -1,6 +1,7 @@
 import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, UpsertWriteOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { runAfterSave, runBeforeSave } from '../internals/hooks'
+import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForAdd, prepareForUpdate } from '../internals/writePipeline'
 
@@ -59,6 +60,7 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>) {
                 handle,
                 opContext: options?.opContext,
                 ticket,
+                __persist: options?.__atoma?.persist,
                 onSuccess: async (o) => {
                     await runAfterSave(hooks, validObj, base ? 'update' : 'add')
                     resolve(o)
@@ -69,9 +71,15 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>) {
             })
         })
 
+        const confirmation = options?.confirmation ?? 'optimistic'
+        if (confirmation === 'optimistic') {
+            ignoreTicketRejections(ticket)
+            return resultPromise
+        }
+
         await Promise.all([
-            services.mutation.runtime.await(ticket, options),
-            resultPromise
+            resultPromise,
+            services.mutation.runtime.await(ticket, options)
         ])
 
         return resultPromise

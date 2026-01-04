@@ -40,7 +40,7 @@ function createTodosClient(args: {
   onSyncEvent: (event: any) => void;
   onSyncError: (error: Error) => void;
 }) {
-  const client = defineEntities<{ todos: Todo }>()
+  const { Store, Sync } = defineEntities<{ todos: Todo }>()
     .defineStores({})
     .defineClient({
       backend: {
@@ -64,8 +64,9 @@ function createTodosClient(args: {
     });
 
   return {
-    client,
-    todosStore: client.Store('todos'),
+    Store,
+    Sync,
+    todosStore: Sync.Store('todos'),
   };
 }
 
@@ -99,8 +100,8 @@ export function TodosDemo() {
       },
     });
     setInstance(nextInstance);
-    nextInstance.client.sync.start();
-    nextInstance.client.sync.setSubscribed(true);
+    nextInstance.Sync.start();
+    nextInstance.Sync.setSubscribed(true);
     setSubscribed(true);
   }, [instance]);
 
@@ -132,13 +133,13 @@ function TodosDemoBoard(props: {
   lastEventType: string | null;
   syncError: string | null;
 }) {
-  const { client, todosStore } = props.instance;
+  const { Sync, todosStore } = props.instance;
   const [query, setQuery] = useState('');
   const [title, setTitle] = useState('');
   const [opError, setOpError] = useState<string | null>(null);
 
   const syncStatusText = (() => {
-    const s = client.sync.status();
+    const s = Sync.status();
     if (!s.configured) return '未配置';
     return s.started ? '运行中' : '已停止';
   })();
@@ -173,24 +174,24 @@ function TodosDemoBoard(props: {
   const toggleSse = () => {
     const next = !props.subscribed;
     props.setSubscribed(next);
-    client.sync.setSubscribed(next);
+    Sync.setSubscribed(next);
   };
 
   const flush = async () => {
-    await client.sync.flush();
+    await Sync.flush();
   };
 
   const pull = async () => {
-    await client.sync.pull();
+    await Sync.pull();
   };
 
   const startSync = () => {
-    client.sync.start();
-    client.sync.setSubscribed(props.subscribed);
+    Sync.start();
+    Sync.setSubscribed(props.subscribed);
   };
 
   const stopSync = () => {
-    client.sync.stop();
+    Sync.stop();
   };
 
   const addTodo = async () => {

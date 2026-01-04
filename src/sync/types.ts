@@ -28,6 +28,17 @@ export interface OutboxStore {
     reject: (idempotencyKeys: string[], reason?: unknown) => Promise<void> | void
     markInFlight?: (idempotencyKeys: string[], atMs: number) => Promise<void> | void
     releaseInFlight?: (idempotencyKeys: string[]) => Promise<void> | void
+    /**
+     * Virtual baseVersion rewrite:
+     * - 当某条写入已被服务端确认（拿到 version）后，把同 entity 的后续 outbox items 的 baseVersion 重写为该 version，
+     *   以避免离线连续写导致的自冲突。
+     */
+    rebase?: (args: {
+        resource: string
+        entityId: string
+        baseVersion: number
+        afterEnqueuedAtMs?: number
+    }) => Promise<void> | void
     size: () => Promise<number> | number
 }
 

@@ -1,5 +1,5 @@
 import type { ObservabilityContext } from '#observability'
-import type { Entity, OperationContext, PatchMetadata, StoreDispatchEvent, StoreHandle } from '../types'
+import type { Entity, OperationContext, PatchMetadata, PersistWriteback, StoreDispatchEvent, StoreHandle } from '../types'
 import type { Plan } from './pipeline/types'
 
 export type Unsubscribe = () => void
@@ -63,10 +63,11 @@ export type DispatchDecision<T = unknown> =
 export type PersistMode = 'direct' | 'outbox' | 'custom'
 export type PersistStatus = 'confirmed' | 'enqueued'
 
-export type PersistResult<T> = Readonly<{
+export type PersistResult<T extends Entity> = Readonly<{
     mode: PersistMode
     status: PersistStatus
     created?: T[]
+    writeback?: PersistWriteback<T>
     extensions?: Extensions
 }>
 

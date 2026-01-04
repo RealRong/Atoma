@@ -352,64 +352,60 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
         const returning = options.returning !== false
+        const resultsByIndex: any[] = new Array(items.length)
 
         if (this.inTransaction) {
-            const updated: any[] = []
-            for (const item of items) {
-                const res = await this.upsert(resource, item, options)
-                if (returning && res.data !== undefined) updated.push(res.data)
+            for (let i = 0; i < items.length; i++) {
+                try {
+                    const res = await this.upsert(resource, items[i], options)
+                    resultsByIndex[i] = { ok: true, ...(returning ? { data: res.data } : {}) }
+                } catch (err) {
+                    resultsByIndex[i] = { ok: false, error: this.toError(err) }
+                }
             }
-            return { data: returning ? updated : [], transactionApplied: true }
+            return { resultsByIndex, transactionApplied: true }
         }
 
-        const operations = items.map(item => async () => {
-            const res = await this.upsert(resource, item, options)
-            return returning ? res.data : undefined
-        })
-
-        const settled = await Promise.allSettled(operations.map(op => op()))
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
+        const settled = await Promise.allSettled(items.map(item => this.upsert(resource, item, options)))
         settled.forEach((res, idx) => {
             if (res.status === 'fulfilled') {
-                if (returning && res.value !== undefined) data.push(res.value)
-            } else {
-                partialFailures.push({ index: idx, error: this.toError(res.reason) })
+                resultsByIndex[idx] = { ok: true, ...(returning ? { data: res.value.data } : {}) }
+                return
             }
+            resultsByIndex[idx] = { ok: false, error: this.toError(res.reason) }
         })
 
-        return {
-            data: returning ? data : [],
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: false
-        }
+        return { resultsByIndex, transactionApplied: false }
     }
 
     async bulkCreate(resource: string, items: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
         const delegate = this.requireDelegate(resource, 'create')
+        const returning = options.returning !== false
         const operations = items.map(item => () => delegate.create!({ data: item, select: this.buildSelect(options.select) }))
+        const resultsByIndex: any[] = new Array(items.length)
 
         if (this.inTransaction) {
-            const data: any[] = []
-            for (const op of operations) {
-                const row = await op()
-                if (options.returning !== false) data.push(row)
+            for (let i = 0; i < operations.length; i++) {
+                try {
+                    const row = await operations[i]()
+                    resultsByIndex[i] = { ok: true, ...(returning ? { data: row } : {}) }
+                } catch (err) {
+                    resultsByIndex[i] = { ok: false, error: this.toError(err) }
+                }
             }
-            return { data: options.returning === false ? [] : data, transactionApplied: true }
+            return { resultsByIndex, transactionApplied: true }
         }
 
         const settled = await Promise.allSettled(operations.map(op => op()))
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
         settled.forEach((res, idx) => {
-            if (res.status === 'fulfilled') data.push(res.value)
-            else partialFailures.push({ index: idx, error: this.toError(res.reason) })
+            if (res.status === 'fulfilled') {
+                resultsByIndex[idx] = { ok: true, ...(returning ? { data: res.value } : {}) }
+                return
+            }
+            resultsByIndex[idx] = { ok: false, error: this.toError(res.reason) }
         })
-        return {
-            data: options.returning === false ? [] : data,
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: false
-        }
+
+        return { resultsByIndex, transactionApplied: false }
     }
 
     async bulkUpdate(
@@ -418,66 +414,57 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
         const returning = options.returning !== false
+        const resultsByIndex: any[] = new Array(items.length)
 
         if (this.inTransaction) {
-            const updated: any[] = []
-            for (const item of items) {
-                const res = await this.update(resource, item, options)
-                if (returning && res.data !== undefined) updated.push(res.data)
+            for (let i = 0; i < items.length; i++) {
+                try {
+                    const res = await this.update(resource, items[i], options)
+                    resultsByIndex[i] = { ok: true, ...(returning ? { data: res.data } : {}) }
+                } catch (err) {
+                    resultsByIndex[i] = { ok: false, error: this.toError(err) }
+                }
             }
-            return { data: returning ? updated : [], transactionApplied: true }
+            return { resultsByIndex, transactionApplied: true }
         }
 
-        const operations = items.map(item => async () => {
-            const res = await this.update(resource, item, options)
-            return returning ? res.data : undefined
-        })
-
-        const settled = await Promise.allSettled(operations.map(op => op()))
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
+        const settled = await Promise.allSettled(items.map(item => this.update(resource, item, options)))
         settled.forEach((res, idx) => {
             if (res.status === 'fulfilled') {
-                if (returning && res.value !== undefined) data.push(res.value)
-            } else {
-                partialFailures.push({ index: idx, error: this.toError(res.reason) })
+                resultsByIndex[idx] = { ok: true, ...(returning ? { data: res.value.data } : {}) }
+                return
             }
+            resultsByIndex[idx] = { ok: false, error: this.toError(res.reason) }
         })
-        return {
-            data: returning ? data : [],
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: false
-        }
+        return { resultsByIndex, transactionApplied: false }
     }
 
-    async bulkDelete(resource: string, ids: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
-        const delegate = this.requireDelegate(resource, 'delete')
-        const operations = ids.map(id => () => delegate.delete!({
-            where: { id },
-            select: this.buildSelect(options.select)
-        }))
+    async bulkDelete(resource: string, items: Array<{ id: any; baseVersion?: number }>, options: WriteOptions = {}): Promise<QueryResultMany> {
+        const returning = options.returning !== false
+        const resultsByIndex: any[] = new Array(items.length)
 
         if (this.inTransaction) {
-            const data: any[] = []
-            for (const op of operations) {
-                const row = await op()
-                if (options.returning !== false) data.push(row)
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i]
+                try {
+                    const res = await this.delete(resource, { id: item.id, baseVersion: item.baseVersion }, options)
+                    resultsByIndex[i] = { ok: true, ...(returning ? { data: res.data } : {}) }
+                } catch (err) {
+                    resultsByIndex[i] = { ok: false, error: this.toError(err) }
+                }
             }
-            return { data: options.returning === false ? [] : data, transactionApplied: true }
+            return { resultsByIndex, transactionApplied: true }
         }
 
-        const settled = await Promise.allSettled(operations.map(op => op()))
-        const data: any[] = []
-        const partialFailures: Array<{ index: number; error: any }> = []
+        const settled = await Promise.allSettled(items.map(item => this.delete(resource, { id: item.id, baseVersion: item.baseVersion }, options)))
         settled.forEach((res, idx) => {
-            if (res.status === 'fulfilled') data.push(res.value)
-            else partialFailures.push({ index: idx, error: this.toError(res.reason) })
+            if (res.status === 'fulfilled') {
+                resultsByIndex[idx] = { ok: true, ...(returning ? { data: res.value.data } : {}) }
+                return
+            }
+            resultsByIndex[idx] = { ok: false, error: this.toError(res.reason) }
         })
-        return {
-            data: options.returning === false ? [] : data,
-            partialFailures: partialFailures.length ? partialFailures : undefined,
-            transactionApplied: false
-        }
+        return { resultsByIndex, transactionApplied: false }
     }
 
     private buildWhere(where: QueryParams['where']) {

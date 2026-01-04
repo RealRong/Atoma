@@ -1,13 +1,11 @@
 import { Core, OutboxPersister, applyStoreWriteback, type BeforePersistContext, type DeleteItem, type PersistResult, type StoreKey } from '#core'
 import { Observability, type ObservabilityContext } from '#observability'
-import { Sync, type SyncClient, type SyncEvent, type SyncPhase, type SyncWriteAck, type SyncWriteReject } from '#sync'
+import { Sync, type SyncClient, type SyncEvent, type SyncOutboxEvents, type SyncPhase, type SyncWriteAck, type SyncWriteReject } from '#sync'
 import type { Change } from '#protocol'
 import type { AtomaSync } from '../types'
 import type { ClientRuntime } from '../runtime'
 import type { ResolvedBackend } from '../backend'
 import { OpsDataSource } from '../../datasources'
-
-export type IdRemapSink = (storeName: string, from: StoreKey, to: StoreKey) => void
 
 const SYNC_INSTANCE_ID_SESSION_KEY = 'atoma:sync:instanceId'
 
@@ -77,6 +75,8 @@ export type AtomaClientSyncConfig =
         now?: () => number
         conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
         returning?: boolean
+        /** outbox 事件（例如队列大小变化） */
+        outboxEvents?: SyncOutboxEvents
         onError?: (error: Error, context: { phase: SyncPhase }) => void
         onEvent?: (event: SyncEvent) => void
     }
@@ -86,7 +86,6 @@ export function createSyncController(args: {
     backend?: ResolvedBackend
     localBackend?: ResolvedBackend
     syncConfig?: AtomaClientSyncConfig
-    idRemapSink?: IdRemapSink
 }): Readonly<{
     sync: AtomaSync
     dispose: () => void
@@ -143,7 +142,29 @@ export function createSyncController(args: {
         ctx: BeforePersistContext<any>,
         next: (ctx: BeforePersistContext<any>) => Promise<PersistResult<any>>
     ): Promise<PersistResult<any>> {
-        if (!syncStarted) return next(ctx)
+        const ops = Array.isArray(ctx.operations) ? ctx.operations : []
+        const persistModeSet = new Set<string>()
+        for (const op of ops) {
+            const mode = (op as any)?.__persist
+            if (mode === 'outbox' || mode === 'direct') {
+                persistModeSet.add(mode)
+            }
+        }
+
+        // 默认 direct：不做任何拦截
+        if (!persistModeSet.size || (persistModeSet.size === 1 && persistModeSet.has('direct'))) {
+            return next(ctx)
+        }
+
+        if (persistModeSet.size > 1) {
+            throw new Error('[Atoma] mixed persist modes in one mutation segment (direct vs outbox)')
+        }
+
+        const types = ctx?.plan?.operationTypes
+        if (Array.isArray(types) && types.includes('create' as any)) {
+            throw new Error('[Atoma] createServerAssigned* 不支持 outbox（Server-ID create 必须 direct + strict，且禁止 outbox）')
+        }
+
         const engine = ensureSyncEngine()
         const outbox = new OutboxPersister(engine)
         await outbox.persist({
@@ -218,6 +239,7 @@ export function createSyncController(args: {
             outboxKey,
             cursorKey,
             maxQueueSize: syncConfig.maxQueueSize,
+            outboxEvents: syncConfig.outboxEvents,
             maxPushItems: syncConfig.maxPushItems,
             pullLimit: syncConfig.pullLimit,
             pullDebounceMs: syncConfig.pullDebounceMs,
@@ -403,20 +425,20 @@ export function createSyncController(args: {
         }
 
         if (ack.action === 'create') {
-            const tempEntityId = (ack.item as any)?.entityId
             const nextEntityId = ack.result.entityId
+            const nextKey = normalizeStoreKeyFromEntityId(String(nextEntityId))
 
+            const tempEntityId = (ack.item as any)?.entityId
             const tempKey = (typeof tempEntityId === 'string' && tempEntityId)
                 ? normalizeStoreKeyFromEntityId(tempEntityId)
                 : null
-            const nextKey = normalizeStoreKeyFromEntityId(String(nextEntityId))
 
             if (tempKey !== null && tempKey !== nextKey) {
-                args.idRemapSink?.(String(ack.resource || handle.storeName), tempKey, nextKey)
+                throw new Error('[Atoma] sync: create ack returned mismatched id (client-id create must not change id)')
             }
 
             const before = handle.jotaiStore.get(handle.atom) as Map<StoreKey, any>
-            const existing = (tempKey !== null) ? before.get(tempKey) : undefined
+            const existing = before.get(nextKey)
 
             const serverData = ack.result.data
             const candidate = (serverData && typeof serverData === 'object')
@@ -431,10 +453,6 @@ export function createSyncController(args: {
                     candidate.version = ack.result.version
                 }
                 upserts.push(candidate)
-            }
-
-            if (tempKey !== null && tempKey !== nextKey) {
-                deletes.push(tempKey)
             }
         }
 

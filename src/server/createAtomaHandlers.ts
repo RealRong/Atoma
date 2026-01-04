@@ -10,6 +10,19 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
     return Boolean(value && typeof value === 'object' && typeof (value as any)[Symbol.asyncIterator] === 'function')
 }
 
+function serializeErrorForLog(error: unknown) {
+    if (error instanceof Error) {
+        const anyErr = error as any
+        return {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            ...(anyErr?.cause !== undefined ? { cause: anyErr.cause } : {})
+        }
+    }
+    return { value: error }
+}
+
 function asyncIterableToReadableStream(body: AsyncIterable<unknown>): ReadableStream<Uint8Array> {
     if (typeof ReadableStream !== 'function') {
         throw new Error('ReadableStream is required to stream subscribe responses')
@@ -161,6 +174,12 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
             return response
         } catch (err: any) {
             runtime.observabilityContext.emit('server:error', { message: err?.message })
+            runtime.logger?.error?.('request failed', {
+                route: args.route,
+                method: args.method,
+                pathname: args.pathname,
+                error: serializeErrorForLog(err)
+            })
             if (runtime.hooks?.onError) await runtime.hooks.onError({ ...runtime.hookArgs, error: err })
 
             const formatted = formatTopLevelError({

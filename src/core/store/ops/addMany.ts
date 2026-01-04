@@ -25,6 +25,7 @@ export function createAddMany<T extends Entity>(handle: StoreHandle<T>) {
                     handle,
                     opContext,
                     ticket,
+                    __persist: options?.__atoma?.persist,
                     onSuccess: (o) => {
                         void runAfterSave(hooks, validObj as any, 'add')
                             .then(() => {
