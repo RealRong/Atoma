@@ -98,7 +98,7 @@
 - `SyncEngine.pull()` → `PullLane.pull()`
   - 读取当前 cursor（没有则用 `initialCursor`，再没有则 `'0'`）
   - `transport.opsClient.executeOps({ ops: [changes.pull], meta })`
-  - `applier.applyChanges(batch.changes)`
+  - `applier.applyPullChanges(batch.changes)`
   - `cursor.set(batch.nextCursor)`
 
 此外 `SyncEngine` 还会按 interval 做 periodic pull；失败时会退避并重试。
@@ -132,11 +132,11 @@
 ## Transport & Applier（对接点）
 
 - `SyncTransport.opsClient` 是必需的服务端对接点（提供 `opsClient.executeOps(...)`）。
-- 订阅需要 `subscribeUrl`（可选 `eventSourceFactory`）。
+- 订阅能力（`transport.subscribe`）仅在启用 subscribe 时需要；SSE 模式下通常需要 `subscribeUrl`（可选 `eventSourceFactory`）。
 - `applier` 负责把 sync 事件转成用户回调：
-  - `onPullChanges(changes)`
-  - `onWriteAck(ack)`
-  - `onWriteReject(reject, conflictStrategy)`
+  - `applier.applyPullChanges(changes)`
+  - `applier.applyWriteAck(ack)`
+  - `applier.applyWriteReject(reject, conflictStrategy)`
 
 这样 sync 逻辑就不会依赖你具体的 store/adapter 实现细节。
 

@@ -1,6 +1,6 @@
 import type { OpsClient, RetryOptions } from '#backend'
 import type { Envelope, OpsResponseData } from '#protocol'
-import type { SyncTransport } from '#sync'
+import type { SyncSubscribe } from '#sync'
 import type { StoreKey } from '#core'
 import type { Table } from 'dexie'
 
@@ -44,7 +44,7 @@ export type StoreCustomOpsBackendConfig = {
 }
 
 export type CustomOpsBackendConfig = StoreCustomOpsBackendConfig & {
-    subscribe?: SyncTransport['subscribe']
+    subscribe?: SyncSubscribe
     sse?: {
         subscribeUrl: (args?: { resources?: string[] }) => string
         eventSourceFactory?: (url: string) => EventSource
@@ -80,7 +80,7 @@ export type BackendConfig =
 export type ResolvedBackend = {
     key: string
     opsClient: OpsClient
-    subscribe?: SyncTransport['subscribe']
+    subscribe?: SyncSubscribe
     sse?: {
         buildUrl: (args?: { resources?: string[] }) => string
         eventSourceFactory?: (url: string) => EventSource
@@ -103,4 +103,3 @@ export type ResolvedBackends = {
     /** Backend used by SyncController (usually remote). */
     sync?: ResolvedBackend
 }
-

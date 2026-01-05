@@ -1,4 +1,6 @@
-// Minimal IndexedDB-only KV store (required for Sync persistence).
+// Minimal KV store for Sync persistence:
+// - Browser: IndexedDB
+// - Non-browser (no indexedDB): in-memory fallback (non-durable, mainly for Node/tests)
 
 type KVGet = <T>(key: string) => Promise<T | undefined>
 type KVSet = (key: string, value: any) => Promise<void>
@@ -60,6 +62,22 @@ export function createKVStore(options?: { dbName?: string; storeName?: string })
     const cacheKey = `${dbName}::${storeName}`
     const cached = KV_STORE_CACHE.get(cacheKey)
     if (cached) return cached
+
+    if (typeof indexedDB === 'undefined') {
+        const memory = new Map<string, any>()
+
+        const get: KVGet = async (key) => {
+            return memory.get(key)
+        }
+
+        const set: KVSet = async (key, value) => {
+            memory.set(key, value)
+        }
+
+        const store: KVStore = { get, set }
+        KV_STORE_CACHE.set(cacheKey, store)
+        return store
+    }
 
     const idb = new StrictIDB(dbName, storeName)
 

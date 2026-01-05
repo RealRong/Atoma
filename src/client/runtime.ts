@@ -20,6 +20,9 @@ export function createClientRuntime(args: {
         dataSourceFactory: (name: string) => IDataSource<any>
         idGenerator?: () => StoreKey
     }
+    syncStore?: {
+        allowImplicitFetchForWrite?: boolean
+    }
 }): ClientRuntime {
     const storeCache = new Map<string, CoreStore<any, any>>()
     const handleCache = new Map<string, StoreHandle<any>>()
@@ -101,7 +104,7 @@ export function createClientRuntime(args: {
                 throw new Error(`[Atoma] Sync.Store: 未找到 storeHandle（store="${key}"）`)
             }
 
-            const view = Core.store.createSyncStoreView(handle)
+            const view = Core.store.createSyncStoreView(handle, args.syncStore)
             syncStoreCache.set(key, view as any)
             return view as any
         },

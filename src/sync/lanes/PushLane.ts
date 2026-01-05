@@ -1,5 +1,5 @@
 import { buildWriteBatchCompacted } from '../policies/batchPolicy'
-import type { OutboxStore, SyncEvent, SyncOutboxItem, SyncPhase, SyncTransport, SyncWriteAck, SyncWriteReject } from '../types'
+import type { OutboxStore, SyncApplier, SyncEvent, SyncOutboxItem, SyncPhase, SyncTransport, SyncWriteAck, SyncWriteReject } from '../types'
 import type {
     Meta,
     Operation,
@@ -8,7 +8,6 @@ import type {
     WriteItemResult,
     WriteResultData
 } from '#protocol'
-import type { SyncApplier } from '../internal'
 import { sleepMs } from '../policies/backoffPolicy'
 import { executeSingleOp, toError } from '../internal'
 import { RetryBackoff } from '../policies/retryBackoff'

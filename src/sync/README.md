@@ -98,7 +98,7 @@ Path:
 - `SyncEngine.pull()` → `PullLane.pull()`
   - Reads current cursor (or `initialCursor`, or `'0'`)
   - Calls `transport.opsClient.executeOps({ ops: [changes.pull], meta })`
-  - Applies `batch.changes` via `applier.applyChanges(...)`
+  - Applies `batch.changes` via `applier.applyPullChanges(...)`
   - Stores `batch.nextCursor` via `cursor.set(...)`
 
 `SyncEngine` can also schedule periodic pulls with backoff on failure.
@@ -131,11 +131,11 @@ Important: cursor is advanced only by pull; notify never writes cursor.
 ## Transport & Applier (integration points)
 
 - `SyncTransport.opsClient` is the only required server integration (providing `opsClient.executeOps(...)`).
-- Subscription requires `subscribeUrl` (and optionally `eventSourceFactory`).
+- Subscription capability (`transport.subscribe`) is needed only when subscribe is enabled; SSE usually requires `subscribeUrl` (and optionally `eventSourceFactory`).
 - `applier` is a wrapper that delegates to:
-  - `onPullChanges(changes)`
-  - `onWriteAck(ack)`
-  - `onWriteReject(reject, conflictStrategy)`
+  - `applier.applyPullChanges(changes)`
+  - `applier.applyWriteAck(ack)`
+  - `applier.applyWriteReject(reject, conflictStrategy)`
 
 This separation keeps sync logic independent from your actual store/mutation implementation.
 

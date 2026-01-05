@@ -1,6 +1,5 @@
-import type { CursorStore, SyncEvent, SyncPhase, SyncTransport } from '../types'
+import type { CursorStore, SyncApplier, SyncEvent, SyncPhase, SyncTransport } from '../types'
 import type { ChangeBatch, Cursor, Meta, Operation } from '#protocol'
-import type { SyncApplier } from '../internal'
 import { executeSingleOp, readCursorOrInitial, toError, toOperationError } from '../internal'
 
 export class PullLane {
@@ -61,7 +60,7 @@ export class PullLane {
 
             const batch = opResult.data as ChangeBatch
             if (batch.changes.length) {
-                await Promise.resolve(this.deps.applier.applyChanges(batch.changes))
+                await Promise.resolve(this.deps.applier.applyPullChanges(batch.changes))
             }
             await this.deps.cursor.set(batch.nextCursor)
             return batch

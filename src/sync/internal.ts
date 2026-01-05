@@ -1,32 +1,5 @@
-import type { CursorStore, SyncTransport, SyncWriteAck, SyncWriteReject } from './types'
+import type { CursorStore, SyncTransport } from './types'
 import type { Change, Cursor, Meta, Operation, OperationResult } from '#protocol'
-
-export interface SyncApplier {
-    applyChanges: (changes: Change[]) => Promise<void> | void
-    applyWriteAck: (ack: SyncWriteAck) => Promise<void> | void
-    applyWriteReject: (reject: SyncWriteReject, conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual') => Promise<void> | void
-}
-
-export function createApplier(args: {
-    defaultConflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
-    onPullChanges?: (changes: Change[]) => Promise<void> | void
-    onWriteAck?: (ack: SyncWriteAck) => Promise<void> | void
-    onWriteReject?: (reject: SyncWriteReject, conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual') => Promise<void> | void
-}): SyncApplier {
-    return {
-        applyChanges: async (changes) => {
-            if (args.onPullChanges) {
-                await Promise.resolve(args.onPullChanges(changes))
-            }
-        },
-        applyWriteAck: async (ack) => {
-            await Promise.resolve(args.onWriteAck?.(ack))
-        },
-        applyWriteReject: async (reject, conflictStrategy) => {
-            await Promise.resolve(args.onWriteReject?.(reject, conflictStrategy ?? args.defaultConflictStrategy))
-        }
-    }
-}
 
 export function toError(error: unknown): Error {
     return error instanceof Error ? error : new Error(String(error))

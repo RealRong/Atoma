@@ -1,9 +1,8 @@
 import type { SyncEvent, SyncOutboxEvents, SyncPhase, SyncOutboxItem } from '#sync'
 
-export type SyncQueueWriteMode = 'queue-only' | 'save-local-then-queue'
+export type SyncQueueWriteMode = 'intent-only' | 'local-first'
 
 export type SyncQueueWritesArgs = {
-    mode: SyncQueueWriteMode
     outboxKey?: string
     maxSize?: number
     onQueueChange?: (size: number) => void
@@ -33,8 +32,8 @@ export type SyncDefaultsArgs = {
 }
 
 export type AtomaClientSyncConfig = {
-    /** Sync.Store 写入路径（默认：queue-only） */
-    writePath?: 'queue-only' | 'save-local-then-queue'
+    /** Sync.Store queued 写入策略（默认由 store.backend 推导） */
+    queueWriteMode?: SyncQueueWriteMode
     /** 是否启用 subscribe（默认：true） */
     subscribe?: boolean
     /** SSE event name（默认：Protocol.sse.events.NOTIFY） */
@@ -64,4 +63,3 @@ export type AtomaClientSyncConfig = {
     onError?: (error: Error, context: { phase: SyncPhase }) => void
     onEvent?: (event: SyncEvent) => void
 }
-

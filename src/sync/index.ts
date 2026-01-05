@@ -15,6 +15,8 @@ export type {
     SyncConfig,
     SyncEvent,
     SyncPhase,
+    SyncApplier,
+    SyncSubscribe,
     SyncOutboxItem,
     SyncWriteAck,
     SyncWriteReject,

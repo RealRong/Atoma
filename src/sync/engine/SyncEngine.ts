@@ -1,5 +1,5 @@
-import type { SyncBackoffConfig, SyncClient, SyncConfig, SyncOutboxItem, SyncRetryConfig, SyncTransport } from '../types'
-import { createApplier, toError } from '../internal'
+import type { SyncApplier, SyncBackoffConfig, SyncClient, SyncConfig, SyncOutboxItem, SyncRetryConfig, SyncTransport } from '../types'
+import { toError } from '../internal'
 import { PushLane } from '../lanes/PushLane'
 import { PullLane } from '../lanes/PullLane'
 import { NotifyLane } from '../lanes/NotifyLane'
@@ -101,7 +101,7 @@ export class SyncEngine implements SyncClient {
 
     private readonly outbox
     private readonly cursor
-    private readonly applier
+    private readonly applier: SyncApplier
 
     private readonly pushLane: PushLane
     private readonly pullLane: PullLane
@@ -121,7 +121,7 @@ export class SyncEngine implements SyncClient {
     constructor(private readonly config: SyncConfig) {
         const transport = (config as any)?.transport
         const opsClient = transport?.opsClient
-        if (!transport || !opsClient || typeof opsClient.executeOps !== 'function' || typeof transport.subscribe !== 'function') {
+        if (!transport || !opsClient || typeof opsClient.executeOps !== 'function') {
             throw new Error('[Sync] transport is required')
         }
 
@@ -144,12 +144,7 @@ export class SyncEngine implements SyncClient {
 
         this.outbox = stores.outbox
         this.cursor = stores.cursor
-        this.applier = createApplier({
-            defaultConflictStrategy: config.conflictStrategy,
-            onPullChanges: config.onPullChanges,
-            onWriteAck: config.onWriteAck,
-            onWriteReject: config.onWriteReject
-        })
+        this.applier = config.applier
 
         this.pushLane = new PushLane({
             outbox: this.outbox,

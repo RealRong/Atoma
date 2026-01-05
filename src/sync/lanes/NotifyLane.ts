@@ -70,7 +70,12 @@ export class NotifyLane {
 
     private async open() {
         try {
-            this.subscription = this.deps.transport.subscribe({
+            const subscribe = this.deps.transport.subscribe
+            if (!subscribe) {
+                throw new Error('[Sync] subscribe is enabled but transport.subscribe is not provided')
+            }
+
+            this.subscription = subscribe({
                 resources: this.deps.resources,
                 onMessage: async (msg) => {
                     try {

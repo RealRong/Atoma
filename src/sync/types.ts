@@ -61,18 +61,26 @@ export type SyncWriteReject = {
     result: Extract<WriteItemResult, { ok: false }>
 }
 
+export interface SyncApplier {
+    applyPullChanges: (changes: Change[]) => Promise<void> | void
+    applyWriteAck: (ack: SyncWriteAck) => Promise<void> | void
+    applyWriteReject: (reject: SyncWriteReject, conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual') => Promise<void> | void
+}
+
 export type NotifyMessage = {
     resources?: string[]
     traceId?: string
 }
 
+export type SyncSubscribe = (args: {
+    resources?: string[]
+    onMessage: (msg: NotifyMessage) => void
+    onError: (error: unknown) => void
+}) => { close: () => void }
+
 export interface SyncTransport {
     opsClient: OpsClient
-    subscribe: (args: {
-        resources?: string[]
-        onMessage: (msg: NotifyMessage) => void
-        onError: (error: unknown) => void
-    }) => { close: () => void }
+    subscribe?: SyncSubscribe
 }
 
 export type SyncPhase = 'push' | 'pull' | 'notify' | 'lifecycle'
@@ -116,9 +124,7 @@ export type SyncConfig = {
     push?: boolean
     /** Whether to enable pull (remote -> local). Default: true */
     pull?: boolean
-    onPullChanges?: (changes: Change[]) => Promise<void> | void
-    onWriteAck?: (ack: SyncWriteAck) => Promise<void> | void
-    onWriteReject?: (reject: SyncWriteReject, conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual') => Promise<void> | void
+    applier: SyncApplier
     outboxKey: string
     cursorKey: string
     maxQueueSize?: number

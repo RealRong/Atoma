@@ -2,7 +2,17 @@ import type { IDataSource, Entity, StoreKey } from '#core'
 import type { BackendEndpointConfig, HttpBackendConfig, HttpSyncBackendConfig, IndexedDBBackendConfig, StoreBackendEndpointConfig } from './backend'
 import type { AtomaClient } from './client'
 import type { StoresConstraint } from './store'
-import type { SyncDefaultsArgs, SyncQueueWriteMode, SyncQueueWritesArgs } from './sync'
+import type { SyncDefaultsArgs, SyncQueueWritesArgs } from './sync'
+
+export type SyncQueueWritesBuilder<
+    Entities extends Record<string, Entity>,
+    Stores extends StoresConstraint<Entities> = {}
+> = AtomaClientBuilder<Entities, Stores> & {
+    /** 强制使用 local-first（本地 durable 后再入队） */
+    localFirst: () => AtomaClientBuilder<Entities, Stores>
+    /** 强制使用 intent-only（只入队，不保证本地 durable） */
+    intentOnly: () => AtomaClientBuilder<Entities, Stores>
+}
 
 export type StoreDefaultsArgs<
     Entities extends Record<string, Entity>
@@ -45,7 +55,7 @@ export type AtomaClientBuilder<
             http: (args: SyncTargetHttpArgs) => AtomaClientBuilder<Entities, Stores>
             custom: (args: BackendEndpointConfig) => AtomaClientBuilder<Entities, Stores>
         }
-        queueWrites: (args: SyncQueueWritesArgs) => AtomaClientBuilder<Entities, Stores>
+        queueWrites: (args: SyncQueueWritesArgs) => SyncQueueWritesBuilder<Entities, Stores>
         defaults: (args: SyncDefaultsArgs) => AtomaClientBuilder<Entities, Stores>
     }
     build: () => AtomaClient<Entities, Stores>

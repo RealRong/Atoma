@@ -14,6 +14,7 @@ import type {
     StoreBatchArgs,
     StoreBackendEndpointConfig,
     SyncDefaultsArgs,
+    SyncQueueWriteMode,
     SyncQueueWritesArgs
 } from './types'
 import { resolveBackend } from './backend'
@@ -35,6 +36,7 @@ const defineStoresInternal = <
                 storeBatch?: StoreBatchArgs
                 syncTarget?: BackendEndpointConfig
                 syncQueueWrites?: SyncQueueWritesArgs
+                syncQueueWriteMode?: SyncQueueWriteMode
                 syncDefaults?: SyncDefaultsArgs
             } = {}
 
@@ -57,8 +59,12 @@ const defineStoresInternal = <
                     throw new Error('[Atoma] defineClient().build: 使用 sync 相关配置前必须先配置 sync.target（或将 store.backend 设为 remote，以便复用同一对端）')
                 }
 
-                if (syncQueue?.mode === 'save-local-then-queue' && storeBackend.role !== 'local') {
-                    throw new Error('[Atoma] defineClient().build: sync.queueWrites(mode=save-local-then-queue) 需要 store.backend 为本地 durable（indexedDB/server/custom local）')
+                const queueWriteMode: SyncQueueWriteMode | undefined = syncQueue
+                    ? (state.syncQueueWriteMode ?? (storeBackend.role === 'local' ? 'local-first' : 'intent-only'))
+                    : undefined
+
+                if (queueWriteMode === 'local-first' && storeBackend.role !== 'local') {
+                    throw new Error('[Atoma] defineClient().build: sync.queueWrites(...).localFirst() 需要 store.backend 为本地 durable（indexedDB/server/custom local）')
                 }
 
                 const resolved = (() => {
@@ -99,6 +105,9 @@ const defineStoresInternal = <
                     defaults: {
                         dataSourceFactory: dataSourceFactory as any,
                         idGenerator: state.storeDefaults?.idGenerator
+                    },
+                    syncStore: {
+                        allowImplicitFetchForWrite: queueWriteMode === 'local-first'
                     }
                 })
 
@@ -134,7 +143,7 @@ const defineStoresInternal = <
                                     ...(syncQueue.onQueueFull ? { onQueueFull: (droppedOp: any, maxSize: number) => syncQueue.onQueueFull?.({ maxSize, droppedOp }) } : {})
                                 }
                                 : undefined,
-                            writePath: syncQueue.mode
+                            queueWriteMode
                         } : {})
                     } as any)
                     : undefined
@@ -216,7 +225,20 @@ const defineStoresInternal = <
                     },
                     queueWrites: (args) => {
                         state.syncQueueWrites = args
-                        return builder
+                        state.syncQueueWriteMode = undefined
+
+                        const queueWritesBuilder = Object.assign({}, builder, {
+                            localFirst: () => {
+                                state.syncQueueWriteMode = 'local-first'
+                                return builder
+                            },
+                            intentOnly: () => {
+                                state.syncQueueWriteMode = 'intent-only'
+                                return builder
+                            }
+                        })
+
+                        return queueWritesBuilder as any
                     },
                     defaults: (args) => {
                         state.syncDefaults = args
