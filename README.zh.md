@@ -32,11 +32,10 @@ import { useFindMany } from 'atoma/react'
 type User = { id: string; name: string; version?: number }
 
 const { defineStores } = defineEntities<{ users: User }>()
-const client = defineStores().defineClient({
-    backend: { http: { baseURL: 'http://localhost:3000/api' } },
-    remote: { batch: true },
-    sync: true
-})
+const client = defineStores()
+    .defineClient()
+    .store.backend.http({ baseURL: 'http://localhost:3000/api' })
+    .build()
 
 export function Users() {
     const usersStore = client.Store('users')

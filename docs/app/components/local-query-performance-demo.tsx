@@ -143,17 +143,13 @@ export function LocalQueryPerformanceDemo() {
 
         return defineEntities<{ books: Book }>()
             .defineStores(stores)
-            .defineClient({
-                backend: {
-                    key: `docs:local:${instanceId}`,
-                    http: {
-                        baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-                        opsPath: '/api/ops'
-                    }
-                },
-                defaultDataSourceFactory: () => ds as any,
-                sync: false
+            .defineClient()
+            .store.defaults({ dataSourceFactory: () => ds as any })
+            .store.backend.http({
+                baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+                opsPath: '/api/ops'
             })
+            .build()
     }, [indexesEnabled, instanceId])
 
     const store = client.Store('books')

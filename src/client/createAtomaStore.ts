@@ -81,14 +81,3 @@ export function createStoreInstance(args: {
         handle
     }
 }
-
-export type {
-    BelongsToSchema,
-    CreateAtomaStoreOptions,
-    HasManySchema,
-    HasOneSchema,
-    RelationMapFromSchema,
-    RelationSchemaItem,
-    RelationsDsl,
-    RelationsSchema
-} from './types'

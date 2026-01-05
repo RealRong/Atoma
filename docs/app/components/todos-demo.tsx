@@ -42,26 +42,26 @@ function createTodosClient(args: {
 }) {
   const { Store, Sync } = defineEntities<{ todos: Todo }>()
     .defineStores({})
-    .defineClient({
-      backend: {
-        key: 'docs:todos',
-        http: {
-          baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-          opsPath: '/api/ops',
-          subscribePath: '/api/subscribe',
-        },
-      },
-      sync: {
-        enabled: true,
-        subscribe: true,
-        pullDebounceMs: 200,
-        periodicPullIntervalMs: 30_000,
-        pullLimit: 200,
-        conflictStrategy: 'server-wins',
-        onEvent: args.onSyncEvent,
-        onError: args.onSyncError,
-      },
-    });
+    .defineClient()
+    .store.backend.http({
+      baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+      opsPath: '/api/ops',
+    })
+    .sync.target.http({
+      baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+      opsPath: '/api/ops',
+      subscribePath: '/api/subscribe',
+    })
+    .sync.defaults({
+      subscribe: true,
+      pullDebounceMs: 200,
+      periodicPullIntervalMs: 30_000,
+      pullLimit: 200,
+      conflictStrategy: 'server-wins',
+      onEvent: args.onSyncEvent,
+      onError: args.onSyncError,
+    })
+    .build();
 
   return {
     Store,

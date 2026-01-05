@@ -15,6 +15,7 @@ import { RetryBackoff } from '../policies/retryBackoff'
 
 export class PushLane {
     private disposed = false
+    private enabled = true
     private pushing = false
     private flushScheduled = false
     private flushRequested = false
@@ -45,8 +46,14 @@ export class PushLane {
         this.disposed = true
     }
 
+    setEnabled(enabled: boolean) {
+        if (this.disposed) return
+        this.enabled = Boolean(enabled)
+    }
+
     requestFlush() {
         if (this.disposed) return
+        if (!this.enabled) return
         if (this.flushScheduled) return
         this.flushScheduled = true
         queueMicrotask(() => {
@@ -57,6 +64,7 @@ export class PushLane {
 
     async flush() {
         if (this.disposed) return
+        if (!this.enabled) return
         if (this.pushing) {
             this.flushRequested = true
             return

@@ -63,16 +63,12 @@ function createRelationsClient(backendKey: string) {
         },
       },
     })
-    .defineClient({
-      backend: {
-        key: backendKey,
-        http: {
-          baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-          opsPath: '/api/demos/relations/ops',
-        },
-      },
-      sync: false,
-    });
+    .defineClient()
+    .store.backend.http({
+      baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+      opsPath: '/api/demos/relations/ops',
+    })
+    .build();
 
   return {
     client,

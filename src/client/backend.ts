@@ -1,90 +1,6 @@
-import { Protocol, type Envelope, type OpsResponseData } from '#protocol'
-import { Backend, type OpsClient, type RetryOptions } from '#backend'
-import type { SyncTransport } from '#sync'
-import type { Table } from 'dexie'
-import type { StoreKey } from '#core'
-
-export type HttpBackendConfig = {
-    baseURL: string
-    opsPath?: string
-    subscribePath?: string
-    subscribeUrl?: (args?: { resources?: string[] }) => string
-    eventSourceFactory?: (url: string) => EventSource
-
-    headers?: () => Promise<Record<string, string>> | Record<string, string>
-    retry?: RetryOptions
-    fetchFn?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-
-    onRequest?: (request: Request) => Promise<Request | void> | Request | void
-    onResponse?: (context: {
-        response: Response
-        envelope: Envelope<OpsResponseData>
-        request: Request
-    }) => void
-    responseParser?: (response: Response, data: unknown) => Promise<Envelope<OpsResponseData>> | Envelope<OpsResponseData>
-}
-
-export type MemoryBackendConfig = {
-    seed?: Record<string, any[]>
-}
-
-export type IndexedDBBackendConfig = {
-    tableForResource: (resource: string) => Table<any, StoreKey>
-    transformData?: (args: { resource: string; data: any }) => any | undefined
-}
-
-export type BackendEndpointConfig =
-    | string
-    | { key?: string; http: HttpBackendConfig }
-    | { key?: string; memory: MemoryBackendConfig }
-    | { key?: string; indexeddb: IndexedDBBackendConfig }
-    | {
-        key: string
-        opsClient: OpsClient
-        subscribe?: SyncTransport['subscribe']
-        sse?: {
-            subscribeUrl: (args?: { resources?: string[] }) => string
-            eventSourceFactory?: (url: string) => EventSource
-        }
-    }
-
-export type BackendConfig =
-    | BackendEndpointConfig
-    | {
-        /**
-         * Local-first: local handles reads/writes for IDataSource (OpsDataSource).
-         * Remote handles sync transport (push/pull/subscribe).
-         */
-        local?: BackendEndpointConfig
-        remote?: BackendEndpointConfig
-    }
-
-export type ResolvedBackend = {
-    key: string
-    opsClient: OpsClient
-    subscribe?: SyncTransport['subscribe']
-    sse?: {
-        buildUrl: (args?: { resources?: string[] }) => string
-        eventSourceFactory?: (url: string) => EventSource
-    }
-}
-
-export type ResolvedBackends = {
-    /**
-     * A stable identifier for this client instance.
-     * - When remote exists, uses remote.key (sync identity).
-     * - Otherwise falls back to dataSource.key.
-     */
-    key: string
-    /** Optional local backend (for local-first). */
-    local?: ResolvedBackend
-    /** Optional remote backend (for sync/transport). */
-    remote?: ResolvedBackend
-    /** Backend used by default OpsDataSource instances. */
-    dataSource: ResolvedBackend
-    /** Backend used by SyncController (usually remote). */
-    sync?: ResolvedBackend
-}
+import { Protocol } from '#protocol'
+import { Backend } from '#backend'
+import type { BackendConfig, BackendEndpointConfig, HttpSyncBackendConfig, MemoryBackendConfig, IndexedDBBackendConfig, ResolvedBackend, ResolvedBackends, StoreBackendEndpointConfig } from './types/backend'
 
 function joinUrl(base: string, path: string): string {
     if (!base) return path
@@ -105,14 +21,14 @@ function withResourcesParam(url: string, resources?: string[]): string {
     return `${url}?resources=${encoded}`
 }
 
-function resolveHttpBackend(args: { key?: string; http: HttpBackendConfig }): ResolvedBackend {
+function resolveHttpBackend(args: { http: HttpSyncBackendConfig }): ResolvedBackend {
     const http = args.http
     const baseURL = String(http.baseURL || '')
     if (!baseURL) {
         throw new Error('[Atoma] backend.http.baseURL is required')
     }
 
-    const key = String(args.key ?? baseURL)
+    const key = String(baseURL)
 
     const opsClient = new Backend.HttpOpsClient({
         baseURL,
@@ -127,40 +43,45 @@ function resolveHttpBackend(args: { key?: string; http: HttpBackendConfig }): Re
         }
     })
 
+    const hasSubscribe = Boolean(http.subscribeUrl || http.subscribePath || http.eventSourceFactory)
     const subscribeBaseUrl = http.subscribeUrl
         ? http.subscribeUrl
-        : (args?: { resources?: string[] }) => {
+        : (args2?: { resources?: string[] }) => {
             const path = http.subscribePath ?? Protocol.http.paths.SYNC_SUBSCRIBE
-            return withResourcesParam(joinUrl(baseURL, path), args?.resources)
+            return withResourcesParam(joinUrl(baseURL, path), args2?.resources)
         }
 
     return {
         key,
         opsClient,
-        sse: {
-            buildUrl: subscribeBaseUrl,
-            eventSourceFactory: http.eventSourceFactory
-        }
+        ...(hasSubscribe
+            ? {
+                sse: {
+                    buildUrl: subscribeBaseUrl,
+                    eventSourceFactory: http.eventSourceFactory
+                }
+            }
+            : {})
     }
 }
 
-function resolveMemoryBackend(args: { key?: string; memory: MemoryBackendConfig }): ResolvedBackend {
-    const key = String(args.key ?? 'memory')
+function resolveMemoryBackend(args: { memory: MemoryBackendConfig }): ResolvedBackend {
+    const key = 'memory'
     return {
         key,
         opsClient: new Backend.MemoryOpsClient(args.memory)
     }
 }
 
-function resolveIndexedDBBackend(args: { key?: string; indexeddb: IndexedDBBackendConfig }): ResolvedBackend {
-    const key = String(args.key ?? 'indexeddb')
+function resolveIndexedDBBackend(args: { indexeddb: IndexedDBBackendConfig }): ResolvedBackend {
+    const key = 'indexeddb'
     return {
         key,
         opsClient: new Backend.IndexedDBOpsClient(args.indexeddb)
     }
 }
 
-function isEndpointConfig(config: BackendConfig): config is BackendEndpointConfig {
+function isEndpointConfig(config: BackendConfig): config is StoreBackendEndpointConfig | BackendEndpointConfig {
     if (typeof config === 'string') return true
     if (!config || typeof config !== 'object' || Array.isArray(config)) return false
     if ('http' in config) return true
@@ -170,7 +91,7 @@ function isEndpointConfig(config: BackendConfig): config is BackendEndpointConfi
     return false
 }
 
-function resolveEndpoint(config: BackendEndpointConfig): ResolvedBackend {
+function resolveEndpoint(config: StoreBackendEndpointConfig | BackendEndpointConfig): ResolvedBackend {
     if (typeof config === 'string') {
         const baseURL = config
         return resolveHttpBackend({ http: { baseURL } })
@@ -182,29 +103,26 @@ function resolveEndpoint(config: BackendEndpointConfig): ResolvedBackend {
 
     if ('http' in config && (config as any).http) {
         return resolveHttpBackend({
-            key: (config as any).key,
             http: (config as any).http
         })
     }
 
     if ('memory' in config && (config as any).memory) {
         return resolveMemoryBackend({
-            key: (config as any).key,
             memory: (config as any).memory
         })
     }
 
     if ('indexeddb' in config && (config as any).indexeddb) {
         return resolveIndexedDBBackend({
-            key: (config as any).key,
             indexeddb: (config as any).indexeddb
         })
     }
 
     if ('opsClient' in config && (config as any).opsClient) {
-        const key = String((config as any).key || '')
-        if (!key) {
-            throw new Error('[Atoma] backend.key is required when using a custom opsClient')
+        const id = String((config as any).id || '')
+        if (!id) {
+            throw new Error('[Atoma] backend.id is required when using a custom opsClient')
         }
 
         const sse = (config as any).sse
@@ -218,7 +136,7 @@ function resolveEndpoint(config: BackendEndpointConfig): ResolvedBackend {
             : undefined
 
         return {
-            key,
+            key: id,
             opsClient: (config as any).opsClient,
             subscribe: typeof (config as any).subscribe === 'function' ? (config as any).subscribe : undefined,
             ...(sseResolved ? { sse: sseResolved } : {})

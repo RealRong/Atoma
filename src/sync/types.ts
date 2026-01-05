@@ -112,6 +112,10 @@ export type SyncRetryConfig = {
 
 export type SyncConfig = {
     transport: SyncTransport
+    /** Whether to enable push (outbox -> remote). Default: true */
+    push?: boolean
+    /** Whether to enable pull (remote -> local). Default: true */
+    pull?: boolean
     onPullChanges?: (changes: Change[]) => Promise<void> | void
     onWriteAck?: (ack: SyncWriteAck) => Promise<void> | void
     onWriteReject?: (reject: SyncWriteReject, conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual') => Promise<void> | void

@@ -77,69 +77,65 @@ export function BatchConsoleDemo() {
 
     const client = defineEntities<{ items: Item }>()
       .defineStores({})
-      .defineClient({
-        backend: {
-          key: `docs:batch:${runId}`,
-          http: {
-            baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-            opsPath: '/api/demos/batch/ops',
-            onRequest: async (request) => {
-              try {
-                startedAt.set(request, nowMs());
-                const cloned = request.clone();
-                const text = await cloned.text();
-                const counts = tryParseOpsCount(text);
-                const bytes = text.length;
-                const id = createId('req');
-                statIdByReq.set(request, id);
-                setStats((prev) => [
-                  ...prev,
-                  {
-                    id,
-                    atMs: nowMs(),
-                    bytes,
-                    opsCount: counts.opsCount,
-                    queryOps: counts.queryOps,
-                    writeOps: counts.writeOps,
-                  },
-                ]);
-              } catch {
-                // ignore
-              }
-              return request;
-            },
-            onResponse: (ctx) => {
-              try {
-                const started = startedAt.get(ctx.request);
-                const durationMs = typeof started === 'number' ? nowMs() - started : undefined;
-                const ok = Boolean((ctx.envelope as any)?.ok);
-                const statId = statIdByReq.get(ctx.request);
-                setStats((prev) => {
-                  if (!statId) return prev;
-                  const idx = prev.findIndex((s) => s.id === statId);
-                  if (idx < 0) return prev;
-                  const next = prev.slice();
-                  next[idx] = { ...next[idx], durationMs, ok };
-                  return next;
-                });
-              } catch {
-                // ignore
-              }
-            },
-          },
+      .defineClient()
+      .store.backend.http({
+        baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+        opsPath: '/api/demos/batch/ops',
+        onRequest: async (request) => {
+          try {
+            startedAt.set(request, nowMs());
+            const cloned = request.clone();
+            const text = await cloned.text();
+            const counts = tryParseOpsCount(text);
+            const bytes = text.length;
+            const id = createId('req');
+            statIdByReq.set(request, id);
+            setStats((prev) => [
+              ...prev,
+              {
+                id,
+                atMs: nowMs(),
+                bytes,
+                opsCount: counts.opsCount,
+                queryOps: counts.queryOps,
+                writeOps: counts.writeOps,
+              },
+            ]);
+          } catch {
+            // ignore
+          }
+          return request;
         },
-        remote: {
-          batch: batchMode === 'on'
-            ? {
-              enabled: true,
-              flushIntervalMs,
-              ...(typeof maxBatchSize === 'number' ? { maxBatchSize } : {}),
-              devWarnings: false,
-            }
-            : false,
+        onResponse: (ctx) => {
+          try {
+            const started = startedAt.get(ctx.request);
+            const durationMs = typeof started === 'number' ? nowMs() - started : undefined;
+            const ok = Boolean((ctx.envelope as any)?.ok);
+            const statId = statIdByReq.get(ctx.request);
+            setStats((prev) => {
+              if (!statId) return prev;
+              const idx = prev.findIndex((s) => s.id === statId);
+              if (idx < 0) return prev;
+              const next = prev.slice();
+              next[idx] = { ...next[idx], durationMs, ok };
+              return next;
+            });
+          } catch {
+            // ignore
+          }
         },
-        sync: false,
-      });
+      })
+      .store.batch(
+        batchMode === 'on'
+          ? {
+            enabled: true,
+            flushIntervalMs,
+            ...(typeof maxBatchSize === 'number' ? { maxBatchSize } : {}),
+            devWarnings: false,
+          }
+          : false,
+      )
+      .build();
 
     return client;
   }, [batchMode, flushIntervalMs, maxBatchSize]);

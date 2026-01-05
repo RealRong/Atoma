@@ -11,6 +11,7 @@ import { RetryBackoff } from '../policies/retryBackoff'
 
 type ResolvedSyncConfig = {
     push: {
+        enabled: boolean
         maxItems: number
         returning: boolean
         conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
@@ -18,6 +19,7 @@ type ResolvedSyncConfig = {
         backoff: SyncBackoffConfig
     }
     pull: {
+        enabled: boolean
         limit: number
         debounceMs: number
         resources?: string[]
@@ -50,7 +52,9 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
     }
 
     const reconnectDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 1000))
-    const periodicPullIntervalMs = Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 30_000))
+    const pushEnabled = (config as any).push !== false
+    const pullEnabled = (config as any).pull !== false
+    const periodicPullIntervalMs = pullEnabled ? Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 30_000)) : 0
     const periodicPullBackoffBaseDelayMs = Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 1_000))
     const lockBackoffBaseDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 300))
     const retry = config.retry ?? { maxAttempts: 10 }
@@ -58,6 +62,7 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
 
     return {
         push: {
+            enabled: pushEnabled,
             maxItems: Math.max(1, Math.floor(config.maxPushItems ?? 50)),
             returning: config.returning !== false,
             conflictStrategy: config.conflictStrategy,
@@ -65,6 +70,7 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
             backoff: resolveBackoff({ baseDelayMs: 300 })
         },
         pull: {
+            enabled: pullEnabled,
             limit: Math.max(1, Math.floor(config.pullLimit ?? 200)),
             debounceMs: Math.max(0, Math.floor(config.pullDebounceMs ?? 200)),
             resources: config.resources,
@@ -76,7 +82,7 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
             }
         },
         subscribe: {
-            enabled: config.subscribe !== false,
+            enabled: pullEnabled && config.subscribe !== false,
             reconnectDelayMs,
             retry,
             backoff: resolveBackoff({ baseDelayMs: reconnectDelayMs })
@@ -160,6 +166,7 @@ export class SyncEngine implements SyncClient {
             onError: config.onError,
             onEvent: config.onEvent
         })
+        this.pushLane.setEnabled(false)
 
         this.pullLane = new PullLane({
             cursor: this.cursor,
@@ -205,6 +212,7 @@ export class SyncEngine implements SyncClient {
         this.started = false
         this.config.onEvent?.({ type: 'lifecycle:stopped' })
         this.notifyLane.stop()
+        this.pushLane.setEnabled(false)
         this.clearPeriodicPull()
         this.clearPullTimer()
         this.rejectPullWaiters(new Error('[Sync] stopped'))
@@ -243,17 +251,27 @@ export class SyncEngine implements SyncClient {
             }
         })
         await this.outbox.enqueue(items)
-        this.pushLane.requestFlush()
+        if (this.started && this.lock && this.resolved.push.enabled) {
+            this.pushLane.requestFlush()
+        }
         return items.map(i => i.idempotencyKey)
     }
 
     async flush() {
         if (this.disposed) throw new Error('SyncEngine disposed')
+        if (!this.resolved.push.enabled) {
+            throw new Error('[Sync] push is disabled')
+        }
+        await this.ensureStarted()
         await this.pushLane.flush()
     }
 
     async pull() {
         if (this.disposed) throw new Error('SyncEngine disposed')
+        if (!this.resolved.pull.enabled) {
+            throw new Error('[Sync] pull is disabled')
+        }
+        await this.ensureStarted()
         return this.schedulePull({ cause: 'manual', debounceMs: 0 })
     }
 
@@ -282,6 +300,16 @@ export class SyncEngine implements SyncClient {
 
     private now() {
         return this.config.now ? this.config.now() : Date.now()
+    }
+
+    private async ensureStarted(): Promise<void> {
+        if (this.disposed) throw new Error('SyncEngine disposed')
+        if (this.started && this.lock) return
+        this.start()
+        await this.startInFlight
+        if (!this.lock) {
+            throw new Error('[Sync] not started')
+        }
     }
 
     private lockKey() {
@@ -327,8 +355,13 @@ export class SyncEngine implements SyncClient {
 
         this.notifyLane.start()
         this.notifyLane.setEnabled(this.resolved.subscribe.enabled)
-        this.pushLane.requestFlush()
-        this.schedulePeriodicPull(0)
+        this.pushLane.setEnabled(Boolean(this.resolved.push.enabled))
+        if (this.resolved.push.enabled) {
+            this.pushLane.requestFlush()
+        }
+        if (this.resolved.pull.enabled) {
+            this.schedulePeriodicPull(0)
+        }
         this.config.onEvent?.({ type: 'lifecycle:started' })
     }
 
@@ -352,6 +385,7 @@ export class SyncEngine implements SyncClient {
 
     private async runPeriodicPull() {
         if (this.disposed || !this.started) return
+        if (!this.resolved.pull.enabled) return
 
         try {
             await this.schedulePull({ cause: 'periodic', debounceMs: 0 })
@@ -390,6 +424,7 @@ export class SyncEngine implements SyncClient {
 
     private schedulePull(args: { cause: 'manual' | 'periodic' | 'notify'; resources?: string[]; debounceMs?: number }): Promise<ChangeBatch | undefined> {
         if (this.disposed || !this.started) return Promise.resolve(undefined)
+        if (!this.resolved.pull.enabled) return Promise.resolve(undefined)
 
         if (args.cause === 'notify' && !this.shouldPullForResources(args.resources)) {
             return Promise.resolve(undefined)

@@ -1,10 +1,13 @@
 import type { CoreStore, IDataSource, IStore, JotaiStore, StoreHandle, StoreKey } from '#core'
+import { Core } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { createStoreInstance } from './createAtomaStore'
 import type { AtomaClientContext, StoresConstraint } from './types'
+import type { SyncStore } from '#core'
 
 export type ClientRuntime = Readonly<{
     Store: (name: string) => CoreStore<any, any>
+    SyncStore: (name: string) => SyncStore<any, any>
     resolveStore: (name: string) => IStore<any>
     listStores: () => Iterable<IStore<any>>
     onHandleCreated: (listener: (handle: StoreHandle<any>) => void, options?: { replay?: boolean }) => () => void
@@ -19,6 +22,8 @@ export function createClientRuntime(args: {
     }
 }): ClientRuntime {
     const storeCache = new Map<string, CoreStore<any, any>>()
+    const handleCache = new Map<string, StoreHandle<any>>()
+    const syncStoreCache = new Map<string, SyncStore<any, any>>()
     const jotaiStore: JotaiStore = createJotaiStore()
 
     const handles: StoreHandle<any>[] = []
@@ -70,15 +75,36 @@ export function createClientRuntime(args: {
             ctx
         })
 
+        if (handle) {
+            handleCache.set(key, handle)
+            emitHandleCreated(handle)
+
+            const view = Core.store.createDirectStoreView(handle)
+            storeCache.set(key, view as any)
+            return view as any
+        }
+
         storeCache.set(key, created)
-
-        if (handle) emitHandleCreated(handle)
-
         return created
     }
 
     return {
         Store: rawStore,
+        SyncStore: (name: string) => {
+            const key = String(name)
+            const existing = syncStoreCache.get(key)
+            if (existing) return existing
+
+            const base = rawStore(key)
+            const handle = handleCache.get(key) ?? Core.store.getHandle(base)
+            if (!handle) {
+                throw new Error(`[Atoma] Sync.Store: 未找到 storeHandle（store="${key}"）`)
+            }
+
+            const view = Core.store.createSyncStoreView(handle)
+            syncStoreCache.set(key, view as any)
+            return view as any
+        },
         resolveStore: rawStore,
         listStores: () => storeCache.values(),
         onHandleCreated,

@@ -5,12 +5,32 @@
  * 对外统一从顶层 client + react hooks 入口进入（defineEntities/createOpContext/useFindMany 等）。
  */
 
-export { defineEntities } from './client/createAtomaClient'
+export { defineEntities } from './client'
 export { createOpContext } from './core/operationContext'
 export type { CreateOpContextArgs } from './core/operationContext'
-export type { DefineClientConfig, AtomaStoresConfig, AtomaClient, AtomaHistory, AtomaSync, AtomaSyncStatus } from './client/types'
-export type { AtomaClientSyncConfig } from './client/controllers/SyncController'
-export type { BackendConfig, BackendEndpointConfig, HttpBackendConfig, IndexedDBBackendConfig, MemoryBackendConfig, ResolvedBackends } from './client/backend'
+export type {
+    AtomaClientBuilder,
+    AtomaClientSyncConfig,
+    AtomaStoresConfig,
+    AtomaClient,
+    AtomaHistory,
+    AtomaSync,
+    AtomaSyncStartMode,
+    AtomaSyncStatus,
+    BackendConfig,
+    BackendEndpointConfig,
+    CustomOpsBackendConfig,
+    HttpBackendConfig,
+    HttpSubscribeConfig,
+    HttpSyncBackendConfig,
+    IndexedDBBackendConfig,
+    MemoryBackendConfig,
+    ResolvedBackends,
+    StoreBackendEndpointConfig,
+    StoreBatchArgs,
+    StoreCustomOpsBackendConfig,
+    StoreDefaultsArgs
+} from './client/types'
 export { Backend } from '#backend'
 export type { OpsClient, ExecuteOpsInput, ExecuteOpsOutput } from '#backend'
 export type { OperationContext, OperationOrigin } from './core'

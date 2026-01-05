@@ -6,13 +6,18 @@ import { RelationResolver } from './relations/RelationResolver'
 import { collectRelationStoreTokens, projectRelationsBatch } from './relations/projector'
 import { normalizeKey } from './relations/utils'
 import { HistoryManager } from './history/HistoryManager'
-import { getStoreHandle } from './storeHandleRegistry'
+import { attachStoreHandle, getStoreHandle } from './storeHandleRegistry'
 import { fuzzySearch } from './search'
+import { createDirectStoreView } from './store/createDirectStoreView'
+import { createSyncStoreView } from './store/createSyncStoreView'
 
 export const Core = {
     store: {
         createStore,
-        getHandle: getStoreHandle
+        getHandle: getStoreHandle,
+        attachHandle: attachStoreHandle,
+        createDirectStoreView,
+        createSyncStoreView
     },
     operation: {
         createActionId,
@@ -68,3 +73,5 @@ export type {
 } from './mutation'
 export type { StoreIndexes } from './indexes/StoreIndexes'
 export type { FuzzySearchOptions, FuzzySearchResult } from './search'
+
+export type { SyncStore } from './store/createSyncStoreView'

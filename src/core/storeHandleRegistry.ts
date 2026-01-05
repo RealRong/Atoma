@@ -19,6 +19,17 @@ export const registerStoreHandle = <T extends Entity, Relations>(
     getGlobalRegistry().set(store, handle)
 }
 
+export const attachStoreHandle = <T extends Entity, Relations>(
+    store: IStore<T, Relations>,
+    handle: StoreHandle<T>
+): void => {
+    registerStoreHandle(store, handle)
+    const anyStore: any = store as any
+    if (anyStore && typeof anyStore === 'object') {
+        anyStore[HANDLE_KEY] = handle
+    }
+}
+
 export const getStoreHandle = <T extends Entity, Relations>(
     store: IStore<T, Relations> | undefined
 ): StoreHandle<T> | null => {

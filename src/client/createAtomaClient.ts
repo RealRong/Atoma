@@ -1,158 +1,232 @@
 import type { CoreStore, Entity } from '#core'
-import { Core } from '#core'
 import { createHistoryController } from './controllers/HistoryController'
 import { createSyncController } from './controllers/SyncController'
 import { createClientRuntime } from './runtime'
-import type { AtomaClient, DefineClientConfig, EntitiesDefinition, StoresConstraint, StoresDefinition } from './types'
+import type {
+    AtomaClient,
+    AtomaClientBuilder,
+    BackendConfig,
+    BackendEndpointConfig,
+    EntitiesDefinition,
+    StoresConstraint,
+    StoresDefinition,
+    StoreDefaultsArgs,
+    StoreBatchArgs,
+    StoreBackendEndpointConfig,
+    SyncDefaultsArgs,
+    SyncQueueWritesArgs
+} from './types'
 import { resolveBackend } from './backend'
 import { OpsDataSource } from '../datasources'
-import type { BatchEngine } from '#batch'
-import { Batch } from '#batch'
-import { Protocol } from '#protocol'
 
 const defineStoresInternal = <
     const Entities extends Record<string, Entity>,
     const Stores extends StoresConstraint<Entities>
 >(stores: Stores): StoresDefinition<Entities, Stores> => {
     return {
-        defineClient: (config: DefineClientConfig<Entities>) => {
-            const backends = resolveBackend(config.backend)
-            const dataSourceBackend = backends.dataSource
+        defineClient: () => {
+            type StoreBackendState =
+                | { role: 'local'; backend: StoreBackendEndpointConfig }
+                | { role: 'remote'; backend: StoreBackendEndpointConfig }
 
-            const resolveSharedBatchEngine = (() => {
-                let initialized = false
-                let shared: BatchEngine | undefined
+            const state: {
+                storeBackend?: StoreBackendState
+                storeDefaults?: StoreDefaultsArgs<Entities>
+                storeBatch?: StoreBatchArgs
+                syncTarget?: BackendEndpointConfig
+                syncQueueWrites?: SyncQueueWritesArgs
+                syncDefaults?: SyncDefaultsArgs
+            } = {}
 
-                const parse = (batch: any): { enabled: boolean; endpoint?: string; maxBatchSize?: number; flushIntervalMs?: number } => {
-                    if (batch === true) return { enabled: true }
-                    if (batch === false) return { enabled: false }
-                    const cfg = (batch && typeof batch === 'object' && !Array.isArray(batch)) ? batch : {}
-                    return {
-                        enabled: cfg.enabled !== false,
-                        endpoint: typeof cfg.endpoint === 'string' ? cfg.endpoint : undefined,
-                        maxBatchSize: typeof cfg.maxBatchSize === 'number' ? cfg.maxBatchSize : undefined,
-                        flushIntervalMs: typeof cfg.flushIntervalMs === 'number' ? cfg.flushIntervalMs : undefined
-                    }
+            const build = (): AtomaClient<Entities, Stores> => {
+                if (!state.storeBackend) {
+                    throw new Error('[Atoma] defineClient().build: 缺少 store.backend 配置')
                 }
 
-                return () => {
-                    if (initialized) return shared
-                    initialized = true
+                const syncQueue = state.syncQueueWrites
+                const defaults = state.syncDefaults
+                const wantsSync = Boolean(state.syncTarget || syncQueue || defaults)
 
-                    const parsed = parse(config.remote?.batch)
-                    if (!parsed.enabled) return undefined
+                const storeBackend = state.storeBackend
+                const derivedSyncTarget = (!state.syncTarget && storeBackend.role === 'remote')
+                    ? storeBackend.backend
+                    : undefined
+                const syncTarget: BackendConfig | undefined = state.syncTarget ?? derivedSyncTarget
 
-                    shared = Batch.create({
-                        endpoint: parsed.endpoint ?? Protocol.http.paths.OPS,
-                        maxBatchSize: parsed.maxBatchSize,
-                        flushIntervalMs: parsed.flushIntervalMs,
-                        opsClient: dataSourceBackend.opsClient,
-                        onError: (error) => {
-                            // eslint-disable-next-line no-console
-                            console.error('[Atoma] batch request failed', error)
+                if (wantsSync && !syncTarget) {
+                    throw new Error('[Atoma] defineClient().build: 使用 sync 相关配置前必须先配置 sync.target（或将 store.backend 设为 remote，以便复用同一对端）')
+                }
+
+                if (syncQueue?.mode === 'save-local-then-queue' && storeBackend.role !== 'local') {
+                    throw new Error('[Atoma] defineClient().build: sync.queueWrites(mode=save-local-then-queue) 需要 store.backend 为本地 durable（indexedDB/server/custom local）')
+                }
+
+                const resolved = (() => {
+                    if (storeBackend.role === 'local') {
+                        const remote = state.syncTarget
+                        const config: BackendConfig = remote
+                            ? { local: storeBackend.backend, remote }
+                            : storeBackend.backend
+                        const backends = resolveBackend(config)
+                        return {
+                            store: backends,
+                            sync: backends
                         }
-                    })
-                    return shared
-                }
-            })()
+                    }
 
-            const defaultDataSourceFactory = config.defaults?.dataSourceFactory
-                ? config.defaults.dataSourceFactory
-                : ((resourceName: string) => {
+                    const store = resolveBackend(storeBackend.backend)
+                    const sync = syncTarget ? resolveBackend(syncTarget) : store
+                    return { store, sync }
+                })()
+
+                if (wantsSync && !resolved.sync?.sync) {
+                    throw new Error('[Atoma] defineClient().build: sync.target 必须是可用于同步的对端（需要 remote opsClient 能力）')
+                }
+
+                const dataSourceBackend = resolved.store.dataSource
+
+                const dataSourceFactory = state.storeDefaults?.dataSourceFactory ?? ((resourceName: string) => {
                     return new OpsDataSource<any>({
                         opsClient: dataSourceBackend.opsClient,
                         name: dataSourceBackend.key,
                         resourceName,
-                        batchEngine: resolveSharedBatchEngine(),
+                        batch: state.storeBatch ?? false
                     })
                 })
 
-            const runtime = createClientRuntime({
-                stores,
-                defaults: {
-                    dataSourceFactory: defaultDataSourceFactory,
-                    idGenerator: config.defaults?.idGenerator
-                }
-            })
-
-            const historyController = createHistoryController({ runtime })
-            const syncController = createSyncController({
-                runtime,
-                backend: backends.sync,
-                localBackend: backends.local,
-                syncConfig: config.sync
-            })
-
-            const STORE_HANDLE_KEY = Symbol.for('atoma.storeHandle')
-
-            const Store = (<Name extends keyof Entities & string>(name: Name) => {
-                return runtime.Store(name) as unknown as CoreStore<Entities[Name], any>
-            }) as AtomaClient<Entities, Stores>['Store']
-
-            const withOutboxOptions = <TOptions extends object | undefined>(options: TOptions): TOptions => {
-                const anyOptions = (options && typeof options === 'object' && !Array.isArray(options)) ? (options as any) : {}
-                const base = (anyOptions.__atoma && typeof anyOptions.__atoma === 'object' && !Array.isArray(anyOptions.__atoma))
-                    ? anyOptions.__atoma
-                    : {}
-                return {
-                    ...anyOptions,
-                    __atoma: {
-                        ...base,
-                        persist: 'outbox',
-                        allowImplicitFetchForWrite: false
+                const runtime = createClientRuntime({
+                    stores,
+                    defaults: {
+                        dataSourceFactory: dataSourceFactory as any,
+                        idGenerator: state.storeDefaults?.idGenerator
                     }
-                } as TOptions
-            }
+                })
 
-            const syncStoreCache = new Map<string, any>()
+                const historyController = createHistoryController({ runtime })
 
-            const wrapSyncStore = (base: any) => {
-                const cacheKey = String((base && typeof base === 'object' && (base as any).name) ? (base as any).name : 'store')
-                const existing = syncStoreCache.get(cacheKey)
-                if (existing) return existing
+                const syncConfig = wantsSync
+                    ? ({
+                        resources: defaults?.resources,
+                        cursorKey: defaults?.cursorKey,
+                        subscribe: defaults?.subscribe,
+                        subscribeEventName: defaults?.subscribeEventName,
+                        pullLimit: defaults?.pullLimit,
+                        pullDebounceMs: defaults?.pullDebounceMs,
+                        periodicPullIntervalMs: defaults?.periodicPullIntervalMs,
+                        reconnectDelayMs: defaults?.reconnectDelayMs,
+                        inFlightTimeoutMs: defaults?.inFlightTimeoutMs,
+                        retry: defaults?.retry,
+                        backoff: defaults?.backoff,
+                        lockKey: defaults?.lockKey,
+                        lockTtlMs: defaults?.lockTtlMs,
+                        lockRenewIntervalMs: defaults?.lockRenewIntervalMs,
+                        now: defaults?.now,
+                        conflictStrategy: defaults?.conflictStrategy,
+                        returning: defaults?.returning,
+                        onEvent: defaults?.onEvent,
+                        onError: defaults?.onError,
+                        ...(syncQueue ? {
+                            outboxKey: syncQueue.outboxKey,
+                            maxQueueSize: syncQueue.maxSize,
+                            outboxEvents: (syncQueue.onQueueChange || syncQueue.onQueueFull)
+                                ? {
+                                    ...(syncQueue.onQueueChange ? { onQueueChange: syncQueue.onQueueChange } : {}),
+                                    ...(syncQueue.onQueueFull ? { onQueueFull: (droppedOp: any, maxSize: number) => syncQueue.onQueueFull?.({ maxSize, droppedOp }) } : {})
+                                }
+                                : undefined,
+                            writePath: syncQueue.mode
+                        } : {})
+                    } as any)
+                    : undefined
 
-                const wrapper: any = {
-                    ...base,
-                    addOne: (item: any, options?: any) => base.addOne(item, withOutboxOptions(options)),
-                    addMany: (items: any, options?: any) => base.addMany(items, withOutboxOptions(options)),
-                    updateOne: (id: any, recipe: any, options?: any) => base.updateOne(id, recipe, withOutboxOptions(options)),
-                    updateMany: (items: any, options?: any) => base.updateMany(items, withOutboxOptions(options)),
-                    deleteOne: (id: any, options?: any) => base.deleteOne(id, withOutboxOptions(options)),
-                    deleteMany: (ids: any, options?: any) => base.deleteMany(ids, withOutboxOptions(options)),
-                    upsertOne: (item: any, options?: any) => base.upsertOne(item, withOutboxOptions(options)),
-                    upsertMany: (items: any, options?: any) => base.upsertMany(items, withOutboxOptions(options)),
-                    createServerAssignedOne: () => {
-                        throw new Error('[Atoma] Sync.Store: createServerAssignedOne 不可用（Server-ID create 必须 direct）')
-                    },
-                    createServerAssignedMany: () => {
-                        throw new Error('[Atoma] Sync.Store: createServerAssignedMany 不可用（Server-ID create 必须 direct）')
-                    },
-                    withRelations: (factory: any) => wrapSyncStore(base.withRelations(factory))
+                const syncController = createSyncController({
+                    runtime,
+                    backend: resolved.sync.sync,
+                    localBackend: resolved.store.local,
+                    syncConfig
+                })
+
+                const Store = (<Name extends keyof Entities & string>(name: Name) => {
+                    return runtime.Store(name) as unknown as CoreStore<Entities[Name], any>
+                }) as AtomaClient<Entities, Stores>['Store']
+
+                const Sync = {
+                    ...syncController.sync,
+                    Store: (<Name extends keyof Entities & string>(name: Name) => {
+                        return runtime.SyncStore(name) as any
+                    }) as AtomaClient<Entities, Stores>['Sync']['Store']
+                } as AtomaClient<Entities, Stores>['Sync']
+
+                const client: AtomaClient<Entities, Stores> = {
+                    Store,
+                    Sync,
+                    History: historyController.history
                 }
 
-                const handle = Core.store.getHandle(base)
-                if (handle) {
-                    ; (wrapper as any)[STORE_HANDLE_KEY] = handle
-                }
-
-                syncStoreCache.set(cacheKey, wrapper)
-                return wrapper
+                return client
             }
 
-            const Sync = {
-                ...syncController.sync,
-                Store: (<Name extends keyof Entities & string>(name: Name) => {
-                    return wrapSyncStore(Store(name))
-                }) as AtomaClient<Entities, Stores>['Sync']['Store']
-            } as AtomaClient<Entities, Stores>['Sync']
-
-            const client: AtomaClient<Entities, Stores> = {
-                Store,
-                Sync,
-                History: historyController.history
+            const builder: AtomaClientBuilder<Entities, Stores> = {
+                store: {
+                    defaults: (args) => {
+                        state.storeDefaults = args
+                        return builder
+                    },
+                    batch: (args) => {
+                        state.storeBatch = args
+                        return builder
+                    },
+                    backend: {
+                        http: (args) => {
+                            const anyArgs = args as any
+                            if ('subscribePath' in anyArgs || 'subscribeUrl' in anyArgs || 'eventSourceFactory' in anyArgs) {
+                                throw new Error('[Atoma] store.backend.http: subscribe/SSE 配置属于 sync，请使用 sync.target.http 配置 subscribePath/subscribeUrl/eventSourceFactory')
+                            }
+                            state.storeBackend = { role: 'remote', backend: { http: args } }
+                            return builder
+                        },
+                        server: (args) => {
+                            const anyArgs = args as any
+                            if ('subscribePath' in anyArgs || 'subscribeUrl' in anyArgs || 'eventSourceFactory' in anyArgs) {
+                                throw new Error('[Atoma] store.backend.server: subscribe/SSE 配置属于 sync，请使用 sync.target.http 配置 subscribePath/subscribeUrl/eventSourceFactory')
+                            }
+                            state.storeBackend = { role: 'local', backend: { http: args } }
+                            return builder
+                        },
+                        indexedDB: (args) => {
+                            state.storeBackend = { role: 'local', backend: { indexeddb: args } }
+                            return builder
+                        },
+                        custom: (args) => {
+                            state.storeBackend = { role: args.role, backend: args.backend }
+                            return builder
+                        }
+                    }
+                },
+                sync: {
+                    target: {
+                        http: (args) => {
+                            state.syncTarget = { http: args }
+                            return builder
+                        },
+                        custom: (args) => {
+                            state.syncTarget = args
+                            return builder
+                        }
+                    },
+                    queueWrites: (args) => {
+                        state.syncQueueWrites = args
+                        return builder
+                    },
+                    defaults: (args) => {
+                        state.syncDefaults = args
+                        return builder
+                    }
+                },
+                build
             }
 
-            return client
+            return builder
         }
     }
 }
