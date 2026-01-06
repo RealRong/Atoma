@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useAtomValue } from 'jotai'
 import { Core } from '#core'
-import type { Entity, IStore, StoreKey, WithRelations, RelationIncludeInput } from '#core'
+import type { Entity, StoreHandleOwner, StoreKey, WithRelations, RelationIncludeInput } from '#core'
 import { useRelations } from './useRelations'
 
 /**
@@ -9,7 +9,7 @@ import { useRelations } from './useRelations'
  * Returns all items as an array
  */
 export function useAll<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: IStore<T, Relations>,
+    store: StoreHandleOwner<T, Relations>,
     options?: { include?: RelationIncludeInput<Relations> & Include }
 ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
     type Result = keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]

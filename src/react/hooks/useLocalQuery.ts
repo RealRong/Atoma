@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Core } from '#core'
-import type { Entity, FindManyOptions, IStore } from '#core'
+import type { Entity, FindManyOptions } from '#core'
+import type { StoreHandleOwner } from '#core'
 
 type UseLocalQueryOptions<T> = Pick<FindManyOptions<T>, 'where' | 'orderBy' | 'limit' | 'offset'>
 
@@ -15,7 +16,7 @@ type UseLocalQueryOptions<T> = Pick<FindManyOptions<T>, 'where' | 'orderBy' | 'l
 export function useLocalQuery<T extends Entity>(
     data: T[],
     options?: UseLocalQueryOptions<T>,
-    store?: IStore<T, any>
+    store?: StoreHandleOwner<T, any>
 ): T[] {
     const queryKey = useMemo(() => Core.query.stableStringify(options), [options])
 

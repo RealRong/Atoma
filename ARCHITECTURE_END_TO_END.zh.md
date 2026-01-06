@@ -12,28 +12,28 @@
 
 ---
 
-## 1. Client 创建：从 `defineEntities` 到 `defineClient`
+## 1. Client 创建：Presets / Universal Config
 
 入口是顶层 API：
 
-- `defineEntities()`：声明实体集合
-- `.defineStores(stores?)`：可覆盖某些 store 的配置/relations
-- `.defineClient({ backend, remote, sync, defaultDataSourceFactory? })`：实例化 client
+- `createHttpClient({ schema, ... })`：在线 CRUD（可选 sse/sync defaults）
+- `createLocalFirstClient({ schema, ... })`：本地 durable + 云端同步（自动启用 outbox/queue）
+- `createClient({ schema, ... })`：通用配置对象（union + 扁平），用于精细控制
 
 代码位置：
 
-- `src/client/createAtomaClient.ts:1`（`defineEntities/defineClient`）
-- `src/client/types.ts:1`（`DefineClientConfig/AtomaClient`）
+- `src/client/createClient.ts:1`（三个入口与 option 归一化）
+- `src/client/createAtomaClient.ts:1`（内部 build：resolveBackend/runtime/controllers）
+- `src/client/types/index.ts:1`（`AtomaClient/*Config`）
 
-默认行为（没有自定义 `defaultDataSourceFactory` 时）：
+默认行为（未覆盖 `schema[name].dataSource` 时）：
 
-- 为每个 resource 创建一个 `HttpDataSource`（ops 协议），绑定：
+- 为每个 resource 创建一个 `OpsDataSource`（ops 协议），绑定：
   - `backend.opsClient`（传输层）
   - `resourceName`（用于 ops 路由）
-  - `remote.batch`（是否开启 batch 合并）
-  - `remote.usePatchForUpdate`（update 用 patch 或 replace）
+  - `storeBatch`（是否开启 batch 合并）
 
-对应代码：`src/client/createAtomaClient.ts:1`。
+对应代码：`src/client/createAtomaClient.ts:1`、`src/datasources/ops/OpsDataSource.ts:1`。
 
 同时 client 会创建：
 

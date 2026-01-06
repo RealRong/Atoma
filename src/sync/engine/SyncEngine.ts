@@ -270,11 +270,6 @@ export class SyncEngine implements SyncClient {
         return this.schedulePull({ cause: 'manual', debounceMs: 0 })
     }
 
-    setSubscribed(enabled: boolean) {
-        if (this.disposed) return
-        this.notifyLane.setEnabled(enabled)
-    }
-
     private ensureItemMeta(item: WriteItem) {
         const meta = (item.meta && typeof item.meta === 'object' && !Array.isArray(item.meta)) ? item.meta : {}
         const idempotencyKey = typeof (meta as any).idempotencyKey === 'string' && (meta as any).idempotencyKey

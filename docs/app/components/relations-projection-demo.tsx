@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { defineEntities } from 'atoma';
+import { createHttpClient } from 'atoma';
 import { useFindMany } from 'atoma/react';
 import { buttonVariants } from 'fumadocs-ui/components/ui/button';
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -34,9 +34,13 @@ type Comment = {
 
 type RelationsClient = ReturnType<typeof createRelationsClient>;
 
-function createRelationsClient(backendKey: string) {
-  const client = defineEntities<{ users: User; posts: Post; comments: Comment }>()
-    .defineStores({
+function createRelationsClient(_backendKey: string) {
+  const client = createHttpClient<{ users: User; posts: Post; comments: Comment }>(
+    {
+      url: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+      opsPath: '/api/demos/relations/ops',
+    },
+    {
       posts: {
         indexes: [
           { field: 'authorId', type: 'string' },
@@ -62,13 +66,8 @@ function createRelationsClient(backendKey: string) {
           author: { type: 'belongsTo', to: 'users', foreignKey: 'authorId' },
         },
       },
-    })
-    .defineClient()
-    .store.backend.http({
-      baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-      opsPath: '/api/demos/relations/ops',
-    })
-    .build();
+    },
+  );
 
   return {
     client,

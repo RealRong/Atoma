@@ -14,25 +14,32 @@ export type {
 } from './backend'
 
 export type {
+    CreateClientOptions,
+    CreateHttpClientOptions,
+    CreateLocalFirstClientOptions,
+    HttpEndpointOptions,
+    StoreBatchOptions
+} from './options'
+
+export type { ClientRuntime } from './runtime'
+
+export type { StoreBackendState, StoreBatchArgs } from './internal'
+
+export type {
     BelongsToSchema,
     HasManySchema,
     HasOneSchema,
-    InferRelationsFromStoreOverride,
+    InferRelationsFromSchema,
     RelationMapFromSchema,
     RelationSchemaItem,
-    RelationsDsl,
     RelationsSchema,
-    RelationsDslForConstraint,
-    StoreOverrideConstraint
 } from './relations'
 
 export type {
     AtomaClientContext,
-    AtomaStoresConfig,
-    CreateAtomaStore,
-    CreateAtomaStoreOptions,
-    StoresConstraint
 } from './store'
+
+export type { AtomaSchema, AtomaStoreSchema } from './schema'
 
 export type {
     AtomaClient,
@@ -42,18 +49,6 @@ export type {
     AtomaSyncStartMode,
     AtomaSyncStatus
 } from './client'
-
-export type {
-    AtomaClientBuilder,
-    EntitiesDefinition,
-    StoreBackendHttpArgs,
-    StoreBackendIndexedDBArgs,
-    StoreBackendServerArgs,
-    StoreBatchArgs,
-    StoreDefaultsArgs,
-    StoresDefinition,
-    SyncTargetHttpArgs
-} from './builder'
 
 export type {
     AtomaClientSyncConfig,

@@ -1,8 +1,7 @@
 import type { OperationContext, StoreKey } from '#core'
 import { Core } from '#core'
 import type { Patch } from 'immer'
-import type { AtomaHistory } from '../types'
-import type { ClientRuntime } from '../runtime'
+import type { AtomaHistory, ClientRuntime } from '../types'
 
 export function createHistoryController(args: {
     runtime: ClientRuntime

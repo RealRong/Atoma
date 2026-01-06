@@ -35,7 +35,7 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>) {
         const baseMap = jotaiStore.get(atom)
         const merge = options?.merge !== false
 
-        const tasks: Array<Promise<void>> = []
+        const prepared: Array<{ index: number; id: StoreKey; value: PartialWithId<T>; action: 'add' | 'update' }> = []
 
         for (let index = 0; index < items.length; index++) {
             if (results[index]) continue
@@ -80,6 +80,17 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>) {
                 results[index] = { index, ok: false, error: toError(error, `Failed to prepare upsert for id ${String(id)}`) }
                 continue
             }
+
+            prepared.push({ index, id, value: validObj, action })
+        }
+
+        const tasks: Array<Promise<void>> = []
+
+        for (const entry of prepared) {
+            const index = entry.index
+            const id = entry.id
+            const validObj = entry.value
+            const action = entry.action
 
             const { ticket } = services.mutation.runtime.beginWrite()
 

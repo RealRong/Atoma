@@ -3,8 +3,7 @@ import type { ObservabilityContext } from '#observability'
 import type { Change } from '#protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync'
 import { OpsDataSource } from '../../datasources'
-import type { ClientRuntime } from '../runtime'
-import type { AtomaClientSyncConfig, ResolvedBackend } from '../types'
+import type { AtomaClientSyncConfig, ClientRuntime, ResolvedBackend } from '../types'
 
 function normalizeStoreKeyFromEntityId(id: string): StoreKey {
     if (/^[0-9]+$/.test(id)) return Number(id)

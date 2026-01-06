@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { defineEntities } from 'atoma';
+import { createClient } from 'atoma';
 import { buttonVariants } from 'fumadocs-ui/components/ui/button';
 import { Callout } from 'fumadocs-ui/components/callout';
 import { cn } from 'fumadocs-ui/utils/cn';
@@ -75,11 +75,10 @@ export function BatchConsoleDemo() {
     const startedAt = startsAtByRequest.current;
     const statIdByReq = statIdByRequest.current;
 
-    const client = defineEntities<{ items: Item }>()
-      .defineStores({})
-      .defineClient()
-      .store.backend.http({
-        baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+    const client = createClient<{ items: Item }>({
+      store: {
+        type: 'http',
+        url: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
         opsPath: '/api/demos/batch/ops',
         onRequest: async (request) => {
           try {
@@ -124,8 +123,8 @@ export function BatchConsoleDemo() {
             // ignore
           }
         },
-      })
-      .store.batch(
+      },
+      storeBatch:
         batchMode === 'on'
           ? {
             enabled: true,
@@ -134,8 +133,7 @@ export function BatchConsoleDemo() {
             devWarnings: false,
           }
           : false,
-      )
-      .build();
+    });
 
     return client;
   }, [batchMode, flushIntervalMs, maxBatchSize]);

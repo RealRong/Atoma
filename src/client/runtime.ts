@@ -2,26 +2,17 @@ import type { CoreStore, IDataSource, IStore, JotaiStore, StoreHandle, StoreKey 
 import { Core } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { createStoreInstance } from './createAtomaStore'
-import type { AtomaClientContext, StoresConstraint } from './types'
+import type { AtomaClientContext, AtomaSchema, ClientRuntime } from './types'
 import type { SyncStore } from '#core'
 
-export type ClientRuntime = Readonly<{
-    Store: (name: string) => CoreStore<any, any>
-    SyncStore: (name: string) => SyncStore<any, any>
-    resolveStore: (name: string) => IStore<any>
-    listStores: () => Iterable<IStore<any>>
-    onHandleCreated: (listener: (handle: StoreHandle<any>) => void, options?: { replay?: boolean }) => () => void
-    jotaiStore: JotaiStore
-}>
-
 export function createClientRuntime(args: {
-    stores: StoresConstraint<any>
+    schema: AtomaSchema<any>
     defaults: {
         dataSourceFactory: (name: string) => IDataSource<any>
         idGenerator?: () => StoreKey
     }
     syncStore?: {
-        allowImplicitFetchForWrite?: boolean
+        mode?: 'intent-only' | 'local-first'
     }
 }): ClientRuntime {
     const storeCache = new Map<string, CoreStore<any, any>>()
@@ -74,7 +65,7 @@ export function createClientRuntime(args: {
 
         const { store: created, handle } = createStoreInstance({
             name,
-            stores: args.stores,
+            schema: args.schema,
             ctx
         })
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useFindMany } from 'atoma/react';
-import { createOpContext, defineEntities } from 'atoma';
+import { createHttpClient, createOpContext } from 'atoma';
 import { buttonVariants } from 'fumadocs-ui/components/ui/button';
 import { Callout } from 'fumadocs-ui/components/callout';
 import { cn } from 'fumadocs-ui/utils/cn';
@@ -40,28 +40,18 @@ function createTodosClient(args: {
   onSyncEvent: (event: any) => void;
   onSyncError: (error: Error) => void;
 }) {
-  const { Store, Sync } = defineEntities<{ todos: Todo }>()
-    .defineStores({})
-    .defineClient()
-    .store.backend.http({
-      baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-      opsPath: '/api/ops',
-    })
-    .sync.target.http({
-      baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-      opsPath: '/api/ops',
-      subscribePath: '/api/subscribe',
-    })
-    .sync.defaults({
+  const { Store, Sync } = createHttpClient<{ todos: Todo }>({
+    url: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+    opsPath: '/api/ops',
+    realtime: { sse: '/api/subscribe' },
+    sync: {
       subscribe: true,
       pullDebounceMs: 200,
-      periodicPullIntervalMs: 30_000,
-      pullLimit: 200,
-      conflictStrategy: 'server-wins',
+      pullIntervalMs: 30_000,
       onEvent: args.onSyncEvent,
-      onError: args.onSyncError,
-    })
-    .build();
+      onError: (error) => args.onSyncError(error),
+    },
+  });
 
   return {
     Store,

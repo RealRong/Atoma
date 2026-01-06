@@ -60,6 +60,44 @@ describe('Phase4: implicit fetch policy for updateMany/deleteMany', () => {
         expect(store.getCachedOneById('p1')?.title).toBe('next')
     })
 
+    it('direct: updateMany 在同一次 action 内应合并为一次 bulkPut', async () => {
+        const now = Date.now()
+        const adapter: IDataSource<Post> = {
+            name: 'test',
+            put: vi.fn(async () => { }),
+            bulkPut: vi.fn(async () => { }),
+            delete: vi.fn(async () => { }),
+            bulkDelete: vi.fn(async () => { }),
+            get: vi.fn(async () => undefined),
+            bulkGet: vi.fn(async (keys) => keys.map((k) => ({
+                id: String(k),
+                title: 'seed',
+                createdAt: now,
+                updatedAt: now,
+                version: 1
+            }))),
+            getAll: vi.fn(async () => [])
+        }
+
+        const store = Core.store.createStore<Post>({
+            name: 'posts',
+            dataSource: adapter,
+            store: createJotaiStore()
+        })
+
+        const res = await store.updateMany([
+            { id: 'p1', recipe: (draft) => { draft.title = 't' } },
+            { id: 'p2', recipe: (draft) => { draft.title = 't' } },
+            { id: 'p3', recipe: (draft) => { draft.title = 't' } },
+            { id: 'p4', recipe: (draft) => { draft.title = 't' } },
+            { id: 'p5', recipe: (draft) => { draft.title = 't' } }
+        ])
+
+        expect(res.every(r => (r as any)?.ok === true)).toBe(true)
+        expect((adapter.bulkPut as any).mock.calls.length).toBe(1)
+        expect(((adapter.bulkPut as any).mock.calls[0]?.[0] ?? []).length).toBe(5)
+    })
+
     it('outbox: updateMany 禁止补读缺失项（返回明确错误）', async () => {
         const { adapter } = createTestAdapter({ id: 'p1', version: 1 })
         const store = Core.store.createStore<Post>({
@@ -116,4 +154,3 @@ describe('Phase4: implicit fetch policy for updateMany/deleteMany', () => {
         expect(String((res[0] as any).error?.message ?? '')).toMatch(/禁止补读/)
     })
 })
-

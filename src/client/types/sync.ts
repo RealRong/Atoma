@@ -1,17 +1,26 @@
 import type { SyncEvent, SyncOutboxEvents, SyncPhase, SyncOutboxItem } from '#sync'
+import type { HttpBackendConfig } from './backend'
 
 export type SyncQueueWriteMode = 'intent-only' | 'local-first'
 
 export type SyncQueueWritesArgs = {
-    outboxKey?: string
     maxSize?: number
     onQueueChange?: (size: number) => void
     onQueueFull?: (args: { maxSize: number; droppedOp: SyncOutboxItem }) => void
 }
 
-export type SyncDefaultsArgs = {
-    resources?: string[]
+export type SyncAdvancedArgs = {
+    outboxKey?: string
     cursorKey?: string
+    lockKey?: string
+    lockTtlMs?: number
+    lockRenewIntervalMs?: number
+}
+
+export type SyncDefaultsArgs = {
+    deviceId?: string
+    advanced?: SyncAdvancedArgs
+    resources?: string[]
     returning?: boolean
     subscribe?: boolean
     subscribeEventName?: string
@@ -20,11 +29,8 @@ export type SyncDefaultsArgs = {
     periodicPullIntervalMs?: number
     reconnectDelayMs?: number
     inFlightTimeoutMs?: number
-    retry?: { maxAttempts?: number }
+    retry?: HttpBackendConfig['retry']
     backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
-    lockKey?: string
-    lockTtlMs?: number
-    lockRenewIntervalMs?: number
     now?: () => number
     conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
     onEvent?: (event: any) => void
@@ -32,6 +38,10 @@ export type SyncDefaultsArgs = {
 }
 
 export type AtomaClientSyncConfig = {
+    /** Device identity used to derive internal persistence keys (outbox/cursor/lock). */
+    deviceId?: string
+    /** Advanced persistence overrides (rare). */
+    advanced?: SyncAdvancedArgs
     /** Sync.Store queued 写入策略（默认由 store.backend 推导） */
     queueWriteMode?: SyncQueueWriteMode
     /** 是否启用 subscribe（默认：true） */
@@ -40,9 +50,6 @@ export type AtomaClientSyncConfig = {
     subscribeEventName?: string
     /** 同步资源过滤（默认：不过滤；服务端返回所有 changes） */
     resources?: string[]
-    /** outbox/cursor 存储 key（默认：基于 backend.key + 标签页 instanceId 生成） */
-    outboxKey?: string
-    cursorKey?: string
     maxQueueSize?: number
     maxPushItems?: number
     pullLimit?: number
@@ -50,11 +57,8 @@ export type AtomaClientSyncConfig = {
     reconnectDelayMs?: number
     periodicPullIntervalMs?: number
     inFlightTimeoutMs?: number
-    retry?: { maxAttempts?: number }
+    retry?: HttpBackendConfig['retry']
     backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
-    lockKey?: string
-    lockTtlMs?: number
-    lockRenewIntervalMs?: number
     now?: () => number
     conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
     returning?: boolean

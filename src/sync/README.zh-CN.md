@@ -107,7 +107,7 @@
 
 路径：
 
-- `SyncEngine.start()` 会启动 lane；`setSubscribed(true)` 才会启用连接。
+- `SyncEngine.start()` 会启动 lanes；subscribe 是否启用由配置（`subscribe`）在启动时决定。
 - `NotifyLane`：
   - 通过 `transport.subscribe(...)` 打开订阅（默认实现为 `Sync.subscribeNotifySse(...)`）
   - 每个通知：
@@ -147,6 +147,6 @@
   - 是否抢到 lock？（看 lifecycle 事件）
   - outbox 是否真的有数据？（`DefaultOutboxStore.size()`）
 - 订阅不工作/不重连：
-  - 是否调用了 `setSubscribed(true)`？
+  - 是否在配置中启用了 subscribe（`subscribe !== false`）？
   - 是否配置了 `subscribeUrl`？
   - 运行环境是否有 `EventSource`（没有就需要 `eventSourceFactory`）？

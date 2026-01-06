@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { defineEntities } from '../../src'
+import { createClient } from '../../src'
 import { Backend } from '#backend'
 
 type Post = {
@@ -15,16 +15,17 @@ describe('Phase 6 verification (Sync split)', () => {
         const opsClient = new Backend.MemoryOpsClient()
         const executeOps = vi.spyOn(opsClient as any, 'executeOps')
 
-        const client = defineEntities<{ posts: Post }>()
-            .defineStores({})
-            .defineClient()
-            .store.backend.custom({
+        const client = createClient<{ posts: Post }>({
+            schema: {
+                posts: {}
+            },
+            store: {
+                type: 'custom',
                 role: 'remote',
                 backend: { id: 'remote-phase6-direct', opsClient }
-            })
-            .sync.queueWrites({}).intentOnly()
-            .sync.defaults({ periodicPullIntervalMs: 0 })
-            .build()
+            },
+            sync: { pullIntervalMs: 0, queue: 'intent-only' }
+        })
 
         const posts = client.Store('posts')
 
@@ -33,7 +34,7 @@ describe('Phase 6 verification (Sync split)', () => {
         const c1 = executeOps.mock.calls.length
         expect(c1).toBeGreaterThan(c0)
 
-        client.Sync.start({ mode: 'push-only' })
+        client.Sync.start('push-only')
         await posts.addOne({ title: 'b' } as any)
         const c2 = executeOps.mock.calls.length
         expect(c2).toBeGreaterThan(c1)
@@ -48,18 +49,19 @@ describe('Phase 6 verification (Sync split)', () => {
         const opsClient = new Backend.MemoryOpsClient()
         const executeOps = vi.spyOn(opsClient as any, 'executeOps')
 
-        const client = defineEntities<{ posts: Post }>()
-            .defineStores({})
-            .defineClient()
-            .store.backend.custom({
+        const client = createClient<{ posts: Post }>({
+            schema: {
+                posts: {}
+            },
+            store: {
+                type: 'custom',
                 role: 'remote',
                 backend: { id: 'remote-phase6-enqueue', opsClient }
-            })
-            .sync.queueWrites({}).intentOnly()
-            .sync.defaults({ periodicPullIntervalMs: 0 })
-            .build()
+            },
+            sync: { pullIntervalMs: 0, queue: 'intent-only' }
+        })
 
-        client.Sync.start({ mode: 'push-only' })
+        client.Sync.start('push-only')
 
         executeOps.mockClear()
         await client.Sync.Store('posts').addOne({ title: 'x' } as any)
@@ -70,48 +72,53 @@ describe('Phase 6 verification (Sync split)', () => {
     })
 
     it('pull-only 不需要 subscribe 能力（即使 defaults.subscribe=true）', () => {
-        const client = defineEntities<{ posts: Post }>()
-            .defineStores({})
-            .defineClient()
-            .store.backend.custom({
+        const client = createClient<{ posts: Post }>({
+            schema: {
+                posts: {}
+            },
+            store: {
+                type: 'custom',
                 role: 'remote',
                 backend: { id: 'remote-phase6-pull-only', opsClient: new Backend.MemoryOpsClient() }
-            })
-            .sync.defaults({ subscribe: true, periodicPullIntervalMs: 0 })
-            .build()
+            },
+            sync: { subscribe: true, pullIntervalMs: 0 }
+        })
 
-        expect(() => client.Sync.start({ mode: 'pull-only' } as any)).not.toThrow()
+        expect(() => client.Sync.start('pull-only')).not.toThrow()
         client.Sync.stop()
     })
 
     it('pull+subscribe 必须提供 subscribe 能力（sync.target）', () => {
-        const client = defineEntities<{ posts: Post }>()
-            .defineStores({})
-            .defineClient()
-            .store.backend.custom({
+        const client = createClient<{ posts: Post }>({
+            schema: {
+                posts: {}
+            },
+            store: {
+                type: 'custom',
                 role: 'remote',
                 backend: { id: 'remote-phase6-pull-sub', opsClient: new Backend.MemoryOpsClient() }
-            })
-            .sync.defaults({ subscribe: true, periodicPullIntervalMs: 0 })
-            .build()
+            },
+            sync: { subscribe: true, pullIntervalMs: 0 }
+        })
 
-        expect(() => client.Sync.start({ mode: 'pull+subscribe' } as any)).toThrow('subscribe')
+        expect(() => client.Sync.start('pull+subscribe')).toThrow('subscribe')
     })
 
     it('intent-only 的 Sync.Store.updateOne 在 cache miss 时不会发生远端隐式补读', async () => {
         const opsClient = new Backend.MemoryOpsClient()
         const executeOps = vi.spyOn(opsClient as any, 'executeOps')
 
-        const client = defineEntities<{ posts: Post }>()
-            .defineStores({})
-            .defineClient()
-            .store.backend.custom({
+        const client = createClient<{ posts: Post }>({
+            schema: {
+                posts: {}
+            },
+            store: {
+                type: 'custom',
                 role: 'remote',
                 backend: { id: 'remote-phase6-no-implicit', opsClient }
-            })
-            .sync.queueWrites({}).intentOnly()
-            .sync.defaults({ periodicPullIntervalMs: 0 })
-            .build()
+            },
+            sync: { pullIntervalMs: 0, queue: 'intent-only' }
+        })
 
         executeOps.mockClear()
 
@@ -125,20 +132,22 @@ describe('Phase 6 verification (Sync split)', () => {
     })
 
     it('local-first 的 Sync.Store.updateOne cache miss 允许本地补读（不会报“禁止补读”）', async () => {
-        const client = defineEntities<{ posts: Post }>()
-            .defineStores({})
-            .defineClient()
-            .store.backend.custom({
-                role: 'local',
-                backend: { memory: {} }
-            })
-            .sync.target.custom({
-                id: 'remote-phase6-localfirst',
-                opsClient: new Backend.MemoryOpsClient()
-            })
-            .sync.queueWrites({}).localFirst()
-            .sync.defaults({ periodicPullIntervalMs: 0 })
-            .build()
+        const client = createClient<{ posts: Post }>({
+            schema: {
+                posts: {}
+            },
+            store: {
+                type: 'memory'
+            },
+            sync: {
+                backend: {
+                    id: 'remote-phase6-localfirst',
+                    opsClient: new Backend.MemoryOpsClient()
+                },
+                pullIntervalMs: 0,
+                queue: 'local-first'
+            }
+        })
 
         try {
             await client.Sync.Store('posts').updateOne('missing', () => {

@@ -2,7 +2,7 @@ import { atom, useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 import { useMemo } from 'react'
 import { Core } from '#core'
-import type { Entity, IStore, RelationIncludeInput, StoreKey, WithRelations } from '#core'
+import type { Entity, RelationIncludeInput, StoreHandleOwner, StoreKey, WithRelations } from '#core'
 import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'
 
@@ -14,7 +14,7 @@ interface UseMultipleOptions<T, Relations = {}> {
 }
 
 export function useMultiple<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: IStore<T, Relations>,
+    store: StoreHandleOwner<T, Relations>,
     ids: StoreKey[] = [],
     options?: UseMultipleOptions<T, Relations> & { include?: Include }
 ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {

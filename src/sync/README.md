@@ -107,7 +107,7 @@ Path:
 
 Path:
 
-- `SyncEngine.start()` starts the lane, and `setSubscribed(true)` enables it.
+- `SyncEngine.start()` starts the lanes; subscribe is enabled/disabled by config (`subscribe`) at start time.
 - `NotifyLane`:
   - Opens `transport.subscribe(...)` (implemented by `Sync.subscribeNotifySse(...)`)
   - For each message:
@@ -146,6 +146,6 @@ This separation keeps sync logic independent from your actual store/mutation imp
   - Is the lock being acquired? (check lifecycle events)
   - Does outbox contain items? (`DefaultOutboxStore.size()`)
 - Notifications not reconnecting:
-  - Is `setSubscribed(true)` called?
+  - Is subscribe enabled in config (`subscribe !== false`)?
   - Is `subscribeUrl` configured?
   - Is `EventSource` available (or a factory provided)?

@@ -162,5 +162,4 @@ export interface SyncClient {
     }) => Promise<string[]>
     flush: () => Promise<void>
     pull: () => Promise<ChangeBatch | undefined>
-    setSubscribed: (enabled: boolean) => void
 }

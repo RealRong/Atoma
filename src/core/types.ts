@@ -568,6 +568,17 @@ export interface IStore<T, Relations = {}> {
     findMany?(options?: FindManyOptions<T>): Promise<FindManyResult<T>>
 }
 
+/**
+ * Store object that has a storeHandle attached.
+ *
+ * 说明：
+ * - `Sync.Store(...)` 会显式移除 server-assigned create（direct-only 能力）
+ * - React hooks / handle registry 只依赖 handle 与常规 API，因此这里把这两个方法标为可选
+ */
+export type StoreHandleOwner<T extends Entity, Relations = {}> =
+    Omit<IStore<T, Relations>, 'createServerAssignedOne' | 'createServerAssignedMany'>
+    & Partial<Pick<IStore<T, Relations>, 'createServerAssignedOne' | 'createServerAssignedMany'>>
+
 type InferTargetType<R> =
     R extends BelongsToConfig<any, infer U, any> ? U
     : R extends HasManyConfig<any, infer U, any> ? U

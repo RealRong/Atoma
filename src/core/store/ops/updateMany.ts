@@ -97,7 +97,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
             }
         }
 
-        const tasks: Array<Promise<void>> = []
+        const prepared: Array<{ index: number; id: StoreKey; value: PartialWithId<T> }> = []
 
         for (let index = 0; index < items.length; index++) {
             if (results[index]) continue
@@ -123,6 +123,16 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
                 results[index] = { index, ok: false, error: toError(error, `Failed to prepare update for id ${String(id)}`) }
                 continue
             }
+
+            prepared.push({ index, id, value: validObj })
+        }
+
+        const tasks: Array<Promise<void>> = []
+
+        for (const entry of prepared) {
+            const index = entry.index
+            const id = entry.id
+            const validObj = entry.value
 
             const { ticket } = services.mutation.runtime.beginWrite()
 

@@ -1,17 +1,10 @@
 import type { CoreStore, StoreHandle } from '#core'
 import { Core } from '#core'
-import type { AtomaClientContext, CreateAtomaStore, StoresConstraint } from './types'
+import type { AtomaClientContext, AtomaSchema } from './types'
 
-export const createAtomaStore = ((ctx: any, options: any) => {
+export const createAtomaStore = (ctx: any, options: any) => {
     const dataSource = options.dataSource ?? ctx.defaults.dataSourceFactory(options.name)
     const idGenerator = options.idGenerator ?? ctx.defaults.idGenerator
-
-    const createFromDsl = (factory: any) =>
-        factory({
-            belongsTo: (name: any, config: any) => Core.relations.belongsTo(name, config),
-            hasMany: (name: any, config: any) => Core.relations.hasMany(name, config),
-            hasOne: (name: any, config: any) => Core.relations.hasOne(name, config)
-        })
 
     const createFromSchema = (schema: any) => {
         const out: Record<string, any> = {}
@@ -42,9 +35,7 @@ export const createAtomaStore = ((ctx: any, options: any) => {
     }
 
     const relationsFactory = options.relations
-        ? () => typeof options.relations === 'function'
-            ? createFromDsl(options.relations)
-            : createFromSchema(options.relations)
+        ? () => createFromSchema(options.relations)
         : undefined
 
     return Core.store.createStore<any, any>({
@@ -56,24 +47,17 @@ export const createAtomaStore = ((ctx: any, options: any) => {
         relations: relationsFactory as any,
         resolveStore: ctx.resolveStore as any
     })
-}) as CreateAtomaStore
+}
 
 export function createStoreInstance(args: {
     name: string
-    stores: StoresConstraint<any>
+    schema: AtomaSchema<any>
     ctx: AtomaClientContext<any, any>
 }): { store: CoreStore<any, any>; handle: StoreHandle<any> | null } {
     const name = String(args.name)
-    const override = args.stores?.[name]
+    const storeSchema = (args.schema as any)?.[name] ?? {}
 
-    const created = (() => {
-        if (!override) return createAtomaStore(args.ctx, { name })
-        if (typeof override === 'function') return override(args.ctx)
-        if (typeof (override as any)?.name === 'string' && (override as any).name !== name) {
-            throw new Error(`[Atoma] defineStores(...).defineClient: stores["${String(name)}"].name 不一致（收到 "${String((override as any).name)}"）`)
-        }
-        return createAtomaStore(args.ctx, { ...(override as any), name })
-    })()
+    const created = createAtomaStore(args.ctx, { ...(storeSchema as any), name })
 
     const handle = Core.store.getHandle(created)
     return {

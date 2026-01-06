@@ -1,7 +1,7 @@
 import { Observability } from '#observability'
 import { Sync, type SyncClient } from '#sync'
 import type { AtomaClientSyncConfig, ResolvedBackend, AtomaSync } from '../types'
-import type { ClientRuntime } from '../runtime'
+import type { ClientRuntime } from '../types'
 import { createSyncIntentController } from './SyncIntentController'
 import { createSyncReplicatorApplier } from './SyncReplicatorApplier'
 
@@ -91,9 +91,9 @@ export function createSyncController(args: {
     }
 
     const sync: AtomaSync = {
-        start: (args) => {
-            const { mode } = resolveStartMode(args?.mode)
-            const engine = ensureSyncEngine({ mode })
+        start: (mode) => {
+            const { mode: resolved } = resolveStartMode(mode)
+            const engine = ensureSyncEngine({ mode: resolved })
             syncStarted = true
             engine.start()
         },
@@ -105,21 +105,17 @@ export function createSyncController(args: {
         status: () => ({ started: syncStarted, configured: syncConfigured }),
         pull: async () => {
             if (!syncStarted) {
-                sync.start({ mode: 'pull-only' } as any)
+                sync.start('pull-only')
             }
             const engine = ensureSyncEngine({ mode: 'pull-only' })
             await engine.pull()
         },
         flush: async () => {
             if (!syncStarted) {
-                sync.start({ mode: 'push-only' } as any)
+                sync.start('push-only')
             }
             const engine = ensureSyncEngine({ mode: 'push-only' })
             await engine.flush()
-        },
-        setSubscribed: (enabled: boolean) => {
-            const engine = ensureSyncEngine({ mode: 'pull+subscribe' })
-            engine.setSubscribed(Boolean(enabled))
         }
     }
 
@@ -127,7 +123,9 @@ export function createSyncController(args: {
     // 2) Engine（只做构造与缓存）
     // ---------------------------------------------
     const syncDefaultsKey = args.backend?.key ? String(args.backend.key) : 'default'
-    const syncInstanceId = resolveSyncInstanceId()
+    const syncInstanceId = (syncConfig?.deviceId && String(syncConfig.deviceId).trim())
+        ? String(syncConfig.deviceId).trim()
+        : resolveSyncInstanceId()
     const defaultOutboxKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:outbox`
     const defaultCursorKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:cursor`
 
@@ -152,14 +150,15 @@ export function createSyncController(args: {
         }
 
         if (!syncConfig) {
-            throw new Error('[Atoma] sync: 未配置（请通过 builder 配置 sync.target / sync.defaults / sync.queueWrites）')
+            throw new Error('[Atoma] sync: 未配置（请在 createClient/createHttpClient/createLocalFirstClient 中提供 sync 配置）')
         }
         if (!args.backend) {
-            throw new Error('[Atoma] sync: 未配置同步对端（sync.target）')
+            throw new Error('[Atoma] sync: 未配置同步对端（请配置 sync.url 或 sync.backend）')
         }
 
-        const outboxKey = syncConfig.outboxKey ?? defaultOutboxKey
-        const cursorKey = syncConfig.cursorKey ?? defaultCursorKey
+        const adv = syncConfig.advanced
+        const outboxKey = adv?.outboxKey ?? defaultOutboxKey
+        const cursorKey = adv?.cursorKey ?? defaultCursorKey
 
         const backend = args.backend
 
@@ -184,7 +183,7 @@ export function createSyncController(args: {
 
         const wantsSubscribe = modeConfig.subscribe && syncConfig.subscribe !== false
         if (wantsSubscribe && !backend.subscribe && !backend.sse?.buildUrl) {
-            throw new Error('[Atoma] sync: subscribe 已启用，但未配置 subscribe 能力（请在 sync.target.http 配置 subscribePath/subscribeUrl/eventSourceFactory，或提供 backend.subscribe）')
+            throw new Error('[Atoma] sync: subscribe 已启用，但未配置 subscribe 能力（请配置 sync.sse，或在 sync.backend 提供 subscribe/sse）')
         }
 
         const transport = wantsSubscribe
@@ -228,9 +227,9 @@ export function createSyncController(args: {
             inFlightTimeoutMs: syncConfig.inFlightTimeoutMs,
             retry: syncConfig.retry,
             backoff: syncConfig.backoff,
-            lockKey: syncConfig.lockKey,
-            lockTtlMs: syncConfig.lockTtlMs,
-            lockRenewIntervalMs: syncConfig.lockRenewIntervalMs,
+            lockKey: adv?.lockKey,
+            lockTtlMs: adv?.lockTtlMs,
+            lockRenewIntervalMs: adv?.lockRenewIntervalMs,
             now: syncConfig.now,
             onError: syncConfig.onError,
             onEvent: syncConfig.onEvent
@@ -251,7 +250,7 @@ export function createSyncController(args: {
     function buildSubscribeUrl(args2?: { resources?: string[] }): string {
         const backend = args.backend
         if (!backend?.sse?.buildUrl) {
-            throw new Error('[Atoma] sync: subscribe 已启用，但未配置 SSE subscribeUrl（请在 sync.target.http 配置 subscribePath/subscribeUrl）')
+            throw new Error('[Atoma] sync: subscribe 已启用，但未配置 SSE subscribeUrl（请配置 sync.sse，或在 sync.backend.sse.subscribeUrl 提供 buildUrl）')
         }
         const base = backend.sse.buildUrl({ resources: args2?.resources })
 

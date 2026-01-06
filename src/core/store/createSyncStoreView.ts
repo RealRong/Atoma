@@ -20,47 +20,33 @@ import { attachStoreHandle } from '../storeHandleRegistry'
 export type SyncStore<T extends Entity, Relations = {}> =
     Omit<CoreStore<T, Relations>, 'createServerAssignedOne' | 'createServerAssignedMany'>
 
-export type SyncStoreViewConfig = {
+type SyncStoreWriteMode = 'intent-only' | 'local-first'
+
+type SyncStoreViewConfig = {
     /**
-     * 是否允许写入时在 cache miss 的情况下进行隐式补读。
-     * - intent-only（默认）：false（禁止任何隐式补读）
-     * - local-first：true（允许本地 durable 补读；远端补读需由上层保证不会发生）
+     * queued 写入策略：
+     * - intent-only（默认）：只入队；禁止 cache miss 隐式补读
+     * - local-first：先本地 durable 再入队；允许本地 cache miss 隐式补读
      */
-    allowImplicitFetchForWrite?: boolean
+    mode?: SyncStoreWriteMode
 }
 
-function withOutboxOptions<TOptions extends StoreOperationOptions | undefined>(
-    options: TOptions,
-    viewConfig?: SyncStoreViewConfig
-): TOptions {
-    const anyOptions = (options && typeof options === 'object' && !Array.isArray(options)) ? (options as any) : {}
-    const base = (anyOptions.__atoma && typeof anyOptions.__atoma === 'object' && !Array.isArray(anyOptions.__atoma))
-        ? anyOptions.__atoma
-        : {}
-
-    const requestedPersist = base.persist
-    if (requestedPersist === 'direct') {
-        throw new Error('[Atoma] Sync.Store: 不允许 direct persist（请使用 Store(...)）')
+function assertNoInternalOptions(options: unknown): void {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) return
+    if ('__atoma' in (options as any)) {
+        throw new Error('[Atoma] Sync.Store: options.__atoma 为内部保留字段，请勿传入；需要 direct 请使用 Store(...)')
     }
+}
 
-    const requestedImplicit = base.allowImplicitFetchForWrite
-    const viewAllowsImplicit = viewConfig?.allowImplicitFetchForWrite === true
-    if (requestedImplicit === true && !viewAllowsImplicit) {
-        throw new Error('[Atoma] Sync.Store: 当前写入策略禁止写入时隐式补读，请先 fetch/get 再写入')
-    }
-
-    const finalAllowImplicitFetchForWrite = typeof requestedImplicit === 'boolean'
-        ? requestedImplicit
-        : viewAllowsImplicit
-
+function toSyncOptions(options: StoreOperationOptions | undefined, mode: SyncStoreWriteMode): StoreOperationOptions {
+    assertNoInternalOptions(options)
     return {
-        ...anyOptions,
+        ...(options ? options : {}),
         __atoma: {
-            ...base,
             persist: 'outbox',
-            allowImplicitFetchForWrite: finalAllowImplicitFetchForWrite
+            allowImplicitFetchForWrite: mode === 'local-first'
         }
-    } as TOptions
+    }
 }
 
 export function createSyncStoreView<T extends Entity, Relations = {}>(
@@ -68,6 +54,7 @@ export function createSyncStoreView<T extends Entity, Relations = {}>(
     viewConfig?: SyncStoreViewConfig
 ): SyncStore<T, Relations> {
     const name = String(handle.storeName || 'store')
+    const mode: SyncStoreWriteMode = viewConfig?.mode ?? 'intent-only'
 
     const addOneBase = createAddOne<T>(handle)
     const addManyBase = createAddMany<T>(handle)
@@ -85,14 +72,14 @@ export function createSyncStoreView<T extends Entity, Relations = {}>(
     const findMany = createFindMany<T>(handle)
 
     const store: any = {
-        addOne: (item: Partial<T>, options?: StoreOperationOptions) => addOneBase(item, withOutboxOptions(options, viewConfig)),
-        addMany: (items: Array<Partial<T>>, options?: StoreOperationOptions) => addManyBase(items, withOutboxOptions(options, viewConfig)),
-        updateOne: (id: StoreKey, recipe: any, options?: StoreOperationOptions) => updateOneBase(id, recipe, withOutboxOptions(options, viewConfig)),
-        updateMany: (items: any, options?: StoreOperationOptions) => updateManyBase(items, withOutboxOptions(options, viewConfig)),
-        deleteOne: (id: any, options?: StoreOperationOptions) => deleteOneBase(id, withOutboxOptions(options, viewConfig)),
-        deleteMany: (items: any, options?: StoreOperationOptions) => deleteManyBase(items, withOutboxOptions(options, viewConfig)),
-        upsertOne: (item: any, options?: StoreOperationOptions) => upsertOneBase(item, withOutboxOptions(options, viewConfig)),
-        upsertMany: (items: any, options?: StoreOperationOptions) => upsertManyBase(items, withOutboxOptions(options, viewConfig)),
+        addOne: (item: Partial<T>, options?: StoreOperationOptions) => addOneBase(item, toSyncOptions(options, mode)),
+        addMany: (items: Array<Partial<T>>, options?: StoreOperationOptions) => addManyBase(items, toSyncOptions(options, mode)),
+        updateOne: (id: StoreKey, recipe: any, options?: StoreOperationOptions) => updateOneBase(id, recipe, toSyncOptions(options, mode)),
+        updateMany: (items: any, options?: StoreOperationOptions) => updateManyBase(items, toSyncOptions(options, mode)),
+        deleteOne: (id: any, options?: StoreOperationOptions) => deleteOneBase(id, toSyncOptions(options, mode)),
+        deleteMany: (items: any, options?: StoreOperationOptions) => deleteManyBase(items, toSyncOptions(options, mode)),
+        upsertOne: (item: any, options?: StoreOperationOptions) => upsertOneBase(item, toSyncOptions(options, mode)),
+        upsertMany: (items: any, options?: StoreOperationOptions) => upsertManyBase(items, toSyncOptions(options, mode)),
 
         getAll,
         getMany,

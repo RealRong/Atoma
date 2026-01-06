@@ -1,7 +1,7 @@
 import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useState } from 'react'
 import { Core } from '#core'
-import type { FindManyOptions, FetchPolicy, IStore, PageInfo, StoreKey, RelationIncludeInput, Entity, WithRelations } from '#core'
+import type { FindManyOptions, FetchPolicy, PageInfo, StoreKey, RelationIncludeInput, Entity, WithRelations, StoreHandleOwner } from '#core'
 import { useRelations } from './useRelations'
 
 type UseFindManySelect = 'entities' | 'ids'
@@ -51,17 +51,17 @@ type UseFindManyIdsResult<T extends Entity> = {
 }
 
 export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: IStore<T, Relations>,
+    store: StoreHandleOwner<T, Relations>,
     options?: FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy; select?: 'entities' }
 ): UseFindManyEntitiesResult<T, Relations, Include>
 
 export function useFindMany<T extends Entity, Relations = {}>(
-    store: IStore<T, Relations>,
+    store: StoreHandleOwner<T, Relations>,
     options: Omit<FindManyOptions<T, any>, 'include'> & { include?: never; fetchPolicy?: FetchPolicy; select: 'ids' }
 ): UseFindManyIdsResult<T>
 
 export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: IStore<T, Relations>,
+    store: StoreHandleOwner<T, Relations>,
     options?: (FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy; select?: UseFindManySelect })
 ): UseFindManyEntitiesResult<T, Relations, Include> | UseFindManyIdsResult<T> {
     const handle = Core.store.getHandle(store)

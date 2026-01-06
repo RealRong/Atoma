@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { defineEntities } from 'atoma'
+import { createClient } from 'atoma'
 import { useFindMany } from 'atoma/react'
 import { buttonVariants } from 'fumadocs-ui/components/ui/button'
 import { Callout } from 'fumadocs-ui/components/callout'
@@ -66,34 +66,6 @@ function generateBooks(count: number, seed: number): Book[] {
     return out
 }
 
-class LocalSeedDataSource {
-    name = 'docs:local'
-
-    constructor(
-        private getDataset: () => Book[] | null
-    ) {}
-
-    async put() {}
-    async bulkPut() {}
-    async bulkCreate() {}
-    async delete() {}
-    async bulkDelete() {}
-    async get() { return undefined }
-    async bulkGet(keys: any[]) { return keys.map(() => undefined) }
-    async getAll() { return [] }
-    async applyPatches() {}
-
-    async findMany(options?: any) {
-        const key = options?.cache?.key
-        if (key !== 'seed') {
-            throw new Error('[docs] remote disabled: local-only demo')
-        }
-
-        const data = this.getDataset() ?? []
-        return { data }
-    }
-}
-
 export function LocalQueryPerformanceDemo() {
     const [seed, setSeed] = useState(1)
     const [dataset, setDataset] = useState<Book[] | null>(null)
@@ -124,8 +96,6 @@ export function LocalQueryPerformanceDemo() {
     const querySeqRef = useRef(0)
 
     const client = useMemo(() => {
-        const ds = new LocalSeedDataSource(() => datasetRef.current)
-
         const stores: any = {
             books: {
                 ...(indexesEnabled
@@ -141,15 +111,15 @@ export function LocalQueryPerformanceDemo() {
             }
         }
 
-        return defineEntities<{ books: Book }>()
-            .defineStores(stores)
-            .defineClient()
-            .store.defaults({ dataSourceFactory: () => ds as any })
-            .store.backend.http({
-                baseURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-                opsPath: '/api/ops'
-            })
-            .build()
+        return createClient<{ books: Book }>(
+            {
+                store: {
+                    type: 'memory',
+                    seed: { books: datasetRef.current ?? [] }
+                }
+            },
+            stores
+        )
     }, [indexesEnabled, instanceId])
 
     const store = client.Store('books')
@@ -244,7 +214,7 @@ export function LocalQueryPerformanceDemo() {
             setLastGenerateMs(performance.now() - genStart)
 
             const seedStart = performance.now()
-            await store.findMany?.({ cache: { key: 'seed' } } as any)
+            await store.fetchAll?.()
             setLastSeedMs(performance.now() - seedStart)
 
             setSeededCount(store.getCachedAll().length)
@@ -268,7 +238,7 @@ export function LocalQueryPerformanceDemo() {
         querySeqRef.current = 0
         try {
             const seedStart = performance.now()
-            await store.findMany?.({ cache: { key: 'seed' } } as any)
+            await store.fetchAll?.()
             setLastSeedMs(performance.now() - seedStart)
             setSeededCount(store.getCachedAll().length)
             const current = datasetRef.current ?? []
