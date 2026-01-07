@@ -5,7 +5,7 @@ import type {
     HttpBackendConfig,
     SyncDefaultsArgs,
     SyncQueueWritesArgs,
-    SyncQueueWriteMode
+    HttpEndpointOptions
 } from '../types'
 
 export function mkIdxTblForRes<T extends Record<string, Table<any, StoreKey>>>(
@@ -18,15 +18,8 @@ export function mkIdxTblForRes<T extends Record<string, Table<any, StoreKey>>>(
     }
 }
 
-export function pickHttpOv(args: {
-    opsPath?: string
-    headers?: HttpBackendConfig['headers']
-    retry?: HttpBackendConfig['retry']
-    fetchFn?: HttpBackendConfig['fetchFn']
-    onRequest?: HttpBackendConfig['onRequest']
-    onResponse?: HttpBackendConfig['onResponse']
-    responseParser?: HttpBackendConfig['responseParser']
-}): Partial<HttpBackendConfig> {
+function pickHttpOv(args: HttpEndpointOptions | undefined): Partial<HttpBackendConfig> {
+    if (!args) return {}
     return {
         ...(args.opsPath ? { opsPath: args.opsPath } : {}),
         ...(args.headers ? { headers: args.headers } : {}),
@@ -35,6 +28,13 @@ export function pickHttpOv(args: {
         ...(args.onRequest ? { onRequest: args.onRequest } : {}),
         ...(args.onResponse ? { onResponse: args.onResponse } : {}),
         ...(args.responseParser ? { responseParser: args.responseParser } : {})
+    }
+}
+
+export function mergeHttpOv(def: HttpEndpointOptions | undefined, lane: HttpEndpointOptions | undefined): Partial<HttpBackendConfig> {
+    return {
+        ...pickHttpOv(def),
+        ...pickHttpOv(lane)
     }
 }
 
@@ -61,28 +61,6 @@ export function assertNoEchoEndpoint(args: { localServerUrl: string; syncUrl: st
     )
 }
 
-function hasHttpOv(args: {
-    opsPath?: string
-    headers?: unknown
-    retry?: unknown
-    fetchFn?: unknown
-    onRequest?: unknown
-    onResponse?: unknown
-    responseParser?: unknown
-    sse?: unknown
-}): boolean {
-    return Boolean(
-        args.opsPath
-        || args.headers
-        || args.retry
-        || args.fetchFn
-        || args.onRequest
-        || args.onResponse
-        || args.responseParser
-        || args.sse
-    )
-}
-
 export function mkSyncTargetFromBackend(args: {
     backend: BackendEndpointConfig
     ov: Partial<HttpBackendConfig>
@@ -90,16 +68,10 @@ export function mkSyncTargetFromBackend(args: {
 }): BackendEndpointConfig {
     const base = args.backend as any
 
-    const wantsOv = hasHttpOv({
-        opsPath: (args.ov as any).opsPath,
-        headers: (args.ov as any).headers,
-        retry: (args.ov as any).retry,
-        fetchFn: (args.ov as any).fetchFn,
-        onRequest: (args.ov as any).onRequest,
-        onResponse: (args.ov as any).onResponse,
-        responseParser: (args.ov as any).responseParser,
-        sse: args.sse
-    })
+    const wantsOv = Boolean(
+        (args.sse && String(args.sse).trim())
+        || (args.ov && Object.keys(args.ov).length)
+    )
 
     if (!wantsOv) return args.backend
 
@@ -127,6 +99,7 @@ export function mkSyncTargetFromBackend(args: {
 }
 
 export function toSyncDef(args: {
+    mode?: 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full'
     deviceId?: string
     advanced?: {
         outboxKey?: string
@@ -153,6 +126,7 @@ export function toSyncDef(args: {
 } | undefined): SyncDefaultsArgs | undefined {
     if (!args) return undefined
     return {
+        ...(args.mode ? { mode: args.mode as any } : {}),
         ...(args.deviceId ? { deviceId: args.deviceId } : {}),
         ...(args.advanced ? { advanced: args.advanced } : {}),
         ...(args.resources ? { resources: args.resources } : {}),
@@ -184,10 +158,4 @@ export function toQWrites(args: {
         ...(args.onQueueChange ? { onQueueChange: args.onQueueChange } : {}),
         ...(args.onQueueFull ? { onQueueFull: args.onQueueFull as any } : {})
     }
-}
-
-export function toQMode(mode: unknown): SyncQueueWriteMode | undefined {
-    if (mode === 'local-first') return 'local-first'
-    if (mode === 'intent-only') return 'intent-only'
-    return undefined
 }

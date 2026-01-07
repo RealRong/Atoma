@@ -1,13 +1,11 @@
 import React from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { enableGlobalDevtools, getGlobalDevtools } from 'atoma'
-import type { DevtoolsBridge } from 'atoma'
+import { devtools } from 'atoma/devtools'
 import DevtoolsApp from './ui/DevtoolsApp'
 import stylesText from './styles.css?inline'
 
 export type MountAtomaDevToolsOptions = {
     target?: HTMLElement
-    bridge?: DevtoolsBridge
     defaultOpen?: boolean
 }
 
@@ -54,12 +52,12 @@ export function mountAtomaDevTools(options: MountAtomaDevToolsOptions = {}): Mou
     const container = ensureContainer(options.target)
     const { shadowRoot, mountPoint } = ensureShadowRoot(container)
 
-    const bridge = options.bridge ?? getGlobalDevtools() ?? enableGlobalDevtools()
+    devtools.enableGlobal()
 
     const root: Root = createRoot(mountPoint)
     root.render(
         <React.StrictMode>
-            <DevtoolsApp bridge={bridge} defaultOpen={options.defaultOpen} />
+            <DevtoolsApp defaultOpen={options.defaultOpen} />
         </React.StrictMode>
     )
 
@@ -81,4 +79,3 @@ export function mountAtomaDevTools(options: MountAtomaDevToolsOptions = {}): Mou
 export function unmountAtomaDevTools() {
     mounted?.unmount()
 }
-

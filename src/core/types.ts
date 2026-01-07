@@ -320,7 +320,7 @@ export type OrderBy<T> =
     | { field: keyof T & string, direction: 'asc' | 'desc' }
     | Array<{ field: keyof T & string, direction: 'asc' | 'desc' }>
 
-export type FetchPolicy = 'local' | 'remote' | 'local-then-remote'
+export type FetchPolicy = 'local' | 'remote' | 'cache-and-network'
 
 export type PageInfo = import('../protocol/query').PageInfo
 

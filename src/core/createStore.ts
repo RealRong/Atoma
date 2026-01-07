@@ -1,28 +1,11 @@
 import { atom } from 'jotai/vanilla'
 import type { DevtoolsBridge, StoreSnapshot } from '../devtools/types'
 import { getGlobalDevtools, registerGlobalStore } from '../devtools/global'
-import {
-    createAddMany,
-    createAddOne,
-    createBatchGet,
-    createCreateServerAssignedMany,
-    createCreateServerAssignedOne,
-    createDeleteMany,
-    createDeleteOne,
-    createFetchAll,
-    createFindMany,
-    createGetAll,
-    createGetMany,
-    createStoreHandle,
-    createUpdateMany,
-    createUpdateOne,
-    createUpsertMany,
-    createUpsertOne
-} from './store'
-import { registerStoreHandle } from './storeHandleRegistry'
+import { createStoreHandle } from './store'
 import { MutationPipeline } from './mutation'
 import type { JotaiStore } from './types'
 import type { DebugConfig, DebugEvent } from '#observability'
+import { createDirectStoreView } from './store/createDirectStoreView'
 import type {
     Entity,
     IDataSource,
@@ -30,7 +13,6 @@ import type {
     IndexDefinition,
     LifecycleHooks,
     RelationConfig,
-    RelationMap,
     SchemaValidator,
     StoreKey,
     StoreToken
@@ -61,6 +43,8 @@ export interface CoreStore<T extends Entity, Relations = {}> extends IStore<T, R
     name: string
     getCachedOneById: (id: StoreKey) => T | undefined
     getCachedAll: () => T[]
+    /** Reset in-memory cache (atom + indexes). Does NOT touch remote/durable persistence. */
+    reset: () => void
     withRelations: <const NewRelations extends Record<string, RelationConfig<any, any>>>(factory: () => NewRelations) => CoreStore<T, NewRelations>
 }
 
@@ -115,33 +99,7 @@ export function createStore<T extends Entity, Relations = {}>(
         }
     })
     void handle.stopIndexDevtools
-
-    const { getOne, fetchOne } = createBatchGet(handle)
-    const findMany = createFindMany<T>(handle)
-    const fetchAll = createFetchAll<T>(handle)
-
-    const store = {
-        addOne: createAddOne<T>(handle),
-        addMany: createAddMany<T>(handle),
-        createServerAssignedOne: createCreateServerAssignedOne<T>(handle),
-        createServerAssignedMany: createCreateServerAssignedMany<T>(handle),
-        updateOne: createUpdateOne<T>(handle),
-        updateMany: createUpdateMany<T>(handle),
-        deleteOne: createDeleteOne<T>(handle),
-        deleteMany: createDeleteMany<T>(handle),
-        upsertOne: createUpsertOne<T>(handle),
-        upsertMany: createUpsertMany<T>(handle),
-        getAll: createGetAll<T>(handle),
-        getMany: createGetMany<T>(handle),
-        getOne,
-        fetchOne,
-        fetchAll,
-        findMany
-    } as IStore<T>
-
-    const coreStore = store as unknown as CoreStore<T, Relations>
-    coreStore.name = name
-    registerStoreHandle(coreStore, handle)
+    const coreStore = createDirectStoreView<T, Relations>(handle)
 
     const snapshot = (): StoreSnapshot => {
         const map = jotaiStore.get(objectMapAtom)
@@ -165,29 +123,6 @@ export function createStore<T extends Entity, Relations = {}>(
 
     config.devtools?.registerStore?.({ name, snapshot }) ?? registerGlobalStore({ name, snapshot })
 
-    coreStore.getCachedOneById = (id: StoreKey) => {
-        return jotaiStore.get(objectMapAtom).get(id)
-    }
-
-    coreStore.getCachedAll = () => {
-        return Array.from(jotaiStore.get(objectMapAtom).values())
-    }
-
-    const applyRelations = (factory?: () => any) => {
-        if (!factory) return
-        let cache: RelationMap<T> | undefined
-        const getter = () => {
-            if (!cache) cache = factory()
-            return cache
-        }
-        handle.relations = getter as any
-    }
-
-    coreStore.withRelations = <NewRelations extends Record<string, RelationConfig<any, any>>>(factory: () => NewRelations) => {
-        applyRelations(factory)
-        return coreStore as unknown as CoreStore<T, NewRelations>
-    }
-
     const getRelations = (() => {
         const relationsFactory = config.relations
         if (!relationsFactory) return undefined
@@ -203,7 +138,9 @@ export function createStore<T extends Entity, Relations = {}>(
         }
     })()
 
-    applyRelations(getRelations)
+    if (getRelations) {
+        coreStore.withRelations(getRelations as any)
+    }
 
-    return coreStore
+    return coreStore as unknown as CoreStore<T, Relations>
 }

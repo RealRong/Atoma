@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useFindMany } from 'atoma/react';
-import { createHttpClient, createOpContext } from 'atoma';
+import { createClient, createOpContext } from 'atoma';
 import { buttonVariants } from 'fumadocs-ui/components/ui/button';
 import { Callout } from 'fumadocs-ui/components/callout';
 import { cn } from 'fumadocs-ui/utils/cn';
@@ -40,11 +40,18 @@ function createTodosClient(args: {
   onSyncEvent: (event: any) => void;
   onSyncError: (error: Error) => void;
 }) {
-  const { Store, Sync } = createHttpClient<{ todos: Todo }>({
-    url: typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-    opsPath: '/api/ops',
-    realtime: { sse: '/api/subscribe' },
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+
+  const { Store, Sync } = createClient<{ todos: Todo }>({
+    http: {
+      opsPath: '/api/ops',
+    },
+    store: {
+      type: 'http',
+      url: baseUrl,
+    },
     sync: {
+      sse: '/api/subscribe',
       subscribe: true,
       pullDebounceMs: 200,
       pullIntervalMs: 30_000,
@@ -63,7 +70,7 @@ function createTodosClient(args: {
 export function TodosDemo() {
   const [instance, setInstance] = useState<TodosClient | null>(null);
   const [online, setOnline] = useState<boolean>(() => navigator.onLine);
-  const [subscribed, setSubscribed] = useState(false);
+  const [mode, setMode] = useState<'pull-only' | 'pull+subscribe'>('pull+subscribe');
   const [lastEventType, setLastEventType] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -90,9 +97,7 @@ export function TodosDemo() {
       },
     });
     setInstance(nextInstance);
-    nextInstance.Sync.start();
-    nextInstance.Sync.setSubscribed(true);
-    setSubscribed(true);
+    nextInstance.Sync.start('pull+subscribe');
   }, [instance]);
 
   if (!instance) {
@@ -107,8 +112,8 @@ export function TodosDemo() {
     <TodosDemoBoard
       instance={instance}
       online={online}
-      subscribed={subscribed}
-      setSubscribed={setSubscribed}
+      mode={mode}
+      setMode={setMode}
       lastEventType={lastEventType}
       syncError={syncError}
     />
@@ -118,8 +123,8 @@ export function TodosDemo() {
 function TodosDemoBoard(props: {
   instance: TodosClient;
   online: boolean;
-  subscribed: boolean;
-  setSubscribed: (v: boolean) => void;
+  mode: 'pull-only' | 'pull+subscribe';
+  setMode: (v: 'pull-only' | 'pull+subscribe') => void;
   lastEventType: string | null;
   syncError: string | null;
 }) {
@@ -161,10 +166,11 @@ function TodosDemoBoard(props: {
     return out;
   }, [filtered]);
 
-  const toggleSse = () => {
-    const next = !props.subscribed;
-    props.setSubscribed(next);
-    Sync.setSubscribed(next);
+  const toggleSubscribe = () => {
+    const next = props.mode === 'pull+subscribe' ? 'pull-only' : 'pull+subscribe';
+    props.setMode(next);
+    Sync.stop();
+    Sync.start(next);
   };
 
   const flush = async () => {
@@ -176,8 +182,7 @@ function TodosDemoBoard(props: {
   };
 
   const startSync = () => {
-    Sync.start();
-    Sync.setSubscribed(props.subscribed);
+    Sync.start(props.mode);
   };
 
   const stopSync = () => {
@@ -336,17 +341,17 @@ function TodosDemoBoard(props: {
           <div className="flex flex-wrap items-center gap-2">
             <div className="text-sm font-medium">状态：</div>
             <div className="text-sm text-fd-muted-foreground">Sync {syncStatusText}</div>
-            <div className="text-sm text-fd-muted-foreground">SSE {props.subscribed ? '开' : '关'}</div>
+            <div className="text-sm text-fd-muted-foreground">Subscribe {props.mode === 'pull+subscribe' ? '开' : '关'}</div>
             <div className="text-sm text-fd-muted-foreground">{props.online ? 'Online' : 'Offline'}</div>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <button
               className={cn(buttonVariants({ color: 'outline', size: 'sm' }))}
-              onClick={toggleSse}
+              onClick={toggleSubscribe}
               type="button"
             >
-              {props.subscribed ? '关闭 SSE' : '开启 SSE'}
+              {props.mode === 'pull+subscribe' ? '关闭 Subscribe' : '开启 Subscribe'}
             </button>
             <button
               className={cn(buttonVariants({ color: 'outline', size: 'sm' }))}

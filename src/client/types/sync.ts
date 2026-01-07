@@ -1,5 +1,6 @@
 import type { SyncEvent, SyncOutboxEvents, SyncPhase, SyncOutboxItem } from '#sync'
 import type { HttpBackendConfig } from './backend'
+import type { AtomaSyncStartMode } from './client'
 
 export type SyncQueueWriteMode = 'intent-only' | 'local-first'
 
@@ -18,6 +19,7 @@ export type SyncAdvancedArgs = {
 }
 
 export type SyncDefaultsArgs = {
+    mode?: AtomaSyncStartMode
     deviceId?: string
     advanced?: SyncAdvancedArgs
     resources?: string[]
@@ -38,6 +40,8 @@ export type SyncDefaultsArgs = {
 }
 
 export type AtomaClientSyncConfig = {
+    /** Default mode used by `Sync.start()` when called without args. */
+    mode?: AtomaSyncStartMode
     /** Device identity used to derive internal persistence keys (outbox/cursor/lock). */
     deviceId?: string
     /** Advanced persistence overrides (rare). */

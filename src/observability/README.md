@@ -42,7 +42,7 @@ At the public API level, users typically enable debug via `Core.store.createStor
 - If `debug.enabled` is false, **no emitter is created** and all callsites are effectively no-ops.
 - If `debug.sample` is `0` (default), the store will usually **avoid allocating a traceId**, keeping overhead near zero.
 
-Note: Atoma intentionally keeps `DebugConfig` as pure data. The actual event sink is owned by the wiring layer (typically forwarding into a `DevtoolsBridge`).
+Note: Atoma intentionally keeps `DebugConfig` as pure data. The actual event sink is owned by the wiring layer (e.g. logs, UI, remote collectors).
 
 ### 2) Store decides whether to allocate a `traceId`
 
@@ -92,7 +92,7 @@ Current event types emitted by the engine include:
 
 ### 6) Sinks: where events go
 
-The store layer forwards `DebugEvent` into a devtools bridge as a `DevtoolsEvent`:
+The store layer forwards `DebugEvent` into a devtools/event sink as a `DevtoolsEvent`:
 
 - `{ type: 'debug-event', payload: e }`
 
@@ -100,7 +100,7 @@ Consumers (Devtools UI, logs, remote collectors) should group by `store + traceI
 
 ## Explain vs Debug Events
 
-- **Debug events**: a stream of timeline evidence (`DebugEvent[]`), shipped to `debug.onEvent`.
+- **Debug events**: a stream of timeline evidence (`DebugEvent[]`), exposed by wiring as needed (not documented as a stable public surface yet).
 - **Explain**: a copy/paste friendly diagnostic artifact attached to `findMany` results when `options.explain === true`.
 
 Today, explain contains deterministic, JSON-serializable fields (index/finalize/cacheWrite/adapter/errors…). The `Explain.events` field exists in the type but is not automatically populated by core; if you want it, implement a sink that buffers events per trace and attaches them at the boundary you control.
@@ -108,31 +108,20 @@ Today, explain contains deterministic, JSON-serializable fields (index/finalize/
 ## Practical example (user-side)
 
 ```ts
-import { Core, createDevtoolsBridge } from 'atoma'
+	import { Core } from 'atoma'
 
-const devtools = createDevtoolsBridge()
-devtools.subscribe((evt) => {
-    if (evt.type === 'debug-event') {
-        console.log('[atoma debug]', evt.payload.store, evt.payload.traceId, evt.payload.sequence, evt.payload.type)
-    }
-})
+	const store = Core.store.createStore({
+	    name: 'todos',
+	    adapter: /* ... */,
+	    debug: { enabled: true, sample: 1, payload: false, redact: (v) => v }
+	})
 
-const store = Core.store.createStore({
-    name: 'todos',
-    adapter: /* ... */,
-    devtools,
-    debug: {
-        enabled: true,
-        sample: 1,
-        payload: false,
-        redact: (v) => v
-    }
-})
-
-// Produce an explain payload
-const res = await store.findMany({ where: { done: { eq: false } }, explain: true })
-console.log(res.explain)
+	// Produce an explain payload
+	const res = await store.findMany({ where: { done: { eq: false } }, explain: true })
+	console.log(res.explain)
 ```
+
+If you want to inspect “client/store/sync/history runtime state” in dev, use the vNext inspector (`atoma/devtools`). See `DEVTOOLS_INSPECTOR_VNEXT.zh.md` at repo root.
 
 ## Notes on IDs and trace propagation
 

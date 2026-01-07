@@ -1,4 +1,4 @@
-const tabs = ['store', 'index', 'queue', 'history', 'trace'] as const
+const tabs = ['store', 'index', 'sync', 'history', 'trace'] as const
 
 export function TabButtonRow(props: {
     tab: typeof tabs[number]

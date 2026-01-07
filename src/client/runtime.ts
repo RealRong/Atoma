@@ -1,4 +1,4 @@
-import type { CoreStore, IDataSource, IStore, JotaiStore, StoreHandle, StoreKey } from '#core'
+import type { CoreStore, IDataSource, JotaiStore, StoreHandle, StoreKey } from '#core'
 import { Core } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { createStoreInstance } from './createAtomaStore'
@@ -72,10 +72,6 @@ export function createClientRuntime(args: {
         if (handle) {
             handleCache.set(key, handle)
             emitHandleCreated(handle)
-
-            const view = Core.store.createDirectStoreView(handle)
-            storeCache.set(key, view as any)
-            return view as any
         }
 
         storeCache.set(key, created)

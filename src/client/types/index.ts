@@ -15,8 +15,6 @@ export type {
 
 export type {
     CreateClientOptions,
-    CreateHttpClientOptions,
-    CreateLocalFirstClientOptions,
     HttpEndpointOptions,
     StoreBatchOptions
 } from './options'

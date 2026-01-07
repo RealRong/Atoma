@@ -96,7 +96,7 @@ function getState(): StoreState {
     seed('p_3', 'u_2', '同意，最好用 id 作为 tie-break。', 3 * 86_400_000 + 30_000);
     seed('p_3', 'u_1', '回头补个测试用例，覆盖同 timestamp 的场景。', 3 * 86_400_000 + 28_000);
 
-    seed('p_4', 'u_3', '当 fetchPolicy=local-then-remote 时，UI 要避免闪回旧快照。', 4 * 86_400_000 + 11_000);
+    seed('p_4', 'u_3', '当 fetchPolicy=cache-and-network 时，UI 要避免闪回旧快照。', 4 * 86_400_000 + 11_000);
 
     seed('p_5', 'u_5', 'include 关掉时就只渲染 posts 基本字段，体验更快。', 5 * 86_400_000 + 15_000);
     seed('p_5', 'u_2', 'comments 只展示 Top-2，点进去再分页加载。', 5 * 86_400_000 + 12_000);

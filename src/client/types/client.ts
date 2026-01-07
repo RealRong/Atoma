@@ -5,6 +5,7 @@ import type { AtomaSchema } from './schema'
 export type AtomaHistory = {
     canUndo: (scope: string) => boolean
     canRedo: (scope: string) => boolean
+    clear: (scope: string) => void
     undo: (args: { scope: string }) => Promise<boolean>
     redo: (args: { scope: string }) => Promise<boolean>
 }
@@ -19,6 +20,7 @@ export type AtomaSyncStartMode = 'pull-only' | 'subscribe-only' | 'pull+subscrib
 export type AtomaSync = {
     start: (mode?: AtomaSyncStartMode) => void
     stop: () => void
+    dispose: () => void
     status: () => AtomaSyncStatus
     pull: () => Promise<void>
     flush: () => Promise<void>

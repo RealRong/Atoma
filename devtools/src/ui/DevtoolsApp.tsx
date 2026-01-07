@@ -1,89 +1,90 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { DevtoolsBridge, DevtoolsEvent, StoreSnapshot, IndexSnapshot, QueueItem, IndexQueryPlan, HistoryEntrySummary } from 'atoma'
-import type { DebugEvent } from 'atoma'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { devtools } from 'atoma/devtools'
+import type { DevtoolsClientSnapshot, DevtoolsEvent } from 'atoma/devtools'
 import { TabButtonRow } from './components/TabButtonRow'
 import { StoreTab } from './tabs/StoreTab'
 import { IndexTab } from './tabs/IndexTab'
-import { QueueTab } from './tabs/QueueTab'
+import { SyncTab } from './tabs/SyncTab'
 import { HistoryTab } from './tabs/HistoryTab'
 import { TraceTab } from './tabs/TraceTab'
 
-type StoreState = Record<string, StoreSnapshot>
-type IndexState = Record<string, { indexes: IndexSnapshot[]; lastQuery?: IndexQueryPlan }>
-type QueueState = Record<string, { pending: QueueItem[]; failed: QueueItem[] }>
-type HistoryState = Record<string, { pointer: number; length: number; entries: HistoryEntrySummary[] }>
-type TraceState = Record<string, { traceId: string; events: DebugEvent[]; lastUpdatedAt: number }>
-
-export default function DevtoolsApp(props: { bridge?: DevtoolsBridge; defaultOpen?: boolean }) {
-    const { bridge, defaultOpen } = props
+export default function DevtoolsApp(props: { defaultOpen?: boolean }) {
+    const { defaultOpen } = props
     const [open, setOpen] = useState(Boolean(defaultOpen))
-    const [tab, setTab] = useState<'store' | 'index' | 'queue' | 'history' | 'trace'>('store')
+    const [tab, setTab] = useState<'store' | 'index' | 'sync' | 'history' | 'trace'>('store')
 
-    const [stores, setStores] = useState<StoreState>({})
-    const [indexes, setIndexes] = useState<IndexState>({})
-    const [queues, setQueues] = useState<QueueState>({})
-    const [histories, setHistories] = useState<HistoryState>({})
-    const [traces, setTraces] = useState<TraceState>({})
+    const [clients, setClients] = useState<Array<{ id: string; label?: string; createdAt: number; lastSeenAt: number }>>([])
+    const [selectedClientId, setSelectedClientId] = useState<string | undefined>(undefined)
+    const [snapshot, setSnapshot] = useState<DevtoolsClientSnapshot | null>(null)
+
+    const unsubRef = useRef<null | (() => void)>(null)
 
     useEffect(() => {
-        if (!bridge) return
-        const unsub = bridge.subscribe((e: DevtoolsEvent) => {
-            if (e.type === 'store-snapshot') {
-                setStores(prev => ({ ...prev, [e.payload.name]: e.payload }))
+        devtools.enableGlobal()
+    }, [])
+
+    useEffect(() => {
+        if (!open) return
+
+        const global = devtools.global()
+        const refresh = () => {
+            const list = global.clients.list()
+            setClients(list)
+
+            const nextSelected = selectedClientId ?? list[0]?.id
+            if (nextSelected && nextSelected !== selectedClientId) {
+                setSelectedClientId(nextSelected)
+            }
+
+            if (!nextSelected) {
+                setSnapshot(null)
                 return
             }
-            if (e.type === 'index-snapshot') {
-                setIndexes(prev => ({ ...prev, [e.payload.name]: { indexes: e.payload.indexes, lastQuery: e.payload.lastQuery } }))
-                return
+
+            try {
+                const ins = global.clients.get(nextSelected)
+                setSnapshot(ins.snapshot())
+            } catch {
+                setSnapshot(null)
             }
-            if (e.type === 'queue-snapshot') {
-                setQueues(prev => ({ ...prev, [e.payload.name]: { pending: e.payload.pending, failed: e.payload.failed } }))
-                return
-            }
-            if (e.type === 'history-snapshot') {
-                setHistories(prev => ({ ...prev, [e.payload.name]: { pointer: e.payload.pointer, length: e.payload.length, entries: e.payload.entries } }))
-                return
-            }
-            if (e.type === 'debug-event') {
-                const evt = e.payload as DebugEvent
-                const traceId = evt.traceId
-                if (!traceId) return
+        }
 
-                setTraces(prev => {
-                    const maxTraces = 50
-                    const maxEventsPerTrace = 200
-                    const now = Date.now()
+        refresh()
+        const t = setInterval(refresh, 500)
+        return () => clearInterval(t)
+    }, [open, selectedClientId])
 
-                    const existing = prev[traceId]
-                    const nextEvents = existing
-                        ? [...existing.events, evt].slice(-maxEventsPerTrace)
-                        : [evt]
+    useEffect(() => {
+        unsubRef.current?.()
+        unsubRef.current = null
 
-                    let next: TraceState = {
-                        ...prev,
-                        [traceId]: { traceId, events: nextEvents, lastUpdatedAt: now }
-                    }
+        if (!open) return
+        if (!selectedClientId) return
 
-                    const ids = Object.keys(next)
-                    if (ids.length > maxTraces) {
-                        const sorted = ids
-                            .map(id => ({ id, t: next[id]?.lastUpdatedAt ?? 0 }))
-                            .sort((a, b) => b.t - a.t)
-                        const keep = new Set(sorted.slice(0, maxTraces).map(x => x.id))
-                        next = Object.fromEntries(Object.entries(next).filter(([id]) => keep.has(id))) as TraceState
-                    }
+        const global = devtools.global()
+        try {
+            const ins = global.clients.get(selectedClientId)
+            unsubRef.current = ins.subscribe((_e: DevtoolsEvent) => {
+                // snapshot-first：事件仅触发刷新（实际数据以 snapshot 为准）
+                try {
+                    setSnapshot(ins.snapshot())
+                } catch {
+                    // ignore
+                }
+            })
+        } catch {
+            // ignore
+        }
 
-                    return next
-                })
-            }
-        })
-        return () => unsub && unsub()
-    }, [bridge])
+        return () => {
+            unsubRef.current?.()
+            unsubRef.current = null
+        }
+    }, [open, selectedClientId])
 
-    const totalCount = useMemo(
-        () => Object.values(stores).reduce((sum, s) => sum + s.count, 0),
-        [stores]
-    )
+    const totalCount = useMemo(() => {
+        return snapshot?.stores.reduce((sum, s) => sum + s.count, 0) ?? 0
+    }, [snapshot])
 
     const containerClassName = open
         ? 'fixed bottom-4 right-4 z-[9999] h-[70vh] w-[min(920px,calc(100vw-32px))] overflow-hidden rounded-2xl bg-white text-sm text-slate-900 antialiased shadow-[0_0_0_1px_rgba(15,23,42,0.10),0_18px_50px_rgba(15,23,42,0.12)]'
@@ -96,7 +97,14 @@ export default function DevtoolsApp(props: { bridge?: DevtoolsBridge; defaultOpe
             <div
                 className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm"
             >
-                <span className="font-semibold">Atoma DevTools</span>
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 font-semibold">Atoma DevTools</span>
+                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-600">
+                        {selectedClientId
+                            ? `client: ${selectedClientId}${snapshot?.label ? ` (${snapshot.label})` : ''}`
+                            : 'client: -'}
+                    </span>
+                </div>
                 <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-600">缓存：{totalCount}</span>
                     <button
@@ -110,14 +118,32 @@ export default function DevtoolsApp(props: { bridge?: DevtoolsBridge; defaultOpe
 
             {open && (
                 <div className="flex h-[calc(70vh-45px)] min-h-0 flex-col gap-3 p-3">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-700">Clients</span>
+                        <select
+                            className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-900"
+                            value={selectedClientId ?? ''}
+                            onChange={(e) => setSelectedClientId(e.target.value)}
+                        >
+                            {clients.length === 0 && (
+                                <option value="" disabled>暂无 client（先 createClient）</option>
+                            )}
+                            {clients.map(c => (
+                                <option key={c.id} value={c.id}>
+                                    {c.label ? `${c.label} (${c.id})` : c.id}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
                     <TabButtonRow tab={tab} setTab={setTab} />
 
                     <div className="min-h-0 flex-1 overflow-hidden">
-                        {tab === 'store' && <StoreTab stores={stores} />}
-                        {tab === 'index' && <IndexTab indexes={indexes} />}
-                        {tab === 'queue' && <QueueTab queues={queues} />}
-                        {tab === 'history' && <HistoryTab histories={histories} />}
-                        {tab === 'trace' && <TraceTab traces={traces} />}
+                        {tab === 'store' && <StoreTab stores={snapshot?.stores ?? []} />}
+                        {tab === 'index' && <IndexTab indexes={snapshot?.indexes ?? []} />}
+                        {tab === 'sync' && <SyncTab sync={snapshot?.sync ?? { status: { configured: false, started: false } }} />}
+                        {tab === 'history' && <HistoryTab history={snapshot?.history ?? { scopes: [] }} />}
+                        {tab === 'trace' && <TraceTab />}
                     </div>
                 </div>
             )}

@@ -488,7 +488,8 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         if (value === null) return null
         if (this.isOperatorValue(value)) {
             const mapped: Record<string, any> = {}
-            const { in: inArr, gt, gte, lt, lte, startsWith, endsWith, contains } = value
+            const { eq, in: inArr, gt, gte, lt, lte, startsWith, endsWith, contains } = value
+            if (eq !== undefined) mapped.equals = eq
             if (inArr !== undefined) mapped.in = inArr
             if (gt !== undefined) mapped.gt = gt
             if (gte !== undefined) mapped.gte = gte
@@ -544,6 +545,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     }
 
     private isOperatorValue(value: any): value is {
+        eq?: any
         in?: any[]
         gt?: number
         gte?: number
@@ -554,7 +556,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         contains?: string
     } {
         if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-        return ['in', 'gt', 'gte', 'lt', 'lte', 'startsWith', 'endsWith', 'contains']
+        return ['eq', 'in', 'gt', 'gte', 'lt', 'lte', 'startsWith', 'endsWith', 'contains']
             .some(k => (value as any)[k] !== undefined)
     }
 

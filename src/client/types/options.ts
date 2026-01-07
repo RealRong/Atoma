@@ -2,7 +2,7 @@ import type { Entity, StoreKey } from '#core'
 import type { Table } from 'dexie'
 import type { AtomaSchema } from './schema'
 import type { BackendEndpointConfig, HttpBackendConfig, StoreBackendEndpointConfig } from './backend'
-import type { SyncQueueWriteMode } from './sync'
+import type { AtomaSyncStartMode } from './client'
 
 /**
  * Extra HTTP backend options shared by both Store (direct) and Sync (replication) endpoints.
@@ -69,14 +69,17 @@ export interface IndexedDbTablesConfig {
     tables: Record<string, Table<any, StoreKey>>
 }
 
-export interface HttpTargetConfig extends HttpEndpointOptions {
+export interface HttpLaneConfig {
     /** Base URL of the target server that serves the ops endpoint. */
     url: string
+    /**
+     * Optional per-lane HTTP overrides.
+     * When omitted, falls back to top-level `http` defaults on `createClient`.
+     */
+    http?: HttpEndpointOptions
 }
 
-export type LocalServerConfig = HttpTargetConfig
-
-export interface HttpStoreConfig extends HttpTargetConfig {
+export interface HttpStoreConfig extends HttpLaneConfig {
     /** Direct CRUD hits a remote HTTP backend (online-first). */
     type: 'http'
 }
@@ -88,7 +91,7 @@ export interface IndexedDbStoreConfig {
     tables: IndexedDbTablesConfig['tables']
 }
 
-export interface LocalServerStoreConfig extends HttpTargetConfig {
+export interface LocalServerStoreConfig extends HttpLaneConfig {
     /** Direct CRUD hits a local server (e.g. node/go on localhost). */
     type: 'localServer'
 }
@@ -151,6 +154,11 @@ export interface SyncTransportOptions {
 
 export interface SyncDefaultsInput<ResourceName extends string = string> {
     /**
+     * Default sync start mode used when calling `Sync.start()` without explicit mode.
+     * When omitted, mode is derived from `queue` + subscribe capability.
+     */
+    mode?: AtomaSyncStartMode
+    /**
      * Device identity used to derive internal persistence keys (outbox/cursor/lock).
      * - Provide a stable ID to treat multiple tabs/windows as the same "device".
      * - Provide a per-tab ID to treat each tab as an independent "device".
@@ -198,85 +206,29 @@ export interface SyncDefaultsInput<ResourceName extends string = string> {
     onError?: SyncErrorHandler
 }
 
-export type SyncQueueInput = false | true | SyncQueueWriteMode
-
-export interface CreateHttpClientSyncOptions<ResourceName extends string = string>
-    extends SyncDefaultsInput<ResourceName>, SyncTransportOptions, SyncQueueEvents {
-    /** Advanced persistence overrides (rare). */
-    advanced?: SyncAdvancedOptions
-    /** Enable queued writes for `client.Sync.Store(name)` (rare for pure http clients). */
-    queue?: SyncQueueInput
-}
-
-export type CreateHttpClientOptions<
-    Entities extends Record<string, Entity>,
-    Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
-> = {
-    /** Domain schema (indexes/relations/validators/etc). */
-    schema?: Schema
-    /** Base URL of the remote server used for direct CRUD. */
-    url: string
-} & HttpEndpointOptions & {
-    /** Convenience SSE subscribe path for sync (relative to `url`). */
-    sse?: string
-    /** Replication defaults for this client (pull/subscribe behavior). */
-    sync?: string | CreateHttpClientSyncOptions<keyof Entities & string>
-}
-
-export interface LocalFirstStorageIndexedDb {
-    /** Local durable storage backed by IndexedDB (Dexie). */
-    type: 'indexeddb'
-    /** Dexie tables used as local storage. */
-    tables: IndexedDbTablesConfig['tables']
-}
-
-export interface LocalFirstStorageLocalServer extends HttpTargetConfig {
-    /** Local durable storage backed by a local server (HTTP). */
-    type: 'localServer'
-}
-
-export interface CreateLocalFirstClientSyncOptions<ResourceName extends string = string>
-    extends HttpTargetConfig, SyncDefaultsInput<ResourceName>, SyncTransportOptions, SyncQueueEvents {
-    /** Advanced persistence overrides (rare). */
-    advanced?: SyncAdvancedOptions
-    /** Queued write strategy for `client.Sync.Store(name)`. */
-    queue?: SyncQueueInput
-}
-
-export type CreateLocalFirstClientOptions<
-    Entities extends Record<string, Entity>,
-    Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
-> = {
-    /** Domain schema (indexes/relations/validators/etc). */
-    schema?: Schema
-    /** Local durable storage used for direct CRUD. */
-    storage:
-        | LocalFirstStorageIndexedDb
-        | LocalFirstStorageLocalServer
-    /**
-     * Sync target used by the Replicator (remote cloud endpoint).
-     * - If string: treated as `url`
-     * - If object: allows passing HTTP overrides and sync defaults
-     */
-    sync:
-        | string
-        | CreateLocalFirstClientSyncOptions<keyof Entities & string>
-}
+export type SyncQueueInput = false | 'queue' | 'local-first'
 
 export interface CreateClientSyncOptions<ResourceName extends string = string>
-    extends Partial<HttpTargetConfig>, SyncDefaultsInput<ResourceName>, SyncTransportOptions, SyncQueueEvents {
+    extends SyncDefaultsInput<ResourceName>, SyncTransportOptions, SyncQueueEvents {
+    /** Base URL of the sync target server (shortcut for HTTP backend). */
+    url?: string
+    /**
+     * Optional per-lane HTTP overrides for sync transport.
+     * When omitted, falls back to top-level `http` defaults on `createClient`.
+     */
+    http?: HttpEndpointOptions
     /** Advanced persistence overrides (rare). */
     advanced?: SyncAdvancedOptions
     /**
      * Explicit backend endpoint config (advanced).
-     * - When provided, `sync.url`/HTTP override fields are ignored for target selection.
+     * When provided, `url/http/sse` are ignored for target selection.
      */
     backend?: BackendEndpointConfig
     /**
-     * Enable queued writes for `client.Sync.Store(name)`.
-     * - `false` disables, even if `outboxKey/onQueueChange/...` are present.
-     * - `true` enables with defaults derived from the store backend role.
-     * - `'intent-only' | 'local-first'` enables and selects the queued write strategy.
+     * Queued write strategy for `client.Sync.Store(name)`.
+     * - `false` disables queued writes.
+     * - `'queue'` queues intents only (no local durable write).
+     * - `'local-first'` writes to local durable store first, then enqueues.
      */
     queue?: SyncQueueInput
 }
@@ -287,6 +239,11 @@ export type CreateClientOptions<
 > = {
     /** Domain schema (indexes/relations/validators/etc). */
     schema?: Schema
+    /**
+     * Shared HTTP defaults applied to both Store and Sync lanes.
+     * Use `store.http` / `sync.http` to override per lane.
+     */
+    http?: HttpEndpointOptions
     /** Store backend used for direct CRUD (`client.Store(name)`). */
     store: StoreConfig
     /** Default batching config for the generated data sources. */
@@ -294,7 +251,7 @@ export type CreateClientOptions<
     /**
      * Sync/Replication config (optional).
      * - `url`/`backend`: remote target. When omitted, it may be derived from `store` when `store` is remote.
-     * - `queue`: enables queued writes for `client.Sync.Store(name)`; can be `true` or `'intent-only' | 'local-first'`.
+     * - `queue`: enables queued writes for `client.Sync.Store(name)`; can be `'queue' | 'local-first'`.
      * - outbox/cursor/lock keys live under `sync.advanced`.
      */
     sync?: string | CreateClientSyncOptions<keyof Entities & string>

@@ -10,7 +10,7 @@ const query = store.useFindMany({
   where: { status: { in: ['active', 'synced'] } },
   orderBy: [{ field: 'updatedAt', direction: 'desc' }],
   limit: 10,
-  fetchPolicy: 'local-then-remote', // 或 'remote' / 'local'
+  fetchPolicy: 'cache-and-network', // 或 'remote' / 'local'
   skipStore: false                  // 大列表可设 true 仅瞬时查询
 })
 ```

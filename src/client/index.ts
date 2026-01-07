@@ -1,5 +1,6 @@
-export { createClient, createHttpClient, createLocalFirstClient } from './createClient'
-export type { CreateClientOptions, CreateHttpClientOptions, CreateLocalFirstClientOptions } from './types'
+export { createClient } from './createClient'
+export { presets } from './presets'
+export type { CreateClientOptions } from './types'
 
 export type {
     AtomaClient,

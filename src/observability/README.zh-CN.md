@@ -42,7 +42,7 @@
 - `debug.enabled` 关闭时：**不会创建 emitter**，所有埋点点位都会变成近似 0 成本的空操作。
 - `debug.sample` 默认为 `0`：store 通常会**避免分配 traceId**，降低默认开销。
 
-补充：Atoma 刻意让 `DebugConfig` 保持“纯数据”。事件最终投递到哪里由 wiring 层决定（通常转发到 `DevtoolsBridge`）。
+补充：Atoma 刻意让 `DebugConfig` 保持“纯数据”。事件最终投递到哪里由 wiring 层决定（例如日志、UI、远端采集器）。
 
 ### 2）Store 决定是否分配 `traceId`
 
@@ -100,7 +100,7 @@ store 层会把 `DebugEvent` 转换/转发为 devtools 事件：
 
 ## Explain vs Debug 事件流
 
-- **Debug 事件流**：时间线证据（`DebugEvent[]`），通过 `debug.onEvent` 流出。
+- **Debug 事件流**：时间线证据（`DebugEvent[]`），由 wiring 层按需接出（当前不作为稳定对外 API 文档化）。
 - **Explain**：可复制粘贴的诊断快照；当 `findMany({ explain: true })` 时挂在返回值上。
 
 目前 explain 主要包含可 JSON 序列化的结构化信息（index/finalize/cacheWrite/adapter/errors…）。类型里虽然有 `Explain.events`，但 core 并不会自动把事件流塞进去；如需把事件也附到 explain，需要在你控制的边界处用 sink 按 trace 缓存并注入。
@@ -108,31 +108,20 @@ store 层会把 `DebugEvent` 转换/转发为 devtools 事件：
 ## 实用示例（用户侧）
 
 ```ts
-import { Core, createDevtoolsBridge } from 'atoma'
+	import { Core } from 'atoma'
 
-const devtools = createDevtoolsBridge()
-devtools.subscribe((evt) => {
-    if (evt.type === 'debug-event') {
-        console.log('[atoma debug]', evt.payload.store, evt.payload.traceId, evt.payload.sequence, evt.payload.type)
-    }
-})
+	const store = Core.store.createStore({
+	    name: 'todos',
+	    adapter: /* ... */,
+	    debug: { enabled: true, sample: 1, payload: false, redact: (v) => v }
+	})
 
-const store = Core.store.createStore({
-    name: 'todos',
-    adapter: /* ... */,
-    devtools,
-    debug: {
-        enabled: true,
-        sample: 1,
-        payload: false,
-        redact: (v) => v
-    }
-})
-
-// 生成 explain 诊断产物
-const res = await store.findMany({ where: { done: { eq: false } }, explain: true })
-console.log(res.explain)
+	// 生成 explain 诊断产物
+	const res = await store.findMany({ where: { done: { eq: false } }, explain: true })
+	console.log(res.explain)
 ```
+
+如果你想在开发期查看“client/store/sync/history 等运行时状态”，请使用 vNext Inspector（`atoma/devtools`），详见仓库根目录 `DEVTOOLS_INSPECTOR_VNEXT.zh.md`。
 
 ## 关于 ID 与 trace 传递
 

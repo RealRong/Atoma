@@ -21,7 +21,7 @@ description: 常用 createSyncStore / FindManyOptions / Adapter / StoreRegistry 
 - `limit?: number`, `offset?: number`
 - `after?: string`, `before?: string`, `cursor?: string`（`cursor` 等同 `after`，用于续页 token）
 - `includeTotal?: boolean`（offset 分页时是否返回 total，默认 true）
-- `fetchPolicy?: 'local' | 'remote' | 'local-then-remote'`
+- `fetchPolicy?: 'local' | 'remote' | 'cache-and-network'`
 - `skipStore?: boolean`（true 时不写入 atom/索引）
 
 ## IAdapter&lt;T&gt;（必需方法）

@@ -8,7 +8,14 @@ export default defineConfig({
     resolve: {
         dedupe: ['react', 'react-dom'],
         alias: {
-            atoma: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/index.mjs')
+            atoma: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/index.ts'),
+            'atoma/devtools': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/devtools/index.ts'),
+            '#core': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/core/index.ts'),
+            '#observability': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/observability/index.ts'),
+            '#protocol': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/protocol/index.ts'),
+            '#sync': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/sync/index.ts'),
+            '#backend': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/backend/index.ts'),
+            '#batch': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/batch/index.ts')
         }
     },
     build: {
@@ -20,12 +27,13 @@ export default defineConfig({
         },
         sourcemap: true,
         rollupOptions: {
-            external: ['react', 'react-dom', 'atoma'],
+            external: ['react', 'react-dom', 'atoma', 'atoma/devtools'],
             output: {
                 globals: {
                     react: 'React',
                     'react-dom': 'ReactDOM',
-                    atoma: 'Atoma'
+                    atoma: 'Atoma',
+                    'atoma/devtools': 'AtomaDevtools'
                 }
             }
         }

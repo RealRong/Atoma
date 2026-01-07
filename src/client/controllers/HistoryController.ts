@@ -8,6 +8,9 @@ export function createHistoryController(args: {
 }): Readonly<{
     history: AtomaHistory
     dispose: () => void
+    devtools: Readonly<{
+        snapshot: () => { scopes: Array<{ scope: string; canUndo: boolean; canRedo: boolean }> }
+    }>
 }> {
     const historyManager = new Core.history.HistoryManager()
 
@@ -39,6 +42,9 @@ export function createHistoryController(args: {
     const history: AtomaHistory = {
         canUndo: (scope: string) => historyManager.canUndo(String(scope || 'default')),
         canRedo: (scope: string) => historyManager.canRedo(String(scope || 'default')),
+        clear: (scope: string) => {
+            historyManager.clear(String(scope || 'default'))
+        },
         undo: async (undoArgs: { scope: string }) => {
             return historyManager.undo({
                 scope: String(undoArgs.scope || 'default'),
@@ -56,6 +62,19 @@ export function createHistoryController(args: {
             })
         }
     }
+
+    const devtools = {
+        snapshot: () => {
+            const scopes = historyManager.listScopes()
+                .map(scope => ({
+                    scope,
+                    canUndo: historyManager.canUndo(scope),
+                    canRedo: historyManager.canRedo(scope)
+                }))
+                .sort((a, b) => a.scope.localeCompare(b.scope))
+            return { scopes }
+        }
+    } as const
 
     const unsubscribers: Array<() => void> = []
     const unregister = args.runtime.onHandleCreated((handle) => {
@@ -78,6 +97,7 @@ export function createHistoryController(args: {
 
     return {
         history,
+        devtools,
         dispose: () => {
             for (const unsub of unsubscribers) {
                 try {

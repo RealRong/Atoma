@@ -26,13 +26,16 @@ Peer deps:
 ## Quick start (client + React)
 
 ```ts
-import { createHttpClient } from 'atoma'
+import { createClient } from 'atoma'
 import { useFindMany } from 'atoma/react'
 
 type User = { id: string; name: string; version?: number }
 
-const client = createHttpClient<{ users: User }>({
-    url: 'http://localhost:3000/api'
+const client = createClient<{ users: User }>({
+    store: {
+        type: 'http',
+        url: 'http://localhost:3000/api'
+    }
 })
 
 export function Users() {

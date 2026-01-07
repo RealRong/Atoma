@@ -16,13 +16,11 @@
 
 入口是顶层 API：
 
-- `createHttpClient({ schema, ... })`：在线 CRUD（可选 sse/sync defaults）
-- `createLocalFirstClient({ schema, ... })`：本地 durable + 云端同步（自动启用 outbox/queue）
-- `createClient({ schema, ... })`：通用配置对象（union + 扁平），用于精细控制
+- `createClient({ schema, ... })`：唯一公开入口（store + sync），通过 union + 默认推导覆盖在线与 local-first 场景
 
 代码位置：
 
-- `src/client/createClient.ts:1`（三个入口与 option 归一化）
+- `src/client/createClient/index.ts:1`（入口与 option 归一化）
 - `src/client/createAtomaClient.ts:1`（内部 build：resolveBackend/runtime/controllers）
 - `src/client/types/index.ts:1`（`AtomaClient/*Config`）
 

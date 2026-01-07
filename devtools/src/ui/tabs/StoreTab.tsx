@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { StoreSnapshot } from 'atoma'
+import type { DevtoolsStoreSnapshot } from 'atoma/devtools'
 import { Card } from '../components/Card'
 import { Pill } from '../components/Pill'
 import { JsonPre } from '../components/JsonPre'
 
-export function StoreTab(props: { stores: Record<string, StoreSnapshot> }) {
+export function StoreTab(props: { stores: DevtoolsStoreSnapshot[] }) {
     const { stores } = props
-    const entries = useMemo(
-        () => Object.entries(stores).sort(([a], [b]) => a.localeCompare(b)),
-        [stores]
-    )
+    const entries = useMemo(() => stores.slice().sort((a, b) => a.name.localeCompare(b.name)), [stores])
     const [selectedName, setSelectedName] = useState<string | undefined>(undefined)
 
     useEffect(() => {
@@ -17,33 +14,34 @@ export function StoreTab(props: { stores: Record<string, StoreSnapshot> }) {
             setSelectedName(undefined)
             return
         }
-        if (!selectedName || !stores[selectedName]) {
-            setSelectedName(entries[0][0])
+        const exists = selectedName && entries.some(s => s.name === selectedName)
+        if (!selectedName || !exists) {
+            setSelectedName(entries[0].name)
         }
-    }, [entries, selectedName, stores])
+    }, [entries, selectedName])
 
     if (!entries.length) return <div className="h-full min-h-0 overflow-auto text-xs text-slate-500">暂无 store 数据</div>
 
-    const selected = selectedName ? stores[selectedName] : undefined
+    const selected = selectedName ? entries.find(s => s.name === selectedName) : undefined
 
     return (
         <div className="flex h-full min-h-0 gap-3">
             <div className="w-[260px] shrink-0 overflow-auto rounded-xl border border-slate-200 bg-white">
-                {entries.map(([name, s]) => {
-                    const active = name === selectedName
+                {entries.map((s) => {
+                    const active = s.name === selectedName
                     return (
                         <button
-                            key={name}
+                            key={s.name}
                             className={
                                 active
                                     ? 'flex w-full items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left'
                                     : 'flex w-full items-center justify-between gap-2 border-b border-slate-200 px-3 py-2 text-left hover:bg-slate-50'
                             }
-                            onClick={() => setSelectedName(name)}
+                            onClick={() => setSelectedName(s.name)}
                         >
                             <span className="min-w-0">
                                 <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold text-slate-900">
-                                    {name}
+                                    {s.name}
                                 </span>
                                 <span className="mt-0.5 block text-[11px] text-slate-500">store</span>
                             </span>

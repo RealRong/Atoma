@@ -26,6 +26,10 @@ export class HistoryManager {
         this.history = new InMemoryHistory()
     }
 
+    listScopes(): string[] {
+        return this.history.listScopes()
+    }
+
     record(args: HistoryRecordArgs) {
         this.history.recordChange({
             storeName: args.storeName,
@@ -110,10 +114,18 @@ export class HistoryManager {
             throw e
         }
     }
+
+    clear(scope: string) {
+        this.history.clear(scope)
+    }
 }
 
 class InMemoryHistory {
     private stacks = new Map<string, UndoStack>()
+
+    listScopes(): string[] {
+        return Array.from(this.stacks.keys())
+    }
 
     private getStack(scope: string): UndoStack {
         const key = scope || 'default'
@@ -178,5 +190,10 @@ class InMemoryHistory {
 
     pushRedo(scope: string, action: ActionRecord) {
         this.getStack(scope).redo.push(action)
+    }
+
+    clear(scope: string) {
+        const key = scope || 'default'
+        this.stacks.delete(key)
     }
 }

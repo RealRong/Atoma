@@ -1,18 +1,21 @@
-# Atoma DevTools（React Overlay）
+# Atoma DevTools（React Overlay, vNext Inspector）
 
-这是一个可嵌入的 DevTools 浮层：UI 用 React 渲染，但可以挂载到任何框架（Vue/React/纯 JS）页面里。
+这是一个可嵌入的 DevTools 浮层（UI 用 React 渲染），可以挂载到任何框架（Vue/React/纯 JS）页面里。
+
+它基于 `atoma/devtools`（vNext Inspector），以 **Client first + Snapshot first** 的方式展示运行时状态：clients → stores/indexes/sync/history。
 
 ## 设计要点
 
 - 使用 Shadow DOM 隔离样式，避免 Tailwind/shadcn 影响宿主应用，也避免宿主样式污染 DevTools
-- 通过 Atoma 的 `DevtoolsBridge` 订阅 store/index/queue/history/trace 快照
+- 数据源来自 `atoma/devtools`（不再依赖旧 `DevtoolsBridge` 事件流）
+- 支持多 client：面板内可切换选中 client
 
 ## 使用（示例）
 
 ```ts
 import { mountAtomaDevTools } from 'atoma-devtools'
 
-// 开发环境调用即可
+// 开发环境调用即可（内部会自动 devtools.enableGlobal()）
 mountAtomaDevTools()
 ```
 
@@ -24,7 +27,6 @@ if (import.meta.env.DEV) {
 }
 ```
 
-## 注意
+## 限制
 
-- DevTools 会通过 `enableGlobalDevtools()` 订阅全局 bridge；要看到 trace 事件，需要在 store 配置 `debug: { enabled: true, sampleRate: 1 }`
-- 由于使用 Shadow DOM，Tailwind/shadcn 的样式不会污染宿主应用
+- Trace 面板（Observability debug-event）暂未接入 vNext Inspector，后续阶段补齐
