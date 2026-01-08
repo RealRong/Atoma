@@ -1,6 +1,4 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
-import type { DevtoolsBridge } from '../../../devtools/types'
-import { registerGlobalIndex } from '../../../devtools/global'
 import { StoreIndexes } from '../../indexes/StoreIndexes'
 import type { IndexDefinition, IDataSource, JotaiStore, StoreConfig, StoreHandle, StoreKey, StoreOperationOptions, StoreReadOptions, Entity } from '../../types'
 import type { QueryMatcherOptions } from '../../query/QueryMatcher'
@@ -27,11 +25,6 @@ export function createStoreHandle<T extends Entity>(params: {
     const indexes = config.indexes && config.indexes.length ? new StoreIndexes<T>(config.indexes) : null
 
     const matcher = buildQueryMatcherOptions(config.indexes)
-    const stopIndexDevtools = registerStoreIndexesSnapshot({
-        indexes,
-        devtools: config.devtools,
-        storeName
-    })
 
     const transform = (item: T): T => {
         return config.transformData ? config.transformData(item) : item
@@ -59,8 +52,7 @@ export function createStoreHandle<T extends Entity>(params: {
         transform,
         writePolicies: {
             allowImplicitFetchForWrite: true
-        },
-        stopIndexDevtools
+        }
     }
 }
 
@@ -95,31 +87,4 @@ export function buildQueryMatcherOptions<T>(indexes?: Array<IndexDefinition<T>>)
     })
 
     return Object.keys(fields).length ? { fields } : undefined
-}
-
-export function registerStoreIndexesSnapshot<T>(params: {
-    indexes: StoreIndexes<T> | null
-    devtools?: DevtoolsBridge
-    storeName?: string
-}) {
-    const { indexes, devtools, storeName } = params
-    if (!indexes) return undefined
-
-    const name = storeName || 'store'
-    const snapshot = () => {
-        const list = indexes.getIndexSnapshots().map(s => ({
-            field: s.field,
-            type: s.type,
-            dirty: s.dirty,
-            size: s.totalDocs,
-            distinctValues: s.distinctValues,
-            avgSetSize: s.avgSetSize,
-            maxSetSize: s.maxSetSize,
-            minSetSize: s.minSetSize
-        }))
-
-        return { name, indexes: list, lastQuery: indexes.getLastQueryPlan() }
-    }
-
-    return devtools?.registerIndexManager?.({ name, snapshot }) || registerGlobalIndex({ name, snapshot })
 }

@@ -1,7 +1,6 @@
 import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
 import type { StoreServices } from './createStore'
-import type { DevtoolsBridge } from '../devtools/types'
 import type { Explain, ObservabilityContext, ObservabilityRuntime } from '#observability'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
 import type { StoreIndexes } from './indexes/StoreIndexes'
@@ -414,14 +413,14 @@ export interface StoreConfig<T> {
     /** Per-store services for dependency injection (avoids circular import) */
     services?: StoreServices
 
-    /** Devtools bridge（可选） */
-    devtools?: DevtoolsBridge
-
     /** Store name（用于 devtools 标识） */
     storeName?: string
 
     /** 可观测性/诊断（默认关闭） */
     debug?: import('#observability').DebugConfig
+
+    /** 可观测性/诊断：DebugEvent sink（dev-only / wiring 层注入） */
+    debugSink?: (e: import('#observability').DebugEvent) => void
 }
 
 export type IndexType = 'number' | 'date' | 'string' | 'substring' | 'text'
@@ -698,7 +697,6 @@ export type StoreHandle<T extends Entity = any> = {
     schema: StoreConfig<T>['schema']
     idGenerator: StoreConfig<T>['idGenerator']
     transform: (item: T) => T
-    stopIndexDevtools?: () => void
 
     /** 运行时写入策略（允许被 client/controller 动态切换） */
     writePolicies?: StoreWritePolicies

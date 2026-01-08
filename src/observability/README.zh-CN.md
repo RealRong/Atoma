@@ -92,11 +92,12 @@
 
 ### 6）Sink：事件最终流向哪里
 
-store 层会把 `DebugEvent` 转换/转发为 devtools 事件：
+Atoma 只负责生成 `DebugEvent`；事件最终流向哪里由 **wiring 层**决定（例如输出到控制台/日志系统/远端采集器/自研 Devtools）。
 
-- `{ type: 'debug-event', payload: e }`
+目前库内不再提供旧的 `DevtoolsBridge` 事件流。若你需要 Debug 事件流，可在创建 store 时提供 `debugSink(e)`：
 
-消费侧（Devtools UI / 日志 / 远端采集器）通常按 `store + traceId` 聚合，并按 `sequence` 排序展示。
+- `debugSink` 负责接收已脱敏/摘要化后的 `DebugEvent`（由 `debug.payload/redact` 控制）
+- 消费侧通常按 `store + traceId` 聚合，并按 `sequence` 排序展示
 
 ## Explain vs Debug 事件流
 
@@ -113,7 +114,8 @@ store 层会把 `DebugEvent` 转换/转发为 devtools 事件：
 	const store = Core.store.createStore({
 	    name: 'todos',
 	    adapter: /* ... */,
-	    debug: { enabled: true, sample: 1, payload: false, redact: (v) => v }
+	    debug: { enabled: true, sample: 1, payload: false, redact: (v) => v },
+	    debugSink: (e) => console.log(e)
 	})
 
 	// 生成 explain 诊断产物

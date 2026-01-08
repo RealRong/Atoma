@@ -92,11 +92,12 @@ Current event types emitted by the engine include:
 
 ### 6) Sinks: where events go
 
-The store layer forwards `DebugEvent` into a devtools/event sink as a `DevtoolsEvent`:
+Atoma only generates `DebugEvent`; where it goes is decided by the **wiring layer** (console/logs/remote collector/custom devtools).
 
-- `{ type: 'debug-event', payload: e }`
+The library no longer ships the legacy `DevtoolsBridge` event stream. If you need a debug event stream, provide a `debugSink(e)` when creating a store:
 
-Consumers (Devtools UI, logs, remote collectors) should group by `store + traceId` and sort by `sequence`.
+- `debugSink` receives already-redacted/summarized `DebugEvent` (controlled by `debug.payload/redact`)
+- Consumers typically group by `store + traceId` and sort by `sequence`
 
 ## Explain vs Debug Events
 
@@ -113,7 +114,8 @@ Today, explain contains deterministic, JSON-serializable fields (index/finalize/
 	const store = Core.store.createStore({
 	    name: 'todos',
 	    adapter: /* ... */,
-	    debug: { enabled: true, sample: 1, payload: false, redact: (v) => v }
+	    debug: { enabled: true, sample: 1, payload: false, redact: (v) => v },
+	    debugSink: (e) => console.log(e)
 	})
 
 	// Produce an explain payload

@@ -1,7 +1,7 @@
-import type { IndexDefinition } from '#core'
-import type { DebugEvent } from '#observability'
+import type { AtomaClient } from '../client/types'
 
-export type StoreSnapshot = {
+export type DevtoolsStoreSnapshot = {
+    clientId: string
     name: string
     count: number
     approxSize: number
@@ -9,66 +9,114 @@ export type StoreSnapshot = {
     timestamp: number
 }
 
-export type IndexSnapshot = {
-    field: string
-    type: IndexDefinition<any>['type']
-    dirty?: boolean
-    size?: number
-    distinctValues?: number
-    avgSetSize?: number
-    maxSetSize?: number
-    minSetSize?: number
-    sampleTerms?: Array<{ term: string; ids: Array<string | number> }>
-    min?: number | string
-    max?: number | string
-}
-
-export type IndexQueryPlan = {
-    timestamp: number
-    whereFields: string[]
-    perField: Array<{
-        field: string
-        status: 'no_index' | 'unsupported' | 'empty' | 'candidates'
-        exactness?: 'exact' | 'superset'
-        candidates?: number
-    }>
-    result: { kind: 'unsupported' | 'empty' | 'candidates'; exactness?: 'exact' | 'superset'; candidates?: number }
-}
-
-export type IndexSnapshotPayload = {
+export type DevtoolsIndexManagerSnapshot = {
+    clientId: string
     name: string
-    indexes: IndexSnapshot[]
-    lastQuery?: IndexQueryPlan
+    indexes: Array<{
+        field: string
+        type: string
+        dirty?: boolean
+        size?: number
+        distinctValues?: number
+        avgSetSize?: number
+        maxSetSize?: number
+        minSetSize?: number
+        sampleTerms?: Array<{ term: string; ids: Array<string | number> }>
+    }>
+    lastQuery?: {
+        timestamp: number
+        whereFields: string[]
+        perField: Array<{
+            field: string
+            status: 'no_index' | 'unsupported' | 'empty' | 'candidates'
+            exactness?: 'exact' | 'superset'
+            candidates?: number
+        }>
+        result: { kind: 'unsupported' | 'empty' | 'candidates'; exactness?: 'exact' | 'superset'; candidates?: number }
+    }
 }
 
-export type QueueItem = {
+export type DevtoolsSyncSnapshot = {
+    status: { configured: boolean; started: boolean }
+    queue?: { pending: number; failed: number }
+    lastEventAt?: number
+    lastError?: string
+}
+
+export type DevtoolsHistorySnapshot = {
+    scopes: Array<{ scope: string; canUndo: boolean; canRedo: boolean }>
+}
+
+export type DevtoolsClientSnapshot = {
     id: string
+    label?: string
+    createdAt: number
+    updatedAt: number
+    config: {
+        storeBackend: { role: 'local' | 'remote'; kind: 'http' | 'indexeddb' | 'memory' | 'localServer' | 'custom' }
+        syncConfigured: boolean
+    }
+    stores: DevtoolsStoreSnapshot[]
+    indexes: DevtoolsIndexManagerSnapshot[]
+    sync: DevtoolsSyncSnapshot
+    history: DevtoolsHistorySnapshot
+}
+
+export type DevtoolsEvent = {
     type: string
-    retries: number
-    nextRetryAt?: number
-    error?: string
     payload?: any
 }
 
-export type HistoryEntrySummary = {
-    index: number
-    action: 'add' | 'update' | 'delete'
-    id?: string | number
-    patchCount?: number
+export type DevtoolsClientInspector = {
+    id: string
+    label?: string
+    snapshot: () => DevtoolsClientSnapshot
+    subscribe: (fn: (e: DevtoolsEvent) => void) => () => void
+    stores: {
+        list: () => Array<{ name: string }>
+        snapshot: (name?: string) => DevtoolsStoreSnapshot[]
+    }
+    indexes: {
+        list: () => Array<{ name: string }>
+        snapshot: (name?: string) => DevtoolsIndexManagerSnapshot[]
+    }
+    sync: {
+        snapshot: () => DevtoolsSyncSnapshot
+    }
+    history: {
+        snapshot: () => DevtoolsHistorySnapshot
+    }
 }
 
-export type DevtoolsEvent =
-    | { type: 'store-snapshot'; payload: StoreSnapshot }
-    | { type: 'index-snapshot'; payload: IndexSnapshotPayload }
-    | { type: 'queue-snapshot'; payload: { name: string; pending: QueueItem[]; failed: QueueItem[] } }
-    | { type: 'history-snapshot'; payload: { name: string; pointer: number; length: number; entries: HistoryEntrySummary[] } }
-    | { type: 'debug-event'; payload: DebugEvent }
-
-export interface DevtoolsBridge {
-    emit(event: DevtoolsEvent): void
-    subscribe(fn: (e: DevtoolsEvent) => void): () => void
-    registerStore?(args: { name: string; snapshot: () => StoreSnapshot }): () => void
-    registerIndexManager?(args: { name: string; snapshot: () => IndexSnapshotPayload }): () => void
-    registerQueue?(args: { name: string; snapshot: () => { pending: QueueItem[]; failed?: QueueItem[] } }): () => void
-    registerHistory?(args: { name: string; snapshot: () => { pointer: number; length: number; entries: HistoryEntrySummary[] } }): () => void
+export type DevtoolsGlobalInspector = {
+    enabled: boolean
+    clients: {
+        list: () => Array<{ id: string; label?: string; createdAt: number; lastSeenAt: number }>
+        get: (id: string) => DevtoolsClientInspector
+        snapshot: () => { clients: DevtoolsClientSnapshot[] }
+    }
 }
+
+export type ClientMeta = {
+    storeBackend: { role: 'local' | 'remote'; kind: 'http' | 'indexeddb' | 'memory' | 'localServer' | 'custom' }
+    syncConfigured: boolean
+}
+
+export type SyncProvider = {
+    snapshot: () => { queue?: { pending: number; failed: number }; lastEventAt?: number; lastError?: string }
+    subscribe: (fn: (e: DevtoolsEvent) => void) => () => void
+}
+
+export type HistoryProvider = {
+    snapshot: () => DevtoolsHistorySnapshot
+}
+
+export type RegisterClientFromRuntimeArgs = {
+    client: AtomaClient<any, any>
+    runtime?: import('../client/types').ClientRuntime
+    syncDevtools?: SyncProvider
+    historyDevtools?: HistoryProvider
+    label?: string
+    meta: ClientMeta
+}
+

@@ -1,6 +1,4 @@
 import { atom } from 'jotai/vanilla'
-import type { DevtoolsBridge, StoreSnapshot } from '../devtools/types'
-import { getGlobalDevtools, registerGlobalStore } from '../devtools/global'
 import { createStoreHandle } from './store'
 import { MutationPipeline } from './mutation'
 import type { JotaiStore } from './types'
@@ -34,8 +32,8 @@ export interface CoreStoreConfig<T extends Entity> {
     schema?: SchemaValidator<T>
     hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>
-    devtools?: DevtoolsBridge
     debug?: DebugConfig
+    debugSink?: (e: DebugEvent) => void
     resolveStore?: (name: StoreToken) => IStore<any> | undefined
 }
 
@@ -61,16 +59,6 @@ export function createStore<T extends Entity, Relations = {}>(
 ): CoreStore<T, Relations> {
     const { name, transformData } = config
     const resolvedDebug: DebugConfig | undefined = config.debug
-    const debugSink: ((e: DebugEvent) => void) | undefined = resolvedDebug?.enabled
-        ? (e) => {
-            const bridge = config.devtools ?? getGlobalDevtools()
-            try {
-                bridge?.emit({ type: 'debug-event', payload: e as any })
-            } catch {
-                // ignore
-            }
-        }
-        : undefined
 
     const resolvedDataSource = config.dataSource
 
@@ -79,7 +67,7 @@ export function createStore<T extends Entity, Relations = {}>(
         mutation: new MutationPipeline(),
         resolveStore: config.resolveStore,
         debug: resolvedDebug,
-        debugSink
+        debugSink: config.debugSink
     }
     const objectMapAtom = atom(new Map<StoreKey, T>())
 
@@ -94,34 +82,11 @@ export function createStore<T extends Entity, Relations = {}>(
             hooks: config.hooks,
             indexes: config.indexes,
             services,
-            devtools: config.devtools,
+            debugSink: config.debugSink,
             storeName: name
         }
     })
-    void handle.stopIndexDevtools
     const coreStore = createDirectStoreView<T, Relations>(handle)
-
-    const snapshot = (): StoreSnapshot => {
-        const map = jotaiStore.get(objectMapAtom)
-        const sample: T[] = Array.from(map.values()).slice(0, 5)
-        const approxSize = (() => {
-            try {
-                const str = JSON.stringify(sample)
-                return str ? str.length * 2 : 0
-            } catch {
-                return 0
-            }
-        })()
-        return {
-            name,
-            count: map.size,
-            approxSize,
-            sample,
-            timestamp: Date.now()
-        }
-    }
-
-    config.devtools?.registerStore?.({ name, snapshot }) ?? registerGlobalStore({ name, snapshot })
 
     const getRelations = (() => {
         const relationsFactory = config.relations
