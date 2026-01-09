@@ -1,7 +1,7 @@
 import type { CoreStore, Entity } from '#core'
-import { createHistoryController } from './controllers/HistoryController'
-import { createSyncController } from './controllers/SyncController'
-import { createClientRuntime } from './runtime'
+import { createHistoryController } from '../controllers/HistoryController'
+import { createSyncController } from '../controllers/SyncController'
+import { createRuntime } from './createRuntime'
 import type {
     AtomaClient,
     AtomaSchema,
@@ -13,52 +13,52 @@ import type {
     SyncDefaultsArgs,
     SyncQueueWriteMode,
     SyncQueueWritesArgs
-} from './types'
-import { resolveBackend } from './backend'
-import { OpsDataSource } from '../datasources'
+} from '../types'
+import { resolveBackend } from '../backend'
+import { OpsDataSource } from '../../datasources'
 
-export function createAtomaClientInternal<
+export function buildAtomaClient<
     const Entities extends Record<string, Entity>,
     const Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
 >(args: {
     schema: Schema
-    storeBackend: StoreBackendState
+    storeBackendState: StoreBackendState
     storeBatch?: StoreBatchArgs
-    syncTarget?: BackendEndpointConfig
+    syncEndpoint?: BackendEndpointConfig
     syncDefaults?: SyncDefaultsArgs
     syncQueueWrites?: SyncQueueWritesArgs
     syncQueueWriteMode?: SyncQueueWriteMode
 }): AtomaClient<Entities, Schema> {
-    const storeBackend = args.storeBackend
+    const storeBackendState = args.storeBackendState
     const syncQueue = args.syncQueueWrites
     const defaults = args.syncDefaults
 
-    const wantsSync = Boolean(args.syncTarget || syncQueue || defaults)
+    const wantsSync = Boolean(args.syncEndpoint || syncQueue || defaults)
 
-    const derivedSyncTarget = (!args.syncTarget && storeBackend.role === 'remote')
-        ? storeBackend.backend
+    const derivedSyncEndpoint = (!args.syncEndpoint && storeBackendState.role === 'remote')
+        ? storeBackendState.backend
         : undefined
 
-    const syncTarget: BackendConfig | undefined = args.syncTarget ?? derivedSyncTarget
+    const syncEndpoint: BackendConfig | undefined = args.syncEndpoint ?? derivedSyncEndpoint
 
-    if (wantsSync && !syncTarget) {
+    if (wantsSync && !syncEndpoint) {
         throw new Error('[Atoma] createClient: 使用 sync 相关配置前必须先配置 sync 对端（sync.url/sync.backend），或将 store.type 设为 http/custom(remote) 以复用 store 对端')
     }
 
     const queueWriteMode: SyncQueueWriteMode | undefined = syncQueue
-        ? (args.syncQueueWriteMode ?? (storeBackend.role === 'local' ? 'local-first' : 'intent-only'))
+        ? (args.syncQueueWriteMode ?? (storeBackendState.role === 'local' ? 'local-first' : 'intent-only'))
         : undefined
 
-    if (queueWriteMode === 'local-first' && storeBackend.role !== 'local') {
+    if (queueWriteMode === 'local-first' && storeBackendState.role !== 'local') {
         throw new Error('[Atoma] createClient: sync.queue=\"local-first\" 需要 store 为本地 durable（indexeddb/localServer/custom local）')
     }
 
     const resolved = (() => {
-        if (storeBackend.role === 'local') {
-            const remote = args.syncTarget
+        if (storeBackendState.role === 'local') {
+            const remote = args.syncEndpoint
             const config: BackendConfig = remote
-                ? { local: storeBackend.backend, remote }
-                : storeBackend.backend
+                ? { local: storeBackendState.backend, remote }
+                : storeBackendState.backend
             const backends = resolveBackend(config)
             return {
                 store: backends,
@@ -66,8 +66,8 @@ export function createAtomaClientInternal<
             }
         }
 
-        const store = resolveBackend(storeBackend.backend)
-        const sync = syncTarget ? resolveBackend(syncTarget) : store
+        const store = resolveBackend(storeBackendState.backend)
+        const sync = syncEndpoint ? resolveBackend(syncEndpoint) : store
         return { store, sync }
     })()
 
@@ -85,7 +85,7 @@ export function createAtomaClientInternal<
         })
     })
 
-    const runtime = createClientRuntime({
+    const runtime = createRuntime({
         schema: args.schema,
         defaults: {
             dataSourceFactory: dataSourceFactory as any
@@ -160,13 +160,13 @@ export function createAtomaClientInternal<
     const devtoolsHook = (globalThis as any)?.__ATOMA_DEVTOOLS__
     if (devtoolsHook && typeof devtoolsHook.registerClient === 'function') {
         const kind = (() => {
-            const b: any = storeBackend.backend
+            const b: any = storeBackendState.backend
             if (typeof b === 'string') return 'http' as const
             if (b && typeof b === 'object' && !Array.isArray(b)) {
                 if ('indexeddb' in b) return 'indexeddb' as const
                 if ('memory' in b) return 'memory' as const
                 if ('opsClient' in b) return 'custom' as const
-                if ('http' in b) return (storeBackend.role === 'local' ? 'localServer' : 'http') as 'localServer' | 'http'
+                if ('http' in b) return (storeBackendState.role === 'local' ? 'localServer' : 'http') as 'localServer' | 'http'
             }
             return 'custom' as const
         })()
@@ -179,7 +179,7 @@ export function createAtomaClientInternal<
                 historyDevtools: historyController.devtools,
                 meta: {
                     storeBackend: {
-                        role: storeBackend.role,
+                        role: storeBackendState.role,
                         kind
                     },
                     syncConfigured: wantsSync

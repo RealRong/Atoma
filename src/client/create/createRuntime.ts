@@ -1,11 +1,11 @@
 import type { CoreStore, IDataSource, JotaiStore, StoreHandle, StoreKey } from '#core'
 import { Core } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
-import { createStoreInstance } from './createAtomaStore'
-import type { AtomaClientContext, AtomaSchema, ClientRuntime } from './types'
+import { createStoreInstance } from './createStore'
+import type { AtomaClientContext, AtomaSchema, ClientRuntime } from '../types'
 import type { SyncStore } from '#core'
 
-export function createClientRuntime(args: {
+export function createRuntime(args: {
     schema: AtomaSchema<any>
     defaults: {
         dataSourceFactory: (name: string) => IDataSource<any>
@@ -20,11 +20,11 @@ export function createClientRuntime(args: {
     const syncStoreCache = new Map<string, SyncStore<any, any>>()
     const jotaiStore: JotaiStore = createJotaiStore()
 
-    const handles: StoreHandle<any>[] = []
+    const createdHandles: StoreHandle<any>[] = []
     const handleListeners = new Set<(handle: StoreHandle<any>) => void>()
 
-    const emitHandleCreated = (handle: StoreHandle<any>) => {
-        handles.push(handle)
+    const notifyHandleCreated = (handle: StoreHandle<any>) => {
+        createdHandles.push(handle)
 
         for (const listener of handleListeners) {
             try {
@@ -37,7 +37,7 @@ export function createClientRuntime(args: {
 
     const onHandleCreated = (listener: (handle: StoreHandle<any>) => void, options?: { replay?: boolean }) => {
         if (options?.replay) {
-            for (const handle of handles) {
+            for (const handle of createdHandles) {
                 try {
                     listener(handle)
                 } catch {
@@ -51,27 +51,27 @@ export function createClientRuntime(args: {
         }
     }
 
-    const rawStore = (name: string) => {
+    const getOrCreateStore = (name: string) => {
         const key = String(name)
         const existing = storeCache.get(key)
         if (existing) return existing
 
-        const ctx: AtomaClientContext<any, any> = {
+        const context: AtomaClientContext<any, any> = {
             jotaiStore,
             defaults: args.defaults,
-            Store: rawStore,
-            resolveStore: rawStore
+            Store: getOrCreateStore,
+            resolveStore: getOrCreateStore
         }
 
         const { store: created, handle } = createStoreInstance({
             name,
             schema: args.schema,
-            ctx
+            ctx: context
         })
 
         if (handle) {
             handleCache.set(key, handle)
-            emitHandleCreated(handle)
+            notifyHandleCreated(handle)
         }
 
         storeCache.set(key, created)
@@ -79,13 +79,13 @@ export function createClientRuntime(args: {
     }
 
     return {
-        Store: rawStore,
+        Store: getOrCreateStore,
         SyncStore: (name: string) => {
             const key = String(name)
             const existing = syncStoreCache.get(key)
             if (existing) return existing
 
-            const base = rawStore(key)
+            const base = getOrCreateStore(key)
             const handle = handleCache.get(key) ?? Core.store.getHandle(base)
             if (!handle) {
                 throw new Error(`[Atoma] Sync.Store: 未找到 storeHandle（store="${key}"）`)
@@ -95,7 +95,7 @@ export function createClientRuntime(args: {
             syncStoreCache.set(key, view as any)
             return view as any
         },
-        resolveStore: rawStore,
+        resolveStore: getOrCreateStore,
         listStores: () => storeCache.values(),
         onHandleCreated,
         jotaiStore

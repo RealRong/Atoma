@@ -8,7 +8,7 @@ import type {
     HttpEndpointOptions
 } from '../types'
 
-export function mkIdxTblForRes<T extends Record<string, Table<any, StoreKey>>>(
+export function makeIndexedDbTableForResource<T extends Record<string, Table<any, StoreKey>>>(
     tables: T
 ): (resource: string) => Table<any, StoreKey> {
     return (resource: string) => {
@@ -18,7 +18,7 @@ export function mkIdxTblForRes<T extends Record<string, Table<any, StoreKey>>>(
     }
 }
 
-function pickHttpOv(args: HttpEndpointOptions | undefined): Partial<HttpBackendConfig> {
+function pickHttpOverrides(args: HttpEndpointOptions | undefined): Partial<HttpBackendConfig> {
     if (!args) return {}
     return {
         ...(args.opsPath ? { opsPath: args.opsPath } : {}),
@@ -31,14 +31,14 @@ function pickHttpOv(args: HttpEndpointOptions | undefined): Partial<HttpBackendC
     }
 }
 
-export function mergeHttpOv(def: HttpEndpointOptions | undefined, lane: HttpEndpointOptions | undefined): Partial<HttpBackendConfig> {
+export function mergeHttpOverrides(def: HttpEndpointOptions | undefined, lane: HttpEndpointOptions | undefined): Partial<HttpBackendConfig> {
     return {
-        ...pickHttpOv(def),
-        ...pickHttpOv(lane)
+        ...pickHttpOverrides(def),
+        ...pickHttpOverrides(lane)
     }
 }
 
-function normBaseUrlForCmp(url: string): string {
+function normalizeBaseUrlForCompare(url: string): string {
     const raw = String(url || '').trim()
     if (!raw) return ''
     try {
@@ -51,8 +51,8 @@ function normBaseUrlForCmp(url: string): string {
 }
 
 export function assertNoEchoEndpoint(args: { localServerUrl: string; syncUrl: string }) {
-    const a = normBaseUrlForCmp(args.localServerUrl)
-    const b = normBaseUrlForCmp(args.syncUrl)
+    const a = normalizeBaseUrlForCompare(args.localServerUrl)
+    const b = normalizeBaseUrlForCompare(args.syncUrl)
     if (!a || !b) return
     if (a !== b) return
 
@@ -61,16 +61,16 @@ export function assertNoEchoEndpoint(args: { localServerUrl: string; syncUrl: st
     )
 }
 
-export function mkSyncTargetFromBackend(args: {
+export function makeSyncEndpointFromBackend(args: {
     backend: BackendEndpointConfig
-    ov: Partial<HttpBackendConfig>
+    httpOverrides: Partial<HttpBackendConfig>
     sse?: string
 }): BackendEndpointConfig {
     const base = args.backend as any
 
     const wantsOv = Boolean(
         (args.sse && String(args.sse).trim())
-        || (args.ov && Object.keys(args.ov).length)
+        || (args.httpOverrides && Object.keys(args.httpOverrides).length)
     )
 
     if (!wantsOv) return args.backend
@@ -92,13 +92,13 @@ export function mkSyncTargetFromBackend(args: {
         http: {
             ...httpBase,
             baseURL,
-            ...args.ov,
+            ...args.httpOverrides,
             ...(args.sse ? { subscribePath: args.sse } : {})
         }
     } as any
 }
 
-export function toSyncDef(args: {
+export function toSyncDefaults(args: {
     mode?: 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full'
     deviceId?: string
     advanced?: {
@@ -147,7 +147,7 @@ export function toSyncDef(args: {
     }
 }
 
-export function toQWrites(args: {
+export function toSyncQueueWrites(args: {
     maxQueueSize?: number
     onQueueChange?: (size: number) => void
     onQueueFull?: (args: { maxSize: number; droppedOp: unknown }) => void
