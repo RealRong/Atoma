@@ -154,10 +154,10 @@ export function createAtomaClientInternal<
         History: historyController.history
     }
 
-    // Devtools vNext (Phase 1): auto-register client when global devtools is enabled.
+    // Devtools Inspector: auto-register client when global devtools is enabled.
     // - No public API added to AtomaClient.
     // - Hook is installed by `devtools.enableGlobal()` from `atoma/devtools`.
-    const devtoolsHook = (globalThis as any)?.__ATOMA_DEVTOOLS_VNEXT__
+    const devtoolsHook = (globalThis as any)?.__ATOMA_DEVTOOLS__
     if (devtoolsHook && typeof devtoolsHook.registerClient === 'function') {
         const kind = (() => {
             const b: any = storeBackend.backend

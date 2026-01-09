@@ -123,14 +123,14 @@ Today, explain contains deterministic, JSON-serializable fields (index/finalize/
 	console.log(res.explain)
 ```
 
-If you want to inspect “client/store/sync/history runtime state” in dev, use the vNext inspector (`atoma/devtools`). See `DEVTOOLS_INSPECTOR_VNEXT.zh.md` at repo root.
+If you want to inspect “client/store/sync/history runtime state” in dev, use the inspector (`atoma/devtools`).
 
 ## Notes on IDs and trace propagation
 
 - For ops requests: traceId/requestId are carried in an **op-scoped** form via `op.meta.traceId` / `op.meta.requestId` (especially important for batching: mixed traces are allowed without splitting requests).
 - **No header trace**: Atoma does not support `x-atoma-trace-id` / `x-atoma-request-id` as a carrier. The server should not parse or depend on them (to avoid incorrectly forcing trace to be request-scoped, which conflicts with mixed-trace batches).
 - `requestId` is derived via `ctx.requestId()` (the runtime maintains a per-trace sequence), which avoids process-global mutable state and supports SSR/concurrency.
-- For `sync/subscribe-vnext` GET/SSE (no JSON body): tracing is passed via URL query params (`traceId`/`requestId`).
+- For `sync/subscribe` GET/SSE (no JSON body): tracing is passed via URL query params (`traceId`/`requestId`).
 
 ## Further reading
 

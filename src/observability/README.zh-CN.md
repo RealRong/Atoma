@@ -123,14 +123,14 @@ Atoma 只负责生成 `DebugEvent`；事件最终流向哪里由 **wiring 层**�
 	console.log(res.explain)
 ```
 
-如果你想在开发期查看“client/store/sync/history 等运行时状态”，请使用 vNext Inspector（`atoma/devtools`），详见仓库根目录 `DEVTOOLS_INSPECTOR_VNEXT.zh.md`。
+如果你想在开发期查看“client/store/sync/history 等运行时状态”，请使用 Inspector（`atoma/devtools`）。
 
 ## 关于 ID 与 trace 传递
 
 - 对于 ops 请求：traceId/requestId 以 **op-scoped** 形式写在 `op.meta.traceId` / `op.meta.requestId`（batch 场景尤其重要：同一请求内允许 mixed trace，不需要为 trace 拆批）。
 - **禁止 Header Trace**：不支持 `x-atoma-trace-id` / `x-atoma-request-id` 作为任何权威或可选 carrier，服务端也不应解析/依赖它们（避免把 trace 错误地 request-scoped 化，并与 batch mixed trace 冲突）。
 - `requestId` 通常通过 `ctx.requestId()`（runtime 内部维护 per-trace 序列）在实例内按 trace 生成序列，避免进程级全局可变状态，更适合 SSR/并发场景。
-- 对于 `sync/subscribe-vnext` 这类 GET/SSE（无 JSON body）：trace 通过 URL query（`traceId`/`requestId`）传递。
+- 对于 `sync/subscribe` 这类 GET/SSE（无 JSON body）：trace 通过 URL query（`traceId`/`requestId`）传递。
 
 ## 延伸阅读
 

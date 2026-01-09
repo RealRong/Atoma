@@ -19,7 +19,7 @@ export type {
     DevtoolsGlobalInspector
 } from './types'
 
-const GLOBAL_HOOK_KEY = '__ATOMA_DEVTOOLS_VNEXT__'
+const GLOBAL_HOOK_KEY = '__ATOMA_DEVTOOLS__'
 
 function registerClientFromRuntime(args: RegisterClientFromRuntimeArgs) {
     if (!isRegistryEnabled()) return

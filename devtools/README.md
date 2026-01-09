@@ -1,8 +1,8 @@
-# Atoma DevTools（React Overlay, vNext Inspector）
+# Atoma DevTools（React Overlay, Inspector）
 
 这是一个可嵌入的 DevTools 浮层（UI 用 React 渲染），可以挂载到任何框架（Vue/React/纯 JS）页面里。
 
-它基于 `atoma/devtools`（vNext Inspector），以 **Client first + Snapshot first** 的方式展示运行时状态：clients → stores/indexes/sync/history。
+它基于 `atoma/devtools`（Inspector），以 **Client first + Snapshot first** 的方式展示运行时状态：clients → stores/indexes/sync/history。
 
 ## 设计要点
 
@@ -29,4 +29,4 @@ if (import.meta.env.DEV) {
 
 ## 限制
 
-- Trace 面板（Observability debug-event）暂未接入 vNext Inspector，后续阶段补齐
+- Trace 面板（Observability debug-event）暂未接入 Inspector，后续阶段补齐

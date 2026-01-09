@@ -58,7 +58,7 @@ export function Users() {
 
 All of the above are defined by the shared `#protocol` module (`src/protocol/*`), used by both client and server.
 
-## Server (vNext protocol core)
+## Server (protocol core)
 
 `atoma/server` is a **protocol core**:
 
