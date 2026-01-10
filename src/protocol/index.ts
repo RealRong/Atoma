@@ -1,13 +1,13 @@
 export { Protocol } from './Protocol'
 
-export type { EntityId, Cursor, Version } from './scalars'
-export type { Meta } from './meta'
+export type { EntityId, Cursor, Version } from './shared/scalars'
+export type { Meta } from './shared/meta'
 
-export type { ErrorKind, StandardErrorDetails, StandardError } from './error'
-export type { EnvelopeOk, EnvelopeErr, Envelope } from './envelope'
+export type { ErrorKind, StandardErrorDetails, StandardError } from './shared/error'
+export type { EnvelopeOk, EnvelopeErr, Envelope } from './shared/envelope'
 
-export type { OrderByRule, CursorToken, QueryParams, PageInfo } from './query'
-export type { ChangeKind, Change, ChangeBatch } from './changes'
+export type { OrderByRule, CursorToken, QueryParams, PageInfo } from './ops/query'
+export type { ChangeKind, Change, ChangeBatch } from './ops/changes'
 
 export type {
     OperationKind,
@@ -28,3 +28,4 @@ export type {
     WriteResultData,
     ChangesPullResultData
 } from './ops'
+

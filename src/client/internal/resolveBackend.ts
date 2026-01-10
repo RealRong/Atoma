@@ -1,6 +1,6 @@
 import { Protocol } from '#protocol'
 import { Backend } from '#backend'
-import type { BackendConfig, BackendEndpointConfig, HttpSyncBackendConfig, MemoryBackendConfig, IndexedDBBackendConfig, ResolvedBackend, ResolvedBackends, StoreBackendEndpointConfig } from './types/backend'
+import type { BackendConfig, BackendEndpointConfig, HttpSyncBackendConfig, MemoryBackendConfig, IndexedDBBackendConfig, ResolvedBackend, ResolvedBackends, StoreBackendEndpointConfig } from '../types/backend'
 
 function joinUrl(base: string, path: string): string {
     if (!base) return path
@@ -30,7 +30,7 @@ function resolveHttpBackend(args: { http: HttpSyncBackendConfig }): ResolvedBack
 
     const key = String(baseURL)
 
-    const opsClient = new Backend.HttpOpsClient({
+    const opsClient = new Backend.Ops.HttpOpsClient({
         baseURL,
         opsPath: http.opsPath ?? Protocol.http.paths.OPS,
         headers: http.headers,
@@ -69,7 +69,7 @@ function resolveMemoryBackend(args: { memory: MemoryBackendConfig }): ResolvedBa
     const key = 'memory'
     return {
         key,
-        opsClient: new Backend.MemoryOpsClient(args.memory)
+        opsClient: new Backend.Ops.MemoryOpsClient(args.memory)
     }
 }
 
@@ -77,7 +77,7 @@ function resolveIndexedDBBackend(args: { indexeddb: IndexedDBBackendConfig }): R
     const key = 'indexeddb'
     return {
         key,
-        opsClient: new Backend.IndexedDBOpsClient(args.indexeddb)
+        opsClient: new Backend.Ops.IndexedDBOpsClient(args.indexeddb)
     }
 }
 

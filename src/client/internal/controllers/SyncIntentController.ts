@@ -1,6 +1,6 @@
 import { OutboxPersister, type BeforePersistContext, type PersistResult } from '#core'
 import type { SyncClient } from '#sync'
-import type { AtomaClientSyncConfig, ClientRuntime } from '../types'
+import type { AtomaClientSyncConfig, ClientRuntime } from '../../types'
 
 export function createSyncIntentController(args: {
     runtime: ClientRuntime

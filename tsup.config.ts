@@ -9,7 +9,6 @@ export default defineConfig({
         'protocol/index': 'src/protocol/index.ts',
         'sync/index': 'src/sync/index.ts',
         'backend/index': 'src/backend/index.ts',
-        'datasources/index': 'src/datasources/index.ts',
         'react/index': 'src/react/index.ts',
         'server/index': 'src/server/index.ts',
         'server/adapters': 'src/server/adapters/index.ts',
@@ -30,8 +29,7 @@ export default defineConfig({
             '#protocol': 'src/protocol/index.ts',
             '#sync': 'src/sync/index.ts',
             '#backend': 'src/backend/index.ts',
-            '#devtools': 'src/devtools/index.ts',
-            '#batch': 'src/batch/index.ts'
+            '#devtools': 'src/devtools/index.ts'
         }
     },
     external: [

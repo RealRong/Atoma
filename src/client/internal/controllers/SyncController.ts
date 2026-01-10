@@ -1,8 +1,8 @@
 import { Observability } from '#observability'
 import { Sync, type SyncClient } from '#sync'
 import type { SyncEvent, SyncOutboxItem, SyncPhase } from '#sync'
-import type { AtomaClientSyncConfig, ResolvedBackend, AtomaSync } from '../types'
-import type { ClientRuntime } from '../types'
+import type { AtomaClientSyncConfig, ResolvedBackend, AtomaSync } from '../../types'
+import type { ClientRuntime } from '../../types'
 import { createSyncIntentController } from './SyncIntentController'
 import { createSyncReplicatorApplier } from './SyncReplicatorApplier'
 

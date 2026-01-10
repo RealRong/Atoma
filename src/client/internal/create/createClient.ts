@@ -6,7 +6,7 @@ import type {
     CreateClientOptions,
     HttpBackendConfig,
     SyncQueueMode
-} from '../types'
+} from '../../types'
 import {
     assertNoEchoEndpoint,
     makeIndexedDbTableForResource,

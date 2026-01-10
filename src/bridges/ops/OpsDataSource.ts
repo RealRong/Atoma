@@ -1,5 +1,5 @@
 import type { DeleteItem, Entity, FindManyOptions, IDataSource, PageInfo, PersistWriteback, StoreKey, UpsertWriteOptions } from '#core'
-import { Batch, type BatchEngine } from '#batch'
+import { Batch, type BatchEngine } from '#backend'
 import type { ObservabilityContext } from '#observability'
 import { Protocol } from '#protocol'
 import type { Meta, Operation, OperationResult, QueryResultData, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'

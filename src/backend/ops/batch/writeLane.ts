@@ -8,7 +8,7 @@ import {
     toError
 } from './internal'
 import type { ObservabilityContext } from '#observability'
-import type { OpsClient } from '#backend'
+import type { OpsClient } from '../OpsClient'
 import type { OperationResult, WriteOp } from '#protocol'
 import type { OpsTask } from './types'
 

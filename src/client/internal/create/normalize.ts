@@ -6,7 +6,7 @@ import type {
     SyncDefaultsArgs,
     SyncQueueWritesArgs,
     HttpEndpointOptions
-} from '../types'
+} from '../../types'
 
 export function makeIndexedDbTableForResource<T extends Record<string, Table<any, StoreKey>>>(
     tables: T

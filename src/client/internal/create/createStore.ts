@@ -1,6 +1,6 @@
 import type { CoreStore, StoreHandle } from '#core'
 import { Core } from '#core'
-import type { AtomaClientContext, AtomaSchema } from '../types'
+import type { AtomaClientContext, AtomaSchema } from '../../types'
 
 export const createStore = (ctx: any, options: any) => {
     const dataSource = options.dataSource ?? ctx.defaults.dataSourceFactory(options.name)

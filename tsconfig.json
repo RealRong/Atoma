@@ -19,9 +19,6 @@
       ],
       "#devtools": [
         "src/devtools/index.ts"
-      ],
-      "#batch": [
-        "src/batch/index.ts"
       ]
     },
     "outDir": "./dist",

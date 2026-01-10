@@ -3,8 +3,8 @@ import type { HandleResult } from './runtime/http'
 import { createRuntimeFactory } from './runtime/createRuntime'
 import { createTopLevelErrorFormatter } from './runtime/errors'
 import { readJsonBodyWithLimit } from './runtime/http'
-import { createOpsExecutor } from './core/opsExecutor'
-import { createSubscribeExecutor } from './core/subscribeExecutor'
+import { createOpsExecutor } from './ops/opsExecutor'
+import { createSubscribeExecutor } from './ops/subscribeExecutor'
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
     return Boolean(value && typeof value === 'object' && typeof (value as any)[Symbol.asyncIterator] === 'function')

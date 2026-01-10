@@ -1,15 +1,12 @@
-import { OpsClient } from './OpsClient'
-import { HttpOpsClient } from './http/HttpOpsClient'
-import { IndexedDBOpsClient } from './local/IndexedDBOpsClient'
-import { MemoryOpsClient } from './local/MemoryOpsClient'
+import { Ops } from './ops'
 
 export const Backend = {
-    OpsClient,
-    HttpOpsClient,
-    IndexedDBOpsClient,
-    MemoryOpsClient
-}
+    Ops
+} as const
 
-export type { OpsClient, ExecuteOpsInput, ExecuteOpsOutput } from './OpsClient'
-export type { HttpOpsClientConfig } from './http/HttpOpsClient'
-export type { RetryOptions } from './http/transport/retryPolicy'
+export { Ops } from './ops'
+export type { OpsClient, ExecuteOpsInput, ExecuteOpsOutput } from './ops/OpsClient'
+export type { HttpOpsClientConfig } from './ops/http/HttpOpsClient'
+export type { RetryOptions } from './ops/http/transport/retryPolicy'
+export { Batch } from './ops/batch'
+export type { BatchEngine, BatchEngineConfig } from './ops/batch'

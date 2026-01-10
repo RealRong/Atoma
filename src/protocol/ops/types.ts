@@ -1,8 +1,8 @@
-import type { PageInfo, QueryParams } from '../query'
-import type { Cursor, EntityId, Version } from '../scalars'
-import type { Meta } from '../meta'
-import type { StandardError } from '../error'
-import type { ChangeBatch } from '../changes'
+import type { PageInfo, QueryParams } from './query'
+import type { Cursor, EntityId, Version } from '../shared/scalars'
+import type { Meta } from '../shared/meta'
+import type { StandardError } from '../shared/error'
+import type { ChangeBatch } from './changes'
 
 export type OperationKind = 'query' | 'write' | 'changes.pull'
 

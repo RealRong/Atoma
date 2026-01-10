@@ -24,10 +24,6 @@
             "types": "./dist/react/index.d.ts",
             "import": "./dist/react/index.js"
         },
-        "./datasources": {
-            "types": "./dist/datasources/index.d.ts",
-            "import": "./dist/datasources/index.js"
-        },
         "./server": {
             "types": "./dist/server/index.d.ts",
             "import": "./dist/server/index.js"
@@ -65,10 +61,6 @@
         "#backend": {
             "types": "./dist/backend/index.d.ts",
             "import": "./dist/backend/index.js"
-        },
-        "#batch": {
-            "types": "./dist/batch/index.d.ts",
-            "import": "./dist/batch/index.js"
         }
     },
     "files": [

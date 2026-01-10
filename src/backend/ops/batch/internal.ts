@@ -1,7 +1,7 @@
 import { Observability } from '#observability'
 import type { ObservabilityContext, AtomaDebugEventMap, DebugEmitMeta } from '#observability'
 import type { Meta, Operation, OperationResult } from '#protocol'
-import type { OpsClient } from '#backend'
+import type { OpsClient } from '../OpsClient'
 import type { OpsTask } from './types'
 
 // ============================================================================

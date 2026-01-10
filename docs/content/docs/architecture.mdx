@@ -20,7 +20,7 @@ description: Atoma 核心架构与 demo 页面如何组合
 ## 模式与策略
 - **乐观模式**：先写 atom，适配器成功后触发 onSuccess，失败回滚。
 - **严格模式**：适配器成功后才写 atom。
-- **fetchPolicy**：`local` / `remote` / `cache-and-network`。
+- **fetchPolicy**：`cache-only` / `network-only` / `cache-and-network`。
 - **skipStore**：大列表/瞬时查询可不落地缓存。
 
 ## Demo 页面如何组合

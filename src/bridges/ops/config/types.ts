@@ -1,6 +1,5 @@
 import type { FindManyOptions, PageInfo, StoreKey } from '#core'
-import type { OpsClient } from '#backend'
-import type { BatchEngine } from '#batch'
+import type { OpsClient, BatchEngine } from '#backend'
 
 export interface QueryConfig<T> {
     customFn?: (options: FindManyOptions<T>) => Promise<{ data: T[]; pageInfo?: PageInfo }>

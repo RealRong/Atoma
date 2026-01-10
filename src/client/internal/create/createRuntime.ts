@@ -2,7 +2,7 @@ import type { CoreStore, IDataSource, JotaiStore, StoreHandle, StoreKey } from '
 import { Core } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { createStoreInstance } from './createStore'
-import type { AtomaClientContext, AtomaSchema, ClientRuntime } from '../types'
+import type { AtomaClientContext, AtomaSchema, ClientRuntime } from '../../types'
 import type { SyncStore } from '#core'
 
 export function createRuntime(args: {

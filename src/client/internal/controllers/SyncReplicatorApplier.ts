@@ -2,8 +2,8 @@ import { Core, applyStoreWriteback, type DeleteItem, type StoreKey } from '#core
 import type { ObservabilityContext } from '#observability'
 import type { Change } from '#protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync'
-import { OpsDataSource } from '../../datasources'
-import type { AtomaClientSyncConfig, ClientRuntime, ResolvedBackend } from '../types'
+import { OpsDataSource } from '../../../bridges/ops/OpsDataSource'
+import type { AtomaClientSyncConfig, ClientRuntime, ResolvedBackend } from '../../types'
 
 function normalizeStoreKeyFromEntityId(id: string): StoreKey {
     if (/^[0-9]+$/.test(id)) return Number(id)

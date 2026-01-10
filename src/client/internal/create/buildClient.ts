@@ -13,9 +13,9 @@ import type {
     SyncDefaultsArgs,
     SyncQueueMode,
     SyncQueueWritesArgs
-} from '../types'
-import { resolveBackend } from '../backend'
-import { OpsDataSource } from '../../datasources'
+} from '../../types'
+import { resolveBackend } from '../resolveBackend'
+import { OpsDataSource } from '../../../bridges/ops/OpsDataSource'
 import { Devtools } from '#devtools'
 
 export function buildAtomaClient<

@@ -1,3 +1,17 @@
+import { envelope } from '../shared/envelope'
+import { encodeWriteIntent } from './encodeWrite'
+
+export const ops = {
+    parse: {
+        envelope: envelope.parse.envelope
+    },
+    compose: {
+        ok: envelope.compose.ok,
+        error: envelope.compose.error
+    },
+    encodeWriteIntent
+} as const
+
 export type {
     OperationKind,
     Operation,

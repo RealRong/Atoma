@@ -321,7 +321,7 @@ export type OrderBy<T> =
 
 export type FetchPolicy = 'cache-only' | 'network-only' | 'cache-and-network'
 
-export type PageInfo = import('../protocol/query').PageInfo
+export type PageInfo = import('#protocol').PageInfo
 
 export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
     where?: WhereOperator<T>

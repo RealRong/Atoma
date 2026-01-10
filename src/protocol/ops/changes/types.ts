@@ -1,4 +1,4 @@
-import type { Cursor, EntityId, Version } from '../scalars'
+import type { Cursor, EntityId, Version } from '../../shared/scalars'
 
 export type ChangeKind = 'upsert' | 'delete'
 
@@ -14,4 +14,3 @@ export type ChangeBatch = {
     nextCursor: Cursor
     changes: Change[]
 }
-

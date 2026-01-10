@@ -4,7 +4,7 @@ import type { AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerPluginRuntim
 import { Protocol } from '#protocol'
 import type { OperationResult, WriteOp } from '#protocol'
 import type { IOrmAdapter, ISyncAdapter } from '../../adapters/ports'
-import { executeWriteItemWithSemantics } from '../write'
+import { executeWriteItemWithSemantics } from '../writeSemantics'
 import { isObject } from './normalize'
 
 type TraceMeta = { traceId?: string; requestId?: string; opId: string }
