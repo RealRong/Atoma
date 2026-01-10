@@ -1,6 +1,6 @@
-export { useValue } from './useValue'
+export { useOne } from './useValue'
 export { useAll } from './useAll'
 export { useFindMany } from './useFindMany'
-export { useMultiple } from './useMultiple'
+export { useMany } from './useMultiple'
 export { useFuzzySearch } from './useFuzzySearch'
 export { useLocalQuery } from './useLocalQuery'

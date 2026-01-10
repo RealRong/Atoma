@@ -12,7 +12,7 @@ export function createRuntime(args: {
         idGenerator?: () => StoreKey
     }
     syncStore?: {
-        mode?: 'intent-only' | 'local-first'
+        queue?: 'queue' | 'local-first'
     }
 }): ClientRuntime {
     const storeCache = new Map<string, CoreStore<any, any>>()
@@ -88,7 +88,7 @@ export function createRuntime(args: {
             const base = getOrCreateStore(key)
             const handle = handleCache.get(key) ?? Core.store.getHandle(base)
             if (!handle) {
-                throw new Error(`[Atoma] Sync.Store: 未找到 storeHandle（store="${key}"）`)
+                throw new Error(`[Atoma] Store.Outbox: 未找到 storeHandle（store="${key}"）`)
             }
 
             const view = Core.store.createSyncStoreView(handle, args.syncStore)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { devtools } from 'atoma/devtools'
+import { Devtools } from 'atoma/devtools'
 import type { DevtoolsClientSnapshot, DevtoolsEvent } from 'atoma/devtools'
 import { TabButtonRow } from './components/TabButtonRow'
 import { StoreTab } from './tabs/StoreTab'
@@ -20,13 +20,9 @@ export default function DevtoolsApp(props: { defaultOpen?: boolean }) {
     const unsubRef = useRef<null | (() => void)>(null)
 
     useEffect(() => {
-        devtools.enableGlobal()
-    }, [])
-
-    useEffect(() => {
         if (!open) return
 
-        const global = devtools.global()
+        const global = Devtools.global()
         const refresh = () => {
             const list = global.clients.list()
             setClients(list)
@@ -61,7 +57,7 @@ export default function DevtoolsApp(props: { defaultOpen?: boolean }) {
         if (!open) return
         if (!selectedClientId) return
 
-        const global = devtools.global()
+        const global = Devtools.global()
         try {
             const ins = global.clients.get(selectedClientId)
             unsubRef.current = ins.subscribe((_e: DevtoolsEvent) => {

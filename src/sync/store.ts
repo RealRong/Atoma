@@ -38,7 +38,7 @@ export class DefaultOutboxStore implements OutboxStore {
     constructor(
         private readonly storageKey: string,
         private readonly events?: SyncOutboxEvents,
-        private readonly maxSize: number = 1000,
+        private readonly maxQueueSize: number = 1000,
         private readonly now: () => number = () => Date.now(),
         private readonly inFlightTimeoutMs: number = 30_000
     ) {
@@ -50,11 +50,11 @@ export class DefaultOutboxStore implements OutboxStore {
         let changed = false
         for (const item of items) {
             if (this.byKey.has(item.idempotencyKey)) continue
-            if (this.queue.length >= this.maxSize) {
+            if (this.queue.length >= this.maxQueueSize) {
                 const dropped = this.queue.shift()
                 if (dropped) {
                     this.byKey.delete(dropped.idempotencyKey)
-                    this.events?.onQueueFull?.(dropped, this.maxSize)
+                    this.events?.onQueueFull?.(dropped, this.maxQueueSize)
                 }
             }
             const stored = { ...item, inFlightAtMs: undefined }

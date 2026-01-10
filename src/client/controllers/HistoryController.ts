@@ -40,22 +40,22 @@ export function createHistoryController(args: {
     }
 
     const history: AtomaHistory = {
-        canUndo: (scope: string) => historyManager.canUndo(String(scope || 'default')),
-        canRedo: (scope: string) => historyManager.canRedo(String(scope || 'default')),
-        clear: (scope: string) => {
+        canUndo: (scope?: string) => historyManager.canUndo(String(scope || 'default')),
+        canRedo: (scope?: string) => historyManager.canRedo(String(scope || 'default')),
+        clear: (scope?: string) => {
             historyManager.clear(String(scope || 'default'))
         },
-        undo: async (undoArgs: { scope: string }) => {
+        undo: async (undoArgs?: { scope?: string }) => {
             return historyManager.undo({
-                scope: String(undoArgs.scope || 'default'),
+                scope: String(undoArgs?.scope || 'default'),
                 apply: async (applyArgs) => {
                     await dispatchPatches(applyArgs.storeName, applyArgs.patches, applyArgs.inversePatches, applyArgs.opContext)
                 }
             })
         },
-        redo: async (redoArgs: { scope: string }) => {
+        redo: async (redoArgs?: { scope?: string }) => {
             return historyManager.redo({
-                scope: String(redoArgs.scope || 'default'),
+                scope: String(redoArgs?.scope || 'default'),
                 apply: async (applyArgs) => {
                     await dispatchPatches(applyArgs.storeName, applyArgs.patches, applyArgs.inversePatches, applyArgs.opContext)
                 }

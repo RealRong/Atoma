@@ -1,6 +1,5 @@
 import React from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { devtools } from 'atoma/devtools'
 import DevtoolsApp from './ui/DevtoolsApp'
 import stylesText from './styles.css?inline'
 
@@ -51,8 +50,6 @@ export function mountAtomaDevTools(options: MountAtomaDevToolsOptions = {}): Mou
 
     const container = ensureContainer(options.target)
     const { shadowRoot, mountPoint } = ensureShadowRoot(container)
-
-    devtools.enableGlobal()
 
     const root: Root = createRoot(mountPoint)
     root.render(

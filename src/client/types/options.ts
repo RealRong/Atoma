@@ -128,7 +128,7 @@ export interface SyncQueueEvents {
     /** Called whenever the queue size changes. */
     onQueueChange?: (size: number) => void
     /** Called when the queue is full and an item is dropped. */
-    onQueueFull?: (args: { maxSize: number; droppedOp: unknown }) => void
+    onQueueFull?: (args: { maxQueueSize: number; droppedOp: unknown }) => void
 }
 
 export interface SyncAdvancedOptions {
@@ -225,7 +225,7 @@ export interface CreateClientSyncOptions<ResourceName extends string = string>
      */
     backend?: BackendEndpointConfig
     /**
-     * Queued write strategy for `client.Sync.Store(name)`.
+     * Queued write strategy for `client.Store(name).Outbox`.
      * - `false` disables queued writes.
      * - `'queue'` queues intents only (no local durable write).
      * - `'local-first'` writes to local durable store first, then enqueues.
@@ -251,7 +251,7 @@ export type CreateClientOptions<
     /**
      * Sync/Replication config (optional).
      * - `url`/`backend`: remote target. When omitted, it may be derived from `store` when `store` is remote.
-     * - `queue`: enables queued writes for `client.Sync.Store(name)`; can be `'queue' | 'local-first'`.
+     * - `queue`: enables queued writes for `client.Store(name).Outbox`; can be `'queue' | 'local-first'`.
      * - outbox/cursor/lock keys live under `sync.advanced`.
      */
     sync?: string | CreateClientSyncOptions<keyof Entities & string>

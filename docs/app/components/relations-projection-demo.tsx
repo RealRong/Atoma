@@ -111,7 +111,7 @@ export function RelationsProjectionDemo() {
   const { data: posts, loading, error: hookError, refetch } = useFindMany(postsStore, {
     orderBy: { field: 'updatedAt', direction: 'desc' },
     limit: 20,
-    fetchPolicy: 'local',
+    fetchPolicy: 'cache-only',
     include,
   } as any);
 
@@ -121,9 +121,9 @@ export function RelationsProjectionDemo() {
 
   const counts = useMemo(() => {
     return {
-      users: usersStore.getCachedAll().length,
-      posts: postsStore.getCachedAll().length,
-      comments: commentsStore.getCachedAll().length,
+      users: usersStore.peekAll().length,
+      posts: postsStore.peekAll().length,
+      comments: commentsStore.peekAll().length,
     };
   }, [usersStore, postsStore, commentsStore, posts]);
 

@@ -1,5 +1,3 @@
-import type { AtomaClient } from '../client/types'
-
 export type DevtoolsStoreSnapshot = {
     clientId: string
     name: string
@@ -89,7 +87,6 @@ export type DevtoolsClientInspector = {
 }
 
 export type DevtoolsGlobalInspector = {
-    enabled: boolean
     clients: {
         list: () => Array<{ id: string; label?: string; createdAt: number; lastSeenAt: number }>
         get: (id: string) => DevtoolsClientInspector
@@ -110,13 +107,3 @@ export type SyncProvider = {
 export type HistoryProvider = {
     snapshot: () => DevtoolsHistorySnapshot
 }
-
-export type RegisterClientFromRuntimeArgs = {
-    client: AtomaClient<any, any>
-    runtime?: import('../client/types').ClientRuntime
-    syncDevtools?: SyncProvider
-    historyDevtools?: HistoryProvider
-    label?: string
-    meta: ClientMeta
-}
-

@@ -41,12 +41,13 @@ export function createSyncIntentController(args: {
             throw new Error('[Atoma] createServerAssigned* 不支持 outbox（Server-ID create 必须 direct + strict，且禁止 outbox）')
         }
 
-        const queueWriteMode = (syncConfig && typeof syncConfig === 'object' && !Array.isArray(syncConfig) && typeof (syncConfig as any).queueWriteMode === 'string')
-            ? String((syncConfig as any).queueWriteMode)
-            : 'intent-only'
+        const queue = (syncConfig && typeof syncConfig === 'object' && !Array.isArray(syncConfig))
+            ? (syncConfig as any).queue
+            : undefined
+        const queueMode = queue === 'local-first' ? 'local-first' : 'queue'
 
         let localPersist: PersistResult<any> | undefined
-        if (queueWriteMode === 'local-first') {
+        if (queueMode === 'local-first') {
             localPersist = await next(ctx)
         }
 

@@ -135,7 +135,7 @@ export function toSyncDefaults(args: {
         ...(args.subscribeEventName ? { subscribeEventName: args.subscribeEventName } : {}),
         ...(typeof args.pullLimit === 'number' ? { pullLimit: args.pullLimit } : {}),
         ...(typeof args.pullDebounceMs === 'number' ? { pullDebounceMs: args.pullDebounceMs } : {}),
-        ...(typeof args.pullIntervalMs === 'number' ? { periodicPullIntervalMs: args.pullIntervalMs } : {}),
+        ...(typeof args.pullIntervalMs === 'number' ? { pullIntervalMs: args.pullIntervalMs } : {}),
         ...(typeof args.reconnectDelayMs === 'number' ? { reconnectDelayMs: args.reconnectDelayMs } : {}),
         ...(typeof args.inFlightTimeoutMs === 'number' ? { inFlightTimeoutMs: args.inFlightTimeoutMs } : {}),
         ...(args.retry ? { retry: args.retry as any } : {}),
@@ -150,11 +150,11 @@ export function toSyncDefaults(args: {
 export function toSyncQueueWrites(args: {
     maxQueueSize?: number
     onQueueChange?: (size: number) => void
-    onQueueFull?: (args: { maxSize: number; droppedOp: unknown }) => void
+    onQueueFull?: (args: { maxQueueSize: number; droppedOp: unknown }) => void
 } | undefined): SyncQueueWritesArgs | undefined {
     if (!args) return undefined
     return {
-        ...(typeof args.maxQueueSize === 'number' ? { maxSize: args.maxQueueSize } : {}),
+        ...(typeof args.maxQueueSize === 'number' ? { maxQueueSize: args.maxQueueSize } : {}),
         ...(args.onQueueChange ? { onQueueChange: args.onQueueChange } : {}),
         ...(args.onQueueFull ? { onQueueFull: args.onQueueFull as any } : {})
     }

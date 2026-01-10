@@ -11,11 +11,12 @@ import type {
     StoreBackendEndpointConfig,
     StoreBatchArgs,
     SyncDefaultsArgs,
-    SyncQueueWriteMode,
+    SyncQueueMode,
     SyncQueueWritesArgs
 } from '../types'
 import { resolveBackend } from '../backend'
 import { OpsDataSource } from '../../datasources'
+import { Devtools } from '#devtools'
 
 export function buildAtomaClient<
     const Entities extends Record<string, Entity>,
@@ -27,7 +28,7 @@ export function buildAtomaClient<
     syncEndpoint?: BackendEndpointConfig
     syncDefaults?: SyncDefaultsArgs
     syncQueueWrites?: SyncQueueWritesArgs
-    syncQueueWriteMode?: SyncQueueWriteMode
+    syncQueueMode?: SyncQueueMode
 }): AtomaClient<Entities, Schema> {
     const storeBackendState = args.storeBackendState
     const syncQueue = args.syncQueueWrites
@@ -45,11 +46,11 @@ export function buildAtomaClient<
         throw new Error('[Atoma] createClient: 使用 sync 相关配置前必须先配置 sync 对端（sync.url/sync.backend），或将 store.type 设为 http/custom(remote) 以复用 store 对端')
     }
 
-    const queueWriteMode: SyncQueueWriteMode | undefined = syncQueue
-        ? (args.syncQueueWriteMode ?? (storeBackendState.role === 'local' ? 'local-first' : 'intent-only'))
+    const queue: SyncQueueMode | undefined = syncQueue
+        ? (args.syncQueueMode ?? (storeBackendState.role === 'local' ? 'local-first' : 'queue'))
         : undefined
 
-    if (queueWriteMode === 'local-first' && storeBackendState.role !== 'local') {
+    if (queue === 'local-first' && storeBackendState.role !== 'local') {
         throw new Error('[Atoma] createClient: sync.queue=\"local-first\" 需要 store 为本地 durable（indexeddb/localServer/custom local）')
     }
 
@@ -91,7 +92,7 @@ export function buildAtomaClient<
             dataSourceFactory: dataSourceFactory as any
         },
         syncStore: {
-            mode: queueWriteMode
+            queue
         }
     })
 
@@ -107,7 +108,7 @@ export function buildAtomaClient<
             subscribeEventName: defaults?.subscribeEventName,
             pullLimit: defaults?.pullLimit,
             pullDebounceMs: defaults?.pullDebounceMs,
-            periodicPullIntervalMs: defaults?.periodicPullIntervalMs,
+            pullIntervalMs: defaults?.pullIntervalMs,
             reconnectDelayMs: defaults?.reconnectDelayMs,
             inFlightTimeoutMs: defaults?.inFlightTimeoutMs,
             retry: defaults?.retry,
@@ -118,14 +119,14 @@ export function buildAtomaClient<
             onEvent: defaults?.onEvent,
             onError: defaults?.onError,
             ...(syncQueue ? {
-                maxQueueSize: syncQueue.maxSize,
+                maxQueueSize: syncQueue.maxQueueSize,
                 outboxEvents: (syncQueue.onQueueChange || syncQueue.onQueueFull)
                     ? {
                         ...(syncQueue.onQueueChange ? { onQueueChange: syncQueue.onQueueChange } : {}),
-                        ...(syncQueue.onQueueFull ? { onQueueFull: (droppedOp: any, maxSize: number) => syncQueue.onQueueFull?.({ maxSize, droppedOp }) } : {})
+                        ...(syncQueue.onQueueFull ? { onQueueFull: (droppedOp: any, maxQueueSize: number) => syncQueue.onQueueFull?.({ maxQueueSize, droppedOp }) } : {})
                     }
                     : undefined,
-                queueWriteMode
+                queue
             } : {})
         } as any)
         : undefined
@@ -138,57 +139,56 @@ export function buildAtomaClient<
     })
 
     const Store = (<Name extends keyof Entities & string>(name: Name) => {
-        return runtime.Store(name) as unknown as CoreStore<Entities[Name], any>
+        const store: any = runtime.Store(name) as any
+        if (!('Outbox' in store)) {
+            try {
+                Object.defineProperty(store, 'Outbox', {
+                    enumerable: false,
+                    configurable: true,
+                    get: () => runtime.SyncStore(name) as any
+                })
+            } catch {
+                store.Outbox = runtime.SyncStore(name) as any
+            }
+        }
+        return store as unknown as CoreStore<Entities[Name], any>
     }) as AtomaClient<Entities, Schema>['Store']
 
-    const Sync = {
-        ...syncController.sync,
-        Store: (<Name extends keyof Entities & string>(name: Name) => {
-            return runtime.SyncStore(name) as any
-        }) as AtomaClient<Entities, Schema>['Sync']['Store']
-    } as AtomaClient<Entities, Schema>['Sync']
+    const Sync = syncController.sync as AtomaClient<Entities, Schema>['Sync']
 
-    const client: AtomaClient<Entities, Schema> = {
+    const client: any = {
         Store,
         Sync,
         History: historyController.history
     }
 
-    // Devtools Inspector: auto-register client when global devtools is enabled.
-    // - No public API added to AtomaClient.
-    // - Hook is installed by `devtools.enableGlobal()` from `atoma/devtools`.
-    const devtoolsHook = (globalThis as any)?.__ATOMA_DEVTOOLS__
-    if (devtoolsHook && typeof devtoolsHook.registerClient === 'function') {
-        const kind = (() => {
-            const b: any = storeBackendState.backend
-            if (typeof b === 'string') return 'http' as const
-            if (b && typeof b === 'object' && !Array.isArray(b)) {
-                if ('indexeddb' in b) return 'indexeddb' as const
-                if ('memory' in b) return 'memory' as const
-                if ('opsClient' in b) return 'custom' as const
-                if ('http' in b) return (storeBackendState.role === 'local' ? 'localServer' : 'http') as 'localServer' | 'http'
-            }
-            return 'custom' as const
-        })()
-
-        try {
-            devtoolsHook.registerClient({
-                client,
-                runtime,
-                syncDevtools: syncController.devtools,
-                historyDevtools: historyController.devtools,
-                meta: {
-                    storeBackend: {
-                        role: storeBackendState.role,
-                        kind
-                    },
-                    syncConfigured: wantsSync
-                }
-            })
-        } catch {
-            // ignore
+    const kind = (() => {
+        const b: any = storeBackendState.backend
+        if (typeof b === 'string') return 'http' as const
+        if (b && typeof b === 'object' && !Array.isArray(b)) {
+            if ('indexeddb' in b) return 'indexeddb' as const
+            if ('memory' in b) return 'memory' as const
+            if ('opsClient' in b) return 'custom' as const
+            if ('http' in b) return (storeBackendState.role === 'local' ? 'localServer' : 'http') as 'localServer' | 'http'
         }
-    }
+        return 'custom' as const
+    })()
 
-    return client
+    const clientDevtools = Devtools.createClientInspector({
+        client,
+        runtime,
+        syncDevtools: syncController.devtools,
+        historyDevtools: historyController.devtools,
+        meta: {
+            storeBackend: {
+                role: storeBackendState.role,
+                kind
+            },
+            syncConfigured: wantsSync
+        }
+    })
+
+    client.Devtools = clientDevtools
+
+    return client as AtomaClient<Entities, Schema>
 }

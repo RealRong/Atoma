@@ -10,7 +10,7 @@ import { useRelations } from './useRelations'
  * React hook to subscribe to a single entity by ID
  * Uses selectAtom for fine-grained updates - only re-renders when this specific item changes
  */
-export function useValue<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
+export function useOne<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: StoreHandleOwner<T, Relations>,
     id?: StoreKey,
     options?: { include?: RelationIncludeInput<Relations> & Include }
@@ -19,7 +19,7 @@ export function useValue<T extends Entity, Relations = {}, const Include extends
 
     const handle = Core.store.getHandle(store)
     if (!handle) {
-        throw new Error('[Atoma] useValue: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createStore 创建')
+        throw new Error('[Atoma] useOne: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createStore 创建')
     }
 
     const objectMapAtom = handle.atom

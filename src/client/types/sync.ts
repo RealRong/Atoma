@@ -2,12 +2,12 @@ import type { SyncEvent, SyncOutboxEvents, SyncPhase, SyncOutboxItem } from '#sy
 import type { HttpBackendConfig } from './backend'
 import type { AtomaSyncStartMode } from './client'
 
-export type SyncQueueWriteMode = 'intent-only' | 'local-first'
+export type SyncQueueMode = 'queue' | 'local-first'
 
 export type SyncQueueWritesArgs = {
-    maxSize?: number
+    maxQueueSize?: number
     onQueueChange?: (size: number) => void
-    onQueueFull?: (args: { maxSize: number; droppedOp: SyncOutboxItem }) => void
+    onQueueFull?: (args: { maxQueueSize: number; droppedOp: SyncOutboxItem }) => void
 }
 
 export type SyncAdvancedArgs = {
@@ -28,7 +28,7 @@ export type SyncDefaultsArgs = {
     subscribeEventName?: string
     pullLimit?: number
     pullDebounceMs?: number
-    periodicPullIntervalMs?: number
+    pullIntervalMs?: number
     reconnectDelayMs?: number
     inFlightTimeoutMs?: number
     retry?: HttpBackendConfig['retry']
@@ -46,8 +46,8 @@ export type AtomaClientSyncConfig = {
     deviceId?: string
     /** Advanced persistence overrides (rare). */
     advanced?: SyncAdvancedArgs
-    /** Sync.Store queued 写入策略（默认由 store.backend 推导） */
-    queueWriteMode?: SyncQueueWriteMode
+    /** Store(...).Outbox queued 写入策略（默认由 store.backend 推导） */
+    queue?: false | SyncQueueMode
     /** 是否启用 subscribe（默认：true） */
     subscribe?: boolean
     /** SSE event name（默认：Protocol.sse.events.NOTIFY） */
@@ -59,7 +59,7 @@ export type AtomaClientSyncConfig = {
     pullLimit?: number
     pullDebounceMs?: number
     reconnectDelayMs?: number
-    periodicPullIntervalMs?: number
+    pullIntervalMs?: number
     inFlightTimeoutMs?: number
     retry?: HttpBackendConfig['retry']
     backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }

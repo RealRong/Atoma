@@ -39,8 +39,8 @@ export interface CoreStoreConfig<T extends Entity> {
 
 export interface CoreStore<T extends Entity, Relations = {}> extends IStore<T, Relations> {
     name: string
-    getCachedOneById: (id: StoreKey) => T | undefined
-    getCachedAll: () => T[]
+    peek: (id: StoreKey) => T | undefined
+    peekAll: () => T[]
     /** Reset in-memory cache (atom + indexes). Does NOT touch remote/durable persistence. */
     reset: () => void
     withRelations: <const NewRelations extends Record<string, RelationConfig<any, any>>>(factory: () => NewRelations) => CoreStore<T, NewRelations>

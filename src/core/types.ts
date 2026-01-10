@@ -212,7 +212,7 @@ export type StoreDispatchEvent<T extends Entity> = {
     opContext?: OperationContext
     onFail?: (error?: Error) => void  // Accept error object for rejection
     ticket?: WriteTicket
-    /** 内部：显式持久化路径选择（默认 direct）。用于 Sync.Store 这类封装。 */
+    /** 内部：显式持久化路径选择（默认 direct）。用于 Store(...).Outbox 这类封装。 */
     __persist?: 'direct' | 'outbox'
 } & (
         | {
@@ -319,7 +319,7 @@ export type OrderBy<T> =
     | { field: keyof T & string, direction: 'asc' | 'desc' }
     | Array<{ field: keyof T & string, direction: 'asc' | 'desc' }>
 
-export type FetchPolicy = 'local' | 'remote' | 'cache-and-network'
+export type FetchPolicy = 'cache-only' | 'network-only' | 'cache-and-network'
 
 export type PageInfo = import('../protocol/query').PageInfo
 
@@ -571,7 +571,7 @@ export interface IStore<T, Relations = {}> {
  * Store object that has a storeHandle attached.
  *
  * 说明：
- * - `Sync.Store(...)` 会显式移除 server-assigned create（direct-only 能力）
+ * - outbox 视图（例如 `Store(...).Outbox`）会显式移除 server-assigned create（direct-only 能力）
  * - React hooks / handle registry 只依赖 handle 与常规 API，因此这里把这两个方法标为可选
  */
 export type StoreHandleOwner<T extends Entity, Relations = {}> =

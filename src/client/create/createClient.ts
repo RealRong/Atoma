@@ -5,7 +5,7 @@ import type {
     AtomaSchema,
     CreateClientOptions,
     HttpBackendConfig,
-    SyncQueueWriteMode
+    SyncQueueMode
 } from '../types'
 import {
     assertNoEchoEndpoint,
@@ -116,9 +116,9 @@ export function createClient<
             onQueueFull: syncConfig.onQueueFull
         })
 
-        const mode: SyncQueueWriteMode = queueModeEffective === 'local-first' ? 'local-first' : 'intent-only'
+        const queue: SyncQueueMode = queueModeEffective === 'local-first' ? 'local-first' : 'queue'
 
-        return { enabled: true as const, writes, mode }
+        return { enabled: true as const, writes, queue }
     })()
 
     return buildAtomaClient<E, S>({
@@ -128,6 +128,6 @@ export function createClient<
         ...(syncEndpoint ? { syncEndpoint } : {}),
         ...(syncDefaults ? { syncDefaults } : {}),
         ...(syncQueue.enabled ? { syncQueueWrites: (syncQueue.writes ?? {}) } : {}),
-        ...(syncQueue.enabled ? { syncQueueWriteMode: syncQueue.mode } : {})
+        ...(syncQueue.enabled ? { syncQueueMode: syncQueue.queue } : {})
     })
 }

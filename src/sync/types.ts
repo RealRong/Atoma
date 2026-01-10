@@ -105,7 +105,7 @@ export type SyncEvent =
 
 export type SyncOutboxEvents = {
     onQueueChange?: (size: number) => void
-    onQueueFull?: (droppedOp: SyncOutboxItem, maxSize: number) => void
+    onQueueFull?: (droppedOp: SyncOutboxItem, maxQueueSize: number) => void
 }
 
 export type SyncBackoffConfig = {
@@ -138,7 +138,7 @@ export type SyncConfig = {
     conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
     subscribe?: boolean
     reconnectDelayMs?: number
-    periodicPullIntervalMs?: number
+    pullIntervalMs?: number
     inFlightTimeoutMs?: number
     retry?: SyncRetryConfig
     backoff?: SyncBackoffConfig

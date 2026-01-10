@@ -10,7 +10,7 @@ function withDirectOptions<TOptions extends StoreOperationOptions | undefined>(o
 
     const requestedPersist = base.persist
     if (requestedPersist === 'outbox') {
-        throw new Error('[Atoma] Store: 不允许 outbox persist（请使用 Sync.Store(...)）')
+        throw new Error('[Atoma] Store: 不允许 outbox persist（请使用 Store(...).Outbox）')
     }
 
     return options

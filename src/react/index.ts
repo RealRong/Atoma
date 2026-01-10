@@ -1,8 +1,8 @@
 export {
-    useValue,
+    useOne,
     useAll,
     useFindMany,
-    useMultiple,
+    useMany,
     useFuzzySearch,
     useLocalQuery
 } from './hooks'

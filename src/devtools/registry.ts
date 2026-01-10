@@ -30,13 +30,11 @@ export type ClientEntry = {
 }
 
 type Registry = {
-    enabled: boolean
     byId: Map<string, ClientEntry>
     byClient: WeakMap<object, string>
 }
 
 const registry: Registry = {
-    enabled: false,
     byId: new Map(),
     byClient: new WeakMap()
 }
@@ -62,24 +60,19 @@ function getDefaultMeta(client: AtomaClient<any, any>): ClientMeta {
     }
 }
 
-export function isRegistryEnabled(): boolean {
-    return registry.enabled
-}
-
-export function enableRegistry(): void {
-    registry.enabled = true
-}
-
-export function disableRegistry(): void {
-    registry.enabled = false
-}
-
 export function listEntries(): ClientEntry[] {
     return Array.from(registry.byId.values())
 }
 
 export function getEntryById(id: string): ClientEntry | undefined {
     return registry.byId.get(String(id))
+}
+
+export function removeEntryByClient(client: AtomaClient<any, any>): void {
+    const id = registry.byClient.get(client as any)
+    if (!id) return
+    registry.byClient.delete(client as any)
+    registry.byId.delete(id)
 }
 
 export function ensureEntry(
@@ -113,4 +106,3 @@ export function ensureEntry(
     registry.byClient.set(client as any, id)
     return entry
 }
-

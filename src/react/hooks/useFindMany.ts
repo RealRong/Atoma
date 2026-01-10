@@ -80,7 +80,7 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
     const localEntities = useStoreQuery(store, optionsForStoreQuery)
     const localIds = useStoreQuery(store, { ...(optionsForStoreQuery as any), select: 'ids' as const })
 
-    const remoteEnabled = fetchPolicy !== 'local'
+    const remoteEnabled = fetchPolicy !== 'cache-only'
     const remoteBehavior = wantsTransientRemote ? ({ transient: true } as const) : ({ hydrate: true } as const)
 
     const optionsForRemote = useMemo(() => {
@@ -104,12 +104,12 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
 
     const data = (() => {
         if (select === 'ids') {
-            if (fetchPolicy === 'remote' && remoteBehavior.transient) {
+            if (fetchPolicy === 'network-only' && remoteBehavior.transient) {
                 return (remote.data ?? []).map(item => item.id) as Array<T['id']>
             }
             return localIds
         }
-        if (fetchPolicy === 'remote' && remoteBehavior.transient) {
+        if (fetchPolicy === 'network-only' && remoteBehavior.transient) {
             return (remote.data ?? []) as T[]
         }
         return localEntities

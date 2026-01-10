@@ -63,7 +63,7 @@ function createTodosClient(args: {
   return {
     Store,
     Sync,
-    todosStore: Sync.Store('todos'),
+    todosStore: Store('todos').Outbox,
   };
 }
 
@@ -173,8 +173,8 @@ function TodosDemoBoard(props: {
     Sync.start(next);
   };
 
-  const flush = async () => {
-    await Sync.flush();
+  const push = async () => {
+    await Sync.push();
   };
 
   const pull = async () => {
@@ -369,10 +369,10 @@ function TodosDemoBoard(props: {
             </button>
             <button
               className={cn(buttonVariants({ color: 'outline', size: 'sm' }))}
-              onClick={() => void flush()}
+              onClick={() => void push()}
               type="button"
             >
-              Flush
+              Push
             </button>
             <button
               className={cn(buttonVariants({ color: 'outline', size: 'sm' }))}

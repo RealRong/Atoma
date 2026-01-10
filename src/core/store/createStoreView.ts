@@ -85,11 +85,11 @@ export function createStoreView<T extends Entity, Relations = {}>(
 
     store.name = name
 
-    store.getCachedOneById = (id: StoreKey) => {
+    store.peek = (id: StoreKey) => {
         return handle.jotaiStore.get(handle.atom).get(id)
     }
 
-    store.getCachedAll = () => {
+    store.peekAll = () => {
         return Array.from(handle.jotaiStore.get(handle.atom).values())
     }
 

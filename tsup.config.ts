@@ -30,6 +30,7 @@ export default defineConfig({
             '#protocol': 'src/protocol/index.ts',
             '#sync': 'src/sync/index.ts',
             '#backend': 'src/backend/index.ts',
+            '#devtools': 'src/devtools/index.ts',
             '#batch': 'src/batch/index.ts'
         }
     },

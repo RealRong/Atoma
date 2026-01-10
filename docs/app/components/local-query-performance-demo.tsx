@@ -125,7 +125,7 @@ export function LocalQueryPerformanceDemo() {
     const store = client.Store('books')
 
     useEffect(() => {
-        setSeededCount(store.getCachedAll().length)
+        setSeededCount(store.peekAll().length)
         setSamples([])
         pendingStartRef.current = null
         querySeqRef.current = 0
@@ -167,11 +167,11 @@ export function LocalQueryPerformanceDemo() {
         where,
         orderBy: { field: 'updatedAt', direction: 'desc' },
         limit,
-        fetchPolicy: 'local'
+        fetchPolicy: 'cache-only'
     })
 
     useEffect(() => {
-        setSeededCount(store.getCachedAll().length)
+        setSeededCount(store.peekAll().length)
     }, [store, data])
 
     useEffect(() => {
@@ -217,7 +217,7 @@ export function LocalQueryPerformanceDemo() {
             await store.fetchAll?.()
             setLastSeedMs(performance.now() - seedStart)
 
-            setSeededCount(store.getCachedAll().length)
+            setSeededCount(store.peekAll().length)
             const genres = Array.from(new Set(generated.map(b => b.genre))).slice(0, 12)
             setSelectedGenres(genres.slice(0, 3))
             setSeedError(null)
@@ -240,7 +240,7 @@ export function LocalQueryPerformanceDemo() {
             const seedStart = performance.now()
             await store.fetchAll?.()
             setLastSeedMs(performance.now() - seedStart)
-            setSeededCount(store.getCachedAll().length)
+            setSeededCount(store.peekAll().length)
             const current = datasetRef.current ?? []
             const genres = Array.from(new Set(current.map(b => b.genre))).slice(0, 12)
             setSelectedGenres((prev) => prev.length ? prev : genres.slice(0, 3))
@@ -263,7 +263,7 @@ export function LocalQueryPerformanceDemo() {
                 return
             }
 
-            const all = store.getCachedAll() as Book[]
+            const all = store.peekAll() as Book[]
             const n = Math.min(all.length, Math.max(1, Math.floor(count)))
 
             const picked: Book[] = new Array(n)

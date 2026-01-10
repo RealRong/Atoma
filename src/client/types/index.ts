@@ -41,9 +41,10 @@ export type { AtomaSchema, AtomaStoreSchema } from './schema'
 
 export type {
     AtomaClient,
+    AtomaClientDevtools,
+    AtomaStore,
     AtomaHistory,
     AtomaSync,
-    AtomaSyncNamespace,
     AtomaSyncStartMode,
     AtomaSyncStatus
 } from './client'
@@ -51,6 +52,6 @@ export type {
 export type {
     AtomaClientSyncConfig,
     SyncDefaultsArgs,
-    SyncQueueWriteMode,
+    SyncQueueMode,
     SyncQueueWritesArgs
 } from './sync'

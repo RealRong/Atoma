@@ -122,7 +122,7 @@ export function createSyncController(args: {
         const configured = syncConfig?.mode
         if (configured) return configured
 
-        const hasQueueWrites = Boolean(syncConfig && (syncConfig as any)?.queueWriteMode)
+        const hasQueueWrites = Boolean(syncConfig && (syncConfig as any)?.queue)
         if (hasQueueWrites) return 'full'
         const wantSubscribe = syncConfig?.subscribe !== false
         const hasSubscribeCapability = Boolean(args.backend?.subscribe || args.backend?.sse?.buildUrl)
@@ -180,7 +180,7 @@ export function createSyncController(args: {
             const engine = ensureSyncEngine({ mode: 'pull-only' })
             await engine.pull()
         },
-        flush: async () => {
+        push: async () => {
             if (!syncStarted) {
                 sync.start('push-only')
             }
@@ -264,12 +264,12 @@ export function createSyncController(args: {
                     // ignore
                 }
             },
-            onQueueFull: (droppedOp: SyncOutboxItem, maxSize: number) => {
+            onQueueFull: (droppedOp: SyncOutboxItem, maxQueueSize: number) => {
                 queueFailed += 1
                 lastEventAt = now()
-                emitDevtools({ type: 'sync:queue_full', payload: { droppedOp, maxSize } })
+                emitDevtools({ type: 'sync:queue_full', payload: { droppedOp, maxQueueSize } })
                 try {
-                    syncConfig.outboxEvents?.onQueueFull?.(droppedOp, maxSize)
+                    syncConfig.outboxEvents?.onQueueFull?.(droppedOp, maxQueueSize)
                 } catch {
                     // ignore
                 }
@@ -278,19 +278,19 @@ export function createSyncController(args: {
 
         const modeConfig = (() => {
             if (mode === 'enqueue-only') {
-                return { push: false, pull: false, subscribe: false, periodicPullIntervalMs: 0 }
+                return { push: false, pull: false, subscribe: false, pullIntervalMs: 0 }
             }
             if (mode === 'pull-only') {
                 return { push: false, pull: true, subscribe: false }
             }
             if (mode === 'subscribe-only') {
-                return { push: false, pull: true, subscribe: true, periodicPullIntervalMs: 0 }
+                return { push: false, pull: true, subscribe: true, pullIntervalMs: 0 }
             }
             if (mode === 'pull+subscribe') {
                 return { push: false, pull: true, subscribe: true }
             }
             if (mode === 'push-only') {
-                return { push: true, pull: false, subscribe: false, periodicPullIntervalMs: 0 }
+                return { push: true, pull: false, subscribe: false, pullIntervalMs: 0 }
             }
             return { push: true, pull: true, subscribe: true }
         })()
@@ -335,9 +335,9 @@ export function createSyncController(args: {
             conflictStrategy: syncConfig.conflictStrategy,
             subscribe: wantsSubscribe,
             reconnectDelayMs: syncConfig.reconnectDelayMs,
-            periodicPullIntervalMs: typeof modeConfig.periodicPullIntervalMs === 'number'
-                ? modeConfig.periodicPullIntervalMs
-                : syncConfig.periodicPullIntervalMs,
+            pullIntervalMs: typeof (modeConfig as any).pullIntervalMs === 'number'
+                ? (modeConfig as any).pullIntervalMs
+                : syncConfig.pullIntervalMs,
             inFlightTimeoutMs: syncConfig.inFlightTimeoutMs,
             retry: syncConfig.retry,
             backoff: syncConfig.backoff,

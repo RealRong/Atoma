@@ -54,8 +54,8 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
     const reconnectDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 1000))
     const pushEnabled = (config as any).push !== false
     const pullEnabled = (config as any).pull !== false
-    const periodicPullIntervalMs = pullEnabled ? Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 30_000)) : 0
-    const periodicPullBackoffBaseDelayMs = Math.max(0, Math.floor(config.periodicPullIntervalMs ?? 1_000))
+    const pullIntervalMs = pullEnabled ? Math.max(0, Math.floor(config.pullIntervalMs ?? 30_000)) : 0
+    const pullBackoffBaseDelayMs = Math.max(0, Math.floor(config.pullIntervalMs ?? 1_000))
     const lockBackoffBaseDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 300))
     const retry = config.retry ?? { maxAttempts: 10 }
     const initialCursor = config.initialCursor
@@ -76,9 +76,9 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
             resources: config.resources,
             initialCursor,
             periodic: {
-                intervalMs: periodicPullIntervalMs,
+                intervalMs: pullIntervalMs,
                 retry,
-                backoff: resolveBackoff({ baseDelayMs: periodicPullBackoffBaseDelayMs })
+                backoff: resolveBackoff({ baseDelayMs: pullBackoffBaseDelayMs })
             }
         },
         subscribe: {
