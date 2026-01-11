@@ -1,26 +1,27 @@
 import type { CoreStore } from '../createStore'
 import type { Entity, RelationConfig, StoreHandle, StoreKey, StoreOperationOptions } from '../types'
 import { attachStoreHandle } from '../storeHandleRegistry'
-import { createAddMany } from './ops/addMany'
-import { createAddOne } from './ops/addOne'
-import { createBatchGet } from './ops/batchGet'
-import { createCreateServerAssignedMany } from './ops/createServerAssignedMany'
-import { createCreateServerAssignedOne } from './ops/createServerAssignedOne'
-import { createDeleteMany } from './ops/deleteMany'
-import { createDeleteOne } from './ops/deleteOne'
-import { createFetchAll } from './ops/fetchAll'
-import { createFindMany } from './ops/findMany'
-import { createGetAll } from './ops/getAll'
-import { createGetMany } from './ops/getMany'
-import { createUpdateMany } from './ops/updateMany'
-import { createUpdateOne } from './ops/updateOne'
-import { createUpsertMany } from './ops/upsertMany'
-import { createUpsertOne } from './ops/upsertOne'
-
-type WriteOptionsMapper = (options: StoreOperationOptions | undefined) => StoreOperationOptions | undefined
+import type { StoreWriteConfig } from './internals/writeConfig'
+import {
+    createAddMany,
+    createAddOne,
+    createBatchGet,
+    createCreateServerAssignedMany,
+    createCreateServerAssignedOne,
+    createDeleteMany,
+    createDeleteOne,
+    createFetchAll,
+    createFindMany,
+    createGetAll,
+    createGetMany,
+    createUpdateMany,
+    createUpdateOne,
+    createUpsertMany,
+    createUpsertOne
+} from './ops'
 
 export type StoreViewConfig = {
-    mapWriteOptions?: WriteOptionsMapper
+    writeConfig?: StoreWriteConfig
     includeServerAssignedCreate?: boolean
 }
 
@@ -39,17 +40,22 @@ export function createStoreView<T extends Entity, Relations = {}>(
     config?: StoreViewConfig
 ): CoreStore<T, Relations> {
     const name = String(handle.storeName || 'store')
-    const mapWriteOptions: WriteOptionsMapper = config?.mapWriteOptions ?? ((o) => o)
     const includeServerAssignedCreate = config?.includeServerAssignedCreate !== false
 
-    const addOneBase = createAddOne<T>(handle)
-    const addManyBase = createAddMany<T>(handle)
-    const updateOneBase = createUpdateOne<T>(handle)
-    const updateManyBase = createUpdateMany<T>(handle)
-    const deleteOneBase = createDeleteOne<T>(handle)
-    const deleteManyBase = createDeleteMany<T>(handle)
-    const upsertOneBase = createUpsertOne<T>(handle)
-    const upsertManyBase = createUpsertMany<T>(handle)
+    const allowImplicitFetchForWrite = handle.writePolicies?.allowImplicitFetchForWrite !== false
+    const writeConfig: StoreWriteConfig = config?.writeConfig ?? {
+        persistMode: 'direct',
+        allowImplicitFetchForWrite
+    }
+
+    const addOneBase = createAddOne<T>(handle, writeConfig)
+    const addManyBase = createAddMany<T>(handle, writeConfig)
+    const updateOneBase = createUpdateOne<T>(handle, writeConfig)
+    const updateManyBase = createUpdateMany<T>(handle, writeConfig)
+    const deleteOneBase = createDeleteOne<T>(handle, writeConfig)
+    const deleteManyBase = createDeleteMany<T>(handle, writeConfig)
+    const upsertOneBase = createUpsertOne<T>(handle, writeConfig)
+    const upsertManyBase = createUpsertMany<T>(handle, writeConfig)
 
     const createServerAssignedOneBase = includeServerAssignedCreate ? createCreateServerAssignedOne<T>(handle) : null
     const createServerAssignedManyBase = includeServerAssignedCreate ? createCreateServerAssignedMany<T>(handle) : null
@@ -61,18 +67,18 @@ export function createStoreView<T extends Entity, Relations = {}>(
     const findMany = createFindMany<T>(handle)
 
     const store: any = {
-        addOne: (item: Partial<T>, options?: StoreOperationOptions) => addOneBase(item, mapWriteOptions(options)),
-        addMany: (items: Array<Partial<T>>, options?: StoreOperationOptions) => addManyBase(items, mapWriteOptions(options)),
-        updateOne: (id: StoreKey, recipe: any, options?: StoreOperationOptions) => updateOneBase(id, recipe, mapWriteOptions(options)),
-        updateMany: (items: any, options?: StoreOperationOptions) => updateManyBase(items, mapWriteOptions(options)),
-        deleteOne: (id: any, options?: StoreOperationOptions) => deleteOneBase(id, mapWriteOptions(options)),
-        deleteMany: (items: any, options?: StoreOperationOptions) => deleteManyBase(items, mapWriteOptions(options)),
-        upsertOne: (item: any, options?: any) => upsertOneBase(item, mapWriteOptions(options)),
-        upsertMany: (items: any, options?: StoreOperationOptions) => upsertManyBase(items, mapWriteOptions(options)),
+        addOne: (item: Partial<T>, options?: StoreOperationOptions) => addOneBase(item, options),
+        addMany: (items: Array<Partial<T>>, options?: StoreOperationOptions) => addManyBase(items, options),
+        updateOne: (id: StoreKey, recipe: any, options?: StoreOperationOptions) => updateOneBase(id, recipe, options),
+        updateMany: (items: any, options?: StoreOperationOptions) => updateManyBase(items, options),
+        deleteOne: (id: any, options?: StoreOperationOptions) => deleteOneBase(id, options),
+        deleteMany: (items: any, options?: StoreOperationOptions) => deleteManyBase(items, options),
+        upsertOne: (item: any, options?: any) => upsertOneBase(item, options),
+        upsertMany: (items: any, options?: StoreOperationOptions) => upsertManyBase(items, options),
 
         ...(includeServerAssignedCreate ? {
-            createServerAssignedOne: (item: Partial<T>, options?: StoreOperationOptions) => (createServerAssignedOneBase as any)(item, mapWriteOptions(options)),
-            createServerAssignedMany: (items: Array<Partial<T>>, options?: StoreOperationOptions) => (createServerAssignedManyBase as any)(items, mapWriteOptions(options))
+            createServerAssignedOne: (item: Partial<T>, options?: StoreOperationOptions) => (createServerAssignedOneBase as any)(item, options),
+            createServerAssignedMany: (items: Array<Partial<T>>, options?: StoreOperationOptions) => (createServerAssignedManyBase as any)(items, options)
         } : {}),
 
         getAll,

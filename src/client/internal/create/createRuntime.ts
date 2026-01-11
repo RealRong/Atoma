@@ -1,5 +1,5 @@
-import type { CoreStore, IDataSource, JotaiStore, StoreHandle, StoreKey } from '#core'
-import { Core } from '#core'
+import type { CoreStore, IDataSource, JotaiStore, OutboxEnqueuer, OutboxQueueMode, StoreHandle, StoreKey, StoreServices } from '#core'
+import { Core, MutationPipeline } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import { createStoreInstance } from './createStore'
 import type { AtomaClientContext, AtomaSchema, ClientRuntime } from '../../types'
@@ -15,6 +15,7 @@ export function createRuntime(args: {
         queue?: 'queue' | 'local-first'
     }
 }): ClientRuntime {
+    const mutation = new MutationPipeline()
     const storeCache = new Map<string, CoreStore<any, any>>()
     const handleCache = new Map<string, StoreHandle<any>>()
     const syncStoreCache = new Map<string, SyncStore<any, any>>()
@@ -51,6 +52,18 @@ export function createRuntime(args: {
         }
     }
 
+    const services: StoreServices = {
+        mutation,
+        resolveStore: (name: string) => getOrCreateStore(String(name)) as any
+    }
+
+    const installOutboxRuntime = (args2: { queueMode: OutboxQueueMode; ensureEnqueuer: () => OutboxEnqueuer }) => {
+        services.outbox = {
+            queueMode: args2.queueMode,
+            ensureEnqueuer: args2.ensureEnqueuer
+        }
+    }
+
     const getOrCreateStore = (name: string) => {
         const key = String(name)
         const existing = storeCache.get(key)
@@ -58,6 +71,7 @@ export function createRuntime(args: {
 
         const context: AtomaClientContext<any, any> = {
             jotaiStore,
+            services,
             defaults: args.defaults,
             Store: getOrCreateStore,
             resolveStore: getOrCreateStore
@@ -79,6 +93,7 @@ export function createRuntime(args: {
     }
 
     return {
+        mutation,
         Store: getOrCreateStore,
         SyncStore: (name: string) => {
             const key = String(name)
@@ -98,6 +113,7 @@ export function createRuntime(args: {
         resolveStore: getOrCreateStore,
         listStores: () => storeCache.values(),
         onHandleCreated,
+        installOutboxRuntime,
         jotaiStore
     }
 }

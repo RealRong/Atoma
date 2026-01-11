@@ -11,8 +11,9 @@ import { resolveObservabilityContext } from '../internals/runtime'
 import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForUpdate } from '../internals/writePipeline'
+import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
+export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
     const { jotaiStore, atom, dataSource, services, hooks, schema, transform } = handle
 
     return async (
@@ -54,10 +55,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
         }
 
         if (missing.length) {
-            const allowImplicitFetchForWrite = typeof options?.__atoma?.allowImplicitFetchForWrite === 'boolean'
-                ? options.__atoma.allowImplicitFetchForWrite
-                : handle.writePolicies?.allowImplicitFetchForWrite !== false
-            if (!allowImplicitFetchForWrite) {
+            if (!writeConfig.allowImplicitFetchForWrite) {
                 for (const id of missing) {
                     const firstIndex = firstIndexById.get(id)
                     if (typeof firstIndex !== 'number') continue
@@ -143,7 +141,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>) {
                     data: validObj,
                     opContext,
                     ticket,
-                    __persist: options?.__atoma?.persist,
+                    persist: writeConfig.persistMode,
                     onSuccess: async (updated) => {
                         await runAfterSave(hooks, validObj, 'update')
                         resolve(updated)

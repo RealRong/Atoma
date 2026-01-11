@@ -1,4 +1,4 @@
-import type { OperationContext, StoreKey } from '#core'
+import type { OperationContext } from '#core'
 import { Core } from '#core'
 import type { Patch } from 'immer'
 import type { AtomaHistory, ClientRuntime } from '../../types'
@@ -14,51 +14,51 @@ export function createHistoryController(args: {
 }> {
     const historyManager = new Core.history.HistoryManager()
 
-    const dispatchPatches = async (
+    const dispatchPatches = (
         storeName: string,
         patches: Patch[],
         inversePatches: Patch[],
         opContext: OperationContext
-    ) => {
+    ): Promise<void> => {
         const store = args.runtime.resolveStore(storeName)
         const handle = Core.store.getHandle(store)
         if (!handle) {
             throw new Error(`[Atoma] history: 未找到 storeHandle（store="${storeName}"）`)
         }
 
-        await new Promise<void>((resolve, reject) => {
-            handle.services.mutation.runtime.dispatch({
+        return new Promise<void>((resolve, reject) => {
+            args.runtime.mutation.runtime.dispatch({
                 type: 'patches',
                 patches,
                 inversePatches,
-                handle: handle as any,
+                handle,
                 opContext,
-                onSuccess: () => resolve(),
+                onSuccess: resolve,
                 onFail: (error?: Error) => reject(error ?? new Error('[Atoma] history: patches 写入失败'))
             } as any)
         })
     }
 
+    const scopeKey = (scope?: string) => String(scope || 'default')
+
+    const apply = (applyArgs: { storeName: string; patches: Patch[]; inversePatches: Patch[]; opContext: OperationContext }) => {
+        return dispatchPatches(applyArgs.storeName, applyArgs.patches, applyArgs.inversePatches, applyArgs.opContext)
+    }
+
     const history: AtomaHistory = {
-        canUndo: (scope?: string) => historyManager.canUndo(String(scope || 'default')),
-        canRedo: (scope?: string) => historyManager.canRedo(String(scope || 'default')),
-        clear: (scope?: string) => {
-            historyManager.clear(String(scope || 'default'))
-        },
-        undo: async (undoArgs?: { scope?: string }) => {
+        canUndo: (scope?: string) => historyManager.canUndo(scopeKey(scope)),
+        canRedo: (scope?: string) => historyManager.canRedo(scopeKey(scope)),
+        clear: (scope?: string) => historyManager.clear(scopeKey(scope)),
+        undo: (undoArgs?: { scope?: string }) => {
             return historyManager.undo({
-                scope: String(undoArgs?.scope || 'default'),
-                apply: async (applyArgs) => {
-                    await dispatchPatches(applyArgs.storeName, applyArgs.patches, applyArgs.inversePatches, applyArgs.opContext)
-                }
+                scope: scopeKey(undoArgs?.scope),
+                apply
             })
         },
-        redo: async (redoArgs?: { scope?: string }) => {
+        redo: (redoArgs?: { scope?: string }) => {
             return historyManager.redo({
-                scope: String(redoArgs?.scope || 'default'),
-                apply: async (applyArgs) => {
-                    await dispatchPatches(applyArgs.storeName, applyArgs.patches, applyArgs.inversePatches, applyArgs.opContext)
-                }
+                scope: scopeKey(redoArgs?.scope),
+                apply
             })
         }
     }
@@ -76,35 +76,28 @@ export function createHistoryController(args: {
         }
     } as const
 
-    const unsubscribers: Array<() => void> = []
-    const unregister = args.runtime.onHandleCreated((handle) => {
-        const unsub = handle.services.mutation.hooks.events.committed.on((e) => {
-            const opContext = e?.opContext
-            if (!opContext) return
+    const unsubCommitted = args.runtime.mutation.hooks.events.committed.on((e) => {
+        const opContext = e?.opContext
+        if (!opContext) return
 
-            const storeName = String(e.storeName || handle.storeName)
+        const storeName = String(e.storeName || 'store')
 
-            historyManager.record({
-                storeName,
-                patches: e.plan?.patches ?? [],
-                inversePatches: e.plan?.inversePatches ?? [],
-                opContext
-            })
+        historyManager.record({
+            storeName,
+            patches: e.plan?.patches ?? [],
+            inversePatches: e.plan?.inversePatches ?? [],
+            opContext
         })
-        unsubscribers.push(unsub)
-    }, { replay: true })
-    unsubscribers.push(unregister)
+    })
 
     return {
         history,
         devtools,
         dispose: () => {
-            for (const unsub of unsubscribers) {
-                try {
-                    unsub()
-                } catch {
-                    // ignore
-                }
+            try {
+                unsubCommitted()
+            } catch {
+                // ignore
             }
         }
     }

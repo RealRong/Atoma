@@ -1,18 +1,19 @@
 import { SyncEngine } from './engine/SyncEngine'
 import { subscribeNotifySse } from './lanes/NotifyLane'
-import type { SyncClient, SyncConfig } from './types'
+import type { SyncClient, SyncCreateConfig } from './types'
 
 export const Sync: {
-    create: (config: SyncConfig) => SyncClient
+    create: (config: SyncCreateConfig) => SyncClient
     subscribeNotifySse: typeof subscribeNotifySse
 } = {
-    create: (config: SyncConfig) => new SyncEngine(config),
+    create: (config: SyncCreateConfig) => new SyncEngine(config),
     subscribeNotifySse
 }
 
 export type {
     SyncClient,
-    SyncConfig,
+    SyncMode,
+    SyncCreateConfig,
     SyncEvent,
     SyncPhase,
     SyncApplier,

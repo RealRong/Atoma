@@ -91,4 +91,3 @@ export function attachSyncProvider(entry: ClientEntry, provider: SyncProvider): 
 export function attachHistoryProvider(entry: ClientEntry, provider: HistoryProvider): void {
     entry.historyProvider = provider
 }
-

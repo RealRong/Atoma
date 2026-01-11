@@ -6,9 +6,6 @@ export function createCreateServerAssignedMany<T extends Entity>(handle: StoreHa
     const { services } = handle
 
     return async (items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]> => {
-        if (options?.__atoma?.persist === 'outbox') {
-            throw new Error('[Atoma] createServerAssignedMany: 不支持 outbox（Server-ID create 必须 direct + strict）')
-        }
         for (const item of items) {
             if (item && typeof item === 'object' && !Array.isArray(item)) {
                 const anyItem: any = item as any
@@ -38,7 +35,7 @@ export function createCreateServerAssignedMany<T extends Entity>(handle: StoreHa
                     handle,
                     opContext,
                     ticket,
-                    __persist: 'direct',
+                    persist: 'direct',
                     onSuccess: (o: T) => {
                         results[idx] = o
                         resolve()

@@ -9,7 +9,7 @@ type AtomKey = PrimitiveAtom<any>
 
 function segmentKey(op: StoreDispatchEvent<any>) {
     const c = op.opContext
-    const persist = (op as any)?.__persist ?? ''
+    const persist = (op as any)?.persist ?? ''
     return `${c?.scope ?? 'default'}|${c?.origin ?? 'user'}|${c?.actionId ?? ''}|${persist}`
 }
 

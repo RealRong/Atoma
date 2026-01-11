@@ -46,13 +46,49 @@ export const Core = {
     }
 } as const
 
-export type * from './types'
+export type {
+    BelongsToConfig,
+    DeleteItem,
+    Entity,
+    FetchPolicy,
+    FindManyOptions,
+    FindManyResult,
+    HasManyConfig,
+    HasOneConfig,
+    IDataSource,
+    IStore,
+    JotaiStore,
+    KeySelector,
+    LifecycleHooks,
+    OperationContext,
+    OperationOrigin,
+    OutboxEnqueuer,
+    OutboxQueueMode,
+    OutboxRuntime,
+    StoreServices,
+    OrderBy,
+    PageInfo,
+    PersistWriteback,
+    RelationIncludeInput,
+    RelationIncludeOptions,
+    SchemaValidator,
+    StoreConfig,
+    StoreHandle,
+    StoreHandleOwner,
+    StoreKey,
+    StoreToken,
+    UpsertWriteOptions,
+    WithRelations,
+    WhereOperator,
+    WriteManyResult
+} from './types'
 
 export { OutboxPersister } from './mutation/pipeline/persisters/Outbox'
 export { applyStoreWriteback } from './store/internals/writeback'
 
 export type { CoreStore, CoreStoreConfig } from './createStore'
-export type { MutationPipeline, MutationRuntime, MutationControl } from './mutation/MutationPipeline'
+export { MutationPipeline } from './mutation/MutationPipeline'
+export type { MutationRuntime, MutationControl } from './mutation/MutationPipeline'
 export type {
     AfterPersistEvent,
     BeforeDispatchContext,

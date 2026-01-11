@@ -9,12 +9,12 @@ import { resolveObservabilityContext } from '../internals/runtime'
 import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForUpdate } from '../internals/writePipeline'
+import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
+export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
     const { jotaiStore, atom, dataSource, services, hooks, schema, transform } = handle
     return async (id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         const observabilityContext = resolveObservabilityContext(handle, options)
-        const allowImplicitFetchForWrite = options?.__atoma?.allowImplicitFetchForWrite
 
         const resolveBase = async (): Promise<PartialWithId<T>> => {
             const cached = jotaiStore.get(atom).get(id) as T | undefined
@@ -22,7 +22,7 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
                 return cached as unknown as PartialWithId<T>
             }
 
-            if (allowImplicitFetchForWrite === false) {
+            if (!writeConfig.allowImplicitFetchForWrite) {
                 throw new Error(`[Atoma] updateOne: 缓存缺失且当前写入模式禁止补读，请先 fetch 再 update（id=${String(id)}）`)
             }
 
@@ -54,7 +54,7 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>) {
                 data: validObj,
                 opContext: options?.opContext,
                 ticket,
-                __persist: options?.__atoma?.persist,
+                persist: writeConfig.persistMode,
                 onSuccess: async updated => {
                     await runAfterSave(hooks, validObj, 'update')
                     resolve(updated)

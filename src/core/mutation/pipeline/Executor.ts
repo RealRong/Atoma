@@ -10,6 +10,7 @@ import {
 import type { Committer } from '../types'
 import { AtomCommitter } from '../AtomCommitter'
 import { DirectPersister } from './persisters/Direct'
+import { OutboxPersister } from './persisters/Outbox'
 import type { BeforePersistContext, CommittedEvent, PersistResult, RolledBackEvent } from '../hooks'
 
 class DefaultPlanner implements Planner {
@@ -77,13 +78,24 @@ export class Executor implements IExecutor {
         }
 
         try {
-            const basePersist = async (baseCtx: BeforePersistContext<T>): Promise<PersistResult<T>> => {
+            const resolvePersistMode = () => {
+                const set = new Set<'direct' | 'outbox'>()
+                for (const op of operations) {
+                    const m = (op as any)?.persist
+                    if (m === 'outbox' || m === 'direct') set.add(m)
+                }
+                if (set.size === 0) return 'direct' as const
+                if (set.size === 1) return Array.from(set)[0] as 'direct' | 'outbox'
+                throw new Error('[Atoma] mixed persist modes in one mutation segment (direct vs outbox)')
+            }
+
+            const persistDirect = async (): Promise<PersistResult<T>> => {
                 const res: PersisterPersistResult<T> = await this.directPersister.persist({
-                    handle: baseCtx.handle,
-                    operations: baseCtx.operations,
-                    plan: baseCtx.plan,
-                    metadata: baseCtx.metadata,
-                    observabilityContext: baseCtx.observabilityContext
+                    handle: persistCtx.handle,
+                    operations: persistCtx.operations,
+                    plan: persistCtx.plan,
+                    metadata: persistCtx.metadata,
+                    observabilityContext: persistCtx.observabilityContext
                 })
 
                 const createdResults = (res && typeof res === 'object' && Array.isArray((res as any).created))
@@ -101,7 +113,41 @@ export class Executor implements IExecutor {
                 }
             }
 
-            const persistResult = await mutationHooks.middleware.beforePersist.run(persistCtx, basePersist as any)
+            const persistOutbox = async (): Promise<PersistResult<T>> => {
+                const outbox = handle.services.outbox
+                if (!outbox) {
+                    throw new Error('[Atoma] outbox persist requested but runtime.outbox is not configured (sync not installed)')
+                }
+
+                const queueMode = outbox.queueMode === 'local-first' ? 'local-first' : 'queue'
+
+                let localPersist: PersistResult<T> | undefined
+                if (queueMode === 'local-first') {
+                    localPersist = await persistDirect()
+                }
+
+                const enqueuer = outbox.ensureEnqueuer()
+                const persister = new OutboxPersister(enqueuer)
+                await persister.persist({
+                    handle: persistCtx.handle,
+                    operations: persistCtx.operations,
+                    plan: persistCtx.plan,
+                    metadata: persistCtx.metadata,
+                    observabilityContext: persistCtx.observabilityContext
+                })
+
+                return {
+                    mode: 'outbox',
+                    status: 'enqueued',
+                    ...(localPersist?.created ? { created: localPersist.created } : {}),
+                    ...(localPersist?.writeback ? { writeback: localPersist.writeback } : {})
+                }
+            }
+
+            const persistMode = resolvePersistMode()
+            const persistResult = await (persistMode === 'direct'
+                ? persistDirect()
+                : persistOutbox())
 
             await mutationHooks.events.afterPersist.emit({ ctx: persistCtx, result: persistResult })
 

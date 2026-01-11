@@ -1,9 +1,7 @@
 import { Observability } from '#observability'
-import { Sync, type SyncClient } from '#sync'
-import type { SyncEvent, SyncOutboxItem, SyncPhase } from '#sync'
-import type { AtomaClientSyncConfig, ResolvedBackend, AtomaSync } from '../../types'
+import { Sync, type SyncClient, type SyncCreateConfig, type SyncEvent, type SyncOutboxEvents, type SyncOutboxItem, type SyncPhase, type SyncTransport } from '#sync'
+import type { AtomaClientSyncConfig, AtomaSyncStartMode, ResolvedBackend, AtomaSync } from '../../types'
 import type { ClientRuntime } from '../../types'
-import { createSyncIntentController } from './SyncIntentController'
 import { createSyncReplicatorApplier } from './SyncReplicatorApplier'
 
 const SYNC_INSTANCE_ID_SESSION_KEY = 'atoma:sync:instanceId'
@@ -64,10 +62,20 @@ export function createSyncController(args: {
 
     const now = syncConfig?.now ?? (() => Date.now())
 
+    type EngineMode = AtomaSyncStartMode | 'enqueue-only'
+
     let queuePending = 0
     let queueFailed = 0
     let lastEventAt: number | undefined
     let lastError: string | undefined
+
+    const safe = (fn: () => void) => {
+        try {
+            fn()
+        } catch {
+            // ignore
+        }
+    }
 
     const devtoolsSubscribers = new Set<(e: { type: string; payload?: any }) => void>()
 
@@ -92,10 +100,9 @@ export function createSyncController(args: {
             }
         },
         subscribe: (fn: (e: { type: string; payload?: any }) => void) => {
-            const f = fn
-            devtoolsSubscribers.add(f)
+            devtoolsSubscribers.add(fn)
             return () => {
-                devtoolsSubscribers.delete(f)
+                devtoolsSubscribers.delete(fn)
             }
         }
     } as const
@@ -113,7 +120,36 @@ export function createSyncController(args: {
 
     let subscribeTraceId: string | undefined
     let subscribeRequestSequencer: ReturnType<typeof Observability.trace.createRequestSequencer> | undefined
-    let intentController: ReturnType<typeof createSyncIntentController> | null = null
+    const emitSyncDevtools = (type: string, payload?: any) => {
+        lastEventAt = now()
+        emitDevtools({ type, payload })
+    }
+
+    const disposeEngine = () => {
+        if (!syncEngine) return
+        safe(() => syncEngine?.stop())
+        safe(() => syncEngine?.dispose())
+        syncEngine = null
+        engineModeKey = null
+    }
+
+    function buildSubscribeUrl(args2?: { resources?: string[] }): string {
+        const backend = args.backend
+        if (!backend?.sse?.buildUrl) {
+            throw new Error('[Atoma] sync: subscribe 已启用，但未配置 SSE subscribeUrl（请配置 sync.sse，或在 sync.backend.sse.subscribeUrl 提供 buildUrl）')
+        }
+        const base = backend.sse.buildUrl({ resources: args2?.resources })
+
+        if (!subscribeTraceId) {
+            subscribeTraceId = Observability.trace.createId()
+        }
+        if (!subscribeRequestSequencer) {
+            subscribeRequestSequencer = Observability.trace.createRequestSequencer()
+        }
+
+        const requestId = subscribeRequestSequencer.next(subscribeTraceId)
+        return withQueryParams(base, { traceId: subscribeTraceId, requestId })
+    }
 
     // ---------------------------------------------
     // 1) Public API（新手先看这里）
@@ -122,7 +158,7 @@ export function createSyncController(args: {
         const configured = syncConfig?.mode
         if (configured) return configured
 
-        const hasQueueWrites = Boolean(syncConfig && (syncConfig as any)?.queue)
+        const hasQueueWrites = Boolean(syncConfig?.queue)
         if (hasQueueWrites) return 'full'
         const wantSubscribe = syncConfig?.subscribe !== false
         const hasSubscribeCapability = Boolean(args.backend?.subscribe || args.backend?.sse?.buildUrl)
@@ -131,15 +167,9 @@ export function createSyncController(args: {
         return 'pull-only'
     }
 
-    const resolveStartMode = (mode?: string): { mode: 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full' } => {
-        const m = typeof mode === 'string' && mode ? mode : resolveDefaultStartMode()
-        if (m === 'pull-only' || m === 'subscribe-only' || m === 'pull+subscribe' || m === 'push-only' || m === 'full') return { mode: m }
-        throw new Error(`[Atoma] Sync.start: unsupported mode (${String(mode)})`)
-    }
-
     const sync: AtomaSync = {
         start: (mode) => {
-            const { mode: resolved } = resolveStartMode(mode)
+            const resolved = mode ?? resolveDefaultStartMode()
             const engine = ensureSyncEngine({ mode: resolved })
             syncStarted = true
             engine.start()
@@ -147,30 +177,13 @@ export function createSyncController(args: {
         stop: () => {
             if (!syncStarted) return
             syncStarted = false
-            syncEngine?.stop()
+            safe(() => syncEngine?.stop())
         },
         dispose: () => {
             syncStarted = false
-            try {
-                syncEngine?.stop()
-            } catch {
-                // ignore
-            }
-            try {
-                syncEngine?.dispose()
-            } catch {
-                // ignore
-            }
-            syncEngine = null
-            engineModeKey = null
+            disposeEngine()
             subscribeTraceId = undefined
             subscribeRequestSequencer = undefined
-            try {
-                intentController?.dispose()
-            } catch {
-                // ignore
-            }
-            intentController = null
         },
         status: () => ({ started: syncStarted, configured: syncConfigured }),
         pull: async () => {
@@ -199,113 +212,70 @@ export function createSyncController(args: {
     const defaultOutboxKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:outbox`
     const defaultCursorKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:cursor`
 
-    function ensureSyncEngine(args2?: { mode?: 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full' | 'enqueue-only' }): SyncClient {
-        const mode = args2?.mode ?? 'full'
-        const key = String(mode)
-        if (syncEngine && engineModeKey === key) return syncEngine
-
-        if (syncEngine && engineModeKey !== key) {
-            try {
-                syncEngine.stop()
-            } catch {
-                // ignore
-            }
-            try {
-                syncEngine.dispose()
-            } catch {
-                // ignore
-            }
-            syncEngine = null
-            engineModeKey = null
-        }
-
+    const requireConfigured = (): { syncConfig: AtomaClientSyncConfig; backend: ResolvedBackend } => {
         if (!syncConfig) {
             throw new Error('[Atoma] sync: 未配置（请在 createClient 中提供 sync 配置）')
         }
         if (!args.backend) {
             throw new Error('[Atoma] sync: 未配置同步对端（请配置 sync.url 或 sync.backend）')
         }
+        return { syncConfig, backend: args.backend }
+    }
+
+    function ensureSyncEngine(args2?: { mode?: EngineMode }): SyncClient {
+        const mode: EngineMode = args2?.mode ?? 'full'
+        const key = String(mode)
+        if (syncEngine && engineModeKey === key) return syncEngine
+
+        if (syncEngine && engineModeKey !== key) {
+            disposeEngine()
+        }
+
+        const configured = requireConfigured()
+        const syncConfig = configured.syncConfig
+        const backend = configured.backend
 
         const adv = syncConfig.advanced
         const outboxKey = adv?.outboxKey ?? defaultOutboxKey
         const cursorKey = adv?.cursorKey ?? defaultCursorKey
 
-        const backend = args.backend
-
         const onEventWrapped = (event: SyncEvent) => {
-            lastEventAt = now()
-            emitDevtools({ type: 'sync:event', payload: event })
-            try {
-                syncConfig.onEvent?.(event)
-            } catch {
-                // ignore
-            }
+            emitSyncDevtools('sync:event', event)
+            safe(() => syncConfig.onEvent?.(event))
         }
 
         const onErrorWrapped = (error: Error, context: { phase: SyncPhase }) => {
-            lastEventAt = now()
             lastError = error?.message ? String(error.message) : String(error)
-            emitDevtools({ type: 'sync:error', payload: { error, context } })
-            try {
-                syncConfig.onError?.(error, context)
-            } catch {
-                // ignore
-            }
+            emitSyncDevtools('sync:error', { error, context })
+            safe(() => syncConfig.onError?.(error, context))
         }
 
-        const outboxEventsWrapped = {
+        const outboxEvents: SyncOutboxEvents = {
             onQueueChange: (size: number) => {
                 queuePending = Math.max(0, Math.floor(size))
-                lastEventAt = now()
-                emitDevtools({ type: 'sync:queue', payload: { pending: queuePending, failed: queueFailed } })
-                try {
-                    syncConfig.outboxEvents?.onQueueChange?.(size)
-                } catch {
-                    // ignore
-                }
+                emitSyncDevtools('sync:queue', { pending: queuePending, failed: queueFailed })
+                safe(() => syncConfig.outboxEvents?.onQueueChange?.(size))
             },
             onQueueFull: (droppedOp: SyncOutboxItem, maxQueueSize: number) => {
                 queueFailed += 1
-                lastEventAt = now()
-                emitDevtools({ type: 'sync:queue_full', payload: { droppedOp, maxQueueSize } })
-                try {
-                    syncConfig.outboxEvents?.onQueueFull?.(droppedOp, maxQueueSize)
-                } catch {
-                    // ignore
-                }
+                emitSyncDevtools('sync:queue_full', { droppedOp, maxQueueSize })
+                safe(() => syncConfig.outboxEvents?.onQueueFull?.(droppedOp, maxQueueSize))
             }
-        } as const
+        }
 
-        const modeConfig = (() => {
-            if (mode === 'enqueue-only') {
-                return { push: false, pull: false, subscribe: false, pullIntervalMs: 0 }
-            }
-            if (mode === 'pull-only') {
-                return { push: false, pull: true, subscribe: false }
-            }
-            if (mode === 'subscribe-only') {
-                return { push: false, pull: true, subscribe: true, pullIntervalMs: 0 }
-            }
-            if (mode === 'pull+subscribe') {
-                return { push: false, pull: true, subscribe: true }
-            }
-            if (mode === 'push-only') {
-                return { push: true, pull: false, subscribe: false, pullIntervalMs: 0 }
-            }
-            return { push: true, pull: true, subscribe: true }
-        })()
+        const wantsSubscribe = (mode === 'subscribe-only' || mode === 'pull+subscribe' || mode === 'full')
+            && syncConfig.subscribe !== false
 
-        const wantsSubscribe = modeConfig.subscribe && syncConfig.subscribe !== false
         if (wantsSubscribe && !backend.subscribe && !backend.sse?.buildUrl) {
             throw new Error('[Atoma] sync: subscribe 已启用，但未配置 subscribe 能力（请配置 sync.sse，或在 sync.backend 提供 subscribe/sse）')
         }
 
-        const transport = wantsSubscribe
+        const transport: SyncTransport = wantsSubscribe
             ? {
                 opsClient: backend.opsClient,
                 subscribe: backend.subscribe
                     ? backend.subscribe
-                    : (subArgs: { resources?: string[]; onMessage: (msg: any) => void; onError: (error: unknown) => void }) => {
+                    : (subArgs) => {
                         return Sync.subscribeNotifySse({
                             resources: subArgs.resources,
                             buildUrl: buildSubscribeUrl,
@@ -318,36 +288,34 @@ export function createSyncController(args: {
             }
             : { opsClient: backend.opsClient }
 
-        syncEngine = Sync.create({
+        const {
+            deviceId: _deviceId,
+            advanced: _advanced,
+            queue: _queue,
+            subscribeEventName: _subscribeEventName,
+            outboxEvents: _outboxEvents,
+            onError: _onError,
+            onEvent: _onEvent,
+            mode: _defaultMode,
+            ...syncOptions
+        } = syncConfig
+
+        const createArgs: SyncCreateConfig = {
             transport,
-            push: modeConfig.push,
-            pull: modeConfig.pull,
             applier,
             outboxKey,
             cursorKey,
-            maxQueueSize: syncConfig.maxQueueSize,
-            outboxEvents: outboxEventsWrapped,
-            maxPushItems: syncConfig.maxPushItems,
-            pullLimit: syncConfig.pullLimit,
-            pullDebounceMs: syncConfig.pullDebounceMs,
-            resources: syncConfig.resources,
-            returning: syncConfig.returning,
-            conflictStrategy: syncConfig.conflictStrategy,
-            subscribe: wantsSubscribe,
-            reconnectDelayMs: syncConfig.reconnectDelayMs,
-            pullIntervalMs: typeof (modeConfig as any).pullIntervalMs === 'number'
-                ? (modeConfig as any).pullIntervalMs
-                : syncConfig.pullIntervalMs,
-            inFlightTimeoutMs: syncConfig.inFlightTimeoutMs,
-            retry: syncConfig.retry,
-            backoff: syncConfig.backoff,
+            mode: mode as any,
+            ...syncOptions,
+            outboxEvents,
             lockKey: adv?.lockKey,
             lockTtlMs: adv?.lockTtlMs,
             lockRenewIntervalMs: adv?.lockRenewIntervalMs,
-            now: syncConfig.now,
             onError: onErrorWrapped,
             onEvent: onEventWrapped
-        })
+        }
+
+        syncEngine = Sync.create(createArgs)
         engineModeKey = key
         return syncEngine
     }
@@ -355,28 +323,18 @@ export function createSyncController(args: {
     // ---------------------------------------------
     // 3) Intent（outbox 写语义）
     // ---------------------------------------------
-    intentController = createSyncIntentController({
-        runtime: args.runtime,
-        syncConfig,
-        ensureSyncEngine: ensureSyncEngine as any
-    })
-
-    function buildSubscribeUrl(args2?: { resources?: string[] }): string {
-        const backend = args.backend
-        if (!backend?.sse?.buildUrl) {
-            throw new Error('[Atoma] sync: subscribe 已启用，但未配置 SSE subscribeUrl（请配置 sync.sse，或在 sync.backend.sse.subscribeUrl 提供 buildUrl）')
-        }
-        const base = backend.sse.buildUrl({ resources: args2?.resources })
-
-        if (!subscribeTraceId) {
-            subscribeTraceId = Observability.trace.createId()
-        }
-        if (!subscribeRequestSequencer) {
-            subscribeRequestSequencer = Observability.trace.createRequestSequencer()
-        }
-
-        const requestId = subscribeRequestSequencer.next(subscribeTraceId)
-        return withQueryParams(base, { traceId: subscribeTraceId, requestId })
+    if (syncConfig?.queue) {
+        args.runtime.installOutboxRuntime({
+            queueMode: syncConfig.queue === 'local-first' ? 'local-first' : 'queue',
+            ensureEnqueuer: () => {
+                const engine = ensureSyncEngine({ mode: 'enqueue-only' })
+                return {
+                    enqueueWrite: async (enqueueArgs) => {
+                        await engine.enqueueWrite(enqueueArgs as any)
+                    }
+                }
+            }
+        })
     }
 
     // ---------------------------------------------

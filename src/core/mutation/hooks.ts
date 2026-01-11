@@ -152,7 +152,6 @@ export type RemoteRejectEvent = Readonly<{
 export type MutationHooks = Readonly<{
     middleware: Readonly<{
         beforeDispatch: HookMiddlewareChain<BeforeDispatchContext<any>, DispatchDecision<StoreDispatchEvent<any>>>
-        beforePersist: HookMiddlewareChain<BeforePersistContext<any>, PersistResult<any>>
     }>
     events: Readonly<{
         planned: HookEvent<PlannedEvent<any>>
@@ -169,8 +168,7 @@ export type MutationHooks = Readonly<{
 export function createMutationHooks(): MutationHooks {
     return {
         middleware: {
-            beforeDispatch: new HookMiddlewareChain(),
-            beforePersist: new HookMiddlewareChain()
+            beforeDispatch: new HookMiddlewareChain()
         },
         events: {
             planned: new HookEvent(),

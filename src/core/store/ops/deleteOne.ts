@@ -1,8 +1,9 @@
 import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { ignoreTicketRejections } from '../internals/tickets'
+import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createDeleteOne<T extends Entity>(handle: StoreHandle<T>) {
+export function createDeleteOne<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
     const { services } = handle
     return async (id: StoreKey, options?: StoreOperationOptions) => {
         const { ticket } = services.mutation.runtime.beginWrite()
@@ -14,7 +15,7 @@ export function createDeleteOne<T extends Entity>(handle: StoreHandle<T>) {
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                __persist: options?.__atoma?.persist,
+                persist: writeConfig.persistMode,
                 onSuccess: () => {
                     resolve(true)
                 },

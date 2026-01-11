@@ -1,8 +1,7 @@
 import type { Patch } from 'immer'
 import { Protocol } from '#protocol'
 import type { WriteOptions, WriteIntent } from '#protocol'
-import type { SyncClient } from '#sync'
-import type { Entity, StoreDispatchEvent, StoreKey } from '../../../types'
+import type { Entity, OutboxEnqueuer, StoreDispatchEvent, StoreKey } from '../../../types'
 import type { Persister, PersisterPersistArgs, PersisterPersistResult } from '../types'
 
 function toStoreKey(id: unknown): StoreKey | null {
@@ -48,7 +47,7 @@ function upsertWriteOptions(op: StoreDispatchEvent<any> | undefined): WriteOptio
 }
 
 export class OutboxPersister implements Persister {
-    constructor(private readonly sync: SyncClient) { }
+    constructor(private readonly sync: OutboxEnqueuer) { }
 
     async persist<T extends Entity>(args: PersisterPersistArgs<T>): Promise<PersisterPersistResult<T>> {
         const resource = args.handle.storeName

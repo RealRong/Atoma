@@ -5,9 +5,6 @@ export function createCreateServerAssignedOne<T extends Entity>(handle: StoreHan
     const { services } = handle
 
     return async (item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {
-        if (options?.__atoma?.persist === 'outbox') {
-            throw new Error('[Atoma] createServerAssignedOne: 不支持 outbox（Server-ID create 必须 direct + strict）')
-        }
         if (item && typeof item === 'object' && !Array.isArray(item)) {
             const anyItem: any = item as any
             if (anyItem.id !== undefined && anyItem.id !== null) {
@@ -28,7 +25,7 @@ export function createCreateServerAssignedOne<T extends Entity>(handle: StoreHan
                 handle,
                 opContext: strictOptions.opContext,
                 ticket,
-                __persist: 'direct',
+                persist: 'direct',
                 onSuccess: (o: T) => resolve(o),
                 onFail: (error?: Error) => reject(error || new Error('[Atoma] createServerAssignedOne failed'))
             } as any)

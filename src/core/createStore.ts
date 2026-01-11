@@ -1,8 +1,6 @@
 import { atom } from 'jotai/vanilla'
 import { createStoreHandle } from './store'
-import { MutationPipeline } from './mutation'
 import type { JotaiStore } from './types'
-import type { DebugConfig, DebugEvent } from '#observability'
 import { createDirectStoreView } from './store/createDirectStoreView'
 import type {
     Entity,
@@ -12,16 +10,9 @@ import type {
     LifecycleHooks,
     RelationConfig,
     SchemaValidator,
+    StoreServices,
     StoreKey,
-    StoreToken
 } from './types'
-
-export interface StoreServices {
-    mutation: MutationPipeline
-    resolveStore?: (name: StoreToken) => IStore<any> | undefined
-    debug?: DebugConfig
-    debugSink?: (e: DebugEvent) => void
-}
 
 export interface CoreStoreConfig<T extends Entity> {
     name: string
@@ -32,9 +23,7 @@ export interface CoreStoreConfig<T extends Entity> {
     schema?: SchemaValidator<T>
     hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>
-    debug?: DebugConfig
-    debugSink?: (e: DebugEvent) => void
-    resolveStore?: (name: StoreToken) => IStore<any> | undefined
+    services: StoreServices
 }
 
 export interface CoreStore<T extends Entity, Relations = {}> extends IStore<T, Relations> {
@@ -58,17 +47,11 @@ export function createStore<T extends Entity, Relations = {}>(
     config: CoreStoreConfig<T> & { relations?: () => Relations }
 ): CoreStore<T, Relations> {
     const { name, transformData } = config
-    const resolvedDebug: DebugConfig | undefined = config.debug
 
     const resolvedDataSource = config.dataSource
 
     const jotaiStore = config.store
-    const services: StoreServices = {
-        mutation: new MutationPipeline(),
-        resolveStore: config.resolveStore,
-        debug: resolvedDebug,
-        debugSink: config.debugSink
-    }
+    const services = config.services
     const objectMapAtom = atom(new Map<StoreKey, T>())
 
     const handle = createStoreHandle<T>({
@@ -82,7 +65,6 @@ export function createStore<T extends Entity, Relations = {}>(
             hooks: config.hooks,
             indexes: config.indexes,
             services,
-            debugSink: config.debugSink,
             storeName: name
         }
     })

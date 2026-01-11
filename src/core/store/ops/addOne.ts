@@ -3,8 +3,9 @@ import { dispatch } from '../internals/dispatch'
 import { runAfterSave } from '../internals/hooks'
 import { ignoreTicketRejections } from '../internals/tickets'
 import { prepareForAdd } from '../internals/writePipeline'
+import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createAddOne<T extends Entity>(handle: StoreHandle<T>) {
+export function createAddOne<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
     const { services, hooks } = handle
     return async (obj: Partial<T>, options?: StoreOperationOptions) => {
         const validObj = await prepareForAdd<T>(handle, obj)
@@ -17,7 +18,7 @@ export function createAddOne<T extends Entity>(handle: StoreHandle<T>) {
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                __persist: options?.__atoma?.persist,
+                persist: writeConfig.persistMode,
                 onSuccess: (o) => {
                     void runAfterSave(hooks, validObj, 'add')
                         .then(() => {

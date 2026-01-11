@@ -45,7 +45,7 @@ export const createStore = (ctx: any, options: any) => {
         store: ctx.jotaiStore as any,
         dataSource,
         relations: relationsFactory as any,
-        resolveStore: ctx.resolveStore as any
+        services: ctx.services
     })
 }
 

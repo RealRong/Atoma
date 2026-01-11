@@ -1,7 +1,7 @@
 import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
-import type { StoreServices } from './createStore'
-import type { Explain, ObservabilityContext, ObservabilityRuntime } from '#observability'
+import type { MutationPipeline } from './mutation/MutationPipeline'
+import type { DebugConfig, DebugEvent, Explain, ObservabilityContext, ObservabilityRuntime } from '#observability'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
 import type { StoreIndexes } from './indexes/StoreIndexes'
 
@@ -213,7 +213,7 @@ export type StoreDispatchEvent<T extends Entity> = {
     onFail?: (error?: Error) => void  // Accept error object for rejection
     ticket?: WriteTicket
     /** 内部：显式持久化路径选择（默认 direct）。用于 Store(...).Outbox 这类封装。 */
-    __persist?: 'direct' | 'outbox'
+    persist?: 'direct' | 'outbox'
 } & (
         | {
             type: 'add'
@@ -270,15 +270,6 @@ export type StoreDispatchEvent<T extends Entity> = {
  */
 export interface StoreOperationOptions {
     force?: boolean
-    /**
-     * 内部选项（仅框架/封装层使用；业务侧不应依赖）。
-     * - 用于显式选择写入路径（direct vs outbox），避免全局 sync 开关导致的语义漂移
-     * - 用于覆盖写入时“隐式补读”策略（direct 可允许；outbox 必须禁止）
-     */
-    __atoma?: {
-        persist?: 'direct' | 'outbox'
-        allowImplicitFetchForWrite?: boolean
-    }
     /**
      * `await` 完成语义（默认 optimistic）
      * - 注意：不影响 UI 是否立即更新（UI 仍默认 optimistic commit）
@@ -443,6 +434,53 @@ export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
  * Store token - currently a string (store name)
  */
 export type StoreToken = string
+
+/**
+ * Outbox enqueue client（core 只依赖 enqueueWrite 能力，避免与 #sync 强耦合）
+ */
+export type OutboxEnqueuer = Readonly<{
+    enqueueWrite: (args: {
+        resource: string
+        action: string
+        items: unknown[]
+        options?: unknown
+    }) => Promise<void>
+}>
+
+export type OutboxQueueMode = 'queue' | 'local-first'
+
+export type OutboxRuntime = Readonly<{
+    queueMode: OutboxQueueMode
+    ensureEnqueuer: () => OutboxEnqueuer
+}>
+
+/**
+ * StoreServices：client/runtime 级依赖注入容器（强制共享）
+ */
+export interface StoreServices {
+    /**
+     * 共享 MutationPipeline（client 级）
+     * - 统一 actionId 自动分配
+     * - 统一 tickets/ack/reject 流
+     */
+    mutation: MutationPipeline
+
+    /**
+     * 统一 store resolver（relations/include、history、devtools 等依赖）
+     */
+    resolveStore: (name: StoreToken) => IStore<any> | undefined
+
+    /**
+     * 可观测性（统一配置，避免 store 级碎片化）
+     */
+    debug?: DebugConfig
+    debugSink?: (e: DebugEvent) => void
+
+    /**
+     * Outbox 写入依赖（可选；未配置时 outbox 写入应 fail-fast）
+     */
+    outbox?: OutboxRuntime
+}
 
 export interface BelongsToConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
     type: 'belongsTo'

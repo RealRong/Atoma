@@ -1,4 +1,4 @@
-import type { SyncApplier, SyncBackoffConfig, SyncClient, SyncConfig, SyncOutboxItem, SyncRetryConfig, SyncTransport } from '../types'
+import type { SyncApplier, SyncBackoffConfig, SyncClient, SyncCreateConfig, SyncMode, SyncOutboxItem, SyncRetryConfig, SyncTransport } from '../types'
 import { toError } from '../internal'
 import { PushLane } from '../lanes/PushLane'
 import { PullLane } from '../lanes/PullLane'
@@ -41,7 +41,24 @@ type ResolvedSyncConfig = {
     }
 }
 
-function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
+function resolveMode(mode: SyncMode) {
+    switch (mode) {
+        case 'enqueue-only':
+            return { push: false, pull: false, subscribe: false, pullIntervalMs: 0 }
+        case 'pull-only':
+            return { push: false, pull: true, subscribe: false }
+        case 'subscribe-only':
+            return { push: false, pull: true, subscribe: true, pullIntervalMs: 0 }
+        case 'pull+subscribe':
+            return { push: false, pull: true, subscribe: true }
+        case 'push-only':
+            return { push: true, pull: false, subscribe: false, pullIntervalMs: 0 }
+        case 'full':
+            return { push: true, pull: true, subscribe: true }
+    }
+}
+
+function resolveSyncConfig(config: SyncCreateConfig): ResolvedSyncConfig {
     const resolveBackoff = (fallback: { baseDelayMs: number }) => {
         return {
             baseDelayMs: fallback.baseDelayMs,
@@ -51,10 +68,14 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
         }
     }
 
+    const mode = resolveMode(config.mode ?? 'full')
+
     const reconnectDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 1000))
-    const pushEnabled = (config as any).push !== false
-    const pullEnabled = (config as any).pull !== false
-    const pullIntervalMs = pullEnabled ? Math.max(0, Math.floor(config.pullIntervalMs ?? 30_000)) : 0
+    const pushEnabled = mode.push
+    const pullEnabled = mode.pull
+    const pullIntervalMs = pullEnabled
+        ? Math.max(0, Math.floor(mode.pullIntervalMs !== undefined ? mode.pullIntervalMs : (config.pullIntervalMs ?? 30_000)))
+        : 0
     const pullBackoffBaseDelayMs = Math.max(0, Math.floor(config.pullIntervalMs ?? 1_000))
     const lockBackoffBaseDelayMs = Math.max(0, Math.floor(config.reconnectDelayMs ?? 300))
     const retry = config.retry ?? { maxAttempts: 10 }
@@ -82,7 +103,7 @@ function resolveSyncConfig(config: SyncConfig): ResolvedSyncConfig {
             }
         },
         subscribe: {
-            enabled: pullEnabled && config.subscribe !== false,
+            enabled: pullEnabled && mode.subscribe && config.subscribe !== false,
             reconnectDelayMs,
             retry,
             backoff: resolveBackoff({ baseDelayMs: reconnectDelayMs })
@@ -118,7 +139,7 @@ export class SyncEngine implements SyncClient {
     private pullInFlight?: Promise<ChangeBatch | undefined>
     private pullWaiters: Array<{ resolve: (batch: ChangeBatch | undefined) => void; reject: (error: unknown) => void }> = []
 
-    constructor(private readonly config: SyncConfig) {
+    constructor(private readonly config: SyncCreateConfig) {
         const transport = (config as any)?.transport
         const opsClient = transport?.opsClient
         if (!transport || !opsClient || typeof opsClient.executeOps !== 'function') {

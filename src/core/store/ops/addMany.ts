@@ -4,8 +4,9 @@ import { ensureActionId } from '../internals/ensureActionId'
 import { runAfterSave } from '../internals/hooks'
 import { ignoreTicketRejections } from '../internals/tickets'
 import { prepareForAdd } from '../internals/writePipeline'
+import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createAddMany<T extends Entity>(handle: StoreHandle<T>) {
+export function createAddMany<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
     const { services, hooks } = handle
     return async (items: Array<Partial<T>>, options?: StoreOperationOptions) => {
         const opContext = ensureActionId(options?.opContext)
@@ -25,7 +26,7 @@ export function createAddMany<T extends Entity>(handle: StoreHandle<T>) {
                     handle,
                     opContext,
                     ticket,
-                    __persist: options?.__atoma?.persist,
+                    persist: writeConfig.persistMode,
                     onSuccess: (o) => {
                         void runAfterSave(hooks, validObj as any, 'add')
                             .then(() => {

@@ -4,8 +4,9 @@ import { runAfterSave, runBeforeSave } from '../internals/hooks'
 import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForAdd, prepareForUpdate } from '../internals/writePipeline'
+import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>) {
+export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
     const { jotaiStore, atom, services, hooks } = handle
 
     return async (
@@ -60,7 +61,7 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>) {
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                __persist: options?.__atoma?.persist,
+                persist: writeConfig.persistMode,
                 onSuccess: async (o) => {
                     await runAfterSave(hooks, validObj, base ? 'update' : 'add')
                     resolve(o)

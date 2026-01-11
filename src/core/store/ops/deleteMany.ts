@@ -7,8 +7,9 @@ import { ensureActionId } from '../internals/ensureActionId'
 import { resolveObservabilityContext } from '../internals/runtime'
 import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
+import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>) {
+export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
     const { jotaiStore, atom, dataSource, services, schema, transform } = handle
 
     return async (ids: StoreKey[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
@@ -42,10 +43,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>) {
         }
 
         if (missing.length) {
-            const allowImplicitFetchForWrite = typeof options?.__atoma?.allowImplicitFetchForWrite === 'boolean'
-                ? options.__atoma.allowImplicitFetchForWrite
-                : handle.writePolicies?.allowImplicitFetchForWrite !== false
-            if (!allowImplicitFetchForWrite) {
+            if (!writeConfig.allowImplicitFetchForWrite) {
                 for (const id of missing) {
                     const firstIndex = firstIndexById.get(id)
                     if (typeof firstIndex !== 'number') continue
@@ -119,7 +117,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>) {
                     handle,
                     opContext,
                     ticket,
-                    __persist: options?.__atoma?.persist,
+                    persist: writeConfig.persistMode,
                     onSuccess: () => resolve(true),
                     onFail: (error) => reject(error || new Error(`Failed to delete item with id ${String(id)}`))
                 })

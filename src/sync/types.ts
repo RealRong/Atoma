@@ -118,15 +118,15 @@ export type SyncRetryConfig = {
     maxAttempts?: number
 }
 
-export type SyncConfig = {
+export type SyncMode = 'enqueue-only' | 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full'
+
+export type SyncCreateConfig = {
     transport: SyncTransport
-    /** Whether to enable push (outbox -> remote). Default: true */
-    push?: boolean
-    /** Whether to enable pull (remote -> local). Default: true */
-    pull?: boolean
     applier: SyncApplier
     outboxKey: string
     cursorKey: string
+    /** High-level behavior mode. Default: 'full' */
+    mode?: SyncMode
     maxQueueSize?: number
     outboxEvents?: SyncOutboxEvents
     maxPushItems?: number
@@ -136,6 +136,7 @@ export type SyncConfig = {
     initialCursor?: Cursor
     returning?: boolean
     conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
+    /** Whether to enable subscribe when mode wants it. Default: true */
     subscribe?: boolean
     reconnectDelayMs?: number
     pullIntervalMs?: number
