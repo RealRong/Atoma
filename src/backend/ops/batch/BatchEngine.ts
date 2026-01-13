@@ -1,15 +1,18 @@
 import type { ObservabilityContext } from '#observability'
-import type { OpsClient } from '../OpsClient'
+import type { Operation, OperationResult, WriteOp } from '#protocol'
+import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import { QueryLane } from './queryLane'
 import { WriteLane } from './writeLane'
 import { Protocol } from '#protocol'
-import type { Operation, OperationResult, WriteOp } from '#protocol'
 
 export interface BatchEngineConfig {
     /** Ops endpoint (for observability payloads only). */
     endpoint?: string
-    /** Execute an ops request (transport owned by the adapter). */
-    opsClient: OpsClient
+    /** 
+     * Direct execution function (no batching).
+     * BatchEngine will call this function when flushing batched operations.
+     */
+    executeFn: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
     /**
      * Per-lane queue backpressure limit.
      * - number: applies to both query and write lanes
@@ -53,34 +56,33 @@ export class BatchEngine {
      *
      * This class intentionally owns:
      * - lifecycle (`dispose`)
-     * - shared transport (`opsClient`)
+     * - batching logic and flush scheduling
      *
      * Lane state + drain algorithms live inside `QueryLane` / `WriteLane`.
      */
     private readonly endpoint: string
-    private readonly opsClient: OpsClient
+    private readonly executeFn: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
 
     private readonly queryLane: QueryLane
     private readonly writeLane: WriteLane
 
     constructor(private readonly config: BatchEngineConfig) {
-        const opsClient = (config as any)?.opsClient
-        if (!opsClient || typeof opsClient.executeOps !== 'function') {
-            throw new Error('[BatchEngine] config.opsClient is required')
+        if (!config.executeFn || typeof config.executeFn !== 'function') {
+            throw new Error('[BatchEngine] config.executeFn is required')
         }
         this.endpoint = (config.endpoint || Protocol.http.paths.OPS).replace(/\/$/, '')
-        this.opsClient = config.opsClient
+        this.executeFn = config.executeFn
 
         this.queryLane = new QueryLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            opsClient: this.opsClient
+            executeFn: this.executeFn
         })
 
         this.writeLane = new WriteLane({
             endpoint: () => this.endpoint,
             config: () => this.config,
-            opsClient: this.opsClient
+            executeFn: this.executeFn
         })
     }
 

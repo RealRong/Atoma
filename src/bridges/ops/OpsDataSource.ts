@@ -1,18 +1,9 @@
 import type { DeleteItem, Entity, FindManyOptions, IDataSource, PageInfo, PersistWriteback, StoreKey, UpsertWriteOptions } from '#core'
-import { Batch, type BatchEngine } from '#backend'
 import type { ObservabilityContext } from '#observability'
 import { Protocol } from '#protocol'
 import type { Meta, Operation, OperationResult, QueryResultData, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
-import type { BatchQueryConfig, OpsDataSourceConfig } from './config/types'
+import type { OpsDataSourceConfig } from './config/types'
 import { normalizeAtomaServerQueryParams } from './protocol/queryParams'
-
-type ParsedBatchConfig = {
-    enabled: boolean
-    endpoint?: string
-    maxBatchSize?: number
-    flushIntervalMs?: number
-    devWarnings: boolean
-}
 
 /**
  * Protocol DataSource for ops-based APIs
@@ -20,8 +11,6 @@ type ParsedBatchConfig = {
 export class OpsDataSource<T extends Entity> implements IDataSource<T> {
     public readonly name: string
     private opSeq = 0
-    private batchEngine?: BatchEngine
-    private ownsBatchEngine: boolean
     private resource: string
     private readonly opsClient: OpsDataSourceConfig<T>['opsClient']
 
@@ -34,165 +23,70 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
             throw new Error('[OpsDataSource] "opsClient" is required')
         }
 
-        this.ownsBatchEngine = false
         this.resource = this.normalizeResourceName(config.resourceName)
-
         this.opsClient = config.opsClient
         this.name = config.name ?? `ops:${this.resource}`
-
-        if (config.batchEngine) {
-            this.batchEngine = config.batchEngine
-        } else {
-            const batchConfig = this.parseBatchConfig(config.batch)
-            if (batchConfig.enabled) {
-                const endpointPath = batchConfig.endpoint ?? Protocol.http.paths.OPS
-                this.batchEngine = Batch.create({
-                    endpoint: endpointPath,
-                    maxBatchSize: batchConfig.maxBatchSize,
-                    flushIntervalMs: batchConfig.flushIntervalMs,
-                    opsClient: this.opsClient,
-                    onError: (error, payload) => {
-                        this.onError(error, 'batch')
-                        if (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
-                            console.debug?.('[OpsDataSource:batch] payload failed', payload)
-                        }
-                    }
-                })
-                this.ownsBatchEngine = true
-
-                if (batchConfig.devWarnings && typeof process !== 'undefined' && process?.env?.NODE_ENV === 'development') {
-                    console.info(
-                        `[Atoma] BatchQuery enabled for "${this.resource}" → ${endpointPath}\n` +
-                        'Ensure backend exposes the ops endpoint. Set `batch:false` to disable.'
-                    )
-                }
-            }
-        }
     }
 
     dispose(): void {
-        if (this.ownsBatchEngine) {
-            this.batchEngine?.dispose()
-        }
+        // No-op: OpsClient now owns batch lifecycle
     }
 
     async put(key: StoreKey, value: T, internalContext?: ObservabilityContext): Promise<void> {
-        const op = this.buildWriteOp('update', [{
-            entityId: String(key),
-            baseVersion: this.resolveBaseVersion(key, value),
-            value
-        }])
-        await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'put(batch)' : 'put(ops)')
+        return this.bulkPut([{ ...value as any, id: key }], internalContext)
     }
 
     async bulkPut(items: T[], internalContext?: ObservabilityContext): Promise<void> {
         if (!items.length) return
-        const writeItems: WriteItem[] = items.map(item => ({
-            entityId: String((item as any).id),
-            baseVersion: this.resolveBaseVersion((item as any).id, item),
-            value: item
-        }))
-        const op = this.buildWriteOp('update', writeItems)
-        await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkPut(batch)' : 'bulkPut(ops)')
+        const op = this.buildWriteOp('update', this.buildUpdateItems(items))
+        await this.executeWriteExpectOk(op, internalContext, 'bulkPut')
     }
 
     async bulkPutReturning(items: T[], internalContext?: ObservabilityContext): Promise<PersistWriteback<T> | void> {
         if (!items.length) return
         const keys: StoreKey[] = items.map(item => (item as any).id as StoreKey)
-        const writeItems: WriteItem[] = items.map(item => ({
-            entityId: String((item as any).id),
-            baseVersion: this.resolveBaseVersion((item as any).id, item),
-            value: item
-        }))
-        const op = this.buildWriteOp('update', writeItems)
-        const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkPutReturning(batch)' : 'bulkPutReturning(ops)')
-        return this.collectPersistWriteback(keys, data)
+        return this.executeWriteReturning('update', this.buildUpdateItems(items), keys, undefined, internalContext, 'bulkPutReturning')
     }
 
     async bulkCreate(items: T[], internalContext?: ObservabilityContext): Promise<T[] | void> {
-        if (!items.length) return
-        const writeItems: WriteItem[] = items.map(item => ({
-            entityId: String((item as any)?.id),
-            value: item
-        }))
-        const op = this.buildWriteOp('create', writeItems)
-        const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkCreate(batch)' : 'bulkCreate(ops)')
-        const created = this.collectCreatedItems(data)
-        return created.length ? created : undefined
+        return this.executeWriteCreated(this.buildCreateItems(items, true), internalContext, 'bulkCreate')
     }
 
     async bulkCreateServerAssigned(items: Array<Partial<T>>, internalContext?: ObservabilityContext): Promise<T[] | void> {
-        if (!items.length) return
         for (const item of items) {
             const id = (item as any)?.id
             if (id !== undefined && id !== null) {
                 throw new Error('[OpsDataSource] bulkCreateServerAssigned does not allow client-provided id')
             }
         }
-        const writeItems: WriteItem[] = items.map(item => ({
-            value: item
-        }))
-        const op = this.buildWriteOp('create', writeItems)
-        const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkCreateServerAssigned(batch)' : 'bulkCreateServerAssigned(ops)')
-        const created = this.collectCreatedItems(data)
-        return created.length ? created : undefined
+        return this.executeWriteCreated(this.buildCreateItems(items, false), internalContext, 'bulkCreateServerAssigned')
     }
 
     async delete(item: DeleteItem, internalContext?: ObservabilityContext): Promise<void> {
-        const op = this.buildWriteOp('delete', [{
-            entityId: String(item.id),
-            baseVersion: item.baseVersion
-        }])
-        await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'delete(batch)' : 'delete(ops)')
+        return this.bulkDelete([item], internalContext)
     }
 
     async bulkDelete(items: DeleteItem[], internalContext?: ObservabilityContext): Promise<void> {
         if (!items.length) return
-        const writeItems: WriteItem[] = items.map(item => ({
-            entityId: String(item.id),
-            baseVersion: item.baseVersion
-        }))
-        const op = this.buildWriteOp('delete', writeItems)
-        await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkDelete(batch)' : 'bulkDelete(ops)')
+        const op = this.buildWriteOp('delete', this.buildDeleteItems(items))
+        await this.executeWriteExpectOk(op, internalContext, 'bulkDelete')
     }
 
     async bulkDeleteReturning(items: DeleteItem[], internalContext?: ObservabilityContext): Promise<PersistWriteback<T> | void> {
         if (!items.length) return
         const keys: StoreKey[] = items.map(item => item.id)
-        const writeItems: WriteItem[] = items.map(item => ({
-            entityId: String(item.id),
-            baseVersion: item.baseVersion
-        }))
-        const op = this.buildWriteOp('delete', writeItems)
-        const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkDeleteReturning(batch)' : 'bulkDeleteReturning(ops)')
-        return this.collectPersistWriteback(keys, data)
+        return this.executeWriteReturning('delete', this.buildDeleteItems(items), keys, undefined, internalContext, 'bulkDeleteReturning')
     }
 
     async upsert(key: StoreKey, value: T, options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void> {
-        const baseVersion = this.resolveOptionalBaseVersion(key, value)
-        const writeOptions = this.buildUpsertWriteOptions(options)
-        const op = this.buildWriteOp('upsert', [{
-            entityId: String(key),
-            ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
-            value
-        }], writeOptions)
-        await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'upsert(batch)' : 'upsert(ops)')
+        return this.bulkUpsert([{ ...value as any, id: key }], options, internalContext)
     }
 
     async bulkUpsert(items: T[], options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void> {
         if (!items.length) return
         const writeOptions = this.buildUpsertWriteOptions(options)
-        const writeItems: WriteItem[] = items.map(item => {
-            const id = (item as any).id
-            const baseVersion = this.resolveOptionalBaseVersion(id, item)
-            return {
-                entityId: String(id),
-                ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
-                value: item
-            }
-        })
-        const op = this.buildWriteOp('upsert', writeItems, writeOptions)
-        await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkUpsert(batch)' : 'bulkUpsert(ops)')
+        const op = this.buildWriteOp('upsert', this.buildUpsertItems(items), writeOptions)
+        await this.executeWriteExpectOk(op, internalContext, 'bulkUpsert')
     }
 
     async bulkUpsertReturning(
@@ -203,18 +97,7 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
         if (!items.length) return
         const keys: StoreKey[] = items.map(item => (item as any).id as StoreKey)
         const writeOptions = this.buildUpsertWriteOptions(options)
-        const writeItems: WriteItem[] = items.map(item => {
-            const id = (item as any).id
-            const baseVersion = this.resolveOptionalBaseVersion(id, item)
-            return {
-                entityId: String(id),
-                ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
-                value: item
-            }
-        })
-        const op = this.buildWriteOp('upsert', writeItems, writeOptions)
-        const data = await this.executeWriteExpectOk(op, internalContext, this.batchEngine ? 'bulkUpsertReturning(batch)' : 'bulkUpsertReturning(ops)')
-        return this.collectPersistWriteback(keys, data)
+        return this.executeWriteReturning('upsert', this.buildUpsertItems(items), keys, writeOptions, internalContext, 'bulkUpsertReturning')
     }
 
     async get(key: StoreKey, internalContext?: ObservabilityContext): Promise<T | undefined> {
@@ -223,7 +106,7 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
             limit: 1,
             includeTotal: false
         }
-        const { data } = await this.executeQueryExpectOk(this.buildQueryOp(params), internalContext, this.batchEngine ? 'get(batch)' : 'get(ops)')
+        const { data } = await this.executeQueryExpectOk(this.buildQueryOp(params), internalContext, 'get')
         return data[0]
     }
 
@@ -232,7 +115,7 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
 
         const uniqueKeys = Array.from(new Set(keys))
         const params: FindManyOptions<T> = { where: { id: { in: uniqueKeys } } as any, skipStore: false }
-        const { data } = await this.executeQueryExpectOk(this.buildQueryOp(params), internalContext, this.batchEngine ? 'bulkGet(batch)' : 'bulkGet(ops)')
+        const { data } = await this.executeQueryExpectOk(this.buildQueryOp(params), internalContext, 'bulkGet')
 
         const map = new Map<StoreKey, T>()
         data.forEach(item => {
@@ -244,7 +127,7 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
     }
 
     async getAll(filter?: (item: T) => boolean, internalContext?: ObservabilityContext): Promise<T[]> {
-        const { data } = await this.executeQueryExpectOk(this.buildQueryOp(undefined), internalContext, this.batchEngine ? 'getAll(batch)' : 'getAll(ops)')
+        const { data } = await this.executeQueryExpectOk(this.buildQueryOp(undefined), internalContext, 'getAll')
         return filter ? data.filter(filter) : data
     }
 
@@ -252,17 +135,38 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
         options?: FindManyOptions<T>,
         internalContext?: ObservabilityContext
     ): Promise<{ data: T[]; pageInfo?: PageInfo; explain?: unknown }> {
-        if (this.config.query?.customFn) {
-            const res = await this.config.query.customFn(options || {} as any)
-            return { data: res.data, pageInfo: res.pageInfo }
-        }
-
         const { data, pageInfo } = await this.executeQueryExpectOk(
             this.buildQueryOp(options),
             internalContext,
-            this.batchEngine ? 'findMany(batch)' : 'findMany(ops)'
+            'findMany'
         )
         return { data, pageInfo }
+    }
+
+    private async executeWriteReturning(
+        action: WriteAction,
+        items: WriteItem[],
+        keys: StoreKey[],
+        writeOptions?: WriteOptions | undefined,
+        internalContext?: ObservabilityContext,
+        tag?: string
+    ): Promise<PersistWriteback<T> | void> {
+        if (!items.length) return
+        const op = this.buildWriteOp(action, items, writeOptions)
+        const data = await this.executeWriteExpectOk(op, internalContext, tag || action)
+        return this.collectPersistWriteback(keys, data)
+    }
+
+    private async executeWriteCreated(
+        items: WriteItem[],
+        internalContext?: ObservabilityContext,
+        tag?: string
+    ): Promise<T[] | void> {
+        if (!items.length) return
+        const op = this.buildWriteOp('create', items)
+        const data = await this.executeWriteExpectOk(op, internalContext, tag || 'create')
+        const created = this.collectCreatedItems(data)
+        return created.length ? created : undefined
     }
 
     onError(error: Error, operation: string): void {
@@ -270,10 +174,6 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
     }
 
     private async executeOps(ops: Operation[], context?: ObservabilityContext): Promise<OperationResult[]> {
-        if (this.batchEngine) {
-            return await this.batchEngine.enqueueOps(ops, context)
-        }
-
         const opsWithTrace = this.applyOpTraceMeta(ops as any, context) as Operation[]
         const meta: Meta = { v: 1, clientTimeMs: Date.now() }
         const result = await this.opsClient.executeOps({
@@ -282,23 +182,6 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
             context
         })
         return result.results as any
-    }
-
-    private parseBatchConfig(batch?: boolean | BatchQueryConfig): ParsedBatchConfig {
-        if (batch === true) {
-            return { enabled: true, devWarnings: true }
-        }
-        if (batch === false) {
-            return { enabled: false, devWarnings: true }
-        }
-        const cfg = batch || {}
-        return {
-            enabled: cfg.enabled !== false,
-            endpoint: cfg.endpoint,
-            maxBatchSize: cfg.maxBatchSize,
-            flushIntervalMs: cfg.flushIntervalMs,
-            devWarnings: cfg.devWarnings !== false
-        }
     }
 
     private normalizeResourceName(name?: string): string {
@@ -369,6 +252,41 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
         return Object.keys(out).length ? out : undefined
     }
 
+    // Helper methods to build WriteItems
+    private buildUpdateItems(items: T[]): WriteItem[] {
+        return items.map(item => ({
+            entityId: String((item as any).id),
+            baseVersion: this.resolveBaseVersion((item as any).id, item),
+            value: item
+        }))
+    }
+
+    private buildDeleteItems(items: DeleteItem[]): WriteItem[] {
+        return items.map(item => ({
+            entityId: String(item.id),
+            baseVersion: item.baseVersion
+        }))
+    }
+
+    private buildUpsertItems(items: T[]): WriteItem[] {
+        return items.map(item => {
+            const id = (item as any).id
+            const baseVersion = this.resolveOptionalBaseVersion(id, item)
+            return {
+                entityId: String(id),
+                ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+                value: item
+            }
+        })
+    }
+
+    private buildCreateItems(items: Array<T | Partial<T>>, allowClientId: boolean): WriteItem[] {
+        return items.map(item => ({
+            ...(allowClientId && (item as any)?.id !== undefined ? { entityId: String((item as any).id) } : {}),
+            value: item
+        }))
+    }
+
     private ensureWriteItemMeta(item: WriteItem): WriteItem {
         if (!item || typeof item !== 'object') return item
         const meta = (item as any).meta
@@ -415,7 +333,7 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
             ? (result.error as any).message
             : `[${tag}] Operation failed`
         const err = new Error(message)
-        ;(err as any).error = result.error
+            ; (err as any).error = result.error
         return err
     }
 
@@ -480,4 +398,4 @@ export class OpsDataSource<T extends Entity> implements IDataSource<T> {
     }
 }
 
-export interface OpsDataSource<T extends Entity> extends IDataSource<T> {}
+export interface OpsDataSource<T extends Entity> extends IDataSource<T> { }

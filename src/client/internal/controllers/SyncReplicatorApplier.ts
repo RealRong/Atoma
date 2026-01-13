@@ -22,8 +22,7 @@ export function createSyncReplicatorApplier(args: {
         return new OpsDataSource<any>({
             opsClient: backend.opsClient,
             resourceName: resource,
-            name: `${backend.key}:remote`,
-            batch: false
+            name: `${backend.key}:remote`
         })
     }
 
@@ -33,8 +32,7 @@ export function createSyncReplicatorApplier(args: {
         return new OpsDataSource<any>({
             opsClient: backend.opsClient,
             resourceName: resource,
-            name: `${backend.key}:local`,
-            batch: false
+            name: `${backend.key}:local`
         })
     }
 

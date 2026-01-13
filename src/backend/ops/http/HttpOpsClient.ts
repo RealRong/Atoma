@@ -1,6 +1,7 @@
 import { Protocol, type Meta, type OpsResponseData } from '#protocol'
 import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import { OpsClient } from '../OpsClient'
+import { Batch, type BatchEngine } from '../batch'
 import { createOpsHttpTransport } from './transport/opsTransport'
 import { fetchWithRetry, type RetryOptions } from './transport/retryPolicy'
 import type { HttpInterceptors } from './transport/jsonClient'
@@ -12,6 +13,20 @@ export type HttpOpsClientConfig = {
     retry?: RetryOptions
     fetchFn?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
     interceptors?: HttpInterceptors<OpsResponseData>
+    /** 
+     * Batch configuration. Default: enabled with zero delay.
+     * Set to { enabled: false } to disable batching.
+     */
+    batch?: {
+        enabled?: boolean
+        maxBatchSize?: number
+        flushIntervalMs?: number
+        maxQueueLength?: number | { query?: number; write?: number }
+        queryOverflowStrategy?: 'reject_new' | 'drop_old_queries'
+        queryMaxInFlight?: number
+        writeMaxInFlight?: number
+        maxOpsPerRequest?: number
+    }
 }
 
 export class HttpOpsClient extends OpsClient {
@@ -21,6 +36,7 @@ export class HttpOpsClient extends OpsClient {
     private readonly retry?: RetryOptions
     private readonly getHeaders: () => Promise<Record<string, string>>
     private readonly transport: ReturnType<typeof createOpsHttpTransport>
+    private readonly batchEngine?: BatchEngine
 
     constructor(config: HttpOpsClientConfig) {
         super()
@@ -42,6 +58,22 @@ export class HttpOpsClient extends OpsClient {
             getHeaders: this.getHeaders,
             interceptors: config.interceptors
         })
+
+        // Initialize BatchEngine (default: enabled with zero delay)
+        const batchEnabled = config.batch?.enabled ?? true
+        if (batchEnabled) {
+            this.batchEngine = Batch.create({
+                endpoint: this.opsPath,
+                executeFn: (input) => this._executeOpsDirectly(input),
+                flushIntervalMs: config.batch?.flushIntervalMs ?? 0,
+                maxBatchSize: config.batch?.maxBatchSize,
+                maxQueueLength: config.batch?.maxQueueLength,
+                queryOverflowStrategy: config.batch?.queryOverflowStrategy,
+                queryMaxInFlight: config.batch?.queryMaxInFlight,
+                writeMaxInFlight: config.batch?.writeMaxInFlight,
+                maxOpsPerRequest: config.batch?.maxOpsPerRequest
+            })
+        }
     }
 
     private normalizeRequestMeta(meta: Meta): Meta {
@@ -54,7 +86,25 @@ export class HttpOpsClient extends OpsClient {
         }
     }
 
-    async executeOps({ ops, meta, context, signal }: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
+    /**
+     * Execute operations. Automatically uses BatchEngine if enabled.
+     */
+    async executeOps(input: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
+        if (this.batchEngine) {
+            const results = await this.batchEngine.enqueueOps(input.ops, input.context)
+            return {
+                results,
+                status: 200
+            }
+        }
+        return this._executeOpsDirectly(input)
+    }
+
+    /**
+     * Direct HTTP execution (bypasses BatchEngine).
+     * Used internally by BatchEngine.
+     */
+    private async _executeOpsDirectly({ ops, meta, context, signal }: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
         const requestMeta = this.normalizeRequestMeta(meta)
         const res = await this.transport.executeOps({
             baseURL: this.baseURL,

@@ -32,7 +32,7 @@ yarn-error.log*
 coverage/
 
 # Root markdown notes (keep primary docs tracked)
-/*.md
+# /*.md
 !/README.md
 
 # Unfinished Atoma docs

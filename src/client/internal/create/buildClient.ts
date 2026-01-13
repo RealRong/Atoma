@@ -81,8 +81,7 @@ export function buildAtomaClient<
         return new OpsDataSource<any>({
             opsClient: dataSourceBackend.opsClient,
             name: dataSourceBackend.key,
-            resourceName,
-            batch: args.storeBatch ?? false
+            resourceName
         })
     })
 

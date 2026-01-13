@@ -8,7 +8,7 @@ import {
     toError
 } from './internal'
 import type { ObservabilityContext } from '#observability'
-import type { OpsClient } from '../OpsClient'
+import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import type { OperationResult, WriteOp } from '#protocol'
 import type { OpsTask } from './types'
 
@@ -21,7 +21,7 @@ type WriteLaneDeps = {
         maxOpsPerRequest?: number
         onError?: (error: Error, context: unknown) => void
     }
-    opsClient: OpsClient
+    executeFn: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
 }
 
 export class WriteLane {
@@ -84,7 +84,7 @@ export class WriteLane {
                     lane: 'write',
                     endpoint: this.deps.endpoint(),
                     tasks: batch,
-                    opsClient: this.deps.opsClient,
+                    executeFn: this.deps.executeFn,
                     controller
                 })
 

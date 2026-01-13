@@ -8,7 +8,7 @@ import {
     toError
 } from './internal'
 import type { ObservabilityContext } from '#observability'
-import type { OpsClient } from '../OpsClient'
+import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import type { OperationResult, QueryOp } from '#protocol'
 import type { OpsTask } from './types'
 
@@ -22,7 +22,7 @@ type QueryLaneDeps = {
         maxOpsPerRequest?: number
         onError?: (error: Error, context: unknown) => void
     }
-    opsClient: OpsClient
+    executeFn: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
 }
 
 export class QueryLane {
@@ -100,7 +100,7 @@ export class QueryLane {
                     lane: 'query',
                     endpoint: this.deps.endpoint(),
                     tasks: batch,
-                    opsClient: this.deps.opsClient,
+                    executeFn: this.deps.executeFn,
                     controller
                 })
 

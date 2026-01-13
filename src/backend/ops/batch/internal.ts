@@ -1,7 +1,6 @@
 import { Observability } from '#observability'
 import type { ObservabilityContext, AtomaDebugEventMap, DebugEmitMeta } from '#observability'
 import type { Meta, Operation, OperationResult } from '#protocol'
-import type { OpsClient } from '../OpsClient'
 import type { OpsTask } from './types'
 
 // ============================================================================
@@ -140,7 +139,7 @@ export async function executeOpsTasksBatch(args: {
     lane: 'query' | 'write'
     endpoint: string
     tasks: OpsTask[]
-    opsClient: OpsClient
+    executeFn: (input: { ops: Operation[]; meta: Meta; signal?: AbortSignal }) => Promise<{ results: OperationResult[]; status?: number }>
     controller?: AbortController
 }) {
     const requestContext = buildOpsLaneRequestContext(args.tasks)
@@ -178,7 +177,7 @@ export async function executeOpsTasksBatch(args: {
     let startedAt: number | undefined
     try {
         startedAt = Date.now()
-        const res = await args.opsClient.executeOps({
+        const res = await args.executeFn({
             ops: payload.ops,
             meta: payload.meta,
             signal: args.controller?.signal
