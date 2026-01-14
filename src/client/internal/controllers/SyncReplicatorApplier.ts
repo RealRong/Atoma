@@ -118,10 +118,7 @@ export function createSyncReplicatorApplier(args: {
     }
 
     function newWriteItemMeta(): WriteItemMeta {
-        return {
-            idempotencyKey: Protocol.ids.createIdempotencyKey({ now: () => Date.now() }),
-            clientTimeMs: Date.now()
-        }
+        return Protocol.ops.meta.newWriteItemMeta({ now: () => Date.now() })
     }
 
     function desiredBaseVersionFromTargetVersion(version: unknown): number | undefined {

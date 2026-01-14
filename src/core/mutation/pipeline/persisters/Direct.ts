@@ -125,9 +125,15 @@ function writeItemMetaForIndex(args: { operations: StoreDispatchEvent<any>[]; id
         : args.fallbackClientTimeMs
     const idempotencyKey = (typeof ticket?.idempotencyKey === 'string' && ticket.idempotencyKey)
         ? ticket.idempotencyKey
-        : Protocol.ids.createIdempotencyKey({ now: () => Date.now() })
+        : undefined
 
-    return { idempotencyKey, clientTimeMs }
+    return Protocol.ops.meta.ensureWriteItemMeta({
+        meta: {
+            clientTimeMs,
+            ...(idempotencyKey ? { idempotencyKey } : {})
+        },
+        now: () => Date.now()
+    })
 }
 
 function upsertWriteOptions(op: StoreDispatchEvent<any> | undefined): WriteOptions | undefined {
@@ -223,7 +229,10 @@ export class DirectPersister implements Persister {
         const fallbackClientTimeMs = args.metadata.timestamp
 
         if (types.length === 1 && types[0] === 'patches') {
-            const meta = writeItemMetaForIndex({ operations: args.operations, idx: 0, fallbackClientTimeMs })
+            const metaForItem = () => Protocol.ops.meta.ensureWriteItemMeta({
+                meta: { clientTimeMs: fallbackClientTimeMs },
+                now: () => Date.now()
+            })
 
             const touchedIds = new Set<EntityId>()
             ;(args.plan.patches as Patch[]).forEach(p => {
@@ -246,6 +255,7 @@ export class DirectPersister implements Persister {
             const deleteItems: WriteItem[] = []
 
             for (const id of touchedIds.values()) {
+                const meta = metaForItem()
                 const next = (args.plan.nextState as any as Map<EntityId, T>).get(id)
                 if (next) {
                     const baseVersion = resolveOptionalBaseVersion(next)
@@ -363,4 +373,3 @@ export class DirectPersister implements Persister {
             : undefined
     }
 }
-

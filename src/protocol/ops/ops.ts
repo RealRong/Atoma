@@ -1,5 +1,6 @@
 import { envelope } from '../shared/envelope'
 import { encodeWriteIntent } from './encodeWrite'
+import { ensureWriteItemMeta, newWriteItemMeta } from './meta'
 import { assertOpsRequestV1, assertOperationV1, assertOutgoingOpsV1 } from './validate'
 
 export const ops = {
@@ -11,6 +12,10 @@ export const ops = {
         error: envelope.compose.error
     },
     encodeWriteIntent,
+    meta: {
+        ensureWriteItemMeta,
+        newWriteItemMeta
+    },
     validate: {
         assertOpsRequestV1,
         assertOperationV1,

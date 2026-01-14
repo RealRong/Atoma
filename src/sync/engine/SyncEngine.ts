@@ -292,14 +292,10 @@ export class SyncEngine implements SyncClient {
     }
 
     private ensureItemMeta(item: WriteItem) {
-        const meta = (item.meta && typeof item.meta === 'object' && !Array.isArray(item.meta)) ? item.meta : {}
-        const idempotencyKey = typeof (meta as any).idempotencyKey === 'string' && (meta as any).idempotencyKey
-            ? (meta as any).idempotencyKey
-            : Protocol.ids.createIdempotencyKey({ now: () => this.now() })
-        return {
-            ...meta,
-            idempotencyKey
-        }
+        return Protocol.ops.meta.ensureWriteItemMeta({
+            meta: (item as any).meta,
+            now: () => this.now()
+        })
     }
 
     private buildMeta(): Meta {

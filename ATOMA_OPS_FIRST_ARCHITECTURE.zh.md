@@ -6,7 +6,7 @@
 
 ---
 
-## 1. 现状（截至 2026-01-14：已完成 Phase 2）
+## 1. 现状（截至 2026-01-14：已完成 Phase 3）
 
 当前仓库已经进入 **Ops-first**：
 
@@ -18,9 +18,9 @@
 2) **outbox（入队）路径**
 - `src/core/mutation/pipeline/persisters/Outbox.ts`：把写入 encode 为 ops intent（`Protocol.ops.encodeWriteIntent(...)`）→ outbox 存储/同步引擎推送时发 `write` op
 
-差异点（仍需在 Phase 3 统一）：
-- direct 与 outbox 目前都走 ops，但编码入口不同（direct 直接组装 `WriteOp`，outbox 先 encode intent）。
-- meta/idempotency/baseVersion 已经通过协议校验“锁死合同”，但仍需要确保两条路径的生成策略完全一致（尤其是 WriteItem.meta 的稳定性）。
+差异点（Phase 3 已统一关键合同，入口差异保留）：
+- direct 与 outbox 都走 ops，但编码入口不同（direct 直接组装 `WriteOp`，outbox 先 encode intent 再入队）——这是实现差异，不再影响协议合同。
+- `WriteItem.meta` 的生成/补齐策略已统一：发送前必须具备 `idempotencyKey + clientTimeMs`，并且同一次发送内每个 item 的 `idempotencyKey` 必须唯一（见 `Protocol.ops.meta.*` + PushLane 的兜底补齐与校验）。
 
 ---
 
@@ -277,12 +277,15 @@ Ops-first 改造时最容易犯的错是：把 direct 的行为“误改成只�
 
 验收：不引入 outbox 的情况下，store 的所有写入/查询链路都不再依赖 `IDataSource`。
 
-### Phase 3：outbox/sync 路径统一（同一套 ops 编码/回执处理）
-- outbox 存储的内容从“半自定义 intent”收敛为“可直接发送的 ops 表达”（二选一：`WriteOp` 或 `WriteIntent` + 统一 encoder）。
-- ack/reject 的处理只依赖 `entityId(string)` 与 `idempotencyKey`，不再做 StoreKey/数字化分支。
-- 统一 strict/optimistic 的 ticket/confirmed 语义，保证 direct/outbox 行为不漂移。
+### Phase 3：outbox/sync 路径统一（同一套 meta/校验/回执处理）（已完成）
+- `WriteItem.meta` 的生成规则收敛为协议级工具：`Protocol.ops.meta.ensureWriteItemMeta/newWriteItemMeta`。
+- client enqueue/send 全链路强制补齐并校验：
+  - enqueue：`SyncEngine.enqueueWrite(...)` 统一补齐 `idempotencyKey/clientTimeMs`（`src/sync/engine/SyncEngine.ts`）
+  - push：`PushLane.flush()` 发送前按 outbox entry 兜底补齐（确保 `idempotencyKey` 与 outbox key 一致），并执行 `Protocol.ops.validate.assertOutgoingOpsV1(...)`（`src/sync/lanes/PushLane.ts`）
+- patches 场景防坑：当一次 patches 影响多个 entity 时，不再允许多个 write items 共享同一个 `idempotencyKey`（避免服务端幂等表写入冲突）。
+- ack/reject 分支彻底收敛：仅依赖 `entityId: string` 与 `item.meta.idempotencyKey`（不再存在 StoreKey/数字化兼容分支）。
 
-验收：direct 与 outbox 的 meta/idempotency/baseVersion 规则完全一致；同一写入在两条路径的错误形态一致。
+验收：direct/outbox/sync push 三条路径发出的 ops 均能通过协议校验；并且不会出现“同一批 write items 共享 idempotencyKey”导致的服务端幂等冲突。
 
 ### Phase 4：文档/示例清理（进行中）
 - 清理 README/示例中残留的 datasource/bridge 术语与配置（例如旧的 `dataSource`/`dataSourceFactory` 字段）。

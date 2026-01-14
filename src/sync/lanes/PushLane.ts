@@ -1,13 +1,6 @@
 import { buildWriteBatchCompacted } from '../policies/batchPolicy'
 import type { OutboxStore, SyncApplier, SyncEvent, SyncOutboxItem, SyncPhase, SyncTransport, SyncWriteAck, SyncWriteReject } from '../types'
-import type {
-    Meta,
-    Operation,
-    OperationResult,
-    StandardError,
-    WriteItemResult,
-    WriteResultData
-} from '#protocol'
+import { Protocol, type Meta, type Operation, type OperationResult, type StandardError, type WriteItemResult, type WriteResultData } from '#protocol'
 import { sleepMs } from '../policies/backoffPolicy'
 import { executeSingleOp, toError } from '../internal'
 import { RetryBackoff } from '../policies/retryBackoff'
@@ -92,18 +85,51 @@ export class PushLane {
                         ? batch.options
                         : undefined
 
+                    const ensuredItems = items.map((item, index) => {
+                        const entry = entries[index]
+                        const baseMeta = (item as any)?.meta
+                        const meta = Protocol.ops.meta.ensureWriteItemMeta({
+                            meta: baseMeta,
+                            now: () => this.deps.now(),
+                            defaults: {
+                                idempotencyKey: entry?.idempotencyKey,
+                                clientTimeMs: entry?.enqueuedAtMs
+                            }
+                        })
+                        return {
+                            ...(item as any),
+                            meta
+                        }
+                    })
+
                     const op: Operation = {
                         opId,
                         kind: 'write',
                         write: {
                             resource,
                             action,
-                            items,
+                            items: ensuredItems,
                             options: {
                                 ...(baseOptions ? baseOptions : {}),
                                 returning: this.deps.returning
                             }
                         }
+                    }
+
+                    try {
+                        Protocol.ops.validate.assertOutgoingOpsV1({ ops: [op], meta })
+                    } catch (error) {
+                        const maybeStandard = (error && typeof error === 'object' && typeof (error as any).code === 'string' && typeof (error as any).message === 'string' && typeof (error as any).kind === 'string')
+                            ? (error as any as StandardError)
+                            : {
+                                code: 'INVALID_WRITE',
+                                message: error instanceof Error ? error.message : `Invalid outbox write: ${String(error)}`,
+                                kind: 'validation' as const
+                            }
+                        const rejected = await this.rejectAllFromOpError({ opId, ok: false, error: maybeStandard }, allEntries)
+                        await this.deps.outbox.reject(rejected, maybeStandard)
+                        this.retry.reset()
+                        continue
                     }
 
                     const opResult = await executeSingleOp({

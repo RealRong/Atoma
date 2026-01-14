@@ -102,7 +102,8 @@ export class OutboxPersister implements Persister {
                 patchesByItemId.get(itemId)!.push(p)
             })
 
-            const opMeta = metaForOpIndex(0)
+            // patches 可能覆盖多个 entityId：绝不能让多个 write items 共享同一个 idempotencyKey
+            const opMeta = { clientTimeMs: fallbackClientTimeMs }
 
             const createItems: Array<{ entityId: EntityId; value: unknown }> = []
             const updateItems: Array<{ entityId: EntityId; value: unknown; baseVersion: number }> = []
