@@ -1,5 +1,5 @@
 import { envelope } from '../core/envelope'
-import { encodeWriteIntent } from './encodeWrite'
+import { buildChangesPullOp, buildQueryOp, buildRequestMeta, buildWriteOp, withTraceMeta } from './build'
 import { ensureWriteItemMeta, newWriteItemMeta } from './meta'
 import { assertOpsRequestV1, assertOperationV1, assertOutgoingOpsV1 } from './validate'
 
@@ -11,7 +11,13 @@ export const ops = {
         ok: envelope.compose.ok,
         error: envelope.compose.error
     },
-    encodeWriteIntent,
+    build: {
+        buildRequestMeta,
+        withTraceMeta,
+        buildWriteOp,
+        buildQueryOp,
+        buildChangesPullOp
+    },
     meta: {
         ensureWriteItemMeta,
         newWriteItemMeta
@@ -41,5 +47,3 @@ export type {
     WriteResultData,
     ChangesPullResultData
 } from './types'
-
-export type { WriteIntent } from './encodeWrite'

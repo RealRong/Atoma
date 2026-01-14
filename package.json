@@ -46,6 +46,10 @@
             "types": "./dist/core/index.d.ts",
             "import": "./dist/core/index.js"
         },
+        "#shared": {
+            "types": "./dist/shared/index.d.ts",
+            "import": "./dist/shared/index.js"
+        },
         "#observability": {
             "types": "./dist/observability/index.d.ts",
             "import": "./dist/observability/index.js"

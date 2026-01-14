@@ -16,55 +16,29 @@ export function createSyncReplicatorApplier(args: {
         return `${prefix}_${Date.now()}_${opSeq}`
     }
 
-    function applyOpTraceMeta(ops: Operation[], context?: ObservabilityContext): Operation[] {
-        if (!context || !ops.length) return ops
-        const traceId = (typeof context.traceId === 'string' && context.traceId) ? context.traceId : undefined
-        if (!traceId) return ops
-
-        return ops.map((op) => {
-            const requestId = context.requestId()
-            const baseMeta = (op as any).meta
-            const meta = (baseMeta && typeof baseMeta === 'object' && !Array.isArray(baseMeta)) ? baseMeta : undefined
-            return {
-                ...(op as any),
-                meta: {
-                    v: 1,
-                    ...(meta ? meta : {}),
-                    traceId,
-                    ...(requestId ? { requestId } : {})
-                }
-            } as Operation
-        })
-    }
-
-    function requestMeta(context?: ObservabilityContext): Meta {
-        const traceId = (typeof context?.traceId === 'string' && context.traceId) ? context.traceId : undefined
-        const requestId = context ? context.requestId() : undefined
-        return {
-            v: 1,
-            clientTimeMs: Date.now(),
-            ...(traceId ? { traceId } : {}),
-            ...(requestId ? { requestId } : {})
-        }
-    }
-
     async function executeOps(opsClient: ResolvedBackend['opsClient'], ops: Operation[], context?: ObservabilityContext): Promise<OperationResult[]> {
-        const opsWithTrace = applyOpTraceMeta(ops, context)
-        const meta = requestMeta(context)
+        const traceId = (typeof context?.traceId === 'string' && context.traceId) ? context.traceId : undefined
+        const opsWithTrace = Protocol.ops.build.withTraceMeta({
+            ops,
+            traceId,
+            ...(context ? { nextRequestId: context.requestId } : {})
+        })
+        const meta = Protocol.ops.build.buildRequestMeta({
+            now: () => Date.now(),
+            traceId,
+            requestId: context ? context.requestId() : undefined
+        })
         Protocol.ops.validate.assertOutgoingOpsV1({ ops: opsWithTrace, meta })
         const res = await opsClient.executeOps({ ops: opsWithTrace, meta, context })
         return Array.isArray(res.results) ? (res.results as any) : []
     }
 
     async function queryResource(opsClient: ResolvedBackend['opsClient'], args2: { resource: string; params: QueryParams; context?: ObservabilityContext }): Promise<{ items: any[]; pageInfo?: any }> {
-        const op: Operation = {
+        const op: Operation = Protocol.ops.build.buildQueryOp({
             opId: nextOpId('q'),
-            kind: 'query',
-            query: {
-                resource: args2.resource,
-                params: args2.params
-            }
-        }
+            resource: args2.resource,
+            params: args2.params
+        })
         const results = await executeOps(opsClient, [op], args2.context)
         const result = results[0]
         if (!result) throw new Error('[Atoma] Missing query result')
@@ -83,16 +57,15 @@ export function createSyncReplicatorApplier(args: {
     }
 
     async function writeResource(opsClient: ResolvedBackend['opsClient'], args2: { resource: string; action: WriteAction; items: WriteItem[]; options?: WriteOptions; context?: ObservabilityContext }): Promise<WriteResultData> {
-        const op: Operation = {
+        const op: Operation = Protocol.ops.build.buildWriteOp({
             opId: nextOpId('w'),
-            kind: 'write',
             write: {
                 resource: args2.resource,
                 action: args2.action,
                 items: args2.items,
                 ...(args2.options ? { options: args2.options } : {})
             }
-        }
+        })
         const results = await executeOps(opsClient, [op], args2.context)
         const result = results[0]
         if (!result) throw new Error('[Atoma] Missing write result')

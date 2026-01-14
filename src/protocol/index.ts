@@ -18,7 +18,6 @@ export type {
     WriteItem,
     WriteItemMeta,
     WriteOptions,
-    WriteIntent,
     ChangesPullOp,
     OperationResult,
     OpsRequest,

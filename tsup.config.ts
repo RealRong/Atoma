@@ -5,6 +5,7 @@ export default defineConfig({
         index: 'src/index.ts',
         'devtools/index': 'src/devtools/index.ts',
         'core/index': 'src/core/index.ts',
+        'shared/index': 'src/shared/index.ts',
         'observability/index': 'src/observability/index.ts',
         'protocol/index': 'src/protocol/index.ts',
         'sync/index': 'src/sync/index.ts',
@@ -25,6 +26,7 @@ export default defineConfig({
         options.alias = {
             ...(options.alias ?? {}),
             '#core': 'src/core/index.ts',
+            '#shared': 'src/shared/index.ts',
             '#observability': 'src/observability/index.ts',
             '#protocol': 'src/protocol/index.ts',
             '#sync': 'src/sync/index.ts',

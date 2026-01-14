@@ -1,5 +1,5 @@
 import type { CursorStore, SyncApplier, SyncEvent, SyncPhase, SyncTransport } from '../types'
-import type { ChangeBatch, Cursor, Meta, Operation } from '#protocol'
+import { Protocol, type ChangeBatch, type Cursor, type Meta, type Operation } from '#protocol'
 import { executeSingleOp, readCursorOrInitial, toError, toOperationError } from '../internal'
 
 export class PullLane {
@@ -38,15 +38,12 @@ export class PullLane {
             const opId = this.deps.nextOpId('c')
             const resources = this.deps.resources
 
-            const op: Operation = {
+            const op: Operation = Protocol.ops.build.buildChangesPullOp({
                 opId,
-                kind: 'changes.pull',
-                pull: {
-                    cursor,
-                    limit,
-                    ...(resources?.length ? { resources } : {})
-                }
-            }
+                cursor,
+                limit,
+                ...(resources?.length ? { resources } : {})
+            })
 
             const opResult = await executeSingleOp({
                 transport: this.deps.transport,

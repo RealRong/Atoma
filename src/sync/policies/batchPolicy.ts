@@ -1,5 +1,6 @@
 import type { SyncOutboxItem } from '../types'
 import type { WriteAction, WriteItem, WriteOptions } from '#protocol'
+import { Shared } from '#shared'
 
 export type WriteBatch = {
     resource: string
@@ -13,17 +14,8 @@ export type WriteBatch = {
     options?: WriteOptions
 }
 
-function stableStringify(value: any): string {
-    if (value === null || value === undefined) return String(value)
-    if (typeof value !== 'object') return JSON.stringify(value)
-    if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
-    const keys = Object.keys(value).sort()
-    return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify((value as any)[k])}`).join(',')}}`
-}
-
 function optionsKey(options: WriteOptions | undefined): string {
-    if (!options) return ''
-    return stableStringify(options)
+    return Shared.key.optionsKey(options)
 }
 
 export function buildWriteBatch(pending: SyncOutboxItem[]): WriteBatch | undefined {

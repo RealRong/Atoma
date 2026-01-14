@@ -2,7 +2,7 @@ import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
 import type { MutationPipeline } from './mutation/MutationPipeline'
 import type { DebugConfig, DebugEvent, Explain, ObservabilityContext, ObservabilityRuntime } from '#observability'
-import type { EntityId, Meta, Operation, OperationResult } from '#protocol'
+import type { EntityId, Meta, Operation, OperationResult, WriteAction, WriteItem, WriteOptions } from '#protocol'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
 import type { StoreIndexes } from './indexes/StoreIndexes'
 
@@ -219,7 +219,7 @@ export type StoreDispatchEvent<T extends Entity> = {
             /**
              * Patch-based mutation (用于 history undo/redo 或其他高级场景)
              * - direct：不会逐条把 patches 应用到后端，而是按受影响 id 做 restore/replace（bulkUpsert merge=false + 版本化 bulkDelete）。
-             * - outbox：会将 patches 归并为按 id 的 create/update/delete 意图后入队。
+             * - outbox：与 direct 同语义，按受影响 id 做 restore/replace（upsert merge=false loose + delete），但写入会进入 outbox 队列等待推送。
              */
             type: 'patches'
             patches: Patch[]
@@ -404,9 +404,9 @@ export type StoreToken = string
 export type OutboxEnqueuer = Readonly<{
     enqueueWrite: (args: {
         resource: string
-        action: string
-        items: unknown[]
-        options?: unknown
+        action: WriteAction
+        items: WriteItem[]
+        options?: WriteOptions
     }) => Promise<void>
 }>
 

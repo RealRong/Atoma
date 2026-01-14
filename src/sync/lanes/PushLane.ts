@@ -102,9 +102,8 @@ export class PushLane {
                         }
                     })
 
-                    const op: Operation = {
+                    const op: Operation = Protocol.ops.build.buildWriteOp({
                         opId,
-                        kind: 'write',
                         write: {
                             resource,
                             action,
@@ -114,7 +113,7 @@ export class PushLane {
                                 returning: this.deps.returning
                             }
                         }
-                    }
+                    })
 
                     try {
                         Protocol.ops.validate.assertOutgoingOpsV1({ ops: [op], meta })

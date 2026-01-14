@@ -5,6 +5,7 @@ export default defineConfig({
     resolve: {
         alias: {
             '#core': path.resolve(__dirname, 'src/core/index.ts'),
+            '#shared': path.resolve(__dirname, 'src/shared/index.ts'),
             '#observability': path.resolve(__dirname, 'src/observability/index.ts'),
             '#protocol': path.resolve(__dirname, 'src/protocol/index.ts'),
             '#sync': path.resolve(__dirname, 'src/sync/index.ts'),

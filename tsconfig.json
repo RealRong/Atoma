@@ -5,6 +5,9 @@
       "#core": [
         "src/core/index.ts"
       ],
+      "#shared": [
+        "src/shared/index.ts"
+      ],
       "#observability": [
         "src/observability/index.ts"
       ],
