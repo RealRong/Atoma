@@ -2,8 +2,6 @@ import { produce } from 'immer'
 import type { Draft } from 'immer'
 import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
-import { bulkAdd } from '../internals/atomMapOps'
-import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { dispatch } from '../internals/dispatch'
 import { toError } from '../internals/errors'
 import { ensureActionId } from '../internals/ensureActionId'
@@ -69,7 +67,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
                 }
             } else {
                 const { data } = await executeQuery(handle, { where: { id: { in: missing } } } as any, observabilityContext)
-                const toCache: Array<PartialWithId<T>> = []
+                const toHydrate: Array<PartialWithId<T>> = []
 
                 for (const fetched of data) {
                     if (!fetched) continue
@@ -77,21 +75,17 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
                     const validFetched = await validateWithSchema(transformed, schema)
                     const id = (validFetched as any).id as EntityId
                     baseById.set(id, validFetched as any)
-                    toCache.push(validFetched as any)
+                    toHydrate.push(validFetched as any)
                 }
 
-                if (toCache.length) {
-                    const after = bulkAdd(toCache, beforeMap)
-                    if (after !== beforeMap) {
-                        const changedIds = new Set<EntityId>()
-                        for (const item of toCache) {
-                            const id = item.id as any as EntityId
-                            if (!beforeMap.has(id) || beforeMap.get(id) !== (item as any)) {
-                                changedIds.add(id)
-                            }
-                        }
-                        commitAtomMapUpdateDelta({ handle, before: beforeMap, after, changedIds })
-                    }
+                if (toHydrate.length) {
+                    dispatch<T>({
+                        type: 'hydrateMany',
+                        handle,
+                        items: toHydrate,
+                        opContext,
+                        persist: writeConfig.persistMode
+                    })
                 }
             }
         }

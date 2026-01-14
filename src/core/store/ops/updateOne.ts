@@ -2,8 +2,6 @@ import { produce } from 'immer'
 import type { Draft } from 'immer'
 import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { add } from '../internals/atomMapOps'
-import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { dispatch } from '../internals/dispatch'
 import { runAfterSave } from '../internals/hooks'
 import { resolveObservabilityContext } from '../internals/runtime'
@@ -18,10 +16,10 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>, writeC
     return async (id: EntityId, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         const observabilityContext = resolveObservabilityContext(handle, options)
 
-        const resolveBase = async (): Promise<PartialWithId<T>> => {
+        const resolveBase = async (): Promise<{ base: PartialWithId<T>; hydrate?: PartialWithId<T> }> => {
             const cached = jotaiStore.get(atom).get(id) as T | undefined
             if (cached) {
-                return cached as unknown as PartialWithId<T>
+                return { base: cached as unknown as PartialWithId<T> }
             }
 
             if (!writeConfig.allowImplicitFetchForWrite) {
@@ -37,13 +35,13 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>, writeC
 
             const transformed = transform(fetched)
             const validFetched = await validateWithSchema(transformed, schema)
-            const before = jotaiStore.get(atom)
-            const after = add(validFetched as PartialWithId<T>, before)
-            commitAtomMapUpdateDelta({ handle, before, after, changedIds: [id] })
-            return validFetched as unknown as PartialWithId<T>
+            return {
+                base: validFetched as unknown as PartialWithId<T>,
+                hydrate: validFetched as unknown as PartialWithId<T>
+            }
         }
 
-        const base = await resolveBase()
+        const { base, hydrate } = await resolveBase()
 
         const next = produce(base as any, (draft: Draft<T>) => recipe(draft)) as any
         const patched = { ...(next as any), id } as PartialWithId<T>
@@ -52,6 +50,16 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>, writeC
         const { ticket } = services.mutation.runtime.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
+            if (hydrate) {
+                dispatch<T>({
+                    type: 'hydrate',
+                    handle,
+                    data: hydrate,
+                    opContext: options?.opContext,
+                    persist: writeConfig.persistMode
+                })
+            }
+
             dispatch<T>({
                 type: 'update',
                 handle,

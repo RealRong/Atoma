@@ -31,3 +31,4 @@ export type PageInfo = {
     hasNext?: boolean
     total?: number
 }
+

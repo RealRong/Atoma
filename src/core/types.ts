@@ -208,6 +208,14 @@ export type StoreDispatchEvent<T extends Entity> = {
             onSuccess?: () => void
         }
         | {
+            type: 'hydrate'
+            data: PartialWithId<T>
+        }
+        | {
+            type: 'hydrateMany'
+            items: Array<PartialWithId<T>>
+        }
+        | {
             /**
              * Patch-based mutation (用于 history undo/redo 或其他高级场景)
              * - direct：不会逐条把 patches 应用到后端，而是按受影响 id 做 restore/replace（bulkUpsert merge=false + 版本化 bulkDelete）。

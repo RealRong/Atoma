@@ -49,6 +49,13 @@ export class AtomCommitter implements Committer {
     prepare<T extends Entity>(args: CommitterPrepareArgs<T>) {
         if (args.plan.patches.length === 0 && args.plan.nextState === args.originalState) return
         args.store.set(args.atom, args.plan.nextState)
+
+        const changedIds = (args.plan as any)?.changedIdsForIndexes as ReadonlySet<any> | undefined
+        if (changedIds && changedIds.size) {
+            args.indexes?.applyChangedIds(args.originalState as any, args.plan.nextState as any, changedIds as any)
+            return
+        }
+
         args.indexes?.applyPatches(args.originalState, args.plan.nextState, args.plan.patches)
     }
 
@@ -119,6 +126,13 @@ export class AtomCommitter implements Committer {
 
     rollback<T extends Entity>(args: CommitterRollbackArgs<T>) {
         args.store.set(args.atom, args.originalState)
+
+        const changedIds = (args.plan as any)?.changedIdsForIndexes as ReadonlySet<any> | undefined
+        if (changedIds && changedIds.size) {
+            args.indexes?.applyChangedIds(args.plan.nextState as any, args.originalState as any, changedIds as any)
+            return
+        }
+
         args.indexes?.applyPatches(args.plan.nextState, args.originalState, args.plan.inversePatches)
     }
 }

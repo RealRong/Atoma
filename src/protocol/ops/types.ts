@@ -1,7 +1,7 @@
 import type { PageInfo, QueryParams } from './query'
-import type { Cursor, EntityId, Version } from '../shared/scalars'
-import type { Meta } from '../shared/meta'
-import type { StandardError } from '../shared/error'
+import type { Cursor, EntityId, Version } from '../core/scalars'
+import type { Meta } from '../core/meta'
+import type { StandardError } from '../core/error'
 import type { ChangeBatch } from './changes'
 
 export type OperationKind = 'query' | 'write' | 'changes.pull'

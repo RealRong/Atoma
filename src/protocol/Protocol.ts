@@ -1,8 +1,9 @@
-import { error } from './shared/error'
-import { http } from './ops/http'
-import { ids } from './shared/ids'
-import { ops } from './ops/ops'
-import { sse } from './shared/sse'
+import { error } from './core/error'
+import { http } from './transport/http'
+import { ids } from './ids'
+import { ops } from './ops'
+import { sse } from './transport/sse'
+import { collab } from './collab'
 
 export const Protocol = {
     http,
@@ -10,6 +11,5 @@ export const Protocol = {
     ids,
     ops,
     sse,
-    collab: {}
+    collab
 } as const
-

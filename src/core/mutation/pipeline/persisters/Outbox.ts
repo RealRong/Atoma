@@ -190,6 +190,7 @@ export class OutboxPersister implements Persister {
             const type = types[i]
             const value = args.plan.appliedData[i]
             if (!type) continue
+            if (type === 'hydrate' || type === 'hydrateMany') continue
             const meta = metaForOpIndex(i)
 
             if (type === 'add') {

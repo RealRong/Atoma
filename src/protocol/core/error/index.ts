@@ -1,4 +1,4 @@
-import * as errorFns from './fns'
+import * as errorFns from './error'
 
 export const error = {
     create: errorFns.create,

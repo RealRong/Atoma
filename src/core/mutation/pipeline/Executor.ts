@@ -21,7 +21,115 @@ class DefaultPlanner implements Planner {
         operations: StoreDispatchEvent<T>[],
         currentState: Map<EntityId, T>
     ): Plan<T> {
-        return this.reducer.reduce(operations, currentState)
+        const atom = operations[0]?.handle.atom as any
+
+        let baseState: Map<EntityId, T> = currentState
+        const hydrateChangedIds = new Set<EntityId>()
+
+        const writeOps: Array<StoreDispatchEvent<T>> = []
+
+        for (const op of operations) {
+            if (op.type === 'hydrate') {
+                const item = (op as any).data as any
+                const id = item?.id as EntityId | undefined
+                if (id !== undefined && id !== null && !baseState.has(id)) {
+                    if (baseState === currentState) {
+                        const next = new Map(currentState)
+                        next.set(id, item as any)
+                        baseState = next as any
+                    } else {
+                        (baseState as any).set(id, item as any)
+                    }
+                    hydrateChangedIds.add(id)
+                }
+                continue
+            }
+            if (op.type === 'hydrateMany') {
+                const items = ((op as any).items as any[]) ?? []
+                for (const item of items) {
+                    const id = item?.id as EntityId | undefined
+                    if (id === undefined || id === null) continue
+                    if (baseState.has(id)) continue
+                    if (baseState === currentState) {
+                        const next = new Map(currentState)
+                        next.set(id, item as any)
+                        baseState = next as any
+                    } else {
+                        (baseState as any).set(id, item as any)
+                    }
+                    hydrateChangedIds.add(id)
+                }
+                continue
+            }
+
+            writeOps.push(op)
+        }
+
+        const baseStateForPlan = baseState === currentState ? undefined : baseState
+
+        if (writeOps.length === 0) {
+            const operationTypes = operations.map(o => o.type as any)
+            const appliedData = operations.map(o => {
+                if (o.type === 'hydrate') return (o as any).data
+                if (o.type === 'hydrateMany') return (o as any).items
+                return (o as any).data
+            })
+
+            return {
+                ...(baseStateForPlan ? { baseState: baseStateForPlan } : {}),
+                ...(hydrateChangedIds.size ? { changedIdsForIndexes: hydrateChangedIds } : {}),
+                nextState: baseState,
+                patches: [],
+                inversePatches: [],
+                changedFields: new Set(),
+                appliedData,
+                operationTypes,
+                atom
+            } as any
+        }
+
+        const writePlan = this.reducer.reduce(writeOps, baseState)
+
+        const appliedData = new Array<any>(operations.length)
+        const operationTypes = new Array<any>(operations.length)
+
+        let writeCursor = 0
+        for (let i = 0; i < operations.length; i++) {
+            const op = operations[i]
+            if (op.type === 'hydrate') {
+                operationTypes[i] = 'hydrate'
+                appliedData[i] = (op as any).data
+                continue
+            }
+            if (op.type === 'hydrateMany') {
+                operationTypes[i] = 'hydrateMany'
+                appliedData[i] = (op as any).items
+                continue
+            }
+
+            operationTypes[i] = writePlan.operationTypes[writeCursor]
+            appliedData[i] = writePlan.appliedData[writeCursor]
+            writeCursor++
+        }
+
+        const changedIdsForIndexes = new Set<EntityId>()
+        hydrateChangedIds.forEach(id => changedIdsForIndexes.add(id))
+        writePlan.patches.forEach(p => {
+            const path = (p as any)?.path
+            if (!Array.isArray(path) || path.length < 1) return
+            const id = path[0] as any as EntityId
+            if (id === undefined || id === null) return
+            changedIdsForIndexes.add(id)
+        })
+
+        return {
+            ...(baseStateForPlan ? { baseState: baseStateForPlan } : {}),
+            ...(changedIdsForIndexes.size ? { changedIdsForIndexes } : {}),
+            ...writePlan,
+            appliedData,
+            operationTypes,
+            atom
+        } as any
     }
 }
 
@@ -183,18 +291,19 @@ export class Executor implements IExecutor {
 
                 const payload = plan.appliedData[idx]
                 if (op.type === 'add' || op.type === 'create' || op.type === 'update' || op.type === 'upsert') {
-                    op.onSuccess?.(payload ?? (op.data as any))
+                    (op as any).onSuccess?.(payload ?? ((op as any).data as any))
                     return
                 }
-                op.onSuccess?.()
+                (op as any).onSuccess?.()
             })
         } catch (error) {
             await mutationHooks.events.persistError.emit({ ctx: persistCtx, error })
+            const rollbackState = ((plan as any)?.baseState as any) ?? originalState
             this.committer.rollback({
                 atom,
                 store,
                 plan,
-                originalState,
+                originalState: rollbackState,
                 indexes
             })
             const rolledBackEvent: RolledBackEvent<T> = {

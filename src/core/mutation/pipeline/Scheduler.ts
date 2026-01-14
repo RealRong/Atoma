@@ -36,51 +36,15 @@ export class Scheduler {
     private readonly autoActionIdByKey = new Map<string, { actionId: string; timestamp: number }>()
 
     enqueue(event: StoreDispatchEvent<any>) {
-        const run = async () => {
-            const services = event.handle.services
-            const hooks = services.mutation.hooks
-
-            const decision: DispatchDecision<StoreDispatchEvent<any>> = await hooks.middleware.beforeDispatch.run(
-                {
-                    storeName: event.handle.storeName,
-                    event
-                } as BeforeDispatchContext<any>,
-                async () => ({ kind: 'proceed' } as any)
-            )
-
-            if (decision.kind === 'reject') {
-                const err = toError(decision.error, '[Atoma] dispatch rejected')
-                event.ticket?.settle('enqueued', err)
-                event.onFail?.(err)
-                return
-            }
-
-            const nextEvent = decision.kind === 'transform'
-                ? (decision.event as StoreDispatchEvent<any>)
-                : event
-
-            const normalizedOpContext = this.normalizeOpContext(nextEvent.opContext)
-            const normalized = {
-                ...nextEvent,
-                opContext: normalizedOpContext
-            } as StoreDispatchEvent<any>
-
-            const atom = normalized.handle.atom as any
-            const existing = this.queueMap.get(atom)
-            if (existing) {
-                existing.push(normalized)
-            } else {
-                this.queueMap.set(atom, [normalized])
-            }
-
-            this.flush()
+        const atom = event.handle.atom as any
+        const existing = this.queueMap.get(atom)
+        if (existing) {
+            existing.push(event)
+        } else {
+            this.queueMap.set(atom, [event])
         }
 
-        void run().catch((error) => {
-            const err = toError(error, '[Atoma] dispatch failed')
-            event.ticket?.settle('enqueued', err)
-            event.onFail?.(err)
-        })
+        this.flush()
     }
 
     flush() {
@@ -107,7 +71,10 @@ export class Scheduler {
 
                 for (const [_atom, events] of snapshot.entries()) {
                     if (!events.length) continue
-                    const segments = this.segmentByContext(events)
+                    const processed = await this.applyMiddlewareAndNormalize(events)
+                    if (!processed.length) continue
+
+                    const segments = this.segmentByContext(processed)
                     for (const ops of segments) {
                         await this.runSegment(ops)
                     }
@@ -117,6 +84,70 @@ export class Scheduler {
             this.draining = false
             this.autoActionIdByKey.clear()
         }
+    }
+
+    private async applyMiddlewareAndNormalize(events: Array<StoreDispatchEvent<any>>) {
+        const processed: Array<StoreDispatchEvent<any>> = []
+
+        for (const original of events) {
+            try {
+                const shouldSkipMiddleware = original.type === 'hydrate' || original.type === 'hydrateMany'
+                const nextEvent = shouldSkipMiddleware
+                    ? original
+                    : await this.runBeforeDispatchMiddleware(original)
+
+                if (!nextEvent) continue
+
+                const normalizedOpContext = this.normalizeOpContext(nextEvent.opContext)
+                const normalized = {
+                    ...nextEvent,
+                    opContext: normalizedOpContext
+                } as StoreDispatchEvent<any>
+
+                const atom = normalized.handle.atom as any
+                if (atom !== (original.handle.atom as any)) {
+                    const existing = this.queueMap.get(atom)
+                    if (existing) {
+                        existing.push(normalized)
+                    } else {
+                        this.queueMap.set(atom, [normalized])
+                    }
+                    continue
+                }
+
+                processed.push(normalized)
+            } catch (error) {
+                const err = toError(error, '[Atoma] dispatch failed')
+                original.ticket?.settle('enqueued', err)
+                original.onFail?.(err)
+            }
+        }
+
+        return processed
+    }
+
+    private async runBeforeDispatchMiddleware(event: StoreDispatchEvent<any>): Promise<StoreDispatchEvent<any> | null> {
+        const services = event.handle.services
+        const hooks = services.mutation.hooks
+
+        const decision: DispatchDecision<StoreDispatchEvent<any>> = await hooks.middleware.beforeDispatch.run(
+            {
+                storeName: event.handle.storeName,
+                event
+            } as BeforeDispatchContext<any>,
+            async () => ({ kind: 'proceed' } as any)
+        )
+
+        if (decision.kind === 'reject') {
+            const err = toError(decision.error, '[Atoma] dispatch rejected')
+            event.ticket?.settle('enqueued', err)
+            event.onFail?.(err)
+            return null
+        }
+
+        return decision.kind === 'transform'
+            ? (decision.event as StoreDispatchEvent<any>)
+            : event
     }
 
     private segmentByContext(events: Array<StoreDispatchEvent<any>>) {

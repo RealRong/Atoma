@@ -14,6 +14,8 @@ import type { StoreIndexes } from '../../indexes/StoreIndexes'
 import type { Committer as MutationCommitter } from '../types'
 
 export type Plan<T extends Entity> = Readonly<{
+    baseState?: Map<EntityId, T>
+    changedIdsForIndexes?: ReadonlySet<EntityId>
     nextState: Map<EntityId, T>
     patches: Patch[]
     inversePatches: Patch[]

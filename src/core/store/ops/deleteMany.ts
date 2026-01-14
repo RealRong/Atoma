@@ -1,7 +1,5 @@
 import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
-import { bulkAdd } from '../internals/atomMapOps'
-import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { dispatch } from '../internals/dispatch'
 import { toError } from '../internals/errors'
 import { ensureActionId } from '../internals/ensureActionId'
@@ -37,6 +35,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
         const before = jotaiStore.get(atom)
         const beforeMap = before as Map<EntityId, T>
         const missing: EntityId[] = []
+        const hydratedIds = new Set<EntityId>()
 
         for (const id of firstIndexById.keys()) {
             const cached = beforeMap.get(id)
@@ -57,34 +56,31 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
                 }
             } else {
                 const { data } = await executeQuery(handle, { where: { id: { in: missing } } } as any, observabilityContext)
-                const toCache: Array<PartialWithId<T>> = []
+                const toHydrate: Array<PartialWithId<T>> = []
 
                 for (const fetched of data) {
                     if (!fetched) continue
                     const transformed = transform(fetched as T)
                     const validFetched = await validateWithSchema(transformed, schema)
-                    toCache.push(validFetched as any)
+                    const id = (validFetched as any).id as EntityId
+                    hydratedIds.add(id)
+                    toHydrate.push(validFetched as any)
                 }
 
-                if (toCache.length) {
-                    const after = bulkAdd(toCache, beforeMap)
-                    if (after !== beforeMap) {
-                        const changedIds = new Set<EntityId>()
-                        for (const item of toCache) {
-                            const id = item.id as any as EntityId
-                            if (!beforeMap.has(id) || beforeMap.get(id) !== (item as any)) {
-                                changedIds.add(id)
-                            }
-                        }
-                        commitAtomMapUpdateDelta({ handle, before: beforeMap, after, changedIds })
-                    }
+                if (toHydrate.length) {
+                    dispatch<T>({
+                        type: 'hydrateMany',
+                        handle,
+                        items: toHydrate,
+                        opContext,
+                        persist: writeConfig.persistMode
+                    })
                 }
 
                 for (const id of missing) {
                     const firstIndex = firstIndexById.get(id)
                     if (typeof firstIndex !== 'number') continue
-                    const now = jotaiStore.get(atom).get(id)
-                    if (now) continue
+                    if (hydratedIds.has(id)) continue
                     results[firstIndex] = {
                         index: firstIndex,
                         ok: false,
@@ -100,7 +96,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
             if (results[index]) continue
 
             const id = ids[index]
-            if (options?.force && !jotaiStore.get(atom).has(id)) {
+            if (options?.force && !(beforeMap.has(id) || hydratedIds.has(id))) {
                 results[index] = {
                     index,
                     ok: false,

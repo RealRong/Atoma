@@ -1,4 +1,4 @@
-import { ids } from '../shared/ids'
+import { ids } from '../ids'
 import type { WriteItemMeta } from './types'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -42,4 +42,3 @@ export function ensureWriteItemMeta(args: {
 export function newWriteItemMeta(args?: { now?: () => number }): WriteItemMeta {
     return ensureWriteItemMeta({ now: args?.now })
 }
-

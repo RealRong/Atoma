@@ -296,6 +296,7 @@ export class DirectPersister implements Persister {
             const type = types[idx]
             const value = args.plan.appliedData[idx]
             if (!type || !value) continue
+            if (type === 'hydrate' || type === 'hydrateMany') continue
 
             const meta = writeItemMetaForIndex({ operations: args.operations, idx, fallbackClientTimeMs })
 

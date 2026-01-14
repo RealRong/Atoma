@@ -45,3 +45,8 @@ export function createOpId(prefix: string, args?: { now?: () => number }): strin
     return `${p}_${now}_${next}`
 }
 
+export const ids = {
+    createIdempotencyKey,
+    createOpId
+} as const
+
