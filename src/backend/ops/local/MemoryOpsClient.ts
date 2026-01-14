@@ -2,17 +2,12 @@ import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import { OpsClient } from '../OpsClient'
 import type { Operation, OperationResult, QueryParams, QueryResultData, StandardError, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
 import type { ChangeBatch } from '#protocol'
-import { Core, type StoreKey } from '#core'
+import { Core } from '#core'
 
 type ResourceStore = Map<string, any>
 
 function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function toStoreKey(entityId: string): StoreKey {
-    if (entityId.match(/^[0-9]+$/)) return Number(entityId)
-    return entityId
 }
 
 function standardError(args: { code: string; message: string; kind: StandardError['kind']; details?: StandardError['details'] }): StandardError {
@@ -45,8 +40,8 @@ function normalizeQueryParams(params: unknown): QueryParams | undefined {
     return params as QueryParams
 }
 
-function normalizeLimit(value: unknown, fallback: number): number {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+function normalizeOptionalLimit(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
     return Math.max(0, Math.floor(value))
 }
 
@@ -85,7 +80,7 @@ export class MemoryOpsClient extends OpsClient {
                     const entityId = String(id)
                     const current = isPlainObject(item) ? { ...(item as any) } : item
                     if (isPlainObject(current)) {
-                        current.id = id
+                        current.id = entityId
                         if (!(typeof current.version === 'number' && Number.isFinite(current.version) && current.version >= 1)) {
                             current.version = 1
                         }
@@ -192,13 +187,15 @@ export class MemoryOpsClient extends OpsClient {
         const wantsCursorPaging = Boolean(beforeToken || afterOrCursor)
 
         if (!wantsCursorPaging) {
-            const limit = normalizeLimit((params as any).limit, 50)
             const offset = normalizeOffset((params as any).offset) ?? 0
             const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
 
-            const slice = sorted.slice(offset, offset + limit)
+            const limit = normalizeOptionalLimit((params as any).limit)
+            const slice = typeof limit === 'number'
+                ? sorted.slice(offset, offset + limit)
+                : sorted.slice(offset)
             const last = slice[slice.length - 1]
-            const hasNext = offset + limit < sorted.length
+            const hasNext = typeof limit === 'number' ? (offset + limit < sorted.length) : false
             return {
                 items: slice.map(i => projectSelect(i, select)),
                 pageInfo: {
@@ -209,7 +206,7 @@ export class MemoryOpsClient extends OpsClient {
             }
         }
 
-        const limit = normalizeLimit((params as any).limit, 50)
+        const limit = normalizeOptionalLimit((params as any).limit) ?? 50
 
         if (beforeToken) {
             const idx = sorted.findIndex(item => String((item as any)?.id) === beforeToken)
@@ -292,7 +289,7 @@ export class MemoryOpsClient extends OpsClient {
                     const value = (raw as any)?.value
                     const next = isPlainObject(value) ? { ...(value as any) } : value
                     if (isPlainObject(next)) {
-                        next.id = toStoreKey(id)
+                        next.id = id
                         if (!(typeof next.version === 'number' && Number.isFinite(next.version) && next.version >= 1)) {
                             next.version = 1
                         }
@@ -345,7 +342,7 @@ export class MemoryOpsClient extends OpsClient {
                     const next = isPlainObject(value) ? { ...(value as any) } : value
                     const nextVersion = baseVersion + 1
                     if (isPlainObject(next)) {
-                        next.id = toStoreKey(id)
+                        next.id = id
                         next.version = nextVersion
                     }
                     store.set(id, next)
@@ -373,7 +370,7 @@ export class MemoryOpsClient extends OpsClient {
                     if (!current) {
                         const next = candidate
                         if (isPlainObject(next)) {
-                            next.id = toStoreKey(id)
+                            next.id = id
                             if (!(typeof next.version === 'number' && Number.isFinite(next.version) && next.version >= 1)) {
                                 next.version = 1
                             }
@@ -426,7 +423,7 @@ export class MemoryOpsClient extends OpsClient {
                         : candidate
 
                     if (isPlainObject(next)) {
-                        next.id = toStoreKey(id)
+                        next.id = id
                         next.version = nextVersion
                     }
                     store.set(id, next)

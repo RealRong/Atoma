@@ -1,4 +1,5 @@
-import { IndexDefinition, StoreKey } from '../../types'
+import { IndexDefinition } from '../../types'
+import type { EntityId } from '#protocol'
 import { CandidateResult, IndexStats } from '../types'
 import { binarySearchPrefix, intersectAll } from '../utils'
 import { IIndex } from '../base/IIndex'
@@ -28,12 +29,12 @@ export class SubstringIndex<T> implements IIndex<T> {
 
     private ngramSize: number
 
-    private valueMap = new Map<string, Set<StoreKey>>()
-    private reverseValueMap = new Map<string, Set<StoreKey>>()
-    private gramMap = new Map<string, Set<StoreKey>>()
+    private valueMap = new Map<string, Set<EntityId>>()
+    private reverseValueMap = new Map<string, Set<EntityId>>()
+    private gramMap = new Map<string, Set<EntityId>>()
 
-    private docValue = new Map<StoreKey, string>()
-    private docGrams = new Map<StoreKey, string[]>()
+    private docValue = new Map<EntityId, string>()
+    private docGrams = new Map<EntityId, string[]>()
 
     private sortedValues: string[] | null = null
     private sortedReverseValues: string[] | null = null
@@ -47,18 +48,18 @@ export class SubstringIndex<T> implements IIndex<T> {
         this.ngramSize = Math.max(2, Math.min(6, config.options?.ngramSize ?? 3))
     }
 
-    add(id: StoreKey, value: any): void {
+    add(id: EntityId, value: any): void {
         const str = normalize(value)
         this.docValue.set(id, str)
 
         // value -> ids
-        const set = this.valueMap.get(str) || new Set<StoreKey>()
+        const set = this.valueMap.get(str) || new Set<EntityId>()
         set.add(id)
         this.valueMap.set(str, set)
 
         // reversed value -> ids (for endsWith)
         const reversed = reverseString(str)
-        const rset = this.reverseValueMap.get(reversed) || new Set<StoreKey>()
+        const rset = this.reverseValueMap.get(reversed) || new Set<EntityId>()
         rset.add(id)
         this.reverseValueMap.set(reversed, rset)
 
@@ -66,7 +67,7 @@ export class SubstringIndex<T> implements IIndex<T> {
         const grams = buildNgrams(str, this.ngramSize)
         this.docGrams.set(id, grams)
         grams.forEach(g => {
-            const gset = this.gramMap.get(g) || new Set<StoreKey>()
+            const gset = this.gramMap.get(g) || new Set<EntityId>()
             gset.add(id)
             this.gramMap.set(g, gset)
         })
@@ -76,7 +77,7 @@ export class SubstringIndex<T> implements IIndex<T> {
         this.dirty = true
     }
 
-    remove(id: StoreKey, _value: any): void {
+    remove(id: EntityId, _value: any): void {
         const str = this.docValue.get(id)
         if (!str) return
 
@@ -146,7 +147,7 @@ export class SubstringIndex<T> implements IIndex<T> {
             if (needle.length < this.ngramSize) return { kind: 'unsupported' }
             const grams = buildNgrams(needle, this.ngramSize)
             if (!grams.length) return { kind: 'unsupported' }
-            const sets: Set<StoreKey>[] = []
+            const sets: Set<EntityId>[] = []
             for (const gram of grams) {
                 const ids = this.gramMap.get(gram)
                 if (!ids || ids.size === 0) return { kind: 'empty' }
@@ -200,10 +201,10 @@ export class SubstringIndex<T> implements IIndex<T> {
         return this.sortedReverseValues
     }
 
-    private prefixSearch(prefix: string): Set<StoreKey> {
+    private prefixSearch(prefix: string): Set<EntityId> {
         const sorted = this.buildSortedValues()
         const { start, end } = binarySearchPrefix(sorted, prefix)
-        const result = new Set<StoreKey>()
+        const result = new Set<EntityId>()
         for (let i = start; i < end; i++) {
             const val = sorted[i]
             if (!val.startsWith(prefix)) break
@@ -213,11 +214,11 @@ export class SubstringIndex<T> implements IIndex<T> {
         return result
     }
 
-    private suffixSearch(suffix: string): Set<StoreKey> {
+    private suffixSearch(suffix: string): Set<EntityId> {
         const revPrefix = reverseString(suffix)
         const sorted = this.buildSortedReverseValues()
         const { start, end } = binarySearchPrefix(sorted, revPrefix)
-        const result = new Set<StoreKey>()
+        const result = new Set<EntityId>()
         for (let i = start; i < end; i++) {
             const val = sorted[i]
             if (!val.startsWith(revPrefix)) break

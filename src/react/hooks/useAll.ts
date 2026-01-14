@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useAtomValue } from 'jotai'
 import { Core } from '#core'
-import type { Entity, StoreHandleOwner, StoreKey, WithRelations, RelationIncludeInput } from '#core'
+import type { Entity, StoreHandleOwner, WithRelations, RelationIncludeInput } from '#core'
 import { useRelations } from './useRelations'
 
 /**

@@ -3,7 +3,7 @@ import { Core } from '#core'
 import type { AtomaClientContext, AtomaSchema } from '../../types'
 
 export const createStore = (ctx: any, options: any) => {
-    const dataSource = options.dataSource ?? ctx.defaults.dataSourceFactory(options.name)
+    const backend = options.backend ?? ctx.defaults.backendFactory(options.name)
     const idGenerator = options.idGenerator ?? ctx.defaults.idGenerator
 
     const createRelationsFromSchema = (schema: any) => {
@@ -43,7 +43,7 @@ export const createStore = (ctx: any, options: any) => {
         name: options.name,
         ...(idGenerator ? { idGenerator } : {}),
         store: ctx.jotaiStore as any,
-        dataSource,
+        backend,
         relations: relationsFactory as any,
         services: ctx.services
     })

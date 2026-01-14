@@ -1,4 +1,5 @@
-import type { CoreStore, Entity, IDataSource, IStore, JotaiStore, StoreKey, StoreServices } from '#core'
+import type { CoreStore, Entity, IStore, JotaiStore, StoreBackend, StoreServices } from '#core'
+import type { EntityId } from '#protocol'
 import type { InferRelationsFromSchema } from './relations'
 import type { AtomaSchema } from './schema'
 
@@ -9,8 +10,8 @@ export type AtomaClientContext<
     jotaiStore: JotaiStore
     services: StoreServices
     defaults: {
-        dataSourceFactory: <Name extends keyof Entities & string>(name: Name) => IDataSource<Entities[Name]>
-        idGenerator?: () => StoreKey
+        backendFactory: <Name extends keyof Entities & string>(name: Name) => StoreBackend
+        idGenerator?: () => EntityId
     }
     Store: <Name extends keyof Entities & string>(name: Name) => CoreStore<Entities[Name], InferRelationsFromSchema<Entities, Schema, Name>>
     resolveStore: <Name extends keyof Entities & string>(name: Name) => IStore<Entities[Name], InferRelationsFromSchema<Entities, Schema, Name>>

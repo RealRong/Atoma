@@ -1,5 +1,6 @@
 import type { Patch } from 'immer'
-import type { IndexDefinition, StoreKey, WhereOperator } from '../types'
+import type { IndexDefinition, WhereOperator } from '../types'
+import type { EntityId } from '#protocol'
 import type { CandidateResult, IndexStats } from './types'
 import { IndexManager } from './IndexManager'
 
@@ -26,12 +27,12 @@ export class StoreIndexes<T> {
         return this.manager.getLastQueryPlan()
     }
 
-    applyPatches(before: Map<StoreKey, T>, after: Map<StoreKey, T>, patches: Patch[]) {
-        const changedIds = new Set<StoreKey>()
+    applyPatches(before: Map<EntityId, T>, after: Map<EntityId, T>, patches: Patch[]) {
+        const changedIds = new Set<EntityId>()
         patches.forEach(p => {
             const path = (p as any)?.path
             if (!Array.isArray(path) || path.length < 1) return
-            changedIds.add(path[0] as any as StoreKey)
+            changedIds.add(path[0] as any as EntityId)
         })
 
         changedIds.forEach(id => {
@@ -42,7 +43,7 @@ export class StoreIndexes<T> {
         })
     }
 
-    applyChangedIds(before: Map<StoreKey, T>, after: Map<StoreKey, T>, changedIds: Iterable<StoreKey>) {
+    applyChangedIds(before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: Iterable<EntityId>) {
         for (const id of changedIds) {
             const prev = before.get(id)
             const next = after.get(id)
@@ -53,7 +54,7 @@ export class StoreIndexes<T> {
         }
     }
 
-    applyMapDiff(before: Map<StoreKey, T>, after: Map<StoreKey, T>) {
+    applyMapDiff(before: Map<EntityId, T>, after: Map<EntityId, T>) {
         // removals + updates
         before.forEach((prevItem, id) => {
             const nextItem = after.get(id)

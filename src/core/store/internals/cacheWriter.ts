@@ -1,11 +1,12 @@
-import type { StoreHandle, StoreKey } from '../../types'
+import type { StoreHandle } from '../../types'
+import type { EntityId } from '#protocol'
 
-export type ChangedIds = ReadonlyArray<StoreKey> | ReadonlySet<StoreKey>
+export type ChangedIds = ReadonlyArray<EntityId> | ReadonlySet<EntityId>
 
 export function commitAtomMapUpdate<T extends import('../../types').Entity>(params: {
     handle: StoreHandle<T>
-    before: Map<StoreKey, T>
-    after: Map<StoreKey, T>
+    before: Map<EntityId, T>
+    after: Map<EntityId, T>
 }) {
     const { handle, before, after } = params
     const { jotaiStore, atom, indexes } = handle
@@ -18,8 +19,8 @@ export function commitAtomMapUpdate<T extends import('../../types').Entity>(para
 
 export function commitAtomMapUpdateDelta<T extends import('../../types').Entity>(params: {
     handle: StoreHandle<T>
-    before: Map<StoreKey, T>
-    after: Map<StoreKey, T>
+    before: Map<EntityId, T>
+    after: Map<EntityId, T>
     changedIds: ChangedIds
 }) {
     const { handle, before, after, changedIds } = params
@@ -29,7 +30,7 @@ export function commitAtomMapUpdateDelta<T extends import('../../types').Entity>
 
     const size = Array.isArray(changedIds)
         ? changedIds.length
-        : (changedIds as ReadonlySet<StoreKey>).size
+        : (changedIds as ReadonlySet<EntityId>).size
     if (size === 0) return
 
     jotaiStore.set(atom, after)

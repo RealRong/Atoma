@@ -1,5 +1,6 @@
 import type { ClientRuntime } from '../client/types'
-import type { StoreHandle, StoreKey } from '#core'
+import type { StoreHandle } from '#core'
+import type { EntityId } from '#protocol'
 import type { DevtoolsEvent, SyncProvider, HistoryProvider } from './types'
 import type { ClientEntry } from './registry'
 
@@ -25,7 +26,7 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
 
         if (!entry.storeProviders.has(name)) {
             const snapshot = () => {
-                const map = handle.jotaiStore.get(handle.atom) as Map<StoreKey, any>
+                const map = handle.jotaiStore.get(handle.atom) as Map<EntityId, any>
                 const sample = Array.from(map.values()).slice(0, 5)
                 const approxSize = (() => {
                     try {

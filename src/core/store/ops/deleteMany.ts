@@ -1,4 +1,5 @@
-import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, WriteManyResult } from '../../types'
+import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions, WriteManyResult } from '../../types'
+import type { EntityId } from '#protocol'
 import { bulkAdd } from '../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { dispatch } from '../internals/dispatch'
@@ -8,17 +9,18 @@ import { resolveObservabilityContext } from '../internals/runtime'
 import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
 import type { StoreWriteConfig } from '../internals/writeConfig'
+import { executeQuery } from '../internals/opsExecutor'
 
 export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
-    const { jotaiStore, atom, dataSource, services, schema, transform } = handle
+    const { jotaiStore, atom, services, schema, transform } = handle
 
-    return async (ids: StoreKey[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
+    return async (ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
         const opContext = ensureActionId(options?.opContext)
         const confirmation = options?.confirmation ?? 'optimistic'
         const observabilityContext = resolveObservabilityContext(handle, options)
         const results: WriteManyResult<boolean> = new Array(ids.length)
 
-        const firstIndexById = new Map<StoreKey, number>()
+        const firstIndexById = new Map<EntityId, number>()
         for (let i = 0; i < ids.length; i++) {
             const id = ids[i]
             if (firstIndexById.has(id)) {
@@ -33,8 +35,8 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
         }
 
         const before = jotaiStore.get(atom)
-        const beforeMap = before as Map<StoreKey, T>
-        const missing: StoreKey[] = []
+        const beforeMap = before as Map<EntityId, T>
+        const missing: EntityId[] = []
 
         for (const id of firstIndexById.keys()) {
             const cached = beforeMap.get(id)
@@ -54,14 +56,12 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
                     }
                 }
             } else {
-                const fetchedList = await dataSource.bulkGet(missing, observabilityContext)
+                const { data } = await executeQuery(handle, { where: { id: { in: missing } } } as any, observabilityContext)
                 const toCache: Array<PartialWithId<T>> = []
 
-                for (let i = 0; i < missing.length; i++) {
-                    const id = missing[i]
-                    const fetched = fetchedList[i]
+                for (const fetched of data) {
                     if (!fetched) continue
-                    const transformed = transform(fetched)
+                    const transformed = transform(fetched as T)
                     const validFetched = await validateWithSchema(transformed, schema)
                     toCache.push(validFetched as any)
                 }
@@ -69,9 +69,9 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
                 if (toCache.length) {
                     const after = bulkAdd(toCache, beforeMap)
                     if (after !== beforeMap) {
-                        const changedIds = new Set<StoreKey>()
+                        const changedIds = new Set<EntityId>()
                         for (const item of toCache) {
-                            const id = item.id as any as StoreKey
+                            const id = item.id as any as EntityId
                             if (!beforeMap.has(id) || beforeMap.get(id) !== (item as any)) {
                                 changedIds.add(id)
                             }

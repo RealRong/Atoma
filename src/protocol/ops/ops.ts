@@ -1,5 +1,6 @@
 import { envelope } from '../shared/envelope'
 import { encodeWriteIntent } from './encodeWrite'
+import { assertOpsRequestV1, assertOperationV1, assertOutgoingOpsV1 } from './validate'
 
 export const ops = {
     parse: {
@@ -9,7 +10,12 @@ export const ops = {
         ok: envelope.compose.ok,
         error: envelope.compose.error
     },
-    encodeWriteIntent
+    encodeWriteIntent,
+    validate: {
+        assertOpsRequestV1,
+        assertOperationV1,
+        assertOutgoingOpsV1
+    }
 } as const
 
 export type {

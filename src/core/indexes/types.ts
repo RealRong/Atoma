@@ -1,4 +1,4 @@
-import type { StoreKey } from '../types'
+import type { EntityId } from '#protocol'
 
 export type IndexStats = {
     totalDocs: number
@@ -15,4 +15,4 @@ export type CandidateExactness = 'exact' | 'superset'
 export type CandidateResult =
     | { kind: 'unsupported' }
     | { kind: 'empty' }
-    | { kind: 'candidates'; ids: Set<StoreKey>; exactness: CandidateExactness }
+    | { kind: 'candidates'; ids: Set<EntityId>; exactness: CandidateExactness }

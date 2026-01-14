@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Core } from '#core'
-import type { Entity, FindManyOptions, PageInfo, StoreHandleOwner, StoreKey } from '#core'
+import type { Entity, FindManyOptions, PageInfo, StoreHandleOwner } from '#core'
 
 type RemoteState<T extends Entity> = Readonly<{
     isFetching: boolean
@@ -59,9 +59,9 @@ function hydrateIntoStore<T extends Entity>(store: StoreHandleOwner<T, any>, ite
     const handle = Core.store.getHandle(store)
     if (!handle) return
 
-    const before = handle.jotaiStore.get(handle.atom) as Map<StoreKey, T>
+    const before = handle.jotaiStore.get(handle.atom) as Map<T['id'], T>
     const after = new Map(before)
-    const changedIds = new Set<StoreKey>()
+    const changedIds = new Set<T['id']>()
 
     items.forEach(item => {
         const prev = before.get(item.id)
@@ -90,8 +90,8 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
     const key = useMemo(() => {
         const optionsKey = Core.query.stableStringify(stripRuntimeOptions(args.options))
         const modeKey = args.behavior.transient ? 'transient' : 'hydrate'
-        return `${handle.dataSource.name}:${handle.storeName}:${modeKey}:${optionsKey}`
-    }, [handle.dataSource.name, handle.storeName, args.behavior.transient, args.options])
+        return `${handle.backend.key}:${handle.storeName}:${modeKey}:${optionsKey}`
+    }, [handle.backend.key, handle.storeName, args.behavior.transient, args.options])
 
     const entry = useMemo(() => getOrCreateEntry<T>(key), [key])
     const [state, setState] = useState<RemoteState<T>>(() => entry.state)

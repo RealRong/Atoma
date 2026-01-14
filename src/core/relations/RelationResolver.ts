@@ -4,9 +4,9 @@ import {
     IStore,
     RelationConfig,
     RelationMap,
-    StoreKey,
     VariantsConfig
 } from '../types'
+import type { EntityId } from '#protocol'
 import { deepMergeWhere, getValueByPath } from './utils'
 
 export interface ResolveBatchOptions {
@@ -177,8 +177,8 @@ export class RelationResolver {
     private static collectKeys<T extends Entity>(
         items: T[],
         config: Exclude<RelationConfig<T, any>, VariantsConfig<T>>
-    ): StoreKey[] {
-        const rawKeys = new Set<StoreKey>()
+    ): EntityId[] {
+        const rawKeys = new Set<EntityId>()
 
         const keySelector = config.type === 'belongsTo'
             ? config.foreignKey
@@ -197,7 +197,7 @@ export class RelationResolver {
         return Array.from(rawKeys)
     }
 
-    private static extractKeyValue<T>(item: T, selector: string | ((item: T) => any)): StoreKey | StoreKey[] | undefined | null {
+    private static extractKeyValue<T>(item: T, selector: string | ((item: T) => any)): EntityId | EntityId[] | undefined | null {
         if (typeof selector === 'function') return selector(item)
         if (typeof selector === 'string') {
             return getValueByPath(item, selector)

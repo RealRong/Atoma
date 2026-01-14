@@ -1,10 +1,11 @@
 import { defaultSnowflakeGenerator } from './idGenerator'
-import type { Entity, PartialWithId, StoreKey } from '../../types'
+import type { Entity, PartialWithId } from '../../types'
+import type { EntityId } from '#protocol'
 import { runBeforeSave } from './hooks'
 import { validateWithSchema } from './validation'
 import type { StoreHandle } from '../../types'
 
-function initBaseObject<T>(obj: Partial<T>, idGenerator?: () => StoreKey): PartialWithId<T> {
+function initBaseObject<T>(obj: Partial<T>, idGenerator?: () => EntityId): PartialWithId<T> {
     const generator = idGenerator || defaultSnowflakeGenerator
     const now = Date.now()
     return {

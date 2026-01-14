@@ -13,7 +13,7 @@ const MAX_SEQUENCE = 0xfff
 let lastTimestamp = 0
 let sequence = 0
 
-export const defaultSnowflakeGenerator = (): number => {
+export const defaultSnowflakeGenerator = (): string => {
     const now = BigInt(Date.now())
 
     if (Number(now) === lastTimestamp) {
@@ -34,5 +34,5 @@ export const defaultSnowflakeGenerator = (): number => {
     if (!Number.isSafeInteger(asNumber)) {
         throw new Error('Generated id exceeds Number safe integer range')
     }
-    return asNumber
+    return String(asNumber)
 }

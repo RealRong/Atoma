@@ -1,4 +1,5 @@
-import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from '../../types'
+import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from '../../types'
+import type { EntityId } from '#protocol'
 import { dispatch } from '../internals/dispatch'
 import { toError } from '../internals/errors'
 import { ensureActionId } from '../internals/ensureActionId'
@@ -19,7 +20,7 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>, write
         const confirmation = options?.confirmation ?? 'optimistic'
         const results: WriteManyResult<T> = new Array(items.length)
 
-        const firstIndexById = new Map<StoreKey, number>()
+        const firstIndexById = new Map<EntityId, number>()
         for (let i = 0; i < items.length; i++) {
             const id = items[i]?.id
             if (firstIndexById.has(id)) {
@@ -36,13 +37,13 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>, write
         const baseMap = jotaiStore.get(atom)
         const merge = options?.merge !== false
 
-        const prepared: Array<{ index: number; id: StoreKey; value: PartialWithId<T>; action: 'add' | 'update' }> = []
+        const prepared: Array<{ index: number; id: EntityId; value: PartialWithId<T>; action: 'add' | 'update' }> = []
 
         for (let index = 0; index < items.length; index++) {
             if (results[index]) continue
 
             const item = items[index]
-            const id: StoreKey = item.id
+            const id: EntityId = item.id
             const base = baseMap.get(id) as PartialWithId<T> | undefined
 
             let validObj: PartialWithId<T>

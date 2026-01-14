@@ -1,6 +1,7 @@
-import { IndexType, StoreKey } from '../types'
+import { IndexType } from '../types'
+import type { EntityId } from '#protocol'
 
-export const normalizeNumber = (value: any, field: string, kind: IndexType, id: StoreKey): number => {
+export const normalizeNumber = (value: any, field: string, kind: IndexType, id: EntityId | string): number => {
     const num =
         typeof value === 'number'
             ? value
@@ -15,7 +16,7 @@ export const normalizeNumber = (value: any, field: string, kind: IndexType, id: 
     return num
 }
 
-export const validateString = (value: any, field: string, id: StoreKey): string => {
+export const validateString = (value: any, field: string, id: EntityId | string): string => {
     if (typeof value !== 'string') {
         throw new Error(`[Atoma Index] Field "${field}" expects type "string", but got "${typeof value}" for item ${String(id)}.`)
     }

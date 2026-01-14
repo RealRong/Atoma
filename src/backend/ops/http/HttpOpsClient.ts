@@ -106,6 +106,7 @@ export class HttpOpsClient extends OpsClient {
      */
     private async _executeOpsDirectly({ ops, meta, context, signal }: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
         const requestMeta = this.normalizeRequestMeta(meta)
+        Protocol.ops.validate.assertOutgoingOpsV1({ ops, meta: requestMeta })
         const res = await this.transport.executeOps({
             baseURL: this.baseURL,
             opsPath: this.opsPath,

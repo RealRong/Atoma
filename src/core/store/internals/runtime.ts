@@ -1,25 +1,26 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import { StoreIndexes } from '../../indexes/StoreIndexes'
-import type { IndexDefinition, IDataSource, JotaiStore, StoreConfig, StoreHandle, StoreKey, StoreOperationOptions, StoreReadOptions, Entity, StoreServices } from '../../types'
+import type { IndexDefinition, JotaiStore, StoreBackend, StoreConfig, StoreHandle, StoreOperationOptions, StoreReadOptions, Entity, StoreServices } from '../../types'
+import type { EntityId } from '#protocol'
 import type { QueryMatcherOptions } from '../../query/QueryMatcher'
 import { Observability } from '#observability'
 import type { ObservabilityContext } from '#observability'
 
 export function createStoreHandle<T extends Entity>(params: {
-    atom: PrimitiveAtom<Map<StoreKey, T>>
-    dataSource: IDataSource<T>
+    atom: PrimitiveAtom<Map<EntityId, T>>
+    backend: StoreBackend
     config: StoreConfig<T> & {
         store: JotaiStore
         services: StoreServices
         storeName: string
     }
 }): StoreHandle<T> {
-    const { atom, dataSource, config } = params
+    const { atom, backend, config } = params
 
     const jotaiStore = config.store
     const services = config.services
 
-    const storeName = config.storeName || dataSource.name || 'store'
+    const storeName = config.storeName || 'store'
 
     const indexes = config.indexes && config.indexes.length ? new StoreIndexes<T>(config.indexes) : null
 
@@ -35,9 +36,15 @@ export function createStoreHandle<T extends Entity>(params: {
         onEvent: services.debugSink
     })
 
+    let opSeq = 0
+    const nextOpId = (prefix: 'q' | 'w') => {
+        opSeq += 1
+        return `${prefix}_${Date.now()}_${opSeq}`
+    }
+
     return {
         atom,
-        dataSource,
+        backend,
         jotaiStore,
         services,
         storeName,
@@ -49,6 +56,7 @@ export function createStoreHandle<T extends Entity>(params: {
         schema: config.schema,
         idGenerator: config.idGenerator,
         transform,
+        nextOpId,
         writePolicies: {
             allowImplicitFetchForWrite: true
         }

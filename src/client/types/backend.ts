@@ -1,7 +1,6 @@
 import type { OpsClient, RetryOptions } from '#backend'
 import type { Envelope, OpsResponseData } from '#protocol'
 import type { SyncSubscribe } from '#sync'
-import type { StoreKey } from '#core'
 import type { Table } from 'dexie'
 
 export type HttpBackendConfig = {
@@ -34,7 +33,7 @@ export type MemoryBackendConfig = {
 }
 
 export type IndexedDBBackendConfig = {
-    tableForResource: (resource: string) => Table<any, StoreKey>
+    tableForResource: (resource: string) => Table<any, string>
     transformData?: (args: { resource: string; data: any }) => any | undefined
 }
 
@@ -70,8 +69,9 @@ export type BackendConfig =
     | BackendEndpointConfig
     | {
         /**
-         * Local-first: local handles reads/writes for IDataSource (OpsDataSource).
-         * Remote handles sync transport (push/pull/subscribe).
+         * Local-first:
+         * - local：处理 Store 的读写（ops 协议）
+         * - remote：处理 sync transport（push/pull/subscribe）
          */
         local?: StoreBackendEndpointConfig
         remote?: BackendEndpointConfig
@@ -91,15 +91,15 @@ export type ResolvedBackends = {
     /**
      * A stable identifier for this client instance.
      * - When remote exists, uses remote.key (sync identity).
-     * - Otherwise falls back to dataSource.key.
+     * - Otherwise falls back to store.key.
      */
     key: string
     /** Optional local backend (for local-first). */
     local?: ResolvedBackend
     /** Optional remote backend (for sync/transport). */
     remote?: ResolvedBackend
-    /** Backend used by default OpsDataSource instances. */
-    dataSource: ResolvedBackend
+    /** Backend used by Store (读写). */
+    store: ResolvedBackend
     /** Backend used by SyncController (usually remote). */
     sync?: ResolvedBackend
 }

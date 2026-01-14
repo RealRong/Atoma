@@ -1,5 +1,6 @@
 import { Reducer } from './Reducer'
-import type { Entity, PatchMetadata, StoreDispatchEvent, StoreKey } from '../../types'
+import type { EntityId } from '#protocol'
+import type { Entity, PatchMetadata, StoreDispatchEvent } from '../../types'
 import {
     type IExecutor,
     type ExecutorRunArgs,
@@ -18,7 +19,7 @@ class DefaultPlanner implements Planner {
 
     plan<T extends Entity>(
         operations: StoreDispatchEvent<T>[],
-        currentState: Map<StoreKey, T>
+        currentState: Map<EntityId, T>
     ): Plan<T> {
         return this.reducer.reduce(operations, currentState)
     }
@@ -47,7 +48,7 @@ export class Executor implements IExecutor {
 
         const metadata: PatchMetadata = {
             atom,
-            databaseName: handle.dataSource.name,
+            databaseName: handle.backend.key,
             timestamp: typeof clientTimeMs === 'number' ? clientTimeMs : Date.now(),
             baseVersion: Date.now(),
             traceId

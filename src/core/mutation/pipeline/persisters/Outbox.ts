@@ -1,13 +1,10 @@
 import type { Patch } from 'immer'
-import { Protocol } from '#protocol'
-import type { WriteOptions, WriteIntent } from '#protocol'
-import type { Entity, OutboxEnqueuer, StoreDispatchEvent, StoreKey } from '../../../types'
+import { Protocol, type EntityId, type WriteOptions, type WriteIntent } from '#protocol'
+import type { Entity, OutboxEnqueuer, StoreDispatchEvent } from '../../../types'
 import type { Persister, PersisterPersistArgs, PersisterPersistResult } from '../types'
 
-function toStoreKey(id: unknown): StoreKey | null {
-    if (typeof id === 'string') return id
-    if (typeof id === 'number' && Number.isFinite(id)) return id
-    return null
+function toEntityId(id: unknown): EntityId | null {
+    return (typeof id === 'string' && id.length > 0) ? id : null
 }
 
 function resolveVersion(value: unknown): number | undefined {
@@ -15,7 +12,7 @@ function resolveVersion(value: unknown): number | undefined {
     return (typeof v === 'number' && Number.isFinite(v)) ? v : undefined
 }
 
-function requireBaseVersion(id: StoreKey, value: unknown): number {
+function requireBaseVersion(id: EntityId, value: unknown): number {
     const v = resolveVersion(value)
     if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v
     throw new Error(`[Atoma] write requires baseVersion (missing version for id=${String(id)})`)
@@ -52,7 +49,7 @@ export class OutboxPersister implements Persister {
     async persist<T extends Entity>(args: PersisterPersistArgs<T>): Promise<PersisterPersistResult<T>> {
         const resource = args.handle.storeName
         const fallbackClientTimeMs = args.metadata.timestamp
-        const inverseRootAddsById = new Map<StoreKey, unknown>()
+        const inverseRootAddsById = new Map<EntityId, unknown>()
         try {
             const inverse = args.plan.inversePatches
             if (Array.isArray(inverse)) {
@@ -60,7 +57,7 @@ export class OutboxPersister implements Persister {
                     if (p?.op !== 'add') return
                     const path = p?.path
                     if (!Array.isArray(path) || path.length !== 1) return
-                    const id = toStoreKey(path[0])
+                    const id = toEntityId(path[0])
                     if (id === null) return
                     inverseRootAddsById.set(id, p.value)
                 })
@@ -97,9 +94,9 @@ export class OutboxPersister implements Persister {
 
         if (types.length === 1 && types[0] === 'patches') {
             const patches = args.plan.patches
-            const patchesByItemId = new Map<StoreKey, Patch[]>()
+            const patchesByItemId = new Map<EntityId, Patch[]>()
             patches.forEach((p: Patch) => {
-                const itemId = toStoreKey((p as any)?.path?.[0])
+                const itemId = toEntityId((p as any)?.path?.[0])
                 if (itemId === null) return
                 if (!patchesByItemId.has(itemId)) patchesByItemId.set(itemId, [])
                 patchesByItemId.get(itemId)!.push(p)
@@ -107,12 +104,12 @@ export class OutboxPersister implements Persister {
 
             const opMeta = metaForOpIndex(0)
 
-            const createItems: Array<{ entityId: string; value: unknown }> = []
-            const updateItems: Array<{ entityId: string; value: unknown; baseVersion: number }> = []
-            const deleteItems: Array<{ entityId: string; baseVersion: number }> = []
+            const createItems: Array<{ entityId: EntityId; value: unknown }> = []
+            const updateItems: Array<{ entityId: EntityId; value: unknown; baseVersion: number }> = []
+            const deleteItems: Array<{ entityId: EntityId; baseVersion: number }> = []
 
             for (const [id, itemPatches] of patchesByItemId.entries()) {
-                const entityId = String(id)
+                const entityId = id
 
                 const isDelete = itemPatches.some(p => p.op === 'remove' && p.path.length === 1)
                 if (isDelete) {
@@ -134,7 +131,7 @@ export class OutboxPersister implements Persister {
                     continue
                 }
 
-                const next = args.handle.jotaiStore.get(args.handle.atom).get(id as any)
+                const next = args.handle.jotaiStore.get(args.handle.atom).get(id)
                 if (!next) {
                     throw new Error(`[Atoma] outbox: patches item missing in atom (id=${String(id)})`)
                 }
@@ -180,12 +177,12 @@ export class OutboxPersister implements Persister {
             return
         }
 
-        const createItems: Array<{ entityId: string; value: unknown; meta?: any }> = []
-        const updateItems: Array<{ entityId: string; value: unknown; baseVersion: number; meta?: any }> = []
-        const deleteItems: Array<{ entityId: string; baseVersion: number; meta?: any }> = []
+        const createItems: Array<{ entityId: EntityId; value: unknown; meta?: any }> = []
+        const updateItems: Array<{ entityId: EntityId; value: unknown; baseVersion: number; meta?: any }> = []
+        const deleteItems: Array<{ entityId: EntityId; baseVersion: number; meta?: any }> = []
         const upsertItemsByOptions = new Map<string, {
             options?: WriteOptions
-            items: Array<{ entityId: string; value: unknown; baseVersion?: number; meta?: any }>
+            items: Array<{ entityId: EntityId; value: unknown; baseVersion?: number; meta?: any }>
         }>()
 
         for (let i = 0; i < types.length; i++) {
@@ -195,29 +192,29 @@ export class OutboxPersister implements Persister {
             const meta = metaForOpIndex(i)
 
             if (type === 'add') {
-                const id = toStoreKey((value as any)?.id)
+                const id = toEntityId((value as any)?.id)
                 if (id === null) continue
-                createItems.push({ entityId: String(id), value, meta })
+                createItems.push({ entityId: id, value, meta })
                 continue
             }
 
             if (type === 'update' || type === 'remove') {
-                const id = toStoreKey((value as any)?.id)
+                const id = toEntityId((value as any)?.id)
                 if (id === null) continue
-                updateItems.push({ entityId: String(id), value, baseVersion: requireBaseVersion(id, value), meta })
+                updateItems.push({ entityId: id, value, baseVersion: requireBaseVersion(id, value), meta })
                 continue
             }
 
             if (type === 'forceRemove') {
-                const id = toStoreKey((value as any)?.id)
+                const id = toEntityId((value as any)?.id)
                 if (id === null) continue
                 const baseVersion = requireBaseVersion(id, inverseRootAddsById.get(id))
-                deleteItems.push({ entityId: String(id), baseVersion, meta })
+                deleteItems.push({ entityId: id, baseVersion, meta })
                 continue
             }
 
             if (type === 'upsert') {
-                const id = toStoreKey((value as any)?.id)
+                const id = toEntityId((value as any)?.id)
                 if (id === null) continue
                 const baseVersion = resolveVersion(value)
                 const op = args.operations[i]
@@ -229,7 +226,7 @@ export class OutboxPersister implements Persister {
                     return next
                 })()
                 entry.items.push({
-                    entityId: String(id),
+                    entityId: id,
                     value,
                     ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
                     meta

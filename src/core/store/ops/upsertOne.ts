@@ -1,4 +1,4 @@
-import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, UpsertWriteOptions } from '../../types'
+import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions, UpsertWriteOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { runAfterSave, runBeforeSave } from '../internals/hooks'
 import { ignoreTicketRejections } from '../internals/tickets'
@@ -13,7 +13,7 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>, writeC
         item: PartialWithId<T>,
         options?: StoreOperationOptions & UpsertWriteOptions
     ): Promise<T> => {
-        const id: StoreKey = item.id
+        const id = item.id
         const base = jotaiStore.get(atom).get(id) as PartialWithId<T> | undefined
         const merge = options?.merge !== false
 

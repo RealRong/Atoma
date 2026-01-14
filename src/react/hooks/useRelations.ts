@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Core } from '#core'
-import type { Entity, IStore, RelationIncludeInput, StoreKey, StoreToken, WithRelations } from '#core'
+import type { Entity, IStore, RelationIncludeInput, StoreToken, WithRelations } from '#core'
+import type { EntityId } from '#protocol'
 import { useShallowStableArray } from './useShallowStableArray'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
@@ -43,7 +44,7 @@ export function useRelations<T extends Entity>(
     const [state, setState] = useState<State>(() => ({ data: stableItems, loading: false, error: undefined }))
     const patchState = (patch: Partial<State>) => setState(prev => ({ ...prev, ...patch }))
 
-    const snapshotRef = useRef<Map<StoreKey, Record<string, any>>>(new Map())
+    const snapshotRef = useRef<Map<EntityId, Record<string, any>>>(new Map())
     const snapshotNamesRef = useRef<string[]>([])
     const clearSnapshot = () => {
         snapshotRef.current = new Map()
@@ -81,7 +82,7 @@ export function useRelations<T extends Entity>(
         const handle = Core.store.getHandle(store)
         if (!handle || typeof handle.jotaiStore.get !== 'function') return undefined
         return {
-            map: handle.jotaiStore.get(handle.atom) as Map<StoreKey, any>,
+            map: handle.jotaiStore.get(handle.atom) as Map<EntityId, any>,
             indexes: handle.indexes
         }
     }
@@ -101,7 +102,7 @@ export function useRelations<T extends Entity>(
 
         const snapshot = snapshotRef.current
         return projectedLive.map(item => {
-            const cached = snapshot.get((item as any).id as StoreKey)
+            const cached = snapshot.get((item as any).id as EntityId)
             if (!cached) return item
             return { ...item, ...cached } as any
         })
@@ -113,13 +114,13 @@ export function useRelations<T extends Entity>(
 
         const projected = Core.relations.projectRelationsBatch(source, snapshotInclude, relations, getStoreMap) as any[]
 
-        const next = new Map<StoreKey, Record<string, any>>()
+        const next = new Map<EntityId, Record<string, any>>()
         projected.forEach(item => {
-            const id = (item as any)?.id as StoreKey | undefined | null
-            if (id === undefined || id === null) return
+            const id = (item as any)?.id
+            if (!(typeof id === 'string' && id)) return
             const values: Record<string, any> = {}
             snapshotNames.forEach(name => { values[name] = item[name] })
-            next.set(id, values)
+            next.set(id as EntityId, values)
         })
 
         snapshotRef.current = next

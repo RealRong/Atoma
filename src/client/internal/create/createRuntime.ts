@@ -1,6 +1,7 @@
-import type { CoreStore, IDataSource, JotaiStore, OutboxEnqueuer, OutboxQueueMode, StoreHandle, StoreKey, StoreServices } from '#core'
+import type { CoreStore, JotaiStore, OutboxEnqueuer, OutboxQueueMode, StoreBackend, StoreHandle, StoreServices } from '#core'
 import { Core, MutationPipeline } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
+import type { EntityId } from '#protocol'
 import { createStoreInstance } from './createStore'
 import type { AtomaClientContext, AtomaSchema, ClientRuntime } from '../../types'
 import type { SyncStore } from '#core'
@@ -8,8 +9,8 @@ import type { SyncStore } from '#core'
 export function createRuntime(args: {
     schema: AtomaSchema<any>
     defaults: {
-        dataSourceFactory: (name: string) => IDataSource<any>
-        idGenerator?: () => StoreKey
+        backendFactory: (name: string) => StoreBackend
+        idGenerator?: () => EntityId
     }
     syncStore?: {
         queue?: 'queue' | 'local-first'

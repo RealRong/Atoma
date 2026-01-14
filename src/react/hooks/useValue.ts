@@ -3,7 +3,7 @@ import { selectAtom } from 'jotai/utils'
 import { useMemo } from 'react'
 import { useAtomValue } from 'jotai'
 import { Core } from '#core'
-import type { StoreKey, Entity, WithRelations, RelationIncludeInput, StoreHandleOwner } from '#core'
+import type { Entity, WithRelations, RelationIncludeInput, StoreHandleOwner } from '#core'
 import { useRelations } from './useRelations'
 
 /**
@@ -12,7 +12,7 @@ import { useRelations } from './useRelations'
  */
 export function useOne<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: StoreHandleOwner<T, Relations>,
-    id?: StoreKey,
+    id?: T['id'],
     options?: { include?: RelationIncludeInput<Relations> & Include }
 ): (keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined) {
     type Result = keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined

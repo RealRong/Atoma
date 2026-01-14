@@ -15,7 +15,6 @@ import type {
     SyncQueueWritesArgs
 } from '../../types'
 import { resolveBackend } from '../resolveBackend'
-import { OpsDataSource } from '../../../bridges/ops/OpsDataSource'
 import { Devtools } from '#devtools'
 
 export function buildAtomaClient<
@@ -76,19 +75,16 @@ export function buildAtomaClient<
         throw new Error('[Atoma] createClient: sync 对端必须支持同步（需要 remote opsClient 能力）')
     }
 
-    const dataSourceBackend = resolved.store.dataSource
-    const dataSourceFactory = ((resourceName: string) => {
-        return new OpsDataSource<any>({
-            opsClient: dataSourceBackend.opsClient,
-            name: dataSourceBackend.key,
-            resourceName
-        })
+    const storeBackend = resolved.store.store
+    const backendFactory = (_resourceName: string) => ({
+        key: storeBackend.key,
+        opsClient: storeBackend.opsClient
     })
 
     const runtime = createRuntime({
         schema: args.schema,
         defaults: {
-            dataSourceFactory: dataSourceFactory as any
+            backendFactory: backendFactory as any
         },
         syncStore: {
             queue

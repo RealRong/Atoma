@@ -2,7 +2,7 @@ import { atom, useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 import { useMemo } from 'react'
 import { Core } from '#core'
-import type { Entity, RelationIncludeInput, StoreHandleOwner, StoreKey, WithRelations } from '#core'
+import type { Entity, RelationIncludeInput, StoreHandleOwner, WithRelations } from '#core'
 import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'
 
@@ -15,7 +15,7 @@ interface UseMultipleOptions<T, Relations = {}> {
 
 export function useMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: StoreHandleOwner<T, Relations>,
-    ids: StoreKey[] = [],
+    ids: Array<T['id']> = [],
     options?: UseMultipleOptions<T, Relations> & { include?: Include }
 ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
     type Result = keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]
@@ -37,8 +37,8 @@ export function useMany<T extends Entity, Relations = {}, const Include extends 
 
         const idsSnapshot = stableIds.slice()
 
-        const selectList = (map: Map<StoreKey, T>): T[] => {
-            const seen = new Set<StoreKey>()
+        const selectList = (map: Map<T['id'], T>): T[] => {
+            const seen = new Set<T['id']>()
             const arr: T[] = []
 
             for (const id of idsSnapshot) {

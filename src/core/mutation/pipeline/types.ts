@@ -1,32 +1,32 @@
 import type { Patch } from 'immer'
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import type { ObservabilityContext } from '#observability'
+import type { EntityId } from '#protocol'
 import type {
     Entity,
     OperationContext,
     PatchMetadata,
     PersistWriteback,
     StoreDispatchEvent,
-    StoreHandle,
-    StoreKey
+    StoreHandle
 } from '../../types'
 import type { StoreIndexes } from '../../indexes/StoreIndexes'
 import type { Committer as MutationCommitter } from '../types'
 
 export type Plan<T extends Entity> = Readonly<{
-    nextState: Map<StoreKey, T>
+    nextState: Map<EntityId, T>
     patches: Patch[]
     inversePatches: Patch[]
     changedFields: Set<string>
     appliedData: any[]
     operationTypes: StoreDispatchEvent<T>['type'][]
-    atom: PrimitiveAtom<Map<StoreKey, T>>
+    atom: PrimitiveAtom<Map<EntityId, T>>
 }>
 
 export interface Planner {
     plan: <T extends Entity>(
         operations: StoreDispatchEvent<T>[],
-        currentState: Map<StoreKey, T>
+        currentState: Map<EntityId, T>
     ) => Plan<T>
 }
 

@@ -1,6 +1,7 @@
 import { produce } from 'immer'
 import type { Draft } from 'immer'
-import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions } from '../../types'
+import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions } from '../../types'
+import type { EntityId } from '#protocol'
 import { add } from '../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { dispatch } from '../internals/dispatch'
@@ -10,10 +11,11 @@ import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForUpdate } from '../internals/writePipeline'
 import type { StoreWriteConfig } from '../internals/writeConfig'
+import { executeQuery } from '../internals/opsExecutor'
 
 export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
-    const { jotaiStore, atom, dataSource, services, hooks, schema, transform } = handle
-    return async (id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
+    const { jotaiStore, atom, services, hooks, schema, transform } = handle
+    return async (id: EntityId, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         const observabilityContext = resolveObservabilityContext(handle, options)
 
         const resolveBase = async (): Promise<PartialWithId<T>> => {
@@ -26,12 +28,14 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>, writeC
                 throw new Error(`[Atoma] updateOne: 缓存缺失且当前写入模式禁止补读，请先 fetch 再 update（id=${String(id)}）`)
             }
 
-            const data = await dataSource.get(id, observabilityContext)
-            if (!data) {
+            const { data } = await executeQuery(handle, { where: { id }, limit: 1, includeTotal: false } as any, observabilityContext)
+            const one = data[0]
+            const fetched = one !== undefined ? (one as T) : undefined
+            if (!fetched) {
                 throw new Error(`Item with id ${id} not found`)
             }
 
-            const transformed = transform(data)
+            const transformed = transform(fetched)
             const validFetched = await validateWithSchema(transformed, schema)
             const before = jotaiStore.get(atom)
             const after = add(validFetched as PartialWithId<T>, before)

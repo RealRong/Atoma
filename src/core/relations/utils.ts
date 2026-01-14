@@ -1,4 +1,5 @@
-import { WhereOperator, StoreKey } from '../types'
+import { WhereOperator } from '../types'
+import type { EntityId } from '#protocol'
 
 /**
  * 深合并 where 条件（AND 逻辑，简单覆盖同名操作符）
@@ -38,7 +39,6 @@ export function getValueByPath(obj: any, path: string): any {
 /**
  * 将键标准化为字符串（用于 Map key）
  */
-export function normalizeKey(key: StoreKey): string {
-    return String(key)
+export function normalizeKey(key: EntityId): string {
+    return key
 }
-

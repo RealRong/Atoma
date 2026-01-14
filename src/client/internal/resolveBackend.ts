@@ -154,7 +154,7 @@ export function resolveBackend(config: BackendConfig): ResolvedBackends {
         if (isLocalOnly) {
             return {
                 key: resolved.key,
-                dataSource: resolved,
+                store: resolved,
                 local: resolved,
                 sync: undefined
             }
@@ -162,14 +162,14 @@ export function resolveBackend(config: BackendConfig): ResolvedBackends {
         if (isHttpLike) {
             return {
                 key: resolved.key,
-                dataSource: resolved,
+                store: resolved,
                 remote: resolved,
                 sync: resolved
             }
         }
         return {
             key: resolved.key,
-            dataSource: resolved,
+            store: resolved,
             sync: resolved,
             remote: resolved
         }
@@ -182,16 +182,16 @@ export function resolveBackend(config: BackendConfig): ResolvedBackends {
     const local = config.local ? resolveEndpoint(config.local) : undefined
     const remote = config.remote ? resolveEndpoint(config.remote) : undefined
 
-    const dataSource = local ?? remote
-    if (!dataSource) {
+    const store = local ?? remote
+    if (!store) {
         throw new Error('[Atoma] backend.local or backend.remote is required')
     }
 
     return {
-        key: remote?.key ?? dataSource.key,
+        key: remote?.key ?? store.key,
         local,
         remote,
-        dataSource,
+        store,
         sync: remote
     }
 }

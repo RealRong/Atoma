@@ -1,4 +1,4 @@
-import type { Entity, StoreKey } from '#core'
+import type { Entity } from '#core'
 import type { Table } from 'dexie'
 import type { AtomaSchema } from './schema'
 import type { BackendEndpointConfig, HttpBackendConfig, StoreBackendEndpointConfig } from './backend'
@@ -54,7 +54,7 @@ export type StoreBatchOptions =
     | StoreBatchConfig
 
 export interface StoreBatchConfig {
-    /** Enable/disable batching for the default `OpsDataSource` created per store. */
+    /** Enable/disable batching for the default HTTP ops client (per-store 写入合批). */
     enabled?: boolean
     /** Maximum number of operations per batch request. */
     maxBatchSize?: number
@@ -66,7 +66,7 @@ export interface StoreBatchConfig {
 
 export interface IndexedDbTablesConfig {
     /** Map of `resourceName -> Dexie Table` */
-    tables: Record<string, Table<any, StoreKey>>
+    tables: Record<string, Table<any, string>>
 }
 
 export interface HttpLaneConfig {

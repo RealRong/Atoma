@@ -2,19 +2,15 @@ import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
 import type { MutationPipeline } from './mutation/MutationPipeline'
 import type { DebugConfig, DebugEvent, Explain, ObservabilityContext, ObservabilityRuntime } from '#observability'
+import type { EntityId, Meta, Operation, OperationResult } from '#protocol'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
 import type { StoreIndexes } from './indexes/StoreIndexes'
-
-/**
- * Base key type for entities
- */
-export type StoreKey = string | number
 
 /**
  * Minimal entity interface - all stored entities must have an id
  */
 export interface Entity {
-    id: StoreKey
+    id: EntityId
 }
 
 /**
@@ -23,7 +19,7 @@ export interface Entity {
 export type KeySelector<T> =
     | (keyof T & string)
     | string
-    | ((item: T) => StoreKey | StoreKey[] | undefined | null)
+    | ((item: T) => EntityId | EntityId[] | undefined | null)
 
 /**
  * Base interface for all entities stored in the sync engine
@@ -45,7 +41,7 @@ export type BaseEntity = IBase
 /**
  * Partial type with required id field
  */
-export type PartialWithId<T> = Partial<T> & { id: StoreKey }
+export type PartialWithId<T> = Partial<T> & { id: EntityId }
 
 export type UpsertMode = 'strict' | 'loose'
 
@@ -73,7 +69,7 @@ export type WriteManyItemErr = {
 export type WriteManyResult<T> = Array<WriteManyItemOk<T> | WriteManyItemErr>
 
 export type DeleteItem = {
-    id: StoreKey
+    id: EntityId
     baseVersion: number
 }
 
@@ -83,66 +79,25 @@ export type DeleteItem = {
  */
 export type PersistWriteback<T extends Entity> = Readonly<{
     upserts?: T[]
-    deletes?: StoreKey[]
-    versionUpdates?: Array<{ key: StoreKey; version: number }>
+    deletes?: EntityId[]
+    versionUpdates?: Array<{ key: EntityId; version: number }>
 }>
 
-/**
- * DataSource interface - abstracts the persistence/remote backend
- */
-export interface IDataSource<T extends Entity> {
-    /** DataSource name for debugging */
-    name: string
+export type OpsClientLike = {
+    executeOps: (input: {
+        ops: Operation[]
+        meta: Meta
+        signal?: AbortSignal
+        context?: ObservabilityContext
+    }) => Promise<{
+        results: OperationResult[]
+        status?: number
+    }>
+}
 
-    /**
-     * Internal context (optional):
-     * - Only data sources that perform I/O (e.g. HTTP) need to actually consume it.
-     * - Other data sources can safely ignore the extra param.
-     */
-    /**
-     * Persistence operations
-     */
-    put(key: StoreKey, value: T, internalContext?: ObservabilityContext): Promise<void>
-    bulkPut(items: T[], internalContext?: ObservabilityContext): Promise<void>
-    bulkPutReturning?(items: T[], internalContext?: ObservabilityContext): Promise<PersistWriteback<T> | void>
-    bulkCreate?(items: T[], internalContext?: ObservabilityContext): Promise<T[] | void>
-    /**
-     * Server-assigned create (optional):
-     * - 输入允许缺省 id（Partial<T>）
-     * - 必须 returning 最终实体（包含 id/version 等）
-     * - 仅供 createServerAssigned* 使用（在线 strict + direct）
-     */
-    bulkCreateServerAssigned?(items: Array<Partial<T>>, internalContext?: ObservabilityContext): Promise<T[] | void>
-    delete(item: DeleteItem, internalContext?: ObservabilityContext): Promise<void>
-    bulkDelete(items: DeleteItem[], internalContext?: ObservabilityContext): Promise<void>
-    bulkDeleteReturning?(items: DeleteItem[], internalContext?: ObservabilityContext): Promise<PersistWriteback<T> | void>
-
-    /** Upsert operations (optional). When absent, callers may fall back to put/bulkPut semantics. */
-    upsert?(key: StoreKey, value: T, options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void>
-    bulkUpsert?(items: T[], options?: UpsertWriteOptions, internalContext?: ObservabilityContext): Promise<void>
-    bulkUpsertReturning?(
-        items: T[],
-        options?: UpsertWriteOptions,
-        internalContext?: ObservabilityContext
-    ): Promise<PersistWriteback<T> | void>
-
-    /**
-     * Retrieval operations
-     */
-    get(key: StoreKey, internalContext?: ObservabilityContext): Promise<T | undefined>
-    bulkGet(keys: StoreKey[], internalContext?: ObservabilityContext): Promise<(T | undefined)[]>
-    getAll(filter?: (item: T) => boolean, internalContext?: ObservabilityContext): Promise<T[]>
-
-    /** Query operations (optional) */
-    findMany?(
-        options?: FindManyOptions<T>,
-        internalContext?: ObservabilityContext
-    ): Promise<{ data: T[]; pageInfo?: PageInfo; explain?: unknown }>
-
-    /**
-     * Error handling
-     */
-    onError?(error: Error, operation: string): void
+export type StoreBackend = {
+    key: string
+    opsClient: OpsClientLike
 }
 
 /**
@@ -387,7 +342,7 @@ export interface StoreConfig<T> {
     transformData?: (item: T) => T
 
     /** Custom ID generator (defaults to Snowflake-like generator) */
-    idGenerator?: () => StoreKey
+    idGenerator?: () => EntityId
 
     /** Custom Jotai store instance */
     store?: JotaiStore  // ReturnType<typeof createStore> from 'jotai/vanilla'
@@ -562,19 +517,19 @@ export interface IStore<T, Relations = {}> {
     createServerAssignedMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
 
     /** Update an existing item (Immer recipe) */
-    updateOne(id: StoreKey, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions): Promise<T>
+    updateOne(id: EntityId, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions): Promise<T>
 
     /** Update many items (single action, per-item results) */
     updateMany(
-        items: Array<{ id: StoreKey; recipe: (draft: Draft<T>) => void }>,
+        items: Array<{ id: EntityId; recipe: (draft: Draft<T>) => void }>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>>
 
     /** Delete one item by ID */
-    deleteOne(id: StoreKey, options?: StoreOperationOptions): Promise<boolean>
+    deleteOne(id: EntityId, options?: StoreOperationOptions): Promise<boolean>
 
     /** Delete many items by IDs (single action, per-item results) */
-    deleteMany(ids: StoreKey[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>>
+    deleteMany(ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>>
 
     /** Upsert one item (create if missing; update if exists) */
     upsertOne(item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T>
@@ -583,10 +538,10 @@ export interface IStore<T, Relations = {}> {
     upsertMany(items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>>
 
     /** Get one item by ID */
-    getOne(id: StoreKey, options?: StoreReadOptions): Promise<T | undefined>
+    getOne(id: EntityId, options?: StoreReadOptions): Promise<T | undefined>
 
     /** Fetch one from backend (bypass cache) */
-    fetchOne(id: StoreKey, options?: StoreReadOptions): Promise<T | undefined>
+    fetchOne(id: EntityId, options?: StoreReadOptions): Promise<T | undefined>
 
     /** 
      * Get all items 
@@ -599,7 +554,7 @@ export interface IStore<T, Relations = {}> {
     fetchAll?(): Promise<T[]>
 
     /** Get multiple items by IDs */
-    getMany(ids: StoreKey[], cache?: boolean, options?: StoreReadOptions): Promise<T[]>
+    getMany(ids: EntityId[], cache?: boolean, options?: StoreReadOptions): Promise<T[]>
 
     /** Query with filtering/sorting/paging */
     findMany?(options?: FindManyOptions<T>): Promise<FindManyResult<T>>
@@ -720,10 +675,10 @@ export type StoreWritePolicies = {
  * - React/client/adapters use it to access atom/jotaiStore/context/indexes, without bloating IStore.
  */
 export type StoreHandle<T extends Entity = any> = {
-    atom: PrimitiveAtom<Map<StoreKey, T>>
+    atom: PrimitiveAtom<Map<EntityId, T>>
     jotaiStore: JotaiStore
     services: StoreServices
-    dataSource: IDataSource<T>
+    backend: StoreBackend
     matcher?: QueryMatcherOptions
     storeName: string
     relations?: () => any | undefined
@@ -735,6 +690,9 @@ export type StoreHandle<T extends Entity = any> = {
     schema: StoreConfig<T>['schema']
     idGenerator: StoreConfig<T>['idGenerator']
     transform: (item: T) => T
+
+    /** 内部：生成本 store 的 opId */
+    nextOpId: (prefix: 'q' | 'w') => string
 
     /** 运行时写入策略（允许被 client/controller 动态切换） */
     writePolicies?: StoreWritePolicies

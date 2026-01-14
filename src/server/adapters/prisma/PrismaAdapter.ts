@@ -37,8 +37,8 @@ type PrismaClientLike = Record<string, any> & {
     }
 }
 
-function normalizeLimit(value: unknown, fallback: number): number {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+function normalizeOptionalLimit(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
     return Math.max(0, Math.floor(value))
 }
 
@@ -110,14 +110,13 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const fields = normalizeFields((params as any).fields)
         const { select, project } = this.buildSelectWithProjection(fields, orderBy)
 
-        const limit = normalizeLimit((params as any).limit, 50)
         const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
 
         if (!cursor) {
             const skip = normalizeOffset((params as any).offset)
-            const take = limit
+            const take = normalizeOptionalLimit((params as any).limit)
 
-            if (includeTotal && delegate.count) {
+            if (includeTotal && delegate.count && typeof take === 'number') {
                 const [data, total] = await Promise.all([
                     delegate.findMany({ where, orderBy: prismaOrderBy, select, skip, take }),
                     delegate.count({ where })
@@ -132,18 +131,27 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                 }
             }
 
-            const data = await delegate.findMany({ where, orderBy: prismaOrderBy, select, skip, take: take + 1 })
-            const hasNext = data.length > take
-            const sliced = data.slice(0, take)
-            const projected = project ? sliced.map(project) : sliced
+            if (typeof take === 'number') {
+                const data = await delegate.findMany({ where, orderBy: prismaOrderBy, select, skip, take: take + 1 })
+                const hasNext = data.length > take
+                const sliced = data.slice(0, take)
+                const projected = project ? sliced.map(project) : sliced
+                return {
+                    data: projected,
+                    pageInfo: { hasNext }
+                }
+            }
+
+            const data = await delegate.findMany({ where, orderBy: prismaOrderBy, select, skip })
+            const projected = project ? data.map(project) : data
             return {
                 data: projected,
-                pageInfo: { hasNext }
+                pageInfo: { ...(includeTotal && delegate.count ? { total: await delegate.count({ where }) } : {}), hasNext: false }
             }
         }
 
         // cursor keyset：默认不返回 total
-        const take = limit
+        const take = normalizeOptionalLimit((params as any).limit) ?? 50
         const data = await delegate.findMany({
             where,
             orderBy: prismaOrderBy,

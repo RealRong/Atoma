@@ -9,7 +9,7 @@ import type {
     WriteOp
 } from '#protocol'
 import type { IOrmAdapter } from '../../adapters/ports'
-import { clampQueryLimit, ensureV1, normalizeOpsRequest, normalizeOperation, parseCursorV1 } from './normalize'
+import { clampQueryLimit, ensureV1, normalizeOpsRequest, parseCursorV1 } from './normalize'
 import { executeQueryOps } from './query'
 import { executeWriteOps } from './write'
 
@@ -58,7 +58,7 @@ export function createOpsExecutor<Ctx>(args: {
             const req = normalizeOpsRequest(bodyRaw)
             ensureV1(req.meta)
 
-            const ops = req.ops.map(normalizeOperation)
+            const ops = req.ops
             const traceByOpId = new Map<string, { traceId?: string; requestId?: string }>()
             ops.forEach(op => {
                 const traceId = (op.meta && typeof op.meta.traceId === 'string' && op.meta.traceId) ? op.meta.traceId : undefined

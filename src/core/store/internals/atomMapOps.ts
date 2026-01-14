@@ -1,11 +1,12 @@
-import type { PartialWithId, StoreKey } from '../../types'
+import type { PartialWithId } from '../../types'
+import type { EntityId } from '#protocol'
 
-export function clear<T>(data: Map<StoreKey, T>): Map<StoreKey, T> {
+export function clear<T>(data: Map<EntityId, T>): Map<EntityId, T> {
     if (data.size === 0) return data
     return new Map()
 }
 
-export function add<T>(item: PartialWithId<T>, data: Map<StoreKey, T>): Map<StoreKey, T> {
+export function add<T>(item: PartialWithId<T>, data: Map<EntityId, T>): Map<EntityId, T> {
     const id = item.id
     if (data.has(id) && data.get(id) === (item as any)) return data
     const next = new Map(data)
@@ -13,7 +14,7 @@ export function add<T>(item: PartialWithId<T>, data: Map<StoreKey, T>): Map<Stor
     return next
 }
 
-export function bulkAdd<T>(items: PartialWithId<T>[], data: Map<StoreKey, T>): Map<StoreKey, T> {
+export function bulkAdd<T>(items: PartialWithId<T>[], data: Map<EntityId, T>): Map<EntityId, T> {
     if (!items.length) return data
 
     let next = data
@@ -38,7 +39,7 @@ export function bulkAdd<T>(items: PartialWithId<T>[], data: Map<StoreKey, T>): M
     return next
 }
 
-export function bulkRemove<T>(ids: StoreKey[], data: Map<StoreKey, T>): Map<StoreKey, T> {
+export function bulkRemove<T>(ids: EntityId[], data: Map<EntityId, T>): Map<EntityId, T> {
     if (!ids.length) return data
 
     let next = data
@@ -60,14 +61,14 @@ export function bulkRemove<T>(ids: StoreKey[], data: Map<StoreKey, T>): Map<Stor
     return next
 }
 
-export function remove<T>(id: StoreKey, data: Map<StoreKey, T>): Map<StoreKey, T> {
+export function remove<T>(id: EntityId, data: Map<EntityId, T>): Map<EntityId, T> {
     if (!data.has(id)) return data
     const next = new Map(data)
     next.delete(id)
     return next
 }
 
-export function get<T>(id: StoreKey | undefined, data: Map<StoreKey, T>): T | undefined {
+export function get<T>(id: EntityId | undefined, data: Map<EntityId, T>): T | undefined {
     if (id !== undefined && id !== null) {
         return data.get(id)
     }

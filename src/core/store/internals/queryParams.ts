@@ -1,28 +1,6 @@
-import type { FindManyOptions } from '#core'
+import type { FindManyOptions } from '../../types'
 import type { OrderByRule, QueryParams } from '#protocol'
 
-/**
- * Ops query params normalizer (client-side).
- *
- * Why this exists:
- * - Public querying APIs in Atoma use `FindManyOptions<T>` (developer-friendly shape).
- * - The Atoma server ops protocol accepts `QueryParams` that mirrors `FindManyOptions` pagination fields.
- *
- * What it does:
- * - Picks and normalizes only the server-supported query fields:
- *   - `where`   -> `params.where`   (plain object only)
- *   - `orderBy` -> `params.orderBy` (always an array of `{ field, direction }`)
- *   - `fields`  -> `params.fields`
- *   - pagination fields -> `params.limit/offset/includeTotal/after/before`
- *
- * What it does NOT do:
- * - It does not accept/forward raw server `QueryParams` as input.
- *   Callers should always pass `FindManyOptions<T>`; this function owns the translation boundary.
- * - It does not forward unknown/extra fields (e.g. `include`, `cache`, `traceId`, etc).
- *
- * Where it's used:
- * - `OpsDataSource` builds QueryOp params with this helper before calling `/ops`.
- */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -33,8 +11,8 @@ function normalizeOrderBy(orderBy: unknown): OrderByRule[] | undefined {
     const rules: OrderByRule[] = []
     for (const r of arr) {
         if (!isPlainObject(r)) continue
-        const field = r.field
-        const direction = r.direction
+        const field = (r as any).field
+        const direction = (r as any).direction
         if (typeof field !== 'string') continue
         if (direction !== 'asc' && direction !== 'desc') continue
         rules.push({ field, direction })
@@ -43,10 +21,10 @@ function normalizeOrderBy(orderBy: unknown): OrderByRule[] | undefined {
 }
 
 /**
- * Converts `FindManyOptions<T>` into server `QueryParams` for the Batch protocol.
- *
- * Invariants:
- * - Never forwards non-protocol fields from `FindManyOptions` (this is a strict "pick" normalizer).
+ * 将 `FindManyOptions<T>` 严格映射为协议 `QueryParams`（仅保留服务端支持字段）。
+ * - where: 只接受 plain object（函数 where 不会下发）
+ * - orderBy: 规范化为数组规则
+ * - fields/limit/offset/includeTotal/after/before/cursor: 直接映射并做基础校验
  */
 export function normalizeAtomaServerQueryParams<T>(input: FindManyOptions<T> | undefined): QueryParams {
     const i = (input && typeof input === 'object') ? input : undefined
@@ -65,16 +43,16 @@ export function normalizeAtomaServerQueryParams<T>(input: FindManyOptions<T> | u
         out.fields = i!.fields!.filter(f => typeof f === 'string' && f)
     }
 
-    const limit = (typeof i?.limit === 'number' && Number.isFinite(i.limit)) ? i.limit : 50
-    out.limit = limit
+    if (typeof i?.limit === 'number' && Number.isFinite(i.limit)) out.limit = i.limit
     if (typeof i?.offset === 'number' && Number.isFinite(i.offset)) out.offset = i.offset
     if (typeof i?.includeTotal === 'boolean') out.includeTotal = i.includeTotal
 
     const after = (typeof i?.after === 'string' && i.after) ? i.after : undefined
-    const cursor = (typeof i?.cursor === 'string' && i.cursor) ? i.cursor : undefined
+    const cursor = (typeof (i as any)?.cursor === 'string' && (i as any).cursor) ? (i as any).cursor as string : undefined
     const afterOrCursor = after ?? cursor
     if (afterOrCursor) out.after = afterOrCursor
     if (typeof i?.before === 'string' && i.before) out.before = i.before
 
     return out
 }
+

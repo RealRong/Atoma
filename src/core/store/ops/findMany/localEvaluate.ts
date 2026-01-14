@@ -1,12 +1,13 @@
 import { applyQuery } from '../../../query'
 import type { StoreIndexes } from '../../../indexes/StoreIndexes'
 import type { QueryMatcherOptions } from '../../../query/QueryMatcher'
-import type { FindManyOptions, Entity, StoreKey } from '../../../types'
+import type { FindManyOptions, Entity } from '../../../types'
+import type { EntityId } from '#protocol'
 import type { Explain } from '#observability'
 import { summarizeFindManyParams } from './paramsSummary'
 
 export function evaluateWithIndexes<T extends Entity>(params: {
-    mapRef: Map<StoreKey, T>
+    mapRef: Map<EntityId, T>
     options?: FindManyOptions<T>
     indexes: StoreIndexes<T> | null
     matcher?: QueryMatcherOptions

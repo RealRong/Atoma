@@ -1,4 +1,3 @@
-import type { StoreKey } from '#core'
 import type { Table } from 'dexie'
 import type {
     BackendEndpointConfig,
@@ -8,12 +7,12 @@ import type {
     HttpEndpointOptions
 } from '../../types'
 
-export function makeIndexedDbTableForResource<T extends Record<string, Table<any, StoreKey>>>(
+export function makeIndexedDbTableForResource<T extends Record<string, Table<any, string>>>(
     tables: T
-): (resource: string) => Table<any, StoreKey> {
+): (resource: string) => Table<any, string> {
     return (resource: string) => {
         const tbl = (tables as any)[resource]
-        if (tbl) return tbl as Table<any, StoreKey>
+        if (tbl) return tbl as Table<any, string>
         throw new Error(`[Atoma] indexedDB: 未知 resource: ${String(resource)}`)
     }
 }

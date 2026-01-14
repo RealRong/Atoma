@@ -1,11 +1,13 @@
-import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreReadOptions } from '../../types'
+import type { Entity, PartialWithId, StoreHandle, StoreReadOptions } from '../../types'
+import type { EntityId } from '#protocol'
 import { bulkAdd } from '../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { resolveObservabilityContext } from '../internals/runtime'
 import type { ObservabilityContext } from '#observability'
+import { executeQuery } from '../internals/opsExecutor'
 
 type GetOneTask<T> = {
-    id: StoreKey
+    id: EntityId
     resolve: (value: T | undefined) => void
     reject: (error: unknown) => void
     observabilityContext: ObservabilityContext
@@ -53,9 +55,9 @@ const groupTasksByTrace = <T>(tasks: GetOneTask<T>[]): TaskGroup<T>[] => {
     return Array.from(byTrace.values())
 }
 
-const dedupeTaskIds = <T>(tasks: GetOneTask<T>[]): StoreKey[] => {
-    const ids: StoreKey[] = []
-    const seen = new Set<StoreKey>()
+const dedupeTaskIds = <T>(tasks: GetOneTask<T>[]): EntityId[] => {
+    const ids: EntityId[] = []
+    const seen = new Set<EntityId>()
     for (const task of tasks) {
         if (seen.has(task.id)) continue
         seen.add(task.id)
@@ -65,7 +67,7 @@ const dedupeTaskIds = <T>(tasks: GetOneTask<T>[]): StoreKey[] => {
 }
 
 export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
-    const { jotaiStore, atom, dataSource, transform } = handle
+    const { jotaiStore, atom, transform } = handle
 
     let batchGetOneTaskQueue: GetOneTask<T>[] = []
     let batchFetchOneTaskQueue: GetOneTask<T>[] = []
@@ -82,15 +84,15 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
             const ids = dedupeTaskIds(group.tasks)
 
             try {
-                const raw = await dataSource.bulkGet(ids, group.observabilityContext)
+                const { data } = await executeQuery(handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
 
-                const idToItem = new Map<StoreKey, T>()
+                const idToItem = new Map<EntityId, T>()
                 const itemsToCache: T[] = []
 
-                for (const got of raw) {
+                for (const got of data) {
                     if (got === undefined) continue
-                    const item = transform(got)
-                    const id = (item as any).id as StoreKey
+                    const item = transform(got as T)
+                    const id = (item as any).id as EntityId
                     idToItem.set(id, item)
                     itemsToCache.push(item)
                 }
@@ -101,9 +103,9 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
                     : before
 
                 if (before !== after && itemsToCache.length) {
-                    const changedIds = new Set<StoreKey>()
+                    const changedIds = new Set<EntityId>()
                     for (const item of itemsToCache) {
-                        const id = (item as any).id as StoreKey
+                        const id = (item as any).id as EntityId
                         if (before.get(id) !== item) changedIds.add(id)
                     }
                     commitAtomMapUpdateDelta({ handle, before, after, changedIds })
@@ -139,13 +141,13 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
         const processGroup = async (group: TaskGroup<T>) => {
             const ids = dedupeTaskIds(group.tasks)
             try {
-                const raw = await dataSource.bulkGet(ids, group.observabilityContext)
+                const { data } = await executeQuery(handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
 
-                const idToItem = new Map<StoreKey, T>()
-                for (const got of raw) {
+                const idToItem = new Map<EntityId, T>()
+                for (const got of data) {
                     if (got === undefined) continue
-                    const item = transform(got)
-                    const id = (item as any).id as StoreKey
+                    const item = transform(got as T)
+                    const id = (item as any).id as EntityId
                     idToItem.set(id, item)
                 }
 
@@ -169,7 +171,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
 
 
     const handleGetOne = (
-        id: StoreKey,
+        id: EntityId,
         resolve: (v: T | undefined) => void,
         reject: (error: unknown) => void,
         options?: StoreReadOptions
@@ -186,7 +188,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
     }
 
     const handleFetchOne = (
-        id: StoreKey,
+        id: EntityId,
         resolve: (v: T | undefined) => void,
         reject: (error: unknown) => void,
         options?: StoreReadOptions
@@ -203,7 +205,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
     }
 
     return {
-        getOne: (id: StoreKey, options?: StoreReadOptions) => {
+        getOne: (id: EntityId, options?: StoreReadOptions) => {
             return new Promise<T | undefined>((resolve, reject) => {
                 const atomOne = jotaiStore.get(atom).get(id)
                 if (atomOne !== undefined) {
@@ -213,7 +215,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
                 handleGetOne(id, resolve, reject, options)
             })
         },
-        fetchOne: (id: StoreKey, options?: StoreReadOptions) => {
+        fetchOne: (id: EntityId, options?: StoreReadOptions) => {
             return new Promise<T | undefined>((resolve, reject) => {
                 handleFetchOne(id, resolve, reject, options)
             })

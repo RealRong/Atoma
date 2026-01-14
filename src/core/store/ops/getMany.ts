@@ -1,18 +1,20 @@
-import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreReadOptions } from '../../types'
+import type { Entity, PartialWithId, StoreHandle, StoreReadOptions } from '../../types'
+import type { EntityId } from '#protocol'
 import { bulkAdd } from '../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { preserveReferenceShallow } from '../internals/preserveReference'
 import { resolveObservabilityContext } from '../internals/runtime'
+import { executeQuery } from '../internals/opsExecutor'
 
 export function createGetMany<T extends Entity>(handle: StoreHandle<T>) {
-    const { jotaiStore, atom, dataSource, transform } = handle
+    const { jotaiStore, atom, transform } = handle
 
-    return async (ids: StoreKey[], cache = true, options?: StoreReadOptions) => {
-        const beforeMap = jotaiStore.get(atom) as Map<StoreKey, T>
+    return async (ids: EntityId[], cache = true, options?: StoreReadOptions) => {
+        const beforeMap = jotaiStore.get(atom) as Map<EntityId, T>
 
         const out: Array<T | undefined> = new Array(ids.length)
-        const missingSet = new Set<StoreKey>()
-        const missingUnique: StoreKey[] = []
+        const missingSet = new Set<EntityId>()
+        const missingUnique: EntityId[] = []
 
         for (let i = 0; i < ids.length; i++) {
             const id = ids[i]
@@ -30,17 +32,16 @@ export function createGetMany<T extends Entity>(handle: StoreHandle<T>) {
 
         if (missingUnique.length) {
             const observabilityContext = resolveObservabilityContext(handle, options)
-            const fetchedList = await dataSource.bulkGet(missingUnique, observabilityContext)
+            const { data } = await executeQuery(handle, { where: { id: { in: missingUnique } } } as any, observabilityContext)
 
-            const before = jotaiStore.get(atom) as Map<StoreKey, T>
-            const fetchedById = new Map<StoreKey, T>()
+            const before = jotaiStore.get(atom) as Map<EntityId, T>
+            const fetchedById = new Map<EntityId, T>()
             const itemsToCache: T[] = []
 
-            for (let i = 0; i < missingUnique.length; i++) {
-                const got = fetchedList[i]
+            for (const got of data) {
                 if (got === undefined) continue
-                const transformed = transform(got)
-                const id = (transformed as any).id as StoreKey
+                const transformed = transform(got as T)
+                const id = (transformed as any).id as EntityId
 
                 const existing = before.get(id)
                 const preserved = preserveReferenceShallow(existing, transformed)
@@ -54,9 +55,9 @@ export function createGetMany<T extends Entity>(handle: StoreHandle<T>) {
             if (cache && itemsToCache.length) {
                 const after = bulkAdd(itemsToCache as PartialWithId<T>[], before)
                 if (after !== before) {
-                    const changedIds = new Set<StoreKey>()
+                    const changedIds = new Set<EntityId>()
                     for (const item of itemsToCache) {
-                        const id = (item as any).id as StoreKey
+                        const id = (item as any).id as EntityId
                         if (!before.has(id) || before.get(id) !== item) {
                             changedIds.add(id)
                         }

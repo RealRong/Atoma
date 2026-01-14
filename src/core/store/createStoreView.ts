@@ -1,5 +1,6 @@
 import type { CoreStore } from '../createStore'
-import type { Entity, RelationConfig, StoreHandle, StoreKey, StoreOperationOptions } from '../types'
+import type { Entity, RelationConfig, StoreHandle, StoreOperationOptions } from '../types'
+import type { EntityId } from '#protocol'
 import { attachStoreHandle } from '../storeHandleRegistry'
 import type { StoreWriteConfig } from './internals/writeConfig'
 import {
@@ -69,7 +70,7 @@ export function createStoreView<T extends Entity, Relations = {}>(
     const store: any = {
         addOne: (item: Partial<T>, options?: StoreOperationOptions) => addOneBase(item, options),
         addMany: (items: Array<Partial<T>>, options?: StoreOperationOptions) => addManyBase(items, options),
-        updateOne: (id: StoreKey, recipe: any, options?: StoreOperationOptions) => updateOneBase(id, recipe, options),
+        updateOne: (id: EntityId, recipe: any, options?: StoreOperationOptions) => updateOneBase(id, recipe, options),
         updateMany: (items: any, options?: StoreOperationOptions) => updateManyBase(items, options),
         deleteOne: (id: any, options?: StoreOperationOptions) => deleteOneBase(id, options),
         deleteMany: (items: any, options?: StoreOperationOptions) => deleteManyBase(items, options),
@@ -91,7 +92,7 @@ export function createStoreView<T extends Entity, Relations = {}>(
 
     store.name = name
 
-    store.peek = (id: StoreKey) => {
+    store.peek = (id: EntityId) => {
         return handle.jotaiStore.get(handle.atom).get(id)
     }
 
@@ -102,7 +103,7 @@ export function createStoreView<T extends Entity, Relations = {}>(
     store.reset = () => {
         const before = handle.jotaiStore.get(handle.atom)
         if (!before.size) return
-        const after = new Map<StoreKey, T>()
+        const after = new Map<EntityId, T>()
         handle.jotaiStore.set(handle.atom, after)
         handle.indexes?.applyMapDiff(before, after)
     }

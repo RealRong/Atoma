@@ -33,8 +33,8 @@ type OperatorValue = {
 
 type WhereValue = any | OperatorValue
 
-function normalizeLimit(value: unknown, fallback: number): number {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+function normalizeOptionalLimit(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
     return Math.max(0, Math.floor(value))
 }
 
@@ -112,36 +112,42 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         const { selectFields, project } = this.buildSelectFieldsWithProjection(fields, orderBy, alias)
         if (selectFields) qb.select(selectFields)
 
-        const limit = normalizeLimit((params as any).limit, 50)
-
         if (!cursor) {
             const offset = normalizeOffset((params as any).offset) ?? 0
             const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
 
             if (typeof offset === 'number') qb.skip(offset)
-            qb.take(limit)
+            const limit = normalizeOptionalLimit((params as any).limit)
+            if (typeof limit === 'number') qb.take(limit)
 
             if (includeTotal) {
                 const [data, total] = await qb.getManyAndCount()
                 const projected = project ? data.map(project) : data
-                const hasNext = (offset ?? 0) + limit < total
+                const hasNext = typeof limit === 'number' ? ((offset ?? 0) + limit < total) : false
                 return { data: projected, pageInfo: { total, hasNext } }
             }
 
             // 不返回 total：用 limit+1 判断 hasNext
-            qb.take(limit + 1)
-            const dataPlus = await qb.getMany()
-            const hasNext = dataPlus.length > limit
-            const sliced = dataPlus.slice(0, limit)
-            const projected = project ? sliced.map(project) : sliced
-            return { data: projected, pageInfo: { hasNext } }
+            if (typeof limit === 'number') {
+                qb.take(limit + 1)
+                const dataPlus = await qb.getMany()
+                const hasNext = dataPlus.length > limit
+                const sliced = dataPlus.slice(0, limit)
+                const projected = project ? sliced.map(project) : sliced
+                return { data: projected, pageInfo: { hasNext } }
+            }
+
+            const data = await qb.getMany()
+            const projected = project ? data.map(project) : data
+            return { data: projected, pageInfo: { hasNext: false } }
         }
 
         // cursor keyset：默认不返回 total
-        qb.take(limit + 1)
+        const cursorLimit = normalizeOptionalLimit((params as any).limit) ?? 50
+        qb.take(cursorLimit + 1)
         const dataPlus = await qb.getMany()
-        const hasNext = dataPlus.length > limit
-        const sliced = dataPlus.slice(0, limit)
+        const hasNext = dataPlus.length > cursorLimit
+        const sliced = dataPlus.slice(0, cursorLimit)
         const finalRows = reverseResult ? sliced.reverse() : sliced
         const projected = project ? finalRows.map(project) : finalRows
 

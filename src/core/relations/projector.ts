@@ -4,20 +4,20 @@ import type {
     KeySelector,
     RelationConfig,
     RelationMap,
-    StoreKey,
     StoreToken,
     VariantsConfig
 } from '../types'
+import type { EntityId } from '#protocol'
 import type { StoreIndexes } from '../indexes/StoreIndexes'
 import { applyQuery } from '../query'
 import { getValueByPath } from './utils'
 
 export type StoreRuntime = {
-    map: Map<StoreKey, any>
+    map: Map<EntityId, any>
     indexes?: StoreIndexes<any> | null
 }
 
-export type GetStoreMap = (store: StoreToken) => Map<StoreKey, any> | StoreRuntime | undefined
+export type GetStoreMap = (store: StoreToken) => Map<EntityId, any> | StoreRuntime | undefined
 
 type IncludeInput = Record<string, boolean | FindManyOptions<any>> | undefined
 
@@ -50,12 +50,12 @@ const getDefaultValue = (config: RelationConfig<any, any> | undefined) => {
     return null
 }
 
-const extractKeyValue = <T>(item: T, selector: KeySelector<T>): StoreKey | StoreKey[] | undefined | null => {
+const extractKeyValue = <T>(item: T, selector: KeySelector<T>): EntityId | EntityId[] | undefined | null => {
     if (typeof selector === 'function') return selector(item)
     return getValueByPath(item, selector)
 }
 
-const pickFirstKey = (value: StoreKey | StoreKey[] | undefined | null): StoreKey | undefined => {
+const pickFirstKey = (value: EntityId | EntityId[] | undefined | null): EntityId | undefined => {
     if (value === undefined || value === null) return undefined
     if (!Array.isArray(value)) return value
     for (const v of value) {
@@ -211,10 +211,10 @@ function projectStandard<TSource extends Entity>(
         }
 
         let lookupMode: 'index' | 'scan' | undefined
-        const scannedIndex = new Map<StoreKey, any>()
-        const pickedByKey = new Map<StoreKey, any>()
+        const scannedIndex = new Map<EntityId, any>()
+        const pickedByKey = new Map<EntityId, any>()
 
-        const getTargetByKey = (key: StoreKey): any | undefined => {
+        const getTargetByKey = (key: EntityId): any | undefined => {
             const cached = pickedByKey.get(key)
             if (cached !== undefined) return cached
 
@@ -243,7 +243,7 @@ function projectStandard<TSource extends Entity>(
             if (lookupMode !== 'scan') lookupMode = 'scan'
             if (scannedIndex.size === 0) {
                 map.forEach(target => {
-                    const k = (target as any)?.[shape.targetKeyField] as StoreKey | undefined | null
+                    const k = (target as any)?.[shape.targetKeyField] as EntityId | undefined | null
                     if (k === undefined || k === null) return
                     if (!scannedIndex.has(k)) scannedIndex.set(k, target)
                 })
@@ -261,11 +261,11 @@ function projectStandard<TSource extends Entity>(
         return
     }
 
-    let bucket: Map<StoreKey, any[]> | null = null
+    let bucket: Map<EntityId, any[]> | null = null
     let keyLookupMode: 'index' | 'scan' | undefined
-    const perKeyCache = new Map<StoreKey, any[]>()
+    const perKeyCache = new Map<EntityId, any[]>()
 
-    const getTargetsByKey = (key: StoreKey): any[] => {
+    const getTargetsByKey = (key: EntityId): any[] => {
         const cached = perKeyCache.get(key)
         if (cached) return cached
 
@@ -291,9 +291,9 @@ function projectStandard<TSource extends Entity>(
 
         if (keyLookupMode !== 'scan') keyLookupMode = 'scan'
         if (!bucket) {
-            const next = new Map<StoreKey, any[]>()
+            const next = new Map<EntityId, any[]>()
             map.forEach(target => {
-                const k = (target as any)?.[shape.targetKeyField] as StoreKey | undefined | null
+                const k = (target as any)?.[shape.targetKeyField] as EntityId | undefined | null
                 if (k === undefined || k === null) return
                 const arr = next.get(k) || []
                 arr.push(target)

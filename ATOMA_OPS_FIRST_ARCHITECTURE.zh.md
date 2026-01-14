@@ -6,19 +6,21 @@
 
 ---
 
-## 1. 现状（你现在的链路）
+## 1. 现状（截至 2026-01-14：已完成 Phase 2）
 
-目前有两条“翻译链路”，概念重复：
+当前仓库已经进入 **Ops-first**：
 
 1) **direct（直连）路径**
-- `src/core` 写入/查询 → `IDataSource<T>` → `src/bridges/ops/OpsDataSource.ts`（翻译成 ops）→ `src/backend/ops/OpsClient.ts`（发送）→ HTTP/IndexedDB/Memory transport
+- `src/core` 写入/查询 → 直接组装 `Operation(query/write)` → `StoreHandle.backend.opsClient.executeOps(...)` → HTTP/IndexedDB/Memory transport
+  - 读侧：`src/core/store/internals/opsExecutor.ts`（`executeQuery/executeOps`）
+  - 写侧：`src/core/mutation/pipeline/persisters/Direct.ts`（组装 `WriteOp` + 解析 `WriteResultData`）
 
 2) **outbox（入队）路径**
-- `src/core/mutation/pipeline/persisters/Outbox.ts` 里直接调用 `Protocol.ops.encodeWriteIntent(...)` 生成 ops intent（相当于另一套翻译器）→ outbox 存储/同步引擎推送时发 `write` op
+- `src/core/mutation/pipeline/persisters/Outbox.ts`：把写入 encode 为 ops intent（`Protocol.ops.encodeWriteIntent(...)`）→ outbox 存储/同步引擎推送时发 `write` op
 
-这导致：
-- 新人需要理解：`IDataSource`、`OpsDataSource`、`OpsClient`、outbox intent、以及它们之间的差异。
-- 同样的“meta 注入 / idempotency / baseVersion”在多处重复实现，长期一致性风险大。
+差异点（仍需在 Phase 3 统一）：
+- direct 与 outbox 目前都走 ops，但编码入口不同（direct 直接组装 `WriteOp`，outbox 先 encode intent）。
+- meta/idempotency/baseVersion 已经通过协议校验“锁死合同”，但仍需要确保两条路径的生成策略完全一致（尤其是 WriteItem.meta 的稳定性）。
 
 ---
 
@@ -28,12 +30,12 @@
 - **唯一后端接口：** `OpsClient.executeOps({ ops, meta, context, signal })`
 - **唯一持久化/查询表达：** `Operation(kind='query'|'write'|'changes.pull')`
 
-因此（明确删除清单，不留兼容层）：
-- 删除 `IDataSource<T>` 以及所有 `*DataSource` 实现（包括 `OpsDataSource`）。
-- 删除 `src/bridges/**`（整个目录直接移除；不再作为内部/外部入口存在）。
-- 删除 “dataSourceFactory 注入” 这条配置面（改为注入 `OpsClient` 或等价的 ops 执行器）。
+因此（明确删除清单，不留兼容层；已完成）：
+- 已删除 `IDataSource<T>` 以及 `OpsDataSource`。
+- 已删除 `src/bridges/**`（目录不再作为入口存在）。
+- 已把 runtime 注入从 `dataSourceFactory` 改为 `backendFactory`（返回 `{ key, opsClient }`）。
 - 删除/迁移 `StoreKey`（详见 §5.6：统一前后端 id 类型为 `string`）。
-- core 的 persister/query 直接生成 ops 并调用 `OpsClient`。
+- core 的 persister/query 直接生成 ops 并调用 `OpsClient`（准确说是 `OpsClientLike` 结构类型）。
 
 这个选择会让 `src/core` 与 `#protocol/#backend` 产生依赖（“协议入侵 core”），但换来最直观的学习路径：**只学 ops**，不再需要理解“另一个抽象层”。
 
@@ -60,14 +62,14 @@
 - （可选）batch/retry/interceptors 都作为 `OpsClient` 的配置或装饰器，不单独暴露“BatchEngine”概念
 
 ### 4.2 对内（internal）
-- 一个“按资源绑定”的轻量封装（可选，但能显著简化调用端心智）：
-  - `OpsResourceClient(resource).query(params)` → 发 `QueryOp`
-  - `OpsResourceClient(resource).write(action, items, options?)` → 发 `WriteOp`
+- 不再引入“资源级 client 类”（避免再造一个 `Resource*Client` 概念）。
+- 直接使用少量函数式 helper（core 内部使用，不对外暴露）：
+  - `executeQuery(handle, params, ctx)`：发 `QueryOp`
+  - `executeOps(handle, ops, ctx)`：发 ops 批量（direct/sync 内部都可复用）
 
 命名说明：
 - `OpsClient`：transport 级（怎么发到 HTTP/DB/内存）。
-- `OpsResourceClient`：语义更直观的“资源级调用器”（把 `resource` 绑定住，避免每次手写 `Operation`）。
-- 这不是 `IDataSource`；它不试图模拟 CRUD 语义，只是 ops 的薄封装。
+- `StoreHandle.backend`：store 级绑定（把 `resource` 固定为 `storeName`，把 `opsClient` 固定为 runtime 注入的 backend）。
 
 ---
 
@@ -81,9 +83,10 @@
 - 你现在的 `normalizeAtomaServerQueryParams` 会在没传 `limit` 时默认 `limit=50`。
 - 若保留 `getAll()` 且实现为“发一次 query”，远端永远拿不到全量（只拿到前 50）。
 
-Ops-first 规则建议（二选一，别模糊）：
-1) **移除 `getAll`**，只保留 `findMany`（显式分页）/`scan`（显式迭代）。
-2) **保留但改语义：** `getAll` 明确为“最多 N 条”（例如 `getAll({ limit: 1000 })`），或者内部自动翻页直到穷尽（但要定义最大页数/最大条数/超时/取消）。
+Ops-first 规则（按你的决定：宁可爆炸也不做隐式分页）：
+- **移除 `limit=50` 的隐式默认值**：当 `QueryParams.limit` 未提供时，服务端与本地实现都应视为“无上限”，直接返回全部匹配数据。
+- `getAll()`/“不带 limit 的 findMany()”都将变成潜在的全量拉取：数据量爆炸由调用方自行承担。
+- cursor 分页（after/before）仍建议要求显式 `limit`；如果调用方不传，则允许实现层提供一个保守默认值（仅用于 cursor 分页），但绝不能再影响 `getAll`。
 
 ### 5.2 `where` 的“双语义”必须明确：本地函数 vs 远端对象
 
@@ -121,7 +124,7 @@ Ops-first 下建议把这条变成“系统级不变量”并写进错误信息�
 
 ### 5.5 `resource` 命名必须稳定且不做隐式归一化
 
-`OpsDataSource.normalizeResourceName` 这类“只取最后一段”的规则会制造隐形冲突：
+任何“normalizeResourceName（只取最后一段）”的规则都会制造隐形冲突（历史上曾在 `OpsDataSource` 里出现过这种逻辑，已移除）：
 - `/a/users` 与 `/b/users` 会撞成同一个 `users`
 
 Ops-first 建议：
@@ -145,9 +148,8 @@ Ops-first 建议：
 - schema/校验层应在开发期就拦截 “非 string id”。
 
 与 `src/server` 的一致性（参考当前实现）：
-- 目前 server 在 `src/server/ops/opsExecutor/write.ts` 内部用 `normalizeId(...)` 接受 number 并转 string，这是“兼容行为”。
-- Ops-first 改造完成后，应把它改为**只接受 string**，对 number 直接返回 `INVALID_WRITE/validation`，从而把合同钉死。
-- 另外，server 的 `src/server/ops/opsExecutor/normalize.ts` 会把 `write.items` 直接 cast 为 `WriteItem[]`（不逐项校验字段类型）；要真正落实“id 仅 string”，需要在 write executor 逐项校验（或在 normalize 阶段深度校验 items）。
+- server 侧已在 ops normalize 阶段启用 `Protocol.ops.validate.*` 校验：`entityId/value.id` 非 string 会被直接拒绝（validation）。
+- 这意味着“number id 兼容”应视为已废弃：任何 number/数字字符串转 number 的逻辑都不应该再存在于主链路中。
 
 ### 5.7 `WriteResultData.results` 的顺序/索引是协议级合同
 
@@ -242,9 +244,9 @@ Ops-first 改造时最容易犯的错是：把 direct 的行为“误改成只�
 - direct persister：不再调用 `dataSource.bulkPut/bulkDelete...`，改为组装 `WriteOp`
 - query/read：不再调用 `dataSource.get/bulkGet/findMany/getAll`，改为组装 `QueryOp`
 
-### 6.3 最后删除旧抽象
-- 删除 `IDataSource`、`OpsDataSource`、`src/bridges/**`（明确整个目录移除）
-- `createStore`/runtime 注入从 `dataSourceFactory` 改为注入 `opsClient`（或由 `OpsResourceClient` 在内部绑定 resource）
+### 6.3 最后删除旧抽象（已完成）
+- 已删除 `IDataSource`、`OpsDataSource`、`src/bridges/**`
+- `createStore`/runtime 注入已从 `dataSourceFactory` 改为 `backendFactory`（内部通过 `StoreHandle.backend` 绑定 `opsClient` 与 `storeName`）
 - 文档与 README 统一只讲 `OpsClient` 与 ops 协议（不再出现 datasource/bridge 术语）
 
 ---
@@ -260,17 +262,18 @@ Ops-first 改造时最容易犯的错是：把 direct 的行为“误改成只�
 
 验收：server（`src/server`）能对非法 id/非法 op 早失败，并给出稳定错误码；文档能让新人只看一份就理解全部约束。
 
-### Phase 1：类型收敛到 `src/protocol`（id/版本/游标）
+### Phase 1：类型收敛到 `src/protocol`（id/版本/游标）（已完成）
 - 把核心标量类型统一由 `src/protocol/shared/scalars` 提供：`EntityId`/`Version`/`Cursor`（以及你希望保留的时间戳类型）。
 - core 不再定义 `StoreKey`，并把“原 StoreKey 的职责”并入 `EntityId`：store API 全面切换为 `EntityId`（string）。
 - 扫掉所有 number id 的隐式转换逻辑（客户端与 server 同步收紧）。
 
 验收：全仓库不再出现 `StoreKey`（或仅残留在历史文件中，待下一阶段删），所有 id 流转都是 string。
 
-### Phase 2：direct 路径 Ops 化（core 直接发 ops）
-- 替换 direct persister：从“按 CRUD 调 `dataSource.bulkPut/bulkDelete...`”改为“组装 `WriteOp` 发给 `OpsClient`”。
-- 替换读路径：`get/bulkGet/findMany` 直接组装 `QueryOp`（保留本地缓存/索引逻辑不变）。
-- 把 meta 注入收敛到一个位置（建议在 core 的“组装 Operation”处，或一个专门的 ops middleware）。
+### Phase 2：移除 datasource/bridges（core 直接发 ops）（已完成）
+- direct persister：从“按 CRUD 调 datasource”改为“组装 `WriteOp` 发给 `opsClient`”（`src/core/mutation/pipeline/persisters/Direct.ts`）。
+- 读路径：`get/bulkGet/findMany/getAll` 直接组装 `QueryOp`（`src/core/store/internals/opsExecutor.ts` + `src/core/store/ops/*`）。
+- runtime 注入：`dataSourceFactory` → `backendFactory`（`StoreBackend = { key, opsClient }`）。
+- 删除：`IDataSource`、`OpsDataSource`、`src/bridges/**`（不留兼容层）。
 
 验收：不引入 outbox 的情况下，store 的所有写入/查询链路都不再依赖 `IDataSource`。
 
@@ -281,12 +284,11 @@ Ops-first 改造时最容易犯的错是：把 direct 的行为“误改成只�
 
 验收：direct 与 outbox 的 meta/idempotency/baseVersion 规则完全一致；同一写入在两条路径的错误形态一致。
 
-### Phase 4：清理旧层与目录（真正完成“无兼容层”）
-- 删除 `src/bridges/**`、删除 `IDataSource`、删除所有 DataSource 相关测试与文档引用。
-- `createClient/createStore` 配置面只暴露 `OpsClient`（以及 batch/retry/interceptors），不再出现 datasource 入口。
-- 更新 README/示例，让使用者只接触 `Backend.*OpsClient` 与 Store API。
+### Phase 4：文档/示例清理（进行中）
+- 清理 README/示例中残留的 datasource/bridge 术语与配置（例如旧的 `dataSource`/`dataSourceFactory` 字段）。
+- 统一对外只暴露 `OpsClient`（以及 batch/retry/interceptors）与 Store API。
 
-验收：仓库中不存在 “bridge/datasource” 概念入口；新人只需要理解 ops 协议与 `OpsClient`。
+验收：新人不需要看到任何 datasource/bridge 名词也能跑通 demo 与 sync。
 
 ---
 

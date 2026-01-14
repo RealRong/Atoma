@@ -1,6 +1,7 @@
 import { produce } from 'immer'
 import type { Draft } from 'immer'
-import type { Entity, PartialWithId, StoreHandle, StoreKey, StoreOperationOptions, WriteManyResult } from '../../types'
+import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions, WriteManyResult } from '../../types'
+import type { EntityId } from '#protocol'
 import { bulkAdd } from '../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
 import { dispatch } from '../internals/dispatch'
@@ -12,12 +13,13 @@ import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
 import { prepareForUpdate } from '../internals/writePipeline'
 import type { StoreWriteConfig } from '../internals/writeConfig'
+import { executeQuery } from '../internals/opsExecutor'
 
 export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
-    const { jotaiStore, atom, dataSource, services, hooks, schema, transform } = handle
+    const { jotaiStore, atom, services, hooks, schema, transform } = handle
 
     return async (
-        items: Array<{ id: StoreKey; recipe: (draft: Draft<T>) => void }>,
+        items: Array<{ id: EntityId; recipe: (draft: Draft<T>) => void }>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>> => {
         const opContext = ensureActionId(options?.opContext)
@@ -26,7 +28,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
 
         const results: WriteManyResult<T> = new Array(items.length)
 
-        const firstIndexById = new Map<StoreKey, number>()
+        const firstIndexById = new Map<EntityId, number>()
         for (let i = 0; i < items.length; i++) {
             const id = items[i]?.id
             if (firstIndexById.has(id)) {
@@ -41,9 +43,9 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
         }
 
         const before = jotaiStore.get(atom)
-        const beforeMap = before as Map<StoreKey, T>
-        const baseById = new Map<StoreKey, PartialWithId<T>>()
-        const missing: StoreKey[] = []
+        const beforeMap = before as Map<EntityId, T>
+        const baseById = new Map<EntityId, PartialWithId<T>>()
+        const missing: EntityId[] = []
 
         for (const id of firstIndexById.keys()) {
             const cached = beforeMap.get(id)
@@ -66,15 +68,14 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
                     }
                 }
             } else {
-                const fetchedList = await dataSource.bulkGet(missing, observabilityContext)
+                const { data } = await executeQuery(handle, { where: { id: { in: missing } } } as any, observabilityContext)
                 const toCache: Array<PartialWithId<T>> = []
 
-                for (let i = 0; i < missing.length; i++) {
-                    const id = missing[i]
-                    const fetched = fetchedList[i]
+                for (const fetched of data) {
                     if (!fetched) continue
-                    const transformed = transform(fetched)
+                    const transformed = transform(fetched as T)
                     const validFetched = await validateWithSchema(transformed, schema)
+                    const id = (validFetched as any).id as EntityId
                     baseById.set(id, validFetched as any)
                     toCache.push(validFetched as any)
                 }
@@ -82,9 +83,9 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
                 if (toCache.length) {
                     const after = bulkAdd(toCache, beforeMap)
                     if (after !== beforeMap) {
-                        const changedIds = new Set<StoreKey>()
+                        const changedIds = new Set<EntityId>()
                         for (const item of toCache) {
-                            const id = item.id as any as StoreKey
+                            const id = item.id as any as EntityId
                             if (!beforeMap.has(id) || beforeMap.get(id) !== (item as any)) {
                                 changedIds.add(id)
                             }
@@ -95,7 +96,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
             }
         }
 
-        const prepared: Array<{ index: number; id: StoreKey; value: PartialWithId<T> }> = []
+        const prepared: Array<{ index: number; id: EntityId; value: PartialWithId<T> }> = []
 
         for (let index = 0; index < items.length; index++) {
             if (results[index]) continue

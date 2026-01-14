@@ -1,16 +1,17 @@
-import type { Entity, StoreHandle, StoreKey } from '../../types'
+import type { Entity, StoreHandle } from '../../types'
+import type { EntityId } from '#protocol'
 import { commitAtomMapUpdateDelta } from './cacheWriter'
 import { preserveReferenceShallow } from './preserveReference'
 import { validateWithSchema } from './validation'
 
 export type WritebackVersionUpdate = {
-    key: StoreKey
+    key: EntityId
     version: number
 }
 
 export type StoreWritebackArgs<T extends Entity> = {
     upserts?: T[]
-    deletes?: StoreKey[]
+    deletes?: EntityId[]
     versionUpdates?: WritebackVersionUpdate[]
 }
 
@@ -25,8 +26,8 @@ export async function applyStoreWriteback<T extends Entity>(
     if (!upserts.length && !deletes.length && !versionUpdates.length) return
 
     const before = handle.jotaiStore.get(handle.atom)
-    let after: Map<StoreKey, T> | null = null
-    const changedIds = new Set<StoreKey>()
+    let after: Map<EntityId, T> | null = null
+    const changedIds = new Set<EntityId>()
 
     const ensureAfter = () => {
         if (!after) after = new Map(before)
@@ -45,7 +46,7 @@ export async function applyStoreWriteback<T extends Entity>(
     for (const raw of upserts) {
         const transformed = handle.transform(raw)
         const validated = await validateWithSchema(transformed, handle.schema as any)
-        const id = (validated as any).id as StoreKey
+        const id = (validated as any).id as EntityId
 
         const mapRef = getMap()
         const existing = mapRef.get(id)
@@ -59,7 +60,7 @@ export async function applyStoreWriteback<T extends Entity>(
     }
 
     if (versionUpdates.length) {
-        const versionByKey = new Map<StoreKey, number>()
+        const versionByKey = new Map<EntityId, number>()
         for (const v of versionUpdates) {
             versionByKey.set(v.key, v.version)
         }

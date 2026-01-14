@@ -1,7 +1,7 @@
 import { useAtomValue } from 'jotai'
 import { useMemo } from 'react'
 import { Core } from '#core'
-import type { Entity, FindManyOptions, StoreKey, StoreHandleOwner } from '#core'
+import type { Entity, FindManyOptions, StoreHandleOwner } from '#core'
 
 type UseStoreQuerySelect = 'entities' | 'ids'
 
@@ -10,7 +10,7 @@ type UseStoreQueryOptions<T extends Entity> =
     & { select?: UseStoreQuerySelect }
 
 type StoreQueryResult<T extends Entity> = {
-    ids: StoreKey[]
+    ids: Array<T['id']>
     data: T[]
 }
 
@@ -30,7 +30,7 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
         const indexes = handle.indexes
         const candidate = indexes?.collectCandidates(options?.where as any)
 
-        if (candidate?.kind === 'empty') return { ids: [], data: [] }
+        if (candidate?.kind === 'empty') return { ids: [] as Array<T['id']>, data: [] as T[] }
 
         const source = (candidate?.kind === 'candidates')
             ? Array.from(candidate.ids).map(id => map.get(id)).filter(Boolean) as T[]
@@ -58,7 +58,7 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
             ? source
             : (Core.query.applyQuery(source, effectiveOptions as any, handle.matcher ? { matcher: handle.matcher } : undefined) as T[])
 
-        return { ids: result.map(item => item.id), data: result }
+        return { ids: result.map(item => item.id) as Array<T['id']>, data: result }
     }, [map, handle.indexes, handle.matcher, queryKey])
 }
 

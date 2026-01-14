@@ -1,6 +1,7 @@
 import { applyPatches, createDraft, finishDraft, original, Patch, WritableDraft } from 'immer'
 import { PrimitiveAtom } from 'jotai/vanilla'
-import { StoreDispatchEvent, StoreKey, Entity } from '../../types'
+import type { EntityId } from '#protocol'
+import { StoreDispatchEvent, Entity } from '../../types'
 import { Plan } from './types'
 
 /**
@@ -9,9 +10,9 @@ import { Plan } from './types'
 export class Reducer {
     reduce<T extends Entity>(
         operations: StoreDispatchEvent<T>[],
-        currentValue: Map<StoreKey, T>
+        currentValue: Map<EntityId, T>
     ): Plan<T> {
-        const atom = operations[0]?.handle.atom as PrimitiveAtom<Map<StoreKey, T>>
+        const atom = operations[0]?.handle.atom as PrimitiveAtom<Map<EntityId, T>>
 
         const hasCreate = operations.some(o => o.type === 'create')
         if (hasCreate) {
@@ -182,7 +183,7 @@ export class Reducer {
         const newValue = finishDraft(draft, (p, inverse) => {
             patches = p
             inversePatches = inverse
-        }) as Map<StoreKey, T>
+        }) as Map<EntityId, T>
 
         const changedFields = this.collectChangedFieldsFromPatches(patches)
 

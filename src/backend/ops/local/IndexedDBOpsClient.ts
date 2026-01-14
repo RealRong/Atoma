@@ -1,5 +1,5 @@
 import type { Table } from 'dexie'
-import { Core, type StoreKey } from '#core'
+import { Core } from '#core'
 import type {
     ChangeBatch,
     Operation,
@@ -19,11 +19,6 @@ type TransformData = (args: { resource: string; data: any }) => any | undefined
 
 function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function toStoreKey(entityId: string): StoreKey {
-    if (entityId.match(/^[0-9]+$/)) return Number(entityId)
-    return entityId
 }
 
 function standardError(args: { code: string; message: string; kind: StandardError['kind']; details?: StandardError['details'] }): StandardError {
@@ -56,8 +51,8 @@ function normalizeQueryParams(params: unknown): QueryParams | undefined {
     return params as QueryParams
 }
 
-function normalizeLimit(value: unknown, fallback: number): number {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+function normalizeOptionalLimit(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
     return Math.max(0, Math.floor(value))
 }
 
@@ -110,7 +105,7 @@ function serializeValue(value: any) {
 
 export class IndexedDBOpsClient extends OpsClient {
     constructor(private readonly config: {
-        tableForResource: (resource: string) => Table<any, StoreKey>
+        tableForResource: (resource: string) => Table<any, string>
         transformData?: TransformData
     }) {
         super()
@@ -219,13 +214,15 @@ export class IndexedDBOpsClient extends OpsClient {
         const wantsCursorPaging = Boolean(beforeToken || afterOrCursor)
 
         if (!wantsCursorPaging) {
-            const limit = normalizeLimit((params as any).limit, 50)
             const offset = normalizeOffset((params as any).offset) ?? 0
             const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
 
-            const slice = sorted.slice(offset, offset + limit)
+            const limit = normalizeOptionalLimit((params as any).limit)
+            const slice = typeof limit === 'number'
+                ? sorted.slice(offset, offset + limit)
+                : sorted.slice(offset)
             const last = slice[slice.length - 1]
-            const hasNext = offset + limit < sorted.length
+            const hasNext = typeof limit === 'number' ? (offset + limit < sorted.length) : false
             return {
                 items: slice.map(i => projectSelect(i, select)),
                 pageInfo: {
@@ -236,7 +233,7 @@ export class IndexedDBOpsClient extends OpsClient {
             }
         }
 
-        const limit = normalizeLimit((params as any).limit, 50)
+        const limit = normalizeOptionalLimit((params as any).limit) ?? 50
 
         if (beforeToken) {
             const idx = sorted.findIndex(item => String((item as any)?.id) === beforeToken)
@@ -301,7 +298,7 @@ export class IndexedDBOpsClient extends OpsClient {
                         continue
                     }
                     const id = String(entityId)
-                    const key = toStoreKey(id)
+                    const key = id
                     const existing = await table.get(key as any)
                     const current = existing ? this.applyTransformOne(resource, existing) : undefined
                     if (current) {
@@ -342,7 +339,7 @@ export class IndexedDBOpsClient extends OpsClient {
                         results[index] = { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing entityId for update', kind: 'validation', details: { resource } }) }
                         continue
                     }
-                    const key = toStoreKey(id)
+                    const key = id
                     const existing = await table.get(key as any)
                     const current = existing ? this.applyTransformOne(resource, existing) : undefined
                     if (!current) {
@@ -395,7 +392,7 @@ export class IndexedDBOpsClient extends OpsClient {
                         results[index] = { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing entityId for upsert', kind: 'validation', details: { resource } }) }
                         continue
                     }
-                    const key = toStoreKey(id)
+                    const key = id
                     const existing = await table.get(key as any)
                     const current = existing ? this.applyTransformOne(resource, existing) : undefined
 
@@ -484,7 +481,7 @@ export class IndexedDBOpsClient extends OpsClient {
                     results[index] = { index, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing entityId for delete', kind: 'validation', details: { resource } }) }
                     continue
                 }
-                const key = toStoreKey(id)
+                const key = id
                 const existing = await table.get(key as any)
                 const current = existing ? this.applyTransformOne(resource, existing) : undefined
                 if (!current) {

@@ -1,4 +1,5 @@
-import { IndexDefinition, StoreKey } from '../../types'
+import { IndexDefinition } from '../../types'
+import type { EntityId } from '#protocol'
 import { CandidateResult, IndexStats } from '../types'
 import { intersectAll, levenshteinDistance } from '../utils'
 import { defaultTokenizer } from '../tokenizer'
@@ -9,8 +10,8 @@ export class TextIndex<T> implements IIndex<T> {
     readonly type = 'text'
     readonly config: IndexDefinition<T>
 
-    private invertedIndex = new Map<string, Set<StoreKey>>()
-    private docTokens = new Map<StoreKey, string[]>()
+    private invertedIndex = new Map<string, Set<EntityId>>()
+    private docTokens = new Map<EntityId, string[]>()
 
     private tokenizer: (text: string) => string[]
     private minTokenLength: number
@@ -26,7 +27,7 @@ export class TextIndex<T> implements IIndex<T> {
         this.fuzzyDistance = config.options?.fuzzyDistance ?? 1
     }
 
-    add(id: StoreKey, value: any): void {
+    add(id: EntityId, value: any): void {
         const text = validateString(value, this.config.field, id)
         const tokens = this.tokenize(text)
         this.docTokens.set(id, tokens)
@@ -34,14 +35,14 @@ export class TextIndex<T> implements IIndex<T> {
             if (token.length < this.minTokenLength) return
             let set = this.invertedIndex.get(token)
             if (!set) {
-                set = new Set<StoreKey>()
+                set = new Set<EntityId>()
                 this.invertedIndex.set(token, set)
             }
             set.add(id)
         })
     }
 
-    remove(id: StoreKey, value: any): void {
+    remove(id: EntityId, value: any): void {
         const tokens = this.docTokens.get(id) || this.tokenize(validateString(value, this.config.field, id))
         tokens.forEach(token => {
             const set = this.invertedIndex.get(token)
@@ -84,14 +85,14 @@ export class TextIndex<T> implements IIndex<T> {
             .map((t: string) => t.toLowerCase())
         if (!tokens.length) return { kind: 'empty' }
 
-        const tokenSets: Set<StoreKey>[] = []
-        const tokenUnions: Set<StoreKey>[] = []
+        const tokenSets: Set<EntityId>[] = []
+        const tokenUnions: Set<EntityId>[] = []
 
-        const lookupToken = (token: string): Set<StoreKey> => {
+        const lookupToken = (token: string): Set<EntityId> => {
             const exact = this.invertedIndex.get(token)
             if (exact) return new Set(exact)
             if (!distance) return new Set()
-            const fuzzyMatches = new Set<StoreKey>()
+            const fuzzyMatches = new Set<EntityId>()
             this.invertedIndex.forEach((set, t) => {
                 if (Math.abs(t.length - token.length) > distance) return
                 if (levenshteinDistance(token, t, distance) <= distance) {
@@ -117,7 +118,7 @@ export class TextIndex<T> implements IIndex<T> {
             return { kind: 'candidates', ids, exactness: distance ? 'superset' : 'exact' }
         }
 
-        const union = new Set<StoreKey>()
+        const union = new Set<EntityId>()
         tokenUnions.forEach(s => s.forEach(id => union.add(id)))
         if (union.size === 0) return { kind: 'empty' }
         return { kind: 'candidates', ids: union, exactness: distance ? 'superset' : 'exact' }

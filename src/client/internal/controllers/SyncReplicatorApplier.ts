@@ -1,14 +1,8 @@
-import { Core, applyStoreWriteback, type DeleteItem, type StoreKey } from '#core'
+import { Core, applyStoreWriteback, type DeleteItem } from '#core'
 import type { ObservabilityContext } from '#observability'
-import type { Change } from '#protocol'
+import { Protocol, type Change, type EntityId, type Meta, type Operation, type OperationResult, type QueryParams, type QueryResultData, type WriteAction, type WriteItem, type WriteItemMeta, type WriteOptions, type WriteResultData } from '#protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync'
-import { OpsDataSource } from '../../../bridges/ops/OpsDataSource'
 import type { AtomaClientSyncConfig, ClientRuntime, ResolvedBackend } from '../../types'
-
-function normalizeStoreKeyFromEntityId(id: string): StoreKey {
-    if (/^[0-9]+$/.test(id)) return Number(id)
-    return id
-}
 
 export function createSyncReplicatorApplier(args: {
     runtime: ClientRuntime
@@ -16,46 +10,172 @@ export function createSyncReplicatorApplier(args: {
     localBackend?: ResolvedBackend
     syncConfig?: AtomaClientSyncConfig
 }): SyncApplier {
-    const createRemoteDataSource = (resource: string) => {
-        const backend = args.backend
-        if (!backend) return null
-        return new OpsDataSource<any>({
-            opsClient: backend.opsClient,
-            resourceName: resource,
-            name: `${backend.key}:remote`
+    let opSeq = 0
+    const nextOpId = (prefix: 'q' | 'w') => {
+        opSeq += 1
+        return `${prefix}_${Date.now()}_${opSeq}`
+    }
+
+    function applyOpTraceMeta(ops: Operation[], context?: ObservabilityContext): Operation[] {
+        if (!context || !ops.length) return ops
+        const traceId = (typeof context.traceId === 'string' && context.traceId) ? context.traceId : undefined
+        if (!traceId) return ops
+
+        return ops.map((op) => {
+            const requestId = context.requestId()
+            const baseMeta = (op as any).meta
+            const meta = (baseMeta && typeof baseMeta === 'object' && !Array.isArray(baseMeta)) ? baseMeta : undefined
+            return {
+                ...(op as any),
+                meta: {
+                    v: 1,
+                    ...(meta ? meta : {}),
+                    traceId,
+                    ...(requestId ? { requestId } : {})
+                }
+            } as Operation
         })
     }
 
-    const createLocalDataSource = (resource: string) => {
-        const backend = args.localBackend
-        if (!backend) return null
-        return new OpsDataSource<any>({
-            opsClient: backend.opsClient,
-            resourceName: resource,
-            name: `${backend.key}:local`
-        })
+    function requestMeta(context?: ObservabilityContext): Meta {
+        const traceId = (typeof context?.traceId === 'string' && context.traceId) ? context.traceId : undefined
+        const requestId = context ? context.requestId() : undefined
+        return {
+            v: 1,
+            clientTimeMs: Date.now(),
+            ...(traceId ? { traceId } : {}),
+            ...(requestId ? { requestId } : {})
+        }
+    }
+
+    async function executeOps(opsClient: ResolvedBackend['opsClient'], ops: Operation[], context?: ObservabilityContext): Promise<OperationResult[]> {
+        const opsWithTrace = applyOpTraceMeta(ops, context)
+        const meta = requestMeta(context)
+        Protocol.ops.validate.assertOutgoingOpsV1({ ops: opsWithTrace, meta })
+        const res = await opsClient.executeOps({ ops: opsWithTrace, meta, context })
+        return Array.isArray(res.results) ? (res.results as any) : []
+    }
+
+    async function queryResource(opsClient: ResolvedBackend['opsClient'], args2: { resource: string; params: QueryParams; context?: ObservabilityContext }): Promise<{ items: any[]; pageInfo?: any }> {
+        const op: Operation = {
+            opId: nextOpId('q'),
+            kind: 'query',
+            query: {
+                resource: args2.resource,
+                params: args2.params
+            }
+        }
+        const results = await executeOps(opsClient, [op], args2.context)
+        const result = results[0]
+        if (!result) throw new Error('[Atoma] Missing query result')
+        if ((result as any).ok !== true) {
+            const errObj = (result as any).error
+            const msg = (errObj && typeof errObj.message === 'string') ? errObj.message : 'Query failed'
+            const err = new Error(msg)
+            ;(err as any).error = errObj
+            throw err
+        }
+        const data = (result as any).data as QueryResultData
+        return {
+            items: Array.isArray((data as any)?.items) ? ((data as any).items as any[]) : [],
+            pageInfo: (data as any)?.pageInfo
+        }
+    }
+
+    async function writeResource(opsClient: ResolvedBackend['opsClient'], args2: { resource: string; action: WriteAction; items: WriteItem[]; options?: WriteOptions; context?: ObservabilityContext }): Promise<WriteResultData> {
+        const op: Operation = {
+            opId: nextOpId('w'),
+            kind: 'write',
+            write: {
+                resource: args2.resource,
+                action: args2.action,
+                items: args2.items,
+                ...(args2.options ? { options: args2.options } : {})
+            }
+        }
+        const results = await executeOps(opsClient, [op], args2.context)
+        const result = results[0]
+        if (!result) throw new Error('[Atoma] Missing write result')
+        if ((result as any).ok !== true) {
+            const errObj = (result as any).error
+            const msg = (errObj && typeof errObj.message === 'string') ? errObj.message : 'Write failed'
+            const err = new Error(msg)
+            ;(err as any).error = errObj
+            throw err
+        }
+        const data = (result as any).data as WriteResultData
+        const itemResults = Array.isArray((data as any)?.results) ? ((data as any).results as any[]) : []
+        for (const r of itemResults) {
+            if (!r) continue
+            if (r.ok === true) continue
+            const msg = r.error && typeof r.error.message === 'string' ? r.error.message : 'Write failed'
+            const err = new Error(msg)
+            ;(err as any).error = r.error
+            ;(err as any).current = r.current
+            throw err
+        }
+        return data
+    }
+
+    function newWriteItemMeta(): WriteItemMeta {
+        return {
+            idempotencyKey: Protocol.ids.createIdempotencyKey({ now: () => Date.now() }),
+            clientTimeMs: Date.now()
+        }
+    }
+
+    function desiredBaseVersionFromTargetVersion(version: unknown): number | undefined {
+        if (typeof version !== 'number' || !Number.isFinite(version) || version <= 1) return undefined
+        return Math.floor(version) - 1
     }
 
     const persistToLocal = async (
         resource: string,
-        args2: { upserts?: any[]; deletes?: StoreKey[]; versionUpdates?: Array<{ key: StoreKey; version: number }> }
+        args2: { upserts?: any[]; deletes?: EntityId[]; versionUpdates?: Array<{ key: EntityId; version: number }> }
     ) => {
-        const local = createLocalDataSource(resource)
-        if (!local) return
+        const localOpsClient = args.localBackend?.opsClient
+        if (!localOpsClient) return
 
         const upserts = Array.isArray(args2.upserts) ? args2.upserts : []
         const deletes = Array.isArray(args2.deletes) ? args2.deletes : []
         const versionUpdates = Array.isArray(args2.versionUpdates) ? args2.versionUpdates : []
 
         if (upserts.length) {
-            await local.bulkUpsert(upserts as any[], { mode: 'loose', merge: false })
+            const items: WriteItem[] = []
+            for (const u of upserts) {
+                const id = (u as any)?.id
+                if (typeof id !== 'string' || !id) continue
+                const baseVersion = desiredBaseVersionFromTargetVersion((u as any)?.version)
+                items.push({
+                    entityId: id,
+                    ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+                    value: u,
+                    meta: newWriteItemMeta()
+                } as any)
+            }
+            if (items.length) {
+                await writeResource(localOpsClient, {
+                    resource,
+                    action: 'upsert',
+                    items,
+                    options: { merge: false, upsert: { mode: 'loose' } }
+                })
+            }
         }
         if (deletes.length) {
-            const current = await local.bulkGet(deletes)
+            const { items: currentItems } = await queryResource(localOpsClient, {
+                resource,
+                params: { where: { id: { in: deletes } } } as any
+            })
+            const currentById = new Map<EntityId, any>()
+            for (const row of currentItems) {
+                const id = (row as any)?.id
+                if (typeof id === 'string' && id) currentById.set(id, row)
+            }
             const deleteItems: DeleteItem[] = []
             for (let i = 0; i < deletes.length; i++) {
                 const id = deletes[i]
-                const row = current[i]
+                const row = currentById.get(id)
                 if (!row || typeof row !== 'object') continue
                 const baseVersion = (row as any).version
                 if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
@@ -64,17 +184,22 @@ export function createSyncReplicatorApplier(args: {
                 deleteItems.push({ id, baseVersion })
             }
             if (deleteItems.length) {
-                await local.bulkDelete(deleteItems)
+                const items: WriteItem[] = deleteItems.map(d => ({
+                    entityId: d.id,
+                    baseVersion: d.baseVersion,
+                    meta: newWriteItemMeta()
+                } as any))
+                await writeResource(localOpsClient, { resource, action: 'delete', items })
             }
         }
         if (versionUpdates.length) {
-            const versionByKey = new Map<StoreKey, number>()
+            const versionByKey = new Map<EntityId, number>()
             versionUpdates.forEach(v => versionByKey.set(v.key, v.version))
 
-            const upsertedKeys = new Set<StoreKey>()
+            const upsertedKeys = new Set<EntityId>()
             upserts.forEach(u => {
                 const id = (u as any)?.id
-                if (id !== undefined) upsertedKeys.add(id)
+                if (typeof id === 'string' && id) upsertedKeys.add(id)
             })
 
             const toUpdate = Array.from(versionByKey.entries())
@@ -82,19 +207,34 @@ export function createSyncReplicatorApplier(args: {
                 .map(([key]) => key)
 
             if (toUpdate.length) {
-                const current = await local.bulkGet(toUpdate)
-                const patched: any[] = []
-                for (let i = 0; i < toUpdate.length; i++) {
-                    const key = toUpdate[i]
-                    const row = current[i]
-                    const nextVersion = versionByKey.get(key)
-                    if (!row || nextVersion === undefined) continue
-                    if (row && typeof row === 'object') {
-                        patched.push({ ...(row as any), version: nextVersion })
-                    }
+                const { items: currentItems } = await queryResource(localOpsClient, {
+                    resource,
+                    params: { where: { id: { in: toUpdate } } } as any
+                })
+
+                const items: WriteItem[] = []
+                for (const row of currentItems) {
+                    const id = (row as any)?.id
+                    if (typeof id !== 'string' || !id) continue
+                    const nextVersion = versionByKey.get(id)
+                    if (nextVersion === undefined) continue
+
+                    const baseVersion = desiredBaseVersionFromTargetVersion(nextVersion)
+                    items.push({
+                        entityId: id,
+                        ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+                        value: { ...(row as any), version: nextVersion },
+                        meta: newWriteItemMeta()
+                    } as any)
                 }
-                if (patched.length) {
-                    await local.bulkPut(patched)
+
+                if (items.length) {
+                    await writeResource(localOpsClient, {
+                        resource,
+                        action: 'upsert',
+                        items,
+                        options: { merge: true, upsert: { mode: 'loose' } }
+                    })
                 }
             }
         }
@@ -121,27 +261,28 @@ export function createSyncReplicatorApplier(args: {
                 changes: changesForResource
             })
 
-            const deleteKeys: StoreKey[] = []
-            const upsertEntityIds: string[] = []
+            const deleteKeys: EntityId[] = []
+            const upsertEntityIds: EntityId[] = []
 
             for (const c of changesForResource) {
                 if (c.kind === 'delete') {
-                    deleteKeys.push(normalizeStoreKeyFromEntityId(String(c.entityId)))
+                    deleteKeys.push(String(c.entityId) as EntityId)
                     continue
                 }
-                upsertEntityIds.push(String(c.entityId))
+                upsertEntityIds.push(String(c.entityId) as EntityId)
             }
 
-            const uniqueUpsertKeys = Array.from(new Set(upsertEntityIds)).map(id => normalizeStoreKeyFromEntityId(id))
+            const uniqueUpsertKeys = Array.from(new Set(upsertEntityIds))
             const uniqueDeleteKeys = Array.from(new Set(deleteKeys))
 
             const ctx: ObservabilityContext = handle.createObservabilityContext
                 ? handle.createObservabilityContext({})
                 : (undefined as any)
 
-            const remote = createRemoteDataSource(resource)
-            const upserts = (remote && uniqueUpsertKeys.length)
-                ? (await remote.bulkGet(uniqueUpsertKeys, ctx)).filter((i: any): i is any => i !== undefined)
+            const remoteOpsClient = args.backend?.opsClient
+            const upserts = (remoteOpsClient && uniqueUpsertKeys.length)
+                ? (await queryResource(remoteOpsClient, { resource, params: { where: { id: { in: uniqueUpsertKeys } } } as any, context: ctx })).items
+                    .filter((i: any): i is any => i !== undefined)
                 : []
 
             await applyStoreWriteback(handle as any, {
@@ -170,28 +311,28 @@ export function createSyncReplicatorApplier(args: {
         })
 
         const upserts: any[] = []
-        const deletes: StoreKey[] = []
-        const versionUpdates: Array<{ key: StoreKey; version: number }> = []
+        const deletes: EntityId[] = []
+        const versionUpdates: Array<{ key: EntityId; version: number }> = []
 
         const version = ack.result.version
         if (typeof version === 'number' && Number.isFinite(version)) {
-            versionUpdates.push({ key: normalizeStoreKeyFromEntityId(String(ack.result.entityId)), version })
+            versionUpdates.push({ key: String(ack.result.entityId) as EntityId, version })
         }
 
         if (ack.action === 'create') {
             const nextEntityId = ack.result.entityId
-            const nextKey = normalizeStoreKeyFromEntityId(String(nextEntityId))
+            const nextKey = String(nextEntityId) as EntityId
 
             const tempEntityId = (ack.item as any)?.entityId
             const tempKey = (typeof tempEntityId === 'string' && tempEntityId)
-                ? normalizeStoreKeyFromEntityId(tempEntityId)
+                ? (tempEntityId as EntityId)
                 : null
 
             if (tempKey !== null && tempKey !== nextKey) {
                 throw new Error('[Atoma] sync: create ack returned mismatched id (client-id create must not change id)')
             }
 
-            const before = handle.jotaiStore.get(handle.atom) as Map<StoreKey, any>
+            const before = handle.jotaiStore.get(handle.atom) as Map<EntityId, any>
             const existing = before.get(nextKey)
 
             const serverData = ack.result.data
@@ -240,12 +381,12 @@ export function createSyncReplicatorApplier(args: {
             reason: (reject.result as any)?.error ?? reject.result
         })
         const upserts: any[] = []
-        const deletes: StoreKey[] = []
+        const deletes: EntityId[] = []
 
         if (reject.action === 'create') {
             const tempEntityId = (reject.item as any)?.entityId
             const tempKey = (typeof tempEntityId === 'string' && tempEntityId)
-                ? normalizeStoreKeyFromEntityId(tempEntityId)
+                ? (tempEntityId as EntityId)
                 : null
             if (tempKey !== null) {
                 deletes.push(tempKey)

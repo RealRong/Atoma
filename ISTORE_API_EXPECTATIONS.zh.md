@@ -277,12 +277,11 @@ cache miss 行为：
 ### 2.6 `findMany(options?) => Promise<FindManyResult<T>>`
 
 语义分支：
-- 若 dataSource 实现了 `findMany`：
-  - 默认会把返回的数据**写入缓存**（增量写入，不会清空其它缓存项）。
-  - 若 `options.skipStore===true` 或 `options.fields` 非空（sparse fieldset）：**不写入缓存**。
-- 若 dataSource 未实现 `findMany`：
-  - 会 fallback 到 `getAll + 本地 applyQuery`。
-  - 该 fallback 路径会把缓存视为“快照同步”：**会移除不在结果里的 id**（与 `getAll` 类似）。
+`findMany`（Ops-first 当前实现）：
+- 始终发起 `QueryOp`（协议查询），并按需写入缓存。
+- 默认会把返回的数据**增量写入缓存**（不会清空其它缓存项）。
+- 若 `options.skipStore===true` 或 `options.fields` 非空（sparse fieldset）：**不写入缓存**。
+- “快照同步并移除不在结果里的 id”只会出现在 `getAll()` 这类“全量拉取并对齐缓存”的路径中（`findMany` 不做 removals）。
 
 常见手测点：
 - `fields` 时不写入缓存（避免半字段对象污染）。
@@ -315,10 +314,9 @@ cache miss 行为：
 ## 4. 当前实现/设计差异（建议你重点手测暴露）
 
 1) direct 路径对“item 级失败”的回滚/抛错：
-- 若后端协议返回 `op.ok=true` 但 `data.results[i].ok=false`，目前 **可能不会触发前端 rollback**（取决于 OpsDataSource 是否将 item 失败提升为异常）。
-- 手测时建议同时观察服务端日志与本地缓存是否回滚一致。
+- 若后端协议返回 `op.ok=true` 但 `data.results[i].ok=false`：DirectPersister 会将其提升为异常并触发 rollback（保证前端 cache 与持久化结果一致）。
+- 手测时建议同时观察服务端日志与本地缓存是否回滚一致（尤其是冲突场景）。
 
 2) `deleteOne` 在目标不存在时的语义：
 - 实现上更偏“尽力而为”的软删：若本地也没有该 id，可能不会报错也不会产生变化，但仍可能 resolve。
 - 如需严格语义（不存在则 false/抛错），需要另行定义产品规则。
-

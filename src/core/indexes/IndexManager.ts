@@ -1,4 +1,5 @@
-import { IndexDefinition, StoreKey, WhereOperator } from '../types'
+import { IndexDefinition, WhereOperator } from '../types'
+import type { EntityId } from '#protocol'
 import { CandidateExactness, CandidateResult, IndexStats } from './types'
 import { intersectAll } from './utils'
 import { NumberDateIndex } from './implementations/NumberDateIndex'
@@ -35,7 +36,7 @@ export class IndexManager<T> {
     }
 
     add(item: T): void {
-        const id = (item as any).id as StoreKey
+        const id = (item as any).id as EntityId
         this.indexes.forEach(idx => {
             const value = (item as any)[idx.config.field]
             if (value !== undefined && value !== null) {
@@ -46,7 +47,7 @@ export class IndexManager<T> {
 
     remove(item?: T): void {
         if (!item) return
-        const id = (item as any).id as StoreKey
+        const id = (item as any).id as EntityId
         this.indexes.forEach(idx => {
             const value = (item as any)[idx.config.field]
             if (value !== undefined && value !== null) {
@@ -72,7 +73,7 @@ export class IndexManager<T> {
             return { kind: 'unsupported' }
         }
 
-        const candidateSets: Set<StoreKey>[] = []
+        const candidateSets: Set<EntityId>[] = []
         let hasUnsupportedCondition = false
         let exactness: CandidateExactness = 'exact'
         const planPerField: Array<{

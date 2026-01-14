@@ -4,21 +4,21 @@ import type { JotaiStore } from './types'
 import { createDirectStoreView } from './store/createDirectStoreView'
 import type {
     Entity,
-    IDataSource,
     IStore,
     IndexDefinition,
     LifecycleHooks,
     RelationConfig,
     SchemaValidator,
+    StoreBackend,
     StoreServices,
-    StoreKey,
 } from './types'
+import type { EntityId } from '#protocol'
 
 export interface CoreStoreConfig<T extends Entity> {
     name: string
-    dataSource: IDataSource<T>
+    backend: StoreBackend
     transformData?: (data: T) => T | undefined
-    idGenerator?: () => StoreKey
+    idGenerator?: () => EntityId
     store: JotaiStore
     schema?: SchemaValidator<T>
     hooks?: LifecycleHooks<T>
@@ -28,7 +28,7 @@ export interface CoreStoreConfig<T extends Entity> {
 
 export interface CoreStore<T extends Entity, Relations = {}> extends IStore<T, Relations> {
     name: string
-    peek: (id: StoreKey) => T | undefined
+    peek: (id: EntityId) => T | undefined
     peekAll: () => T[]
     /** Reset in-memory cache (atom + indexes). Does NOT touch remote/durable persistence. */
     reset: () => void
@@ -48,15 +48,15 @@ export function createStore<T extends Entity, Relations = {}>(
 ): CoreStore<T, Relations> {
     const { name, transformData } = config
 
-    const resolvedDataSource = config.dataSource
+    const resolvedBackend = config.backend
 
     const jotaiStore = config.store
     const services = config.services
-    const objectMapAtom = atom(new Map<StoreKey, T>())
+    const objectMapAtom = atom(new Map<EntityId, T>())
 
     const handle = createStoreHandle<T>({
         atom: objectMapAtom,
-        dataSource: resolvedDataSource,
+        backend: resolvedBackend,
         config: {
             transformData: transformData ? (item: T) => transformData(item) ?? item : undefined,
             idGenerator: config.idGenerator,

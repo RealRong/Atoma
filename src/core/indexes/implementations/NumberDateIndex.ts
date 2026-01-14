@@ -1,4 +1,5 @@
-import { IndexDefinition, IndexType, StoreKey } from '../../types'
+import { IndexDefinition, IndexType } from '../../types'
+import type { EntityId } from '#protocol'
 import { binarySearchLeft, binarySearchRight } from '../utils'
 import { normalizeNumber } from '../validators'
 import { CandidateResult, IndexStats } from '../types'
@@ -8,8 +9,8 @@ export class NumberDateIndex<T> implements IIndex<T> {
     readonly type: 'number' | 'date'
     readonly config: IndexDefinition<T>
 
-    private valueMap = new Map<number, Set<StoreKey>>()
-    private sortedEntries: Array<{ value: number; ids: StoreKey[] }> | null = null
+    private valueMap = new Map<number, Set<EntityId>>()
+    private sortedEntries: Array<{ value: number; ids: EntityId[] }> | null = null
     private dirty = false
 
     constructor(config: IndexDefinition<T> & { type: 'number' | 'date' }) {
@@ -20,16 +21,16 @@ export class NumberDateIndex<T> implements IIndex<T> {
         this.config = config
     }
 
-    add(id: StoreKey, value: any): void {
+    add(id: EntityId, value: any): void {
         const num = normalizeNumber(value, this.config.field, this.type as IndexType, id)
-        const set = this.valueMap.get(num) || new Set<StoreKey>()
+        const set = this.valueMap.get(num) || new Set<EntityId>()
         set.add(id)
         this.valueMap.set(num, set)
         this.sortedEntries = null
         this.dirty = true
     }
 
-    remove(id: StoreKey, value: any): void {
+    remove(id: EntityId, value: any): void {
         const num = normalizeNumber(value, this.config.field, this.type as IndexType, id)
         const set = this.valueMap.get(num)
         if (set) {
@@ -61,7 +62,7 @@ export class NumberDateIndex<T> implements IIndex<T> {
                 }
             }
             if (condition.in && Array.isArray(condition.in)) {
-                const result = new Set<StoreKey>()
+                const result = new Set<EntityId>()
                 condition.in.forEach((v: any) => {
                     try {
                         const num = normalizeNumber(v, this.config.field, this.type as IndexType, 'in')
@@ -117,7 +118,7 @@ export class NumberDateIndex<T> implements IIndex<T> {
         return this.dirty
     }
 
-    private queryRange(cond: any): Set<StoreKey> {
+    private queryRange(cond: any): Set<EntityId> {
         const entries = this.buildSortedEntries()
         const { gt, gte, lt, lte } = cond ?? {}
 
@@ -144,7 +145,7 @@ export class NumberDateIndex<T> implements IIndex<T> {
             return new Set()
         }
 
-        const result = new Set<StoreKey>()
+        const result = new Set<EntityId>()
         for (let i = start; i < end; i++) {
             entries[i].ids.forEach(id => result.add(id))
         }

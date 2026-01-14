@@ -1,4 +1,5 @@
-import { IndexDefinition, StoreKey } from '../../types'
+import { IndexDefinition } from '../../types'
+import type { EntityId } from '#protocol'
 import { CandidateResult, IndexStats } from '../types'
 import { validateString } from '../validators'
 import { IIndex } from '../base/IIndex'
@@ -7,7 +8,7 @@ export class StringIndex<T> implements IIndex<T> {
     readonly type = 'string'
     readonly config: IndexDefinition<T>
 
-    private valueMap = new Map<string, Set<StoreKey>>()
+    private valueMap = new Map<string, Set<EntityId>>()
 
     constructor(config: IndexDefinition<T>) {
         if (config.type !== 'string') {
@@ -16,14 +17,14 @@ export class StringIndex<T> implements IIndex<T> {
         this.config = config
     }
 
-    add(id: StoreKey, value: any): void {
+    add(id: EntityId, value: any): void {
         const str = validateString(value, this.config.field, id)
-        const set = this.valueMap.get(str) || new Set<StoreKey>()
+        const set = this.valueMap.get(str) || new Set<EntityId>()
         set.add(id)
         this.valueMap.set(str, set)
     }
 
-    remove(id: StoreKey, value: any): void {
+    remove(id: EntityId, value: any): void {
         const str = validateString(value, this.config.field, id)
         const set = this.valueMap.get(str)
         if (set) {
@@ -51,7 +52,7 @@ export class StringIndex<T> implements IIndex<T> {
             if (!Array.isArray(values)) return { kind: 'unsupported' }
             const strs = values.filter((v: any) => typeof v === 'string') as string[]
             if (strs.length === 0) return { kind: 'empty' }
-            const result = new Set<StoreKey>()
+            const result = new Set<EntityId>()
             strs.forEach(v => {
                 const set = this.valueMap.get(v)
                 if (set) set.forEach(id => result.add(id))
