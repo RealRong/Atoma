@@ -1,15 +1,14 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import type { StoreDispatchEvent } from '../../types'
 import { createActionId, normalizeOperationContext } from '../../operationContext'
-import type { IExecutor } from './types'
-import type { BeforeDispatchContext, DispatchDecision, PlannedEvent } from '../hooks'
 import type { OperationContext } from '../../types'
+import type { MutationCommitInfo, MutationSegment } from './types'
 
 type AtomKey = PrimitiveAtom<any>
 
 function segmentKey(op: StoreDispatchEvent<any>) {
     const c = op.opContext
-    const persist = (op as any)?.persist ?? ''
+    const persist = op.persist ?? ''
     return `${c?.scope ?? 'default'}|${c?.origin ?? 'user'}|${c?.actionId ?? ''}|${persist}`
 }
 
@@ -26,7 +25,7 @@ function toError(reason: unknown, fallbackMessage: string): Error {
 export class Scheduler {
     constructor(
         private readonly deps: {
-            executor: IExecutor
+            run: (args: MutationSegment<any>) => Promise<MutationCommitInfo | null | void>
         }
     ) { }
 
@@ -36,7 +35,7 @@ export class Scheduler {
     private readonly autoActionIdByKey = new Map<string, { actionId: string; timestamp: number }>()
 
     enqueue(event: StoreDispatchEvent<any>) {
-        const atom = event.handle.atom as any
+        const atom = event.handle.atom
         const existing = this.queueMap.get(atom)
         if (existing) {
             existing.push(event)
@@ -71,7 +70,7 @@ export class Scheduler {
 
                 for (const [_atom, events] of snapshot.entries()) {
                     if (!events.length) continue
-                    const processed = await this.applyMiddlewareAndNormalize(events)
+                    const processed = this.normalizeDispatchEvents(events)
                     if (!processed.length) continue
 
                     const segments = this.segmentByContext(processed)
@@ -86,34 +85,16 @@ export class Scheduler {
         }
     }
 
-    private async applyMiddlewareAndNormalize(events: Array<StoreDispatchEvent<any>>) {
+    private normalizeDispatchEvents(events: Array<StoreDispatchEvent<any>>) {
         const processed: Array<StoreDispatchEvent<any>> = []
 
         for (const original of events) {
             try {
-                const shouldSkipMiddleware = original.type === 'hydrate' || original.type === 'hydrateMany'
-                const nextEvent = shouldSkipMiddleware
-                    ? original
-                    : await this.runBeforeDispatchMiddleware(original)
-
-                if (!nextEvent) continue
-
-                const normalizedOpContext = this.normalizeOpContext(nextEvent.opContext)
+                const normalizedOpContext = this.normalizeOpContext(original.opContext)
                 const normalized = {
-                    ...nextEvent,
+                    ...original,
                     opContext: normalizedOpContext
                 } as StoreDispatchEvent<any>
-
-                const atom = normalized.handle.atom as any
-                if (atom !== (original.handle.atom as any)) {
-                    const existing = this.queueMap.get(atom)
-                    if (existing) {
-                        existing.push(normalized)
-                    } else {
-                        this.queueMap.set(atom, [normalized])
-                    }
-                    continue
-                }
 
                 processed.push(normalized)
             } catch (error) {
@@ -124,30 +105,6 @@ export class Scheduler {
         }
 
         return processed
-    }
-
-    private async runBeforeDispatchMiddleware(event: StoreDispatchEvent<any>): Promise<StoreDispatchEvent<any> | null> {
-        const services = event.handle.services
-        const hooks = services.mutation.hooks
-
-        const decision: DispatchDecision<StoreDispatchEvent<any>> = await hooks.middleware.beforeDispatch.run(
-            {
-                storeName: event.handle.storeName,
-                event
-            } as BeforeDispatchContext<any>,
-            async () => ({ kind: 'proceed' } as any)
-        )
-
-        if (decision.kind === 'reject') {
-            const err = toError(decision.error, '[Atoma] dispatch rejected')
-            event.ticket?.settle('enqueued', err)
-            event.onFail?.(err)
-            return null
-        }
-
-        return decision.kind === 'transform'
-            ? (decision.event as StoreDispatchEvent<any>)
-            : event
     }
 
     private segmentByContext(events: Array<StoreDispatchEvent<any>>) {
@@ -177,42 +134,13 @@ export class Scheduler {
 
     private async runSegment(ops: Array<StoreDispatchEvent<any>>) {
         const handle = ops[0].handle
-        const atom = handle.atom
-        const store = handle.jotaiStore
-
-        const observabilityContext = handle.createObservabilityContext
-            ? handle.createObservabilityContext()
-            : handle.observability.createContext()
 
         const baseOpContext = ops[0].opContext
         const segmentOpContext = normalizeOperationContext(baseOpContext)
 
-        const segmentOps = ops.map(op => ({ ...op, opContext: segmentOpContext }))
+        const segmentOps: Array<StoreDispatchEvent<any>> = ops.map(op => ({ ...op, opContext: segmentOpContext }))
 
-        const plan = this.deps.executor.planner.plan(segmentOps, store.get(atom))
-
-        const hooks = handle.services.mutation.hooks
-        const plannedEvent: PlannedEvent<any> = {
-            storeName: handle.storeName,
-            opContext: segmentOpContext,
-            handle,
-            operations: segmentOps as any,
-            plan: plan as any,
-            observabilityContext
-        }
-        await hooks.events.planned.emit(plannedEvent as any)
-
-        await this.deps.executor.run({
-            handle,
-            operations: segmentOps as any,
-            plan: plan as any,
-            atom,
-            store,
-            indexes: handle.indexes,
-            observabilityContext,
-            storeName: handle.storeName,
-            opContext: segmentOpContext
-        })
+        await this.deps.run({ handle, operations: segmentOps, opContext: segmentOpContext })
     }
 
     private normalizeOpContext(ctx: OperationContext | undefined) {
@@ -221,7 +149,7 @@ export class Scheduler {
         }
 
         const scope = typeof ctx?.scope === 'string' && ctx.scope ? ctx.scope : 'default'
-        const origin = (ctx?.origin ?? 'user') as any
+        const origin = ctx?.origin ?? 'user'
         const key = `${scope}|${origin}`
 
         const existing = this.autoActionIdByKey.get(key)

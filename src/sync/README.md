@@ -29,7 +29,6 @@ All changes are applied by calling user-provided callbacks via a thin `applier` 
   - `policies/retryBackoff.ts` (shared retry/backoff logic)
   - `policies/backoffPolicy.ts` (delay calculation + sleep)
   - `policies/singleInstanceLock.ts` (single active instance per outbox)
-  - `policies/batchPolicy.ts` (group outbox items into a write batch)
   - `policies/cursorGuard.ts` (cursor monotonic compare)
 - Types + small utilities:
   - `types.ts`
@@ -70,18 +69,17 @@ Disposing (`dispose()`):
 
 Path:
 
-- `SyncEngine.enqueueWrite(...)`
-  - Ensures each `WriteItem` has `meta.idempotencyKey`
-  - Stores `SyncOutboxItem` entries in `DefaultOutboxStore`
+- `SyncEngine.enqueueOps(...)`
+  - Requires each `WriteOp` to contain exactly one `WriteItem` with `meta.idempotencyKey`
+  - Stores `SyncOutboxItem` entries (including prebuilt `op`) in `DefaultOutboxStore`
   - Triggers `PushLane.requestFlush()`
 
 Then:
 
 - `PushLane.flush()` loops:
   - `outbox.peek(max)` to get pending items
-  - `buildWriteBatch(...)` groups items by `(resource, action)` into a single write op
   - Marks keys as in-flight (optional store method)
-  - Calls `transport.opsClient.executeOps({ ops: [writeOp], meta })`
+  - Calls `transport.opsClient.executeOps({ ops, meta })` (ops are taken from outbox items)
   - For each result:
     - OK → `applyWriteAck(...)` then `outbox.ack(keys)`
     - Not OK → `applyWriteReject(...)` then `outbox.reject(keys)`

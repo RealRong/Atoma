@@ -399,15 +399,15 @@ export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
 export type StoreToken = string
 
 /**
- * Outbox enqueue client（core 只依赖 enqueueWrite 能力，避免与 #sync 强耦合）
+ * Outbox enqueue client（core 只依赖 enqueueOps 能力，避免与 #sync 强耦合）
  */
 export type OutboxEnqueuer = Readonly<{
-    enqueueWrite: (args: {
-        resource: string
-        action: WriteAction
-        items: WriteItem[]
-        options?: WriteOptions
-    }) => Promise<void>
+    /**
+     * enqueue 统一为 ops（写入语义以 ops 为唯一载体）。
+     * - 方便 Direct/Outbox 共享“plan → ops”翻译
+     * - 方便 sync 推送侧直接发送 outbox 中的 ops（减少重复 build 逻辑）
+     */
+    enqueueOps: (args: { ops: Operation[] }) => Promise<void>
 }>
 
 export type OutboxQueueMode = 'queue' | 'local-first'

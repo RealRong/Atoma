@@ -226,11 +226,6 @@ export function createSyncReplicatorApplier(args: {
             const handle = Core.store.getHandle(store)
             if (!handle) continue
 
-            handle.services.mutation.control.remotePull({
-                storeName: resource,
-                changes: changesForResource
-            })
-
             const deleteKeys: EntityId[] = []
             const upsertEntityIds: EntityId[] = []
 
@@ -274,11 +269,9 @@ export function createSyncReplicatorApplier(args: {
         const key = (ack.item as any)?.meta && typeof (ack.item as any).meta === 'object'
             ? (ack.item as any).meta.idempotencyKey
             : undefined
-        handle.services.mutation.control.remoteAck({
-            storeName: ack.resource,
-            idempotencyKey: (typeof key === 'string' && key) ? key : undefined,
-            ack
-        })
+        if (typeof key === 'string' && key) {
+            handle.services.mutation.control.onAck(key)
+        }
 
         const upserts: any[] = []
         const deletes: EntityId[] = []
@@ -344,12 +337,9 @@ export function createSyncReplicatorApplier(args: {
         const key = (reject.item as any)?.meta && typeof (reject.item as any).meta === 'object'
             ? (reject.item as any).meta.idempotencyKey
             : undefined
-        handle.services.mutation.control.remoteReject({
-            storeName: reject.resource,
-            idempotencyKey: (typeof key === 'string' && key) ? key : undefined,
-            reject,
-            reason: (reject.result as any)?.error ?? reject.result
-        })
+        if (typeof key === 'string' && key) {
+            handle.services.mutation.control.onReject(key, (reject.result as any)?.error ?? reject.result)
+        }
         const upserts: any[] = []
         const deletes: EntityId[] = []
 

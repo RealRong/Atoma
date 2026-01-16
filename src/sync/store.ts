@@ -103,18 +103,25 @@ export class DefaultOutboxStore implements OutboxStore {
 
         for (const item of this.queue) {
             if (typeof item.inFlightAtMs === 'number') continue
-            if (item.resource !== resource) continue
             if (afterEnqueuedAtMs !== undefined && item.enqueuedAtMs <= afterEnqueuedAtMs) continue
 
-            const writeItem: any = item.item as any
-            const curEntityId = writeItem?.entityId
+            const op: any = (item as any).op
+            if (!op || op.kind !== 'write') continue
+
+            const write: any = op.write
+            if (!write || write.resource !== resource) continue
+
+            const opItem: any = write?.items?.[0]
+            const curEntityId = opItem?.entityId
             if (typeof curEntityId !== 'string' || curEntityId !== entityId) continue
 
-            if (typeof writeItem.baseVersion === 'number' && Number.isFinite(writeItem.baseVersion) && writeItem.baseVersion > 0) {
-                if (writeItem.baseVersion === nextBaseVersion) continue
-                if (writeItem.baseVersion < nextBaseVersion) {
-                    writeItem.baseVersion = nextBaseVersion
-                    changed = true
+            if (opItem && typeof opItem === 'object') {
+                if (typeof opItem.baseVersion === 'number' && Number.isFinite(opItem.baseVersion) && opItem.baseVersion > 0) {
+                    if (opItem.baseVersion === nextBaseVersion) continue
+                    if (opItem.baseVersion < nextBaseVersion) {
+                        opItem.baseVersion = nextBaseVersion
+                        changed = true
+                    }
                 }
             }
         }

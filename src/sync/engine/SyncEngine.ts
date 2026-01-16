@@ -4,7 +4,7 @@ import { PushLane } from '../lanes/PushLane'
 import { PullLane } from '../lanes/PullLane'
 import { NotifyLane } from '../lanes/NotifyLane'
 import { createStores } from '../store'
-import type { ChangeBatch, Cursor, Meta, WriteAction, WriteItem, WriteOptions } from '#protocol'
+import type { ChangeBatch, Cursor, Meta, Operation, WriteAction, WriteItem, WriteOptions } from '#protocol'
 import { Protocol } from '#protocol'
 import { SingleInstanceLock } from '../policies/singleInstanceLock'
 import { RetryBackoff } from '../policies/retryBackoff'
@@ -178,7 +178,6 @@ export class SyncEngine implements SyncClient {
             backoff: this.resolved.push.backoff,
             now: () => this.now(),
             buildMeta: () => this.buildMeta(),
-            nextOpId: (prefix) => this.nextOpId(prefix),
             onError: config.onError,
             onEvent: config.onEvent
         })
@@ -247,25 +246,46 @@ export class SyncEngine implements SyncClient {
         this.notifyLane.dispose()
     }
 
-    async enqueueWrite(args: {
-        resource: string
-        action: WriteAction
-        items: WriteItem[]
-        options?: WriteOptions
-    }) {
+    async enqueueOps(args: { ops: Operation[] }) {
         if (this.disposed) throw new Error('SyncEngine disposed')
         const now = this.now()
-        const items: SyncOutboxItem[] = args.items.map(item => {
-            const meta = this.ensureItemMeta(item)
-            return {
-                idempotencyKey: meta.idempotencyKey!,
-                resource: args.resource,
-                action: args.action,
-                item: { ...item, meta },
-                options: args.options,
-                enqueuedAtMs: now
+        const items: SyncOutboxItem[] = []
+
+        for (const op of args.ops) {
+            if (!op || (op as any).kind !== 'write') {
+                throw new Error('[Sync] enqueueOps only supports write ops')
             }
-        })
+
+            const write = (op as any).write as any
+            const resource = String(write?.resource ?? '')
+            const action = write?.action as WriteAction
+            const options = (write?.options && typeof write.options === 'object') ? (write.options as WriteOptions) : undefined
+            const opItems: WriteItem[] = Array.isArray(write?.items) ? (write.items as WriteItem[]) : []
+            if (!resource || !action || opItems.length !== 1) {
+                throw new Error('[Sync] enqueueOps requires single-item write ops')
+            }
+
+            const baseItem = opItems[0] as WriteItem
+            const meta = this.requireItemMeta(baseItem)
+            const ensuredItem = { ...(baseItem as any), meta } as WriteItem
+
+            const ensuredOp: Operation = Protocol.ops.build.buildWriteOp({
+                opId: String((op as any).opId || this.nextOpId('w')),
+                write: {
+                    resource,
+                    action,
+                    items: [ensuredItem],
+                    ...(options ? { options } : {})
+                }
+            })
+
+            items.push({
+                idempotencyKey: meta.idempotencyKey!,
+                op: ensuredOp,
+                enqueuedAtMs: now
+            })
+        }
+
         await this.outbox.enqueue(items)
         if (this.started && this.lock && this.resolved.push.enabled) {
             this.pushLane.requestFlush()
@@ -291,11 +311,18 @@ export class SyncEngine implements SyncClient {
         return this.schedulePull({ cause: 'manual', debounceMs: 0 })
     }
 
-    private ensureItemMeta(item: WriteItem) {
-        return Protocol.ops.meta.ensureWriteItemMeta({
-            meta: (item as any).meta,
-            now: () => this.now()
-        })
+    private requireItemMeta(item: WriteItem) {
+        const meta = (item as any)?.meta
+        if (!meta || typeof meta !== 'object') {
+            throw new Error('[Sync] write item meta is required for enqueueOps')
+        }
+        if (typeof (meta as any).idempotencyKey !== 'string' || !(meta as any).idempotencyKey) {
+            throw new Error('[Sync] write item meta.idempotencyKey is required for enqueueOps')
+        }
+        if (typeof (meta as any).clientTimeMs !== 'number' || !Number.isFinite((meta as any).clientTimeMs)) {
+            throw new Error('[Sync] write item meta.clientTimeMs is required for enqueueOps')
+        }
+        return meta as any
     }
 
     private buildMeta(): Meta {

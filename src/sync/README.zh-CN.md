@@ -29,7 +29,6 @@
   - `policies/retryBackoff.ts`（统一重试/退避计数与计算）
   - `policies/backoffPolicy.ts`（退避 delay 计算 + sleep）
   - `policies/singleInstanceLock.ts`（同一 outboxKey 只允许一个实例工作）
-  - `policies/batchPolicy.ts`（outbox items 组 batch）
   - `policies/cursorGuard.ts`（cursor 单调比较）
 - 类型 & 小工具：
   - `types.ts`
@@ -70,18 +69,17 @@
 
 路径：
 
-- `SyncEngine.enqueueWrite(...)`
-  - 为每个 `WriteItem` 补齐 `meta.idempotencyKey`
-  - 以 `SyncOutboxItem` 形式写入 `DefaultOutboxStore`
+- `SyncEngine.enqueueOps(...)`
+  - 要求每个 `WriteOp` 必须是单 item，并包含 `meta.idempotencyKey`
+  - 以 `SyncOutboxItem` 形式写入 `DefaultOutboxStore`（包含预构建的 `op`）
   - 触发 `PushLane.requestFlush()`
 
 然后：
 
 - `PushLane.flush()` 循环执行：
   - `outbox.peek(max)` 取待发送条目
-  - `buildWriteBatch(...)` 按 `(resource, action)` 把连续条目组装成一个写入 batch
   - 可选：把这些 key 标记为 inFlight
-  - `transport.opsClient.executeOps({ ops: [writeOp], meta })`
+  - `transport.opsClient.executeOps({ ops, meta })`（ops 直接来自 outbox items）
   - 对每条结果：
     - ok：`applyWriteAck(...)` → `outbox.ack(keys)`
     - not ok：`applyWriteReject(...)` → `outbox.reject(keys)`

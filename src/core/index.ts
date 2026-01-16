@@ -83,28 +83,12 @@ export type {
     WriteManyResult
 } from './types'
 
-export { OutboxPersister } from './mutation/pipeline/persisters/Outbox'
 export { applyStoreWriteback } from './store/internals/writeback'
 
 export type { CoreStore, CoreStoreConfig } from './createStore'
 export { MutationPipeline } from './mutation/MutationPipeline'
 export type { MutationRuntime, MutationControl } from './mutation/MutationPipeline'
 export type {
-    AfterPersistEvent,
-    BeforeDispatchContext,
-    BeforePersistContext,
-    CommittedEvent,
-    DispatchDecision,
-    Extensions,
-    Middleware,
-    MutationHooks,
-    Observer,
-    PersistErrorEvent,
-    PlannedEvent,
-    RolledBackEvent,
-    RemoteAckEvent,
-    RemotePullEvent,
-    RemoteRejectEvent,
     PersistResult
 } from './mutation'
 export type { StoreIndexes } from './indexes/StoreIndexes'

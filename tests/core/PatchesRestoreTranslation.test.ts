@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { EntityId } from '#protocol'
-import { buildRestoreWriteItemsFromPatchesPlan, translatePlanToWrites } from '../../src/core/mutation/pipeline/persisters/writePlanTranslation'
+import { buildRestoreWriteItemsFromPatches, translateMutationToWriteOps } from '../../src/core/mutation/pipeline/Ops'
 
 describe('patches restore/replace translation', () => {
     it('统一翻译为 upsert + delete（包含 baseVersion）', () => {
-        const plan: any = {
-            operationTypes: ['patches'],
+        const patchesOp: any = {
             patches: [
                 { op: 'replace', path: ['a', 'name'], value: 'n' },
                 { op: 'remove', path: ['b'] }
@@ -18,8 +17,10 @@ describe('patches restore/replace translation', () => {
             ])
         }
 
-        const { upsertItems, deleteItems } = buildRestoreWriteItemsFromPatchesPlan({
-            plan,
+        const { upsertItems, deleteItems } = buildRestoreWriteItemsFromPatches({
+            nextState: patchesOp.nextState,
+            patches: patchesOp.patches,
+            inversePatches: patchesOp.inversePatches,
             metaForItem: () => ({ clientTimeMs: 123 })
         })
 
@@ -35,8 +36,7 @@ describe('patches restore/replace translation', () => {
     })
 
     it('outbox 将 patches 翻译为 upsert(loose, merge=false) + delete', () => {
-        const plan: any = {
-            operationTypes: ['patches'],
+        const patchesOp: any = {
             patches: [
                 { op: 'replace', path: ['a', 'name'], value: 'n' },
                 { op: 'remove', path: ['b'] }
@@ -49,20 +49,29 @@ describe('patches restore/replace translation', () => {
             ])
         }
 
-        const writes = translatePlanToWrites({
-            plan,
-            operations: [],
+        const handle: any = {
+            storeName: 'store',
+            nextOpId: (() => {
+                let seq = 0
+                return () => `w_${++seq}`
+            })()
+        }
+
+        const ops = translateMutationToWriteOps({
+            handle,
+            operations: [{ type: 'patches', patches: patchesOp.patches, inversePatches: patchesOp.inversePatches } as any],
+            optimisticState: patchesOp.nextState,
+            baseState: new Map(),
             fallbackClientTimeMs: 123,
-            mode: 'outbox'
+            persistMode: 'outbox'
         })
 
-        expect(writes).toHaveLength(2)
+        expect(ops).toHaveLength(2)
 
-        const upsert = writes.find(w => w.action === 'upsert')
-        expect((upsert as any)?.options).toEqual({ merge: false, upsert: { mode: 'loose' } })
-        expect((upsert as any)?.items?.length).toBe(1)
+        const upsert = ops.find(o => o.action === 'upsert')
+        expect((upsert as any)?.op?.write?.options).toEqual({ merge: false, upsert: { mode: 'loose' } })
 
-        const del = writes.find(w => w.action === 'delete')
-        expect((del as any)?.items?.length).toBe(1)
+        const del = ops.find(o => o.action === 'delete')
+        expect((del as any)?.op).toBeTruthy()
     })
 })

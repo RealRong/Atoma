@@ -12,7 +12,7 @@ export function createHistoryController(args: {
         snapshot: () => { scopes: Array<{ scope: string; canUndo: boolean; canRedo: boolean }> }
     }>
 }> {
-    const historyManager = new Core.history.HistoryManager()
+    const historyManager = args.runtime.mutation.history
 
     const dispatchPatches = (
         storeName: string,
@@ -76,29 +76,11 @@ export function createHistoryController(args: {
         }
     } as const
 
-    const unsubCommitted = args.runtime.mutation.hooks.events.committed.on((e) => {
-        const opContext = e?.opContext
-        if (!opContext) return
-
-        const storeName = String(e.storeName || 'store')
-
-        historyManager.record({
-            storeName,
-            patches: e.plan?.patches ?? [],
-            inversePatches: e.plan?.inversePatches ?? [],
-            opContext
-        })
-    })
-
     return {
         history,
         devtools,
         dispose: () => {
-            try {
-                unsubCommitted()
-            } catch {
-                // ignore
-            }
+            // history 由 mutation pipeline 内置维护，无需 dispose
         }
     }
 }

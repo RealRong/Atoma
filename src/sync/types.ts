@@ -8,16 +8,13 @@ import type {
     WriteAction,
     WriteItem,
     WriteItemResult,
-    WriteOptions,
 } from '#protocol'
 import type { OpsClient } from '#backend'
 
 export type SyncOutboxItem = {
     idempotencyKey: string
-    resource: string
-    action: WriteAction
-    item: WriteItem
-    options?: WriteOptions
+    /** 已构建好的 op（必须为单 item 的 write op），PushLane 直接发送 */
+    op: Operation
     enqueuedAtMs: number
 }
 
@@ -155,12 +152,7 @@ export interface SyncClient {
     start: () => void
     stop: () => void
     dispose: () => void
-    enqueueWrite: (args: {
-        resource: string
-        action: WriteAction
-        items: WriteItem[]
-        options?: WriteOptions
-    }) => Promise<string[]>
+    enqueueOps: (args: { ops: Operation[] }) => Promise<string[]>
     flush: () => Promise<void>
     pull: () => Promise<ChangeBatch | undefined>
 }

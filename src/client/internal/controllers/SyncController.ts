@@ -329,8 +329,8 @@ export function createSyncController(args: {
             ensureEnqueuer: () => {
                 const engine = ensureSyncEngine({ mode: 'enqueue-only' })
                 return {
-                    enqueueWrite: async (enqueueArgs) => {
-                        await engine.enqueueWrite(enqueueArgs)
+                    enqueueOps: async (enqueueArgs) => {
+                        await engine.enqueueOps(enqueueArgs)
                     }
                 }
             }

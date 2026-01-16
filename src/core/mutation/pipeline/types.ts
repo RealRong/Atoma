@@ -1,107 +1,67 @@
 import type { Patch } from 'immer'
 import type { PrimitiveAtom } from 'jotai/vanilla'
-import type { ObservabilityContext } from '#observability'
-import type { EntityId } from '#protocol'
-import type {
-    Entity,
-    OperationContext,
-    PatchMetadata,
-    PersistWriteback,
-    StoreDispatchEvent,
-    StoreHandle
-} from '../../types'
-import type { StoreIndexes } from '../../indexes/StoreIndexes'
-import type { Committer as MutationCommitter } from '../types'
+import type { EntityId, Operation } from '#protocol'
+import type { Entity, OperationContext, PersistWriteback, StoreDispatchEvent, StoreHandle } from '../../types'
 
-export type Plan<T extends Entity> = Readonly<{
-    baseState?: Map<EntityId, T>
-    changedIdsForIndexes?: ReadonlySet<EntityId>
-    nextState: Map<EntityId, T>
+export type PersistMode = 'direct' | 'outbox' | 'custom'
+export type PersistStatus = 'confirmed' | 'enqueued'
+
+export type PersistResult<T extends Entity> = Readonly<{
+    mode: PersistMode
+    status: PersistStatus
+    created?: T[]
+    writeback?: PersistWriteback<T>
+}>
+
+export type TranslatedWriteOp = Readonly<{
+    op: Operation
+    action: 'create' | 'update' | 'upsert' | 'delete'
+    entityId?: EntityId
+    intent?: 'created'
+    requireCreatedData?: boolean
+}>
+
+export type MutationProgramKind = 'noop' | 'hydrate' | 'writes' | 'patches' | 'serverCreate'
+
+export type LocalMutationPlan<T extends Entity> = Readonly<{
+    baseState: Map<EntityId, T>
+    optimisticState: Map<EntityId, T>
+    writeEvents: Array<StoreDispatchEvent<T>>
+    hasCreate: boolean
+    hasPatches: boolean
+    changedIds: Set<EntityId>
     patches: Patch[]
     inversePatches: Patch[]
-    changedFields: Set<string>
-    appliedData: any[]
-    operationTypes: StoreDispatchEvent<T>['type'][]
-    atom: PrimitiveAtom<Map<EntityId, T>>
 }>
 
-export interface Planner {
-    plan: <T extends Entity>(
-        operations: StoreDispatchEvent<T>[],
-        currentState: Map<EntityId, T>
-    ) => Plan<T>
-}
-
-export type PersisterPersistArgs<T extends Entity> = Readonly<{
-    handle: StoreHandle<T>
-    operations: StoreDispatchEvent<T>[]
-    plan: Plan<T>
-    metadata: PatchMetadata
-    observabilityContext: ObservabilityContext
-}>
-
-export type PersisterPersistResult<T extends Entity> = { created?: T[]; writeback?: PersistWriteback<T> } | void
-
-export interface Persister {
-    persist: <T extends Entity>(args: PersisterPersistArgs<T>) => Promise<PersisterPersistResult<T>>
-}
-
-export type RecorderRecordArgs<T extends Entity> = Readonly<{
-    handle: StoreHandle<T>
+export type MutationCommitInfo = Readonly<{
     storeName: string
     opContext: OperationContext
-    plan: Plan<T>
+    patches: Patch[]
+    inversePatches: Patch[]
 }>
 
-export interface Recorder {
-    record: <T extends Entity>(args: RecorderRecordArgs<T>) => void
-}
-
-export type ExecutorRunArgs<T extends Entity> = Readonly<{
+export type MutationSegment<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
     operations: StoreDispatchEvent<T>[]
-    plan: Plan<T>
-    atom: PrimitiveAtom<Map<any, any>>
-    store: any
-    indexes?: StoreIndexes<T> | null
-    observabilityContext: ObservabilityContext
-    storeName?: string
     opContext?: OperationContext
 }>
 
-export type CommitOptimisticBeforePersistArgs<T extends Entity> = Readonly<{
-    atom: PrimitiveAtom<Map<any, any>>
-    store: any
-    plan: Plan<T>
-    originalState: Map<any, any>
-    indexes?: StoreIndexes<T> | null
+type MutationProgramBase<T extends Entity> = Readonly<{
+    kind: MutationProgramKind
+    persistMode: 'direct' | 'outbox'
+    atom: PrimitiveAtom<Map<EntityId, T>>
+    baseState: Map<EntityId, T>
+    optimisticState: Map<EntityId, T>
+    rollbackState: Map<EntityId, T>
+    changedIds: ReadonlySet<EntityId>
+    writeOps: TranslatedWriteOp[]
+    patches: Patch[]
+    inversePatches: Patch[]
 }>
 
-export type CommitAfterPersistArgs<T extends Entity> = Readonly<{
-    atom: PrimitiveAtom<Map<any, any>>
-    store: any
-    plan: Plan<T>
-    createdResults?: T[]
-    writeback?: PersistWriteback<T>
-    indexes?: StoreIndexes<T> | null
-}>
-
-export type RollbackOptimisticArgs<T extends Entity> = Readonly<{
-    atom: PrimitiveAtom<Map<any, any>>
-    store: any
-    plan: Plan<T>
-    originalState: Map<any, any>
-    indexes?: StoreIndexes<T> | null
-}>
-
-export interface ICommitter {
-    commitOptimisticBeforePersist: <T extends Entity>(args: CommitOptimisticBeforePersistArgs<T>) => void
-    commitAfterPersist: <T extends Entity>(args: CommitAfterPersistArgs<T>) => void
-    rollbackOptimistic: <T extends Entity>(args: RollbackOptimisticArgs<T>) => void
-}
-
-export interface IExecutor {
-    planner: Planner
-    committer: MutationCommitter
-    run: <T extends Entity>(args: ExecutorRunArgs<T>) => Promise<void>
-}
+export type MutationProgram<T extends Entity> =
+    | (MutationProgramBase<T> & { kind: 'noop' | 'hydrate'; writeOps: [] })
+    | (MutationProgramBase<T> & { kind: 'writes' })
+    | (MutationProgramBase<T> & { kind: 'patches' })
+    | (MutationProgramBase<T> & { kind: 'serverCreate' })
