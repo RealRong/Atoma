@@ -1,5 +1,5 @@
-import type { Entity, StoreDispatchEvent } from '../../types'
+import type { ClientRuntime, Entity, StoreDispatchEvent } from '../../types'
 
-export function dispatch<T extends Entity>(event: StoreDispatchEvent<T>) {
-    event.handle.services.mutation.api.dispatch(event)
+export function dispatch<T extends Entity>(clientRuntime: ClientRuntime, event: StoreDispatchEvent<T>) {
+    clientRuntime.mutation.api.dispatch(event)
 }

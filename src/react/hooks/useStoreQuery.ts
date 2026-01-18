@@ -1,7 +1,8 @@
-import { useAtomValue } from 'jotai'
 import { useMemo } from 'react'
 import { Core } from '#core'
 import type { Entity, FindManyOptions, StoreHandleOwner } from '#core'
+import { getStoreIndexes, getStoreMatcher } from '../../core/store/internals/storeAccess'
+import { useStoreSnapshot } from './internal/useStoreSelector'
 
 type UseStoreQuerySelect = 'entities' | 'ids'
 
@@ -18,16 +19,12 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
     store: StoreHandleOwner<T, Relations>,
     options?: UseStoreQueryOptions<T>
 ): StoreQueryResult<T> {
-    const handle = Core.store.getHandle(store)
-    if (!handle) {
-        throw new Error('[Atoma] useStoreQuery: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createStore 创建')
-    }
-
-    const map = useAtomValue(handle.atom, { store: handle.jotaiStore })
+    const map = useStoreSnapshot(store, 'useStoreQuery')
+    const indexes = getStoreIndexes(store, 'useStoreQuery')
+    const matcher = getStoreMatcher(store, 'useStoreQuery')
     const queryKey = useMemo(() => Core.query.stableStringify(options), [options])
 
     return useMemo(() => {
-        const indexes = handle.indexes
         const candidate = indexes?.collectCandidates(options?.where as any)
 
         if (candidate?.kind === 'empty') return { ids: [] as Array<T['id']>, data: [] as T[] }
@@ -56,10 +53,10 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
 
         const result: T[] = shouldSkipApplyQuery
             ? source
-            : (Core.query.applyQuery(source, effectiveOptions as any, handle.matcher ? { matcher: handle.matcher } : undefined) as T[])
+            : (Core.query.applyQuery(source, effectiveOptions as any, matcher ? { matcher } : undefined) as T[])
 
         return { ids: result.map(item => item.id) as Array<T['id']>, data: result }
-    }, [map, handle.indexes, handle.matcher, queryKey])
+    }, [map, indexes, matcher, queryKey])
 }
 
 export function useStoreQuery<T extends Entity, Relations = {}>(

@@ -26,9 +26,7 @@ describe('Scheduler', () => {
         const handle: any = {
             atom: mapAtom,
             jotaiStore: store,
-            storeName: 'test',
-            services: { mutation: {} },
-            observability: { createContext: () => ({ traceId: 't', emit: vi.fn() }) }
+            storeName: 'test'
         }
 
         const scheduler = new Scheduler({ run: executor.run })

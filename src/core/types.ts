@@ -1,7 +1,7 @@
 import { Atom, PrimitiveAtom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
 import type { MutationPipeline } from './mutation/MutationPipeline'
-import type { DebugConfig, DebugEvent, Explain, ObservabilityContext, ObservabilityRuntime } from '#observability'
+import type { DebugConfig, DebugEvent, Explain, ObservabilityContext } from '#observability'
 import type { EntityId, Meta, Operation, OperationResult, WriteAction, WriteItem, WriteOptions } from '#protocol'
 import type { QueryMatcherOptions } from './query/QueryMatcher'
 import type { StoreIndexes } from './indexes/StoreIndexes'
@@ -93,11 +93,6 @@ export type OpsClientLike = {
         results: OperationResult[]
         status?: number
     }>
-}
-
-export type StoreBackend = {
-    key: string
-    opsClient: OpsClientLike
 }
 
 /**
@@ -364,9 +359,6 @@ export interface StoreConfig<T> {
     /** Optional index definitions (for findMany 优先命中) */
     indexes?: Array<IndexDefinition<T>>
 
-    /** Per-store services for dependency injection (avoids circular import) */
-    services?: StoreServices
-
     /** Store name（用于 devtools 标识） */
     storeName?: string
 
@@ -418,32 +410,17 @@ export type OutboxRuntime = Readonly<{
 }>
 
 /**
- * StoreServices：client/runtime 级依赖注入容器（强制共享）
+ * ClientRuntime：唯一上下文，承载跨 store 能力（ops/mutation/outbox/observability/resolveStore）
  */
-export interface StoreServices {
-    /**
-     * 共享 MutationPipeline（client 级）
-     * - 统一 actionId 自动分配
-     * - 统一 tickets/ack/reject 流
-     */
+export type ClientRuntime = Readonly<{
+    opsClient: OpsClientLike
     mutation: MutationPipeline
-
-    /**
-     * 统一 store resolver（relations/include、history、devtools 等依赖）
-     */
     resolveStore: (name: StoreToken) => IStore<any> | undefined
-
-    /**
-     * 可观测性（统一配置，避免 store 级碎片化）
-     */
-    debug?: DebugConfig
-    debugSink?: (e: DebugEvent) => void
-
-    /**
-     * Outbox 写入依赖（可选；未配置时 outbox 写入应 fail-fast）
-     */
+    createObservabilityContext: (storeName: StoreToken, args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
+    registerStoreObservability?: (args: { storeName: StoreToken; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => void
     outbox?: OutboxRuntime
-}
+    jotaiStore: JotaiStore
+}>
 
 export interface BelongsToConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
     type: 'belongsTo'
@@ -679,20 +656,15 @@ export type StoreWritePolicies = {
 
 /**
  * Store internal handle bindings exposed across layers.
- * - Internal store operations use it as the only runtime object.
- * - React/client/adapters use it to access atom/jotaiStore/context/indexes, without bloating IStore.
+ * - Internal store operations use it alongside ClientRuntime for cross-store abilities.
+ * - React/client/adapters use it to access atom/jotaiStore/indexes, without bloating IStore.
  */
 export type StoreHandle<T extends Entity = any> = {
     atom: PrimitiveAtom<Map<EntityId, T>>
     jotaiStore: JotaiStore
-    services: StoreServices
-    backend: StoreBackend
     matcher?: QueryMatcherOptions
     storeName: string
     relations?: () => any | undefined
-    createObservabilityContext?: (args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
-
-    observability: ObservabilityRuntime
     indexes: StoreIndexes<T> | null
     hooks: StoreConfig<T>['hooks']
     schema: StoreConfig<T>['schema']

@@ -23,7 +23,7 @@ export type ClientEntry = {
     runtime?: ClientRuntime
     storeProviders: Map<string, StoreProvider>
     indexProviders: Map<string, IndexProvider>
-    stopHandleListener?: () => void
+    stopStoreListener?: () => void
     syncProvider?: SyncProvider
     stopSyncListener?: () => void
     historyProvider?: HistoryProvider

@@ -6,7 +6,6 @@ import { RelationResolver } from './relations/RelationResolver'
 import { collectRelationStoreTokens, projectRelationsBatch } from './relations/projector'
 import { normalizeKey } from './relations/utils'
 import { HistoryManager } from './history/HistoryManager'
-import { attachStoreHandle, getStoreHandle } from './storeHandleRegistry'
 import { fuzzySearch } from './search'
 import { createDirectStoreView } from './store/createDirectStoreView'
 import { createSyncStoreView } from './store/createSyncStoreView'
@@ -14,8 +13,6 @@ import { createSyncStoreView } from './store/createSyncStoreView'
 export const Core = {
     store: {
         createStore,
-        getHandle: getStoreHandle,
-        attachHandle: attachStoreHandle,
         createDirectStoreView,
         createSyncStoreView
     },
@@ -65,8 +62,7 @@ export type {
     OutboxEnqueuer,
     OutboxQueueMode,
     OutboxRuntime,
-    StoreBackend,
-    StoreServices,
+    ClientRuntime,
     OrderBy,
     PageInfo,
     PersistWriteback,
@@ -74,7 +70,6 @@ export type {
     RelationIncludeOptions,
     SchemaValidator,
     StoreConfig,
-    StoreHandle,
     StoreHandleOwner,
     StoreToken,
     UpsertWriteOptions,

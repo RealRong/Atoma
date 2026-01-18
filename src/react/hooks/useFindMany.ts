@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { Core } from '#core'
 import type {
     Entity,
     FindManyOptions,
@@ -9,6 +8,7 @@ import type {
     WithRelations,
     StoreHandleOwner
 } from '#core'
+import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'
 import { useRemoteFindMany } from './useRemoteFindMany'
@@ -59,11 +59,6 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
     store: StoreHandleOwner<T, Relations>,
     options?: (FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy; select?: UseFindManySelect })
 ): UseFindManyEntitiesResult<T, Relations, Include> | UseFindManyIdsResult<T> {
-    const handle = Core.store.getHandle(store)
-    if (!handle) {
-        throw new Error('[Atoma] useFindMany: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createStore 创建')
-    }
-
     const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'cache-and-network'
     const select: UseFindManySelect = (options as any)?.select || 'entities'
 
@@ -156,8 +151,9 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
         } satisfies UseFindManyIdsResult<T>
     }
 
-    const relations = handle.relations?.() as Relations | undefined
-    const resolveStore = handle.services.resolveStore
+    const relations = getStoreRelations(store, 'useFindMany') as Relations | undefined
+    const runtime = getStoreRuntime(store)
+    const resolveStore = runtime?.resolveStore
     const effectiveInclude = (options as any)?.include ?? ({} as Include)
 
     const relationsResult = useRelations<T, Relations, Include>(

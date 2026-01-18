@@ -4,18 +4,21 @@
  * Call chain: Scheduler.executeSegment -> executeMutationFlow -> buildMutationProgram -> executeMutationPersistence -> finalize callbacks.
  */
 import type { ObservabilityContext } from '#observability'
-import type { Entity, StoreDispatchEvent, StoreHandle } from '../../types'
+import type { ClientRuntime, Entity, StoreDispatchEvent, StoreHandle } from '../../types'
 import type { EntityId } from '#protocol'
 import { preserveReferenceShallow } from '../../store/internals/preserveReference'
 import { buildMutationProgram } from './MutationProgram'
 import { executeMutationPersistence } from './Persist'
 import type { MutationCommitInfo, MutationSegment, PersistResult } from './types'
 
-export async function executeMutationFlow<T extends Entity>(args: MutationSegment<T>): Promise<MutationCommitInfo | null> {
+export async function executeMutationFlow<T extends Entity>(
+    clientRuntime: ClientRuntime,
+    args: MutationSegment<T>
+): Promise<MutationCommitInfo | null> {
     const { handle, operations, opContext } = args
     const { atom, jotaiStore: store, indexes, storeName } = handle
 
-    const context = createObservabilityContext(handle)
+    const context = createObservabilityContext(clientRuntime, handle)
     const baseState = store.get(atom)
     const fallbackClientTimeMs = resolveFallbackClientTimeMs(operations)
 
@@ -41,6 +44,7 @@ export async function executeMutationFlow<T extends Entity>(args: MutationSegmen
 
     try {
         const persistResult = await executeMutationPersistence<T>({
+            clientRuntime,
             handle,
             program,
             context
@@ -84,10 +88,8 @@ export async function executeMutationFlow<T extends Entity>(args: MutationSegmen
     return null
 }
 
-function createObservabilityContext<T extends Entity>(handle: StoreHandle<T>): ObservabilityContext {
-    return handle.createObservabilityContext
-        ? handle.createObservabilityContext()
-        : handle.observability.createContext()
+function createObservabilityContext<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>): ObservabilityContext {
+    return clientRuntime.createObservabilityContext(handle.storeName)
 }
 
 function resolveFallbackClientTimeMs<T extends Entity>(operations: Array<StoreDispatchEvent<T>>): number {

@@ -1,4 +1,4 @@
-import type { Entity, PartialWithId, StoreHandle, StoreReadOptions } from '../../types'
+import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { bulkAdd } from '../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
@@ -6,7 +6,7 @@ import { preserveReferenceShallow } from '../internals/preserveReference'
 import { resolveObservabilityContext } from '../internals/runtime'
 import { executeQuery } from '../internals/opsExecutor'
 
-export function createGetMany<T extends Entity>(handle: StoreHandle<T>) {
+export function createGetMany<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom, transform } = handle
 
     return async (ids: EntityId[], cache = true, options?: StoreReadOptions) => {
@@ -31,8 +31,8 @@ export function createGetMany<T extends Entity>(handle: StoreHandle<T>) {
         }
 
         if (missingUnique.length) {
-            const observabilityContext = resolveObservabilityContext(handle, options)
-            const { data } = await executeQuery(handle, { where: { id: { in: missingUnique } } } as any, observabilityContext)
+            const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
+            const { data } = await executeQuery(clientRuntime, handle, { where: { id: { in: missingUnique } } } as any, observabilityContext)
 
             const before = jotaiStore.get(atom) as Map<EntityId, T>
             const fetchedById = new Map<EntityId, T>()

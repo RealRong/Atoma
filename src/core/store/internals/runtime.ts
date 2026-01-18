@@ -1,24 +1,20 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import { StoreIndexes } from '../../indexes/StoreIndexes'
-import type { IndexDefinition, JotaiStore, StoreBackend, StoreConfig, StoreHandle, StoreOperationOptions, StoreReadOptions, Entity, StoreServices } from '../../types'
+import type { ClientRuntime, IndexDefinition, JotaiStore, StoreConfig, StoreHandle, StoreOperationOptions, StoreReadOptions, Entity } from '../../types'
 import type { EntityId } from '#protocol'
 import type { QueryMatcherOptions } from '../../query/QueryMatcher'
-import { Observability } from '#observability'
 import type { ObservabilityContext } from '#observability'
 
 export function createStoreHandle<T extends Entity>(params: {
     atom: PrimitiveAtom<Map<EntityId, T>>
-    backend: StoreBackend
     config: StoreConfig<T> & {
         store: JotaiStore
-        services: StoreServices
         storeName: string
     }
 }): StoreHandle<T> {
-    const { atom, backend, config } = params
+    const { atom, config } = params
 
     const jotaiStore = config.store
-    const services = config.services
 
     const storeName = config.storeName || 'store'
 
@@ -30,12 +26,6 @@ export function createStoreHandle<T extends Entity>(params: {
         return config.transformData ? config.transformData(item) : item
     }
 
-    const observability = Observability.runtime.create({
-        scope: storeName,
-        debug: services.debug,
-        onEvent: services.debugSink
-    })
-
     let opSeq = 0
     const nextOpId = (prefix: 'q' | 'w') => {
         opSeq += 1
@@ -44,12 +34,8 @@ export function createStoreHandle<T extends Entity>(params: {
 
     return {
         atom,
-        backend,
         jotaiStore,
-        services,
         storeName,
-        observability,
-        createObservabilityContext: observability.createContext.bind(observability),
         indexes,
         matcher,
         hooks: config.hooks,
@@ -64,11 +50,12 @@ export function createStoreHandle<T extends Entity>(params: {
 }
 
 export function resolveObservabilityContext<T extends Entity>(
+    clientRuntime: ClientRuntime,
     handle: StoreHandle<T>,
     options?: StoreOperationOptions | StoreReadOptions | { explain?: boolean }
 ): ObservabilityContext {
     const anyOptions = options as any
-    return handle.observability.createContext({
+    return clientRuntime.createObservabilityContext(handle.storeName, {
         explain: anyOptions?.explain === true
     })
 }

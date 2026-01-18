@@ -1,6 +1,6 @@
 import { Observability } from '#observability'
 import type { Explain } from '#observability'
-import type { Entity, FindManyOptions, FindManyResult, PartialWithId } from '../../../types'
+import type { ClientRuntime, Entity, FindManyOptions, FindManyResult, PartialWithId } from '../../../types'
 import type { EntityId } from '#protocol'
 import { bulkAdd, bulkRemove } from '../../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../../internals/cacheWriter'
@@ -15,14 +15,14 @@ import type { StoreHandle } from '../../../types'
 import { executeQuery } from '../../internals/opsExecutor'
 import { normalizeAtomaServerQueryParams } from '../../internals/queryParams'
 
-export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
+export function createFindMany<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom, indexes, matcher, transform } = handle
 
     return async (options?: FindManyOptions<T>): Promise<FindManyResult<T>> => {
         const explainEnabled = options?.explain === true
         const cachePolicy = resolveCachePolicy(options)
 
-        const observabilityContext = resolveObservabilityContext(handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
 
         const optionsForRemote = options
             ? ({ ...options, explain: undefined } as any as FindManyOptions<T>)
@@ -76,7 +76,7 @@ export function createFindMany<T extends Entity>(handle: StoreHandle<T>) {
             const whereIsFn = typeof (options as any)?.where === 'function'
             const params = whereIsFn ? {} : normalizeAtomaServerQueryParams(optionsForRemote)
             const startedAt = Date.now()
-            const { data, pageInfo } = await executeQuery(handle, params, observabilityContext)
+            const { data, pageInfo } = await executeQuery(clientRuntime, handle, params, observabilityContext)
             const durationMs = Date.now() - startedAt
 
             const fetched = Array.isArray(data) ? data : []

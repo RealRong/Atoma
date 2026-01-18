@@ -3,7 +3,7 @@
  * Purpose: Resolves persist mode (direct/outbox) and executes or enqueues write operations.
  * Call chain: executeMutationFlow -> executeMutationPersistence -> executeWriteOps or outbox.enqueueOps.
  */
-import type { Entity, StoreDispatchEvent, StoreHandle } from '../../types'
+import type { ClientRuntime, Entity, StoreDispatchEvent, StoreHandle } from '../../types'
 import type { PersistResult } from './types'
 import type { MutationProgram } from './types'
 import { executeWriteOps } from './WriteOps'
@@ -21,12 +21,14 @@ export function derivePersistModeFromOperations<T extends Entity>(operations: Ar
 }
 
 export async function executeMutationPersistence<T extends Entity>(args: {
+    clientRuntime: ClientRuntime
     handle: StoreHandle<T>
     program: MutationProgram<T>
     context?: ObservabilityContext
 }): Promise<PersistResult<T>> {
     const persistDirect = async (): Promise<PersistResult<T>> => {
         const normalized = await executeWriteOps<T>({
+            clientRuntime: args.clientRuntime,
             handle: args.handle,
             ops: args.program.writeOps,
             context: args.context
@@ -40,7 +42,7 @@ export async function executeMutationPersistence<T extends Entity>(args: {
     }
 
     const persistOutbox = async (): Promise<PersistResult<T>> => {
-        const outbox = args.handle.services.outbox
+        const outbox = args.clientRuntime.outbox
         if (!outbox) {
             throw new Error('[Atoma] outbox persist requested but runtime.outbox is not configured (sync not installed)')
         }

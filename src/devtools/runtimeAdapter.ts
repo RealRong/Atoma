@@ -1,8 +1,8 @@
 import type { ClientRuntime } from '../client/types'
-import type { StoreHandle } from '#core'
 import type { EntityId } from '#protocol'
 import type { DevtoolsEvent, SyncProvider, HistoryProvider } from './types'
 import type { ClientEntry } from './registry'
+import { getStoreIndexes, getStoreName, getStoreSnapshot } from '../core/store/internals/storeAccess'
 
 function emit(entry: ClientEntry, e: DevtoolsEvent): void {
     if (!entry.subscribers.size) return
@@ -20,13 +20,13 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
 
     entry.runtime = runtime
 
-    entry.stopHandleListener?.()
-    entry.stopHandleListener = runtime.onHandleCreated((handle: StoreHandle<any>) => {
-        const name = String(handle.storeName || 'store')
+    entry.stopStoreListener?.()
+    entry.stopStoreListener = runtime.onStoreCreated((store) => {
+        const name = getStoreName(store, 'devtools')
 
         if (!entry.storeProviders.has(name)) {
             const snapshot = () => {
-                const map = handle.jotaiStore.get(handle.atom) as Map<EntityId, any>
+                const map = getStoreSnapshot(store, 'devtools') as Map<EntityId, any>
                 const sample = Array.from(map.values()).slice(0, 5)
                 const approxSize = (() => {
                     try {
@@ -51,9 +51,10 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
             emit(entry, { type: 'store:registered', payload: { clientId: entry.id, name } })
         }
 
-        if (handle.indexes && !entry.indexProviders.has(name)) {
+        const indexesRef = getStoreIndexes(store, 'devtools')
+        if (indexesRef && !entry.indexProviders.has(name)) {
             const snapshot = () => {
-                const indexes = handle.indexes!.getIndexSnapshots().map(s => ({
+                const indexes = indexesRef.getIndexSnapshots().map(s => ({
                     field: s.field,
                     type: s.type,
                     dirty: s.dirty,
@@ -64,7 +65,7 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
                     minSetSize: s.minSetSize
                 }))
 
-                const lastQuery = handle.indexes!.getLastQueryPlan()
+                const lastQuery = indexesRef.getLastQueryPlan()
 
                 return {
                     clientId: entry.id,

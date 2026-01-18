@@ -1,4 +1,4 @@
-import type { Entity, StoreOperationOptions, StoreHandle } from '../../types'
+import type { ClientRuntime, Entity, StoreOperationOptions, StoreHandle } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { ensureActionId } from '../internals/ensureActionId'
 import { runAfterSave } from '../internals/hooks'
@@ -6,8 +6,12 @@ import { ignoreTicketRejections } from '../internals/tickets'
 import { prepareForAdd } from '../internals/writePipeline'
 import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createAddMany<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
-    const { services, hooks } = handle
+export function createAddMany<T extends Entity>(
+    clientRuntime: ClientRuntime,
+    handle: StoreHandle<T>,
+    writeConfig: StoreWriteConfig
+) {
+    const { hooks } = handle
     return async (items: Array<Partial<T>>, options?: StoreOperationOptions) => {
         const opContext = ensureActionId(options?.opContext)
 
@@ -16,11 +20,11 @@ export function createAddMany<T extends Entity>(handle: StoreHandle<T>, writeCon
 
         const tickets = new Array(validItems.length)
         const resultPromises = validItems.map((validObj, idx) => {
-            const { ticket } = services.mutation.api.beginWrite()
+            const { ticket } = clientRuntime.mutation.api.beginWrite()
             tickets[idx] = ticket
 
             return new Promise<void>((resolve, reject) => {
-                dispatch<T>({
+                dispatch<T>(clientRuntime, {
                     type: 'add',
                     data: validObj as any,
                     handle,
@@ -54,7 +58,7 @@ export function createAddMany<T extends Entity>(handle: StoreHandle<T>, writeCon
         }
 
         await Promise.all([
-            ...tickets.map(ticket => services.mutation.api.awaitTicket(ticket, options)),
+            ...tickets.map(ticket => clientRuntime.mutation.api.awaitTicket(ticket, options)),
             ...resultPromises
         ])
 

@@ -1,18 +1,22 @@
-import type { Entity, StoreOperationOptions, StoreHandle } from '../../types'
+import type { ClientRuntime, Entity, StoreOperationOptions, StoreHandle } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { runAfterSave } from '../internals/hooks'
 import { ignoreTicketRejections } from '../internals/tickets'
 import { prepareForAdd } from '../internals/writePipeline'
 import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createAddOne<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
-    const { services, hooks } = handle
+export function createAddOne<T extends Entity>(
+    clientRuntime: ClientRuntime,
+    handle: StoreHandle<T>,
+    writeConfig: StoreWriteConfig
+) {
+    const { hooks } = handle
     return async (obj: Partial<T>, options?: StoreOperationOptions) => {
         const validObj = await prepareForAdd<T>(handle, obj)
-        const { ticket } = services.mutation.api.beginWrite()
+        const { ticket } = clientRuntime.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
-            dispatch<T>({
+            dispatch<T>(clientRuntime, {
                 type: 'add',
                 data: validObj,
                 handle,
@@ -42,7 +46,7 @@ export function createAddOne<T extends Entity>(handle: StoreHandle<T>, writeConf
 
         const [value] = await Promise.all([
             resultPromise,
-            services.mutation.api.awaitTicket(ticket, options)
+            clientRuntime.mutation.api.awaitTicket(ticket, options)
         ])
 
         return value

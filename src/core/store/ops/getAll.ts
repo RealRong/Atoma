@@ -1,4 +1,4 @@
-import type { Entity, PartialWithId, StoreHandle, StoreReadOptions } from '../../types'
+import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { bulkAdd, bulkRemove } from '../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
@@ -6,14 +6,14 @@ import { preserveReferenceShallow } from '../internals/preserveReference'
 import { resolveObservabilityContext } from '../internals/runtime'
 import { executeQuery } from '../internals/opsExecutor'
 
-export function createGetAll<T extends Entity>(handle: StoreHandle<T>) {
+export function createGetAll<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom, transform } = handle
 
     return async (filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions) => {
         const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
-        const observabilityContext = resolveObservabilityContext(handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
 
-        const { data } = await executeQuery(handle, {}, observabilityContext)
+        const { data } = await executeQuery(clientRuntime, handle, {}, observabilityContext)
         const fetched = filter ? (data as any[]).filter(filter as any) : (data as any[])
 
         const arr: T[] = new Array(fetched.length)

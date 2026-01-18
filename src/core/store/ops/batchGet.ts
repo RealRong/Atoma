@@ -1,4 +1,4 @@
-import type { Entity, PartialWithId, StoreHandle, StoreReadOptions } from '../../types'
+import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { bulkAdd } from '../internals/atomMapOps'
 import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
@@ -66,7 +66,7 @@ const dedupeTaskIds = <T>(tasks: GetOneTask<T>[]): EntityId[] => {
     return ids
 }
 
-export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
+export function createBatchGet<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom, transform } = handle
 
     let batchGetOneTaskQueue: GetOneTask<T>[] = []
@@ -84,7 +84,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
             const ids = dedupeTaskIds(group.tasks)
 
             try {
-                const { data } = await executeQuery(handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
+                const { data } = await executeQuery(clientRuntime, handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
 
                 const idToItem = new Map<EntityId, T>()
                 const itemsToCache: T[] = []
@@ -141,7 +141,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
         const processGroup = async (group: TaskGroup<T>) => {
             const ids = dedupeTaskIds(group.tasks)
             try {
-                const { data } = await executeQuery(handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
+                const { data } = await executeQuery(clientRuntime, handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
 
                 const idToItem = new Map<EntityId, T>()
                 for (const got of data) {
@@ -176,7 +176,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
         reject: (error: unknown) => void,
         options?: StoreReadOptions
     ) => {
-        const observabilityContext = resolveObservabilityContext(handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
         if (batchGetOneTaskQueue.length) {
             batchGetOneTaskQueue.push({ resolve, reject, id, observabilityContext })
         } else {
@@ -193,7 +193,7 @@ export function createBatchGet<T extends Entity>(handle: StoreHandle<T>) {
         reject: (error: unknown) => void,
         options?: StoreReadOptions
     ) => {
-        const observabilityContext = resolveObservabilityContext(handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
         if (batchFetchOneTaskQueue.length) {
             batchFetchOneTaskQueue.push({ resolve, reject, id, observabilityContext })
         } else {

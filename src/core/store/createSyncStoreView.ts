@@ -1,5 +1,5 @@
 import type { CoreStore } from '../createStore'
-import type { Entity, StoreHandle } from '../types'
+import type { ClientRuntime, Entity, StoreHandle } from '../types'
 import { createStoreView } from './createStoreView'
 
 export type SyncStore<T extends Entity, Relations = {}> =
@@ -17,13 +17,14 @@ type SyncStoreViewConfig = {
 }
 
 export function createSyncStoreView<T extends Entity, Relations = {}>(
+    clientRuntime: ClientRuntime,
     handle: StoreHandle<T>,
     viewConfig?: SyncStoreViewConfig
 ): SyncStore<T, Relations> {
     const queue: SyncQueueMode = viewConfig?.queue ?? 'queue'
     const allowImplicitFetchForWrite = queue === 'local-first'
         && handle.writePolicies?.allowImplicitFetchForWrite !== false
-    return createStoreView<T, Relations>(handle, {
+    return createStoreView<T, Relations>(clientRuntime, handle, {
         writeConfig: {
             persistMode: 'outbox',
             allowImplicitFetchForWrite

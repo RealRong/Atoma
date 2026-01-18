@@ -4,10 +4,10 @@
  * Call chain: Store.dispatch -> MutationPipeline.api.dispatch -> Scheduler.enqueue -> executeMutationFlow -> HistoryManager.record.
  */
 import type { StoreDispatchEvent, StoreOperationOptions, WriteItemMeta, WriteTicket } from '../types'
-import { executeMutationFlow } from './pipeline/MutationFlow'
 import { Scheduler } from './pipeline/Scheduler'
 import { WriteTicketManager } from './pipeline/WriteTicketManager'
 import { HistoryManager } from '../history/HistoryManager'
+import type { MutationCommitInfo, MutationSegment } from './pipeline/types'
 
 export type MutationApi = Readonly<{
     dispatch: (event: StoreDispatchEvent<any>) => void
@@ -28,11 +28,11 @@ export class MutationPipeline {
     private readonly scheduler: Scheduler
     private readonly tickets: WriteTicketManager
 
-    constructor() {
+    constructor(args: { execute: (segment: MutationSegment<any>) => Promise<MutationCommitInfo | null | void> }) {
         this.history = new HistoryManager()
         this.scheduler = new Scheduler({
-            run: async (args) => {
-                const committed = await executeMutationFlow(args)
+            run: async (segment) => {
+                const committed = await args.execute(segment)
                 if (committed) this.history.record(committed)
             }
         })

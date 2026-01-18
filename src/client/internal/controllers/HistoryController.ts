@@ -1,7 +1,7 @@
 import type { OperationContext } from '#core'
-import { Core } from '#core'
 import type { Patch } from 'immer'
 import type { AtomaHistory, ClientRuntime } from '../../types'
+import { requireStoreHandle } from '../../../core/store/internals/storeAccess'
 
 export function createHistoryController(args: {
     runtime: ClientRuntime
@@ -21,10 +21,7 @@ export function createHistoryController(args: {
         opContext: OperationContext
     ): Promise<void> => {
         const store = args.runtime.resolveStore(storeName)
-        const handle = Core.store.getHandle(store)
-        if (!handle) {
-            throw new Error(`[Atoma] history: 未找到 storeHandle（store="${storeName}"）`)
-        }
+        const handle = requireStoreHandle(store, `HistoryController:${storeName}`)
 
         return new Promise<void>((resolve, reject) => {
             args.runtime.mutation.api.dispatch({

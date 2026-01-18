@@ -3,27 +3,26 @@ import { createStoreHandle } from './store'
 import type { JotaiStore } from './types'
 import { createDirectStoreView } from './store/createDirectStoreView'
 import type {
+    ClientRuntime,
     Entity,
     IStore,
     IndexDefinition,
     LifecycleHooks,
     RelationConfig,
     SchemaValidator,
-    StoreBackend,
-    StoreServices,
+    StoreConfig,
 } from './types'
 import type { EntityId } from '#protocol'
 
-export interface CoreStoreConfig<T extends Entity> {
+export interface CoreStoreConfig<T extends Entity> extends StoreConfig<T> {
     name: string
-    backend: StoreBackend
+    clientRuntime: ClientRuntime
+    store?: JotaiStore
     transformData?: (data: T) => T | undefined
     idGenerator?: () => EntityId
-    store: JotaiStore
     schema?: SchemaValidator<T>
     hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>
-    services: StoreServices
 }
 
 export interface CoreStore<T extends Entity, Relations = {}> extends IStore<T, Relations> {
@@ -47,16 +46,18 @@ export function createStore<T extends Entity, Relations = {}>(
     config: CoreStoreConfig<T> & { relations?: () => Relations }
 ): CoreStore<T, Relations> {
     const { name, transformData } = config
-
-    const resolvedBackend = config.backend
-
-    const jotaiStore = config.store
-    const services = config.services
+    const clientRuntime = config.clientRuntime
+    const jotaiStore = config.store ?? clientRuntime.jotaiStore
     const objectMapAtom = atom(new Map<EntityId, T>())
+
+    clientRuntime.registerStoreObservability?.({
+        storeName: name,
+        debug: config.debug,
+        debugSink: config.debugSink
+    })
 
     const handle = createStoreHandle<T>({
         atom: objectMapAtom,
-        backend: resolvedBackend,
         config: {
             transformData: transformData ? (item: T) => transformData(item) ?? item : undefined,
             idGenerator: config.idGenerator,
@@ -64,11 +65,10 @@ export function createStore<T extends Entity, Relations = {}>(
             schema: config.schema,
             hooks: config.hooks,
             indexes: config.indexes,
-            services,
             storeName: name
         }
     })
-    const coreStore = createDirectStoreView<T, Relations>(handle)
+    const coreStore = createDirectStoreView<T, Relations>(clientRuntime, handle)
 
     const getRelations = (() => {
         const relationsFactory = config.relations

@@ -1,4 +1,4 @@
-import type { Entity, StoreBackend, StoreConfig } from '#core'
+import type { Entity, StoreConfig } from '#core'
 import type { RelationsSchema } from './relations'
 
 export type AtomaStoreSchema<
@@ -6,7 +6,6 @@ export type AtomaStoreSchema<
     Name extends keyof Entities & string
 > = {
     relations?: RelationsSchema<Entities, Name>
-    backend?: StoreBackend
 } & Pick<
     StoreConfig<Entities[Name]>,
     'indexes' | 'schema' | 'transformData' | 'hooks' | 'idGenerator'

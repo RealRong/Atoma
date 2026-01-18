@@ -1,10 +1,10 @@
-import type { CoreStore, StoreHandle } from '#core'
+import type { CoreStore } from '../../../core/types'
 import { Core } from '#core'
-import type { AtomaClientContext, AtomaSchema } from '../../types'
+import type { EntityId } from '#protocol'
+import type { AtomaSchema, ClientRuntime } from '../../types'
 
-export const createStore = (ctx: any, options: any) => {
-    const backend = options.backend ?? ctx.defaults.backendFactory(options.name)
-    const idGenerator = options.idGenerator ?? ctx.defaults.idGenerator
+export const createStore = (clientRuntime: ClientRuntime, options: any, defaultIdGenerator?: () => EntityId) => {
+    const idGenerator = options.idGenerator ?? defaultIdGenerator
 
     const createRelationsFromSchema = (schema: any) => {
         const relations: Record<string, any> = {}
@@ -42,26 +42,21 @@ export const createStore = (ctx: any, options: any) => {
         ...(options as any),
         name: options.name,
         ...(idGenerator ? { idGenerator } : {}),
-        store: ctx.jotaiStore as any,
-        backend,
+        store: clientRuntime.jotaiStore as any,
         relations: relationsFactory as any,
-        services: ctx.services
+        clientRuntime
     })
 }
 
 export function createStoreInstance(args: {
     name: string
     schema: AtomaSchema<any>
-    ctx: AtomaClientContext<any, any>
-}): { store: CoreStore<any, any>; handle: StoreHandle<any> | null } {
+    clientRuntime: ClientRuntime
+    defaultIdGenerator?: () => EntityId
+}): CoreStore<any, any> {
     const name = String(args.name)
     const storeSchema = (args.schema as any)?.[name] ?? {}
 
-    const created = createStore(args.ctx, { ...(storeSchema as any), name })
-
-    const handle = Core.store.getHandle(created)
-    return {
-        store: created,
-        handle
-    }
+    const created = createStore(args.clientRuntime, { ...(storeSchema as any), name }, args.defaultIdGenerator)
+    return created
 }

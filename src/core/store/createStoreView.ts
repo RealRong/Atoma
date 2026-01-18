@@ -1,7 +1,7 @@
 import type { CoreStore } from '../createStore'
-import type { Entity, RelationConfig, StoreHandle, StoreOperationOptions } from '../types'
+import type { ClientRuntime, Entity, RelationConfig, StoreHandle, StoreOperationOptions } from '../types'
 import type { EntityId } from '#protocol'
-import { attachStoreHandle } from '../storeHandleRegistry'
+import { attachStoreHandle, attachStoreRuntime } from '../storeHandleRegistry'
 import type { StoreWriteConfig } from './internals/writeConfig'
 import {
     createAddMany,
@@ -37,6 +37,7 @@ function applyRelations<T extends Entity>(handle: StoreHandle<T>, factory?: () =
 }
 
 export function createStoreView<T extends Entity, Relations = {}>(
+    clientRuntime: ClientRuntime,
     handle: StoreHandle<T>,
     config?: StoreViewConfig
 ): CoreStore<T, Relations> {
@@ -49,23 +50,23 @@ export function createStoreView<T extends Entity, Relations = {}>(
         allowImplicitFetchForWrite
     }
 
-    const addOneBase = createAddOne<T>(handle, writeConfig)
-    const addManyBase = createAddMany<T>(handle, writeConfig)
-    const updateOneBase = createUpdateOne<T>(handle, writeConfig)
-    const updateManyBase = createUpdateMany<T>(handle, writeConfig)
-    const deleteOneBase = createDeleteOne<T>(handle, writeConfig)
-    const deleteManyBase = createDeleteMany<T>(handle, writeConfig)
-    const upsertOneBase = createUpsertOne<T>(handle, writeConfig)
-    const upsertManyBase = createUpsertMany<T>(handle, writeConfig)
+    const addOneBase = createAddOne<T>(clientRuntime, handle, writeConfig)
+    const addManyBase = createAddMany<T>(clientRuntime, handle, writeConfig)
+    const updateOneBase = createUpdateOne<T>(clientRuntime, handle, writeConfig)
+    const updateManyBase = createUpdateMany<T>(clientRuntime, handle, writeConfig)
+    const deleteOneBase = createDeleteOne<T>(clientRuntime, handle, writeConfig)
+    const deleteManyBase = createDeleteMany<T>(clientRuntime, handle, writeConfig)
+    const upsertOneBase = createUpsertOne<T>(clientRuntime, handle, writeConfig)
+    const upsertManyBase = createUpsertMany<T>(clientRuntime, handle, writeConfig)
 
-    const createServerAssignedOneBase = includeServerAssignedCreate ? createCreateServerAssignedOne<T>(handle) : null
-    const createServerAssignedManyBase = includeServerAssignedCreate ? createCreateServerAssignedMany<T>(handle) : null
+    const createServerAssignedOneBase = includeServerAssignedCreate ? createCreateServerAssignedOne<T>(clientRuntime, handle) : null
+    const createServerAssignedManyBase = includeServerAssignedCreate ? createCreateServerAssignedMany<T>(clientRuntime, handle) : null
 
-    const getAll = createGetAll<T>(handle)
-    const getMany = createGetMany<T>(handle)
-    const { getOne, fetchOne } = createBatchGet(handle)
-    const fetchAll = createFetchAll<T>(handle)
-    const findMany = createFindMany<T>(handle)
+    const getAll = createGetAll<T>(clientRuntime, handle)
+    const getMany = createGetMany<T>(clientRuntime, handle)
+    const { getOne, fetchOne } = createBatchGet(clientRuntime, handle)
+    const fetchAll = createFetchAll<T>(clientRuntime, handle)
+    const findMany = createFindMany<T>(clientRuntime, handle)
 
     const store: any = {
         addOne: (item: Partial<T>, options?: StoreOperationOptions) => addOneBase(item, options),
@@ -114,5 +115,6 @@ export function createStoreView<T extends Entity, Relations = {}>(
     }
 
     attachStoreHandle(store as any, handle)
+    attachStoreRuntime(store as any, clientRuntime)
     return store as CoreStore<T, Relations>
 }

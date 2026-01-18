@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Core } from '#core'
 import type { Entity, FindManyOptions, PageInfo, StoreHandleOwner } from '#core'
+import { getStoreName, getStoreRuntime, hydrateStore } from '../../core/store/internals/storeAccess'
 
 type RemoteState<T extends Entity> = Readonly<{
     isFetching: boolean
@@ -24,7 +24,8 @@ type CacheEntry<T extends Entity> = {
     promise: Promise<T[]> | null
 }
 
-const REMOTE_QUERY_CACHE = new Map<string, CacheEntry<any>>()
+const REMOTE_QUERY_CACHE = new WeakMap<object, Map<string, CacheEntry<any>>>()
+const FALLBACK_QUERY_CACHE = new Map<string, CacheEntry<any>>()
 
 function stripRuntimeOptions(options?: any) {
     if (!options) return undefined
@@ -37,42 +38,31 @@ function normalizeResult<T extends Entity>(res: any): { data: T[]; pageInfo?: Pa
     return { data: [] }
 }
 
-function getOrCreateEntry<T extends Entity>(key: string): CacheEntry<T> {
-    const existing = REMOTE_QUERY_CACHE.get(key)
+function getRuntimeCache(runtime?: object | null): Map<string, CacheEntry<any>> {
+    if (!runtime) return FALLBACK_QUERY_CACHE
+    const existing = REMOTE_QUERY_CACHE.get(runtime)
+    if (existing) return existing
+    const next = new Map<string, CacheEntry<any>>()
+    REMOTE_QUERY_CACHE.set(runtime, next)
+    return next
+}
+
+function getOrCreateEntry<T extends Entity>(runtime: object | null, key: string): CacheEntry<T> {
+    const cache = getRuntimeCache(runtime)
+    const existing = cache.get(key)
     if (existing) return existing
     const next: CacheEntry<T> = {
         state: { isFetching: false, error: undefined, pageInfo: undefined, data: undefined },
         subscribers: new Set(),
         promise: null
     }
-    REMOTE_QUERY_CACHE.set(key, next)
+    cache.set(key, next)
     return next
 }
 
 function publish<T extends Entity>(entry: CacheEntry<T>, patch: Partial<RemoteState<T>>) {
     entry.state = { ...entry.state, ...patch }
     entry.subscribers.forEach(fn => fn(entry.state))
-}
-
-function hydrateIntoStore<T extends Entity>(store: StoreHandleOwner<T, any>, items: T[]) {
-    if (!items.length) return
-    const handle = Core.store.getHandle(store)
-    if (!handle) return
-
-    const before = handle.jotaiStore.get(handle.atom) as Map<T['id'], T>
-    const after = new Map(before)
-    const changedIds = new Set<T['id']>()
-
-    items.forEach(item => {
-        const prev = before.get(item.id)
-        after.set(item.id, item)
-        if (prev !== item) changedIds.add(item.id)
-    })
-
-    if (!changedIds.size) return
-
-    handle.jotaiStore.set(handle.atom, after)
-    handle.indexes?.applyChangedIds(before, after, changedIds)
 }
 
 export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
@@ -82,18 +72,16 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
     enabled?: boolean
 }): UseRemoteFindManyResult<T> {
     const enabled = args.enabled !== false
-    const handle = Core.store.getHandle(args.store)
-    if (!handle) {
-        throw new Error('[Atoma] useRemoteFindMany: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createStore 创建')
-    }
+    const storeName = getStoreName(args.store, 'useRemoteFindMany')
+    const runtime = getStoreRuntime(args.store)
 
     const key = useMemo(() => {
         const optionsKey = Core.query.stableStringify(stripRuntimeOptions(args.options))
         const modeKey = args.behavior.transient ? 'transient' : 'hydrate'
-        return `${handle.backend.key}:${handle.storeName}:${modeKey}:${optionsKey}`
-    }, [handle.backend.key, handle.storeName, args.behavior.transient, args.options])
+        return `${storeName}:${modeKey}:${optionsKey}`
+    }, [storeName, args.behavior.transient, args.options])
 
-    const entry = useMemo(() => getOrCreateEntry<T>(key), [key])
+    const entry = useMemo(() => getOrCreateEntry<T>(runtime, key), [runtime, key])
     const [state, setState] = useState<RemoteState<T>>(() => entry.state)
 
     useEffect(() => {
@@ -130,7 +118,7 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
             .then((res: any) => {
                 const { data, pageInfo } = normalizeResult<T>(res)
                 if (!transient) {
-                    hydrateIntoStore(args.store, data)
+                    hydrateStore(args.store, data, 'useRemoteFindMany')
                 }
                 publish(entry, {
                     isFetching: false,

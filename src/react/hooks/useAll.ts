@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { useAtomValue } from 'jotai'
-import { Core } from '#core'
 import type { Entity, StoreHandleOwner, WithRelations, RelationIncludeInput } from '#core'
+import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
+import { useStoreSnapshot } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
 
 /**
@@ -14,21 +14,14 @@ export function useAll<T extends Entity, Relations = {}, const Include extends R
 ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
     type Result = keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]
 
-    const handle = Core.store.getHandle(store)
-    if (!handle) {
-        throw new Error('[Atoma] useAll: 未找到 storeHandle（atom/jotaiStore），请确认 store 已通过 createStore 创建')
-    }
-
-    const objectMapAtom = handle.atom
-    const jotaiStore = handle.jotaiStore
-
-    const all = useAtomValue(objectMapAtom, { store: jotaiStore })
+    const all = useStoreSnapshot(store, 'useAll')
     const memoedArr = useMemo(() => Array.from(all.values()), [all])
 
-    const relations = handle.relations?.()
+    const relations = getStoreRelations(store, 'useAll')
     if (!options?.include || !relations) return memoedArr as Result
 
-    const resolveStore = handle.services.resolveStore
+    const runtime = getStoreRuntime(store)
+    const resolveStore = runtime?.resolveStore
     const relationsResult = useRelations<T, Relations, Include>(memoedArr, options.include, relations as Relations, resolveStore)
     return relationsResult.data as unknown as Result
 }

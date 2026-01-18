@@ -1,4 +1,4 @@
-import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions, WriteManyResult } from '../../types'
+import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreOperationOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
 import { dispatch } from '../internals/dispatch'
 import { toError } from '../internals/errors'
@@ -9,13 +9,17 @@ import { validateWithSchema } from '../internals/validation'
 import type { StoreWriteConfig } from '../internals/writeConfig'
 import { executeQuery } from '../internals/opsExecutor'
 
-export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
-    const { jotaiStore, atom, services, schema, transform } = handle
+export function createDeleteMany<T extends Entity>(
+    clientRuntime: ClientRuntime,
+    handle: StoreHandle<T>,
+    writeConfig: StoreWriteConfig
+) {
+    const { jotaiStore, atom, schema, transform } = handle
 
     return async (ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
         const opContext = ensureActionId(options?.opContext)
         const confirmation = options?.confirmation ?? 'optimistic'
-        const observabilityContext = resolveObservabilityContext(handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
         const results: WriteManyResult<boolean> = new Array(ids.length)
 
         const firstIndexById = new Map<EntityId, number>()
@@ -55,7 +59,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
                     }
                 }
             } else {
-                const { data } = await executeQuery(handle, { where: { id: { in: missing } } } as any, observabilityContext)
+                const { data } = await executeQuery(clientRuntime, handle, { where: { id: { in: missing } } } as any, observabilityContext)
                 const toHydrate: Array<PartialWithId<T>> = []
 
                 for (const fetched of data) {
@@ -68,7 +72,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
                 }
 
                 if (toHydrate.length) {
-                    dispatch<T>({
+                    dispatch<T>(clientRuntime, {
                         type: 'hydrateMany',
                         handle,
                         items: toHydrate,
@@ -104,10 +108,10 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
                 }
                 continue
             }
-            const { ticket } = services.mutation.api.beginWrite()
+            const { ticket } = clientRuntime.mutation.api.beginWrite()
 
             const resultPromise = new Promise<boolean>((resolve, reject) => {
-                dispatch<T>({
+                dispatch<T>(clientRuntime, {
                     type: options?.force ? 'forceRemove' : 'remove',
                     data: { id } as PartialWithId<T>,
                     handle,
@@ -126,7 +130,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
                         return resultPromise
                     })()
                     : Promise.all([
-                        services.mutation.api.awaitTicket(ticket, options),
+                        clientRuntime.mutation.api.awaitTicket(ticket, options),
                         resultPromise
                     ]).then(([_awaited, value]) => value)
                 ).then((value) => {

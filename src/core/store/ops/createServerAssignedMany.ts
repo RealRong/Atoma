@@ -1,10 +1,11 @@
-import type { Entity, StoreHandle, StoreOperationOptions } from '../../types'
+import type { ClientRuntime, Entity, StoreHandle, StoreOperationOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { ensureActionId } from '../internals/ensureActionId'
 
-export function createCreateServerAssignedMany<T extends Entity>(handle: StoreHandle<T>) {
-    const { services } = handle
-
+export function createCreateServerAssignedMany<T extends Entity>(
+    clientRuntime: ClientRuntime,
+    handle: StoreHandle<T>
+) {
     return async (items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]> => {
         for (const item of items) {
             if (item && typeof item === 'object' && !Array.isArray(item)) {
@@ -25,11 +26,11 @@ export function createCreateServerAssignedMany<T extends Entity>(handle: StoreHa
         const tickets = new Array(items.length)
 
         const tasks = items.map((item, idx) => {
-            const { ticket } = services.mutation.api.beginWrite()
+            const { ticket } = clientRuntime.mutation.api.beginWrite()
             tickets[idx] = ticket
 
             const resultPromise = new Promise<void>((resolve, reject) => {
-                dispatch<T>({
+                dispatch<T>(clientRuntime, {
                     type: 'create',
                     data: item,
                     handle,
@@ -46,7 +47,7 @@ export function createCreateServerAssignedMany<T extends Entity>(handle: StoreHa
 
             return Promise.all([
                 resultPromise,
-                services.mutation.api.awaitTicket(ticket, strictOptions)
+                clientRuntime.mutation.api.awaitTicket(ticket, strictOptions)
             ])
         })
 

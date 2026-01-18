@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Core } from '#core'
 import type { Entity, IStore, RelationIncludeInput, StoreToken, WithRelations } from '#core'
 import type { EntityId } from '#protocol'
+import { getStoreIndexes, getStoreSnapshot, subscribeStore } from '../../core/store/internals/storeAccess'
 import { useShallowStableArray } from './useShallowStableArray'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
@@ -79,11 +80,9 @@ export function useRelations<T extends Entity>(
         if (!resolveStore) return undefined
         const store = resolveStore(storeToken)
         if (!store) return undefined
-        const handle = Core.store.getHandle(store)
-        if (!handle || typeof handle.jotaiStore.get !== 'function') return undefined
         return {
-            map: handle.jotaiStore.get(handle.atom) as Map<EntityId, any>,
-            indexes: handle.indexes
+            map: getStoreSnapshot(store, 'useRelations') as Map<EntityId, any>,
+            indexes: getStoreIndexes(store, 'useRelations')
         }
     }
 
@@ -188,9 +187,7 @@ export function useRelations<T extends Entity>(
         tokens.forEach(token => {
             const store = resolveStore(token)
             if (!store) return
-            const handle = Core.store.getHandle(store)
-            if (!handle || typeof handle.jotaiStore.sub !== 'function') return
-            const unsub = handle.jotaiStore.sub(handle.atom, () => setLiveTick(t => t + 1))
+            const unsub = subscribeStore(store, () => setLiveTick(t => t + 1), 'useRelations')
             unsubscribers.push(unsub)
         })
 

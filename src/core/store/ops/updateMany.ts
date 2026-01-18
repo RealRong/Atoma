@@ -1,6 +1,6 @@
 import { produce } from 'immer'
 import type { Draft } from 'immer'
-import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions, WriteManyResult } from '../../types'
+import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreOperationOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
 import { dispatch } from '../internals/dispatch'
 import { toError } from '../internals/errors'
@@ -13,8 +13,12 @@ import { prepareForUpdate } from '../internals/writePipeline'
 import type { StoreWriteConfig } from '../internals/writeConfig'
 import { executeQuery } from '../internals/opsExecutor'
 
-export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
-    const { jotaiStore, atom, services, hooks, schema, transform } = handle
+export function createUpdateMany<T extends Entity>(
+    clientRuntime: ClientRuntime,
+    handle: StoreHandle<T>,
+    writeConfig: StoreWriteConfig
+) {
+    const { jotaiStore, atom, hooks, schema, transform } = handle
 
     return async (
         items: Array<{ id: EntityId; recipe: (draft: Draft<T>) => void }>,
@@ -22,7 +26,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
     ): Promise<WriteManyResult<T>> => {
         const opContext = ensureActionId(options?.opContext)
         const confirmation = options?.confirmation ?? 'optimistic'
-        const observabilityContext = resolveObservabilityContext(handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
 
         const results: WriteManyResult<T> = new Array(items.length)
 
@@ -66,7 +70,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
                     }
                 }
             } else {
-                const { data } = await executeQuery(handle, { where: { id: { in: missing } } } as any, observabilityContext)
+                const { data } = await executeQuery(clientRuntime, handle, { where: { id: { in: missing } } } as any, observabilityContext)
                 const toHydrate: Array<PartialWithId<T>> = []
 
                 for (const fetched of data) {
@@ -79,7 +83,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
                 }
 
                 if (toHydrate.length) {
-                    dispatch<T>({
+                    dispatch<T>(clientRuntime, {
                         type: 'hydrateMany',
                         handle,
                         items: toHydrate,
@@ -127,10 +131,10 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
             const id = entry.id
             const validObj = entry.value
 
-            const { ticket } = services.mutation.api.beginWrite()
+            const { ticket } = clientRuntime.mutation.api.beginWrite()
 
             const resultPromise = new Promise<T>((resolve, reject) => {
-                dispatch<T>({
+                dispatch<T>(clientRuntime, {
                     type: 'update',
                     handle,
                     data: validObj,
@@ -155,7 +159,7 @@ export function createUpdateMany<T extends Entity>(handle: StoreHandle<T>, write
                     })()
                     : Promise.all([
                         resultPromise,
-                        services.mutation.api.awaitTicket(ticket, options)
+                        clientRuntime.mutation.api.awaitTicket(ticket, options)
                     ]).then(([value]) => value)
                 ).then((value) => {
                     results[index] = { index, ok: true, value }

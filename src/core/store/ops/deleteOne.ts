@@ -1,16 +1,19 @@
-import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions } from '../../types'
+import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreOperationOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { dispatch } from '../internals/dispatch'
 import { ignoreTicketRejections } from '../internals/tickets'
 import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createDeleteOne<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
-    const { services } = handle
+export function createDeleteOne<T extends Entity>(
+    clientRuntime: ClientRuntime,
+    handle: StoreHandle<T>,
+    writeConfig: StoreWriteConfig
+) {
     return async (id: EntityId, options?: StoreOperationOptions) => {
-        const { ticket } = services.mutation.api.beginWrite()
+        const { ticket } = clientRuntime.mutation.api.beginWrite()
 
         const resultPromise = new Promise<boolean>((resolve, reject) => {
-            dispatch<T>({
+            dispatch<T>(clientRuntime, {
                 type: options?.force ? 'forceRemove' : 'remove',
                 data: { id } as PartialWithId<T>,
                 handle,
@@ -34,7 +37,7 @@ export function createDeleteOne<T extends Entity>(handle: StoreHandle<T>, writeC
 
         const [value] = await Promise.all([
             resultPromise,
-            services.mutation.api.awaitTicket(ticket, options)
+            clientRuntime.mutation.api.awaitTicket(ticket, options)
         ])
 
         return value

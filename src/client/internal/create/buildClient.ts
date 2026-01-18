@@ -1,7 +1,7 @@
 import type { CoreStore, Entity } from '#core'
 import { createHistoryController } from '../controllers/HistoryController'
 import { createSyncController } from '../controllers/SyncController'
-import { createRuntime } from './createRuntime'
+import { createClientRuntime } from './createClientRuntime'
 import type {
     AtomaClient,
     AtomaSchema,
@@ -76,22 +76,16 @@ export function buildAtomaClient<
     }
 
     const storeBackend = resolved.store.store
-    const backendFactory = (_resourceName: string) => ({
-        key: storeBackend.key,
-        opsClient: storeBackend.opsClient
-    })
 
-    const runtime = createRuntime({
+    const clientRuntime = createClientRuntime({
         schema: args.schema,
-        defaults: {
-            backendFactory: backendFactory as any
-        },
+        opsClient: storeBackend.opsClient,
         syncStore: {
             queue
         }
     })
 
-    const historyController = createHistoryController({ runtime })
+    const historyController = createHistoryController({ runtime: clientRuntime })
 
     const syncConfig = wantsSync
         ? ({
@@ -127,23 +121,23 @@ export function buildAtomaClient<
         : undefined
 
     const syncController = createSyncController({
-        runtime,
+        runtime: clientRuntime,
         backend: resolved.sync.sync,
         localBackend: resolved.store.local,
         syncConfig
     })
 
     const Store = (<Name extends keyof Entities & string>(name: Name) => {
-        const store: any = runtime.Store(name) as any
+        const store: any = clientRuntime.Store(name) as any
         if (!('Outbox' in store)) {
             try {
                 Object.defineProperty(store, 'Outbox', {
                     enumerable: false,
                     configurable: true,
-                    get: () => runtime.SyncStore(name) as any
+                    get: () => clientRuntime.SyncStore(name) as any
                 })
             } catch {
-                store.Outbox = runtime.SyncStore(name) as any
+                store.Outbox = clientRuntime.SyncStore(name) as any
             }
         }
         return store as unknown as CoreStore<Entities[Name], any>
@@ -171,7 +165,7 @@ export function buildAtomaClient<
 
     const clientDevtools = Devtools.createClientInspector({
         client,
-        runtime,
+        runtime: clientRuntime,
         syncDevtools: syncController.devtools,
         historyDevtools: historyController.devtools,
         meta: {

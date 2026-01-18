@@ -1,4 +1,4 @@
-import type { Entity, PartialWithId, StoreHandle, StoreOperationOptions, UpsertWriteOptions } from '../../types'
+import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreOperationOptions, UpsertWriteOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { runAfterSave, runBeforeSave } from '../internals/hooks'
 import { ignoreTicketRejections } from '../internals/tickets'
@@ -6,8 +6,12 @@ import { validateWithSchema } from '../internals/validation'
 import { prepareForAdd, prepareForUpdate } from '../internals/writePipeline'
 import type { StoreWriteConfig } from '../internals/writeConfig'
 
-export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
-    const { jotaiStore, atom, services, hooks } = handle
+export function createUpsertOne<T extends Entity>(
+    clientRuntime: ClientRuntime,
+    handle: StoreHandle<T>,
+    writeConfig: StoreWriteConfig
+) {
+    const { jotaiStore, atom, hooks } = handle
 
     return async (
         item: PartialWithId<T>,
@@ -48,10 +52,10 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>, writeC
             return next as PartialWithId<T>
         })()
 
-        const { ticket } = services.mutation.api.beginWrite()
+        const { ticket } = clientRuntime.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
-            dispatch<T>({
+            dispatch<T>(clientRuntime, {
                 type: 'upsert',
                 data: validObj,
                 upsert: {
@@ -80,7 +84,7 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>, writeC
 
         await Promise.all([
             resultPromise,
-            services.mutation.api.awaitTicket(ticket, options)
+            clientRuntime.mutation.api.awaitTicket(ticket, options)
         ])
 
         return resultPromise

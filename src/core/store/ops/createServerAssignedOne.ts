@@ -1,9 +1,10 @@
-import type { Entity, StoreHandle, StoreOperationOptions } from '../../types'
+import type { ClientRuntime, Entity, StoreHandle, StoreOperationOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
 
-export function createCreateServerAssignedOne<T extends Entity>(handle: StoreHandle<T>) {
-    const { services } = handle
-
+export function createCreateServerAssignedOne<T extends Entity>(
+    clientRuntime: ClientRuntime,
+    handle: StoreHandle<T>
+) {
     return async (item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {
         if (item && typeof item === 'object' && !Array.isArray(item)) {
             const anyItem: any = item as any
@@ -16,10 +17,10 @@ export function createCreateServerAssignedOne<T extends Entity>(handle: StoreHan
         }
 
         const strictOptions: StoreOperationOptions = { ...(options || {}), confirmation: 'strict' }
-        const { ticket } = services.mutation.api.beginWrite()
+        const { ticket } = clientRuntime.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
-            dispatch<T>({
+            dispatch<T>(clientRuntime, {
                 type: 'create',
                 data: item,
                 handle,
@@ -33,7 +34,7 @@ export function createCreateServerAssignedOne<T extends Entity>(handle: StoreHan
 
         await Promise.all([
             resultPromise,
-            services.mutation.api.awaitTicket(ticket, strictOptions)
+            clientRuntime.mutation.api.awaitTicket(ticket, strictOptions)
         ])
 
         return resultPromise

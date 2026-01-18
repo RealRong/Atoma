@@ -16,17 +16,26 @@ describe('hydrate (A 语义)', () => {
                 let seq = 0
                 return () => `w_${++seq}`
             })(),
-            backend: {
-                key: 'test',
-                opsClient: {
-                    executeOps: async () => {
-                        throw new Error('boom')
-                    }
+            indexes: null,
+            hooks: undefined,
+            schema: undefined,
+            idGenerator: undefined,
+            transform: (item: any) => item
+        }
+
+        const clientRuntime: any = {
+            opsClient: {
+                executeOps: async () => {
+                    throw new Error('boom')
                 }
             },
-            indexes: null,
-            services: { mutation: {} },
-            observability: { createContext: () => ({ traceId: 't', emit: vi.fn() }) }
+            createObservabilityContext: () => ({
+                active: false,
+                traceId: 't',
+                requestId: () => 'r',
+                emit: vi.fn(),
+                with: () => ({ active: false, traceId: 't', requestId: () => 'r', emit: vi.fn(), with: () => ({}) })
+            })
         }
 
         const base = { id: '1', version: 1, createdAt: 1, updatedAt: 1 }
@@ -37,7 +46,7 @@ describe('hydrate (A 语义)', () => {
             { type: 'update', handle, data: { id: '1', name: 'n' }, persist: 'direct', onFail }
         ]
 
-        await executeMutationFlow({
+        await executeMutationFlow(clientRuntime, {
             handle,
             operations: operations as any,
             opContext: { scope: 'default', origin: 'user', actionId: 'a' }

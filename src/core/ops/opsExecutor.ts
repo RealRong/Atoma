@@ -1,6 +1,6 @@
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type Meta, type Operation, type OperationResult, type QueryParams, type QueryResultData, type WriteAction, type WriteItem, type WriteOptions, type WriteResultData } from '#protocol'
-import type { Entity, StoreHandle } from '../types'
+import type { ClientRuntime, Entity, StoreHandle } from '../types'
 
 function requireSingleResult(results: OperationResult[], missingMessage: string): OperationResult {
     const result = results[0]
@@ -18,7 +18,7 @@ function toOpsError(result: OperationResult, tag: string): Error {
     return err
 }
 
-export async function executeOps<T extends Entity>(handle: StoreHandle<T>, ops: Operation[], context?: ObservabilityContext): Promise<OperationResult[]> {
+export async function executeOps<T extends Entity>(clientRuntime: ClientRuntime, ops: Operation[], context?: ObservabilityContext): Promise<OperationResult[]> {
     const traceId = (typeof context?.traceId === 'string' && context.traceId) ? context.traceId : undefined
     const opsWithTrace = Protocol.ops.build.withTraceMeta({
         ops,
@@ -31,7 +31,7 @@ export async function executeOps<T extends Entity>(handle: StoreHandle<T>, ops: 
         requestId: context ? context.requestId() : undefined
     })
     Protocol.ops.validate.assertOutgoingOpsV1({ ops: opsWithTrace, meta })
-    const res = await handle.backend.opsClient.executeOps({
+    const res = await clientRuntime.opsClient.executeOps({
         ops: opsWithTrace,
         meta,
         context
@@ -39,13 +39,13 @@ export async function executeOps<T extends Entity>(handle: StoreHandle<T>, ops: 
     return Array.isArray(res.results) ? res.results : []
 }
 
-export async function executeQuery<T extends Entity>(handle: StoreHandle<T>, params: QueryParams, context?: ObservabilityContext): Promise<{ data: unknown[]; pageInfo?: any }> {
+export async function executeQuery<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>, params: QueryParams, context?: ObservabilityContext): Promise<{ data: unknown[]; pageInfo?: any }> {
     const op: Operation = Protocol.ops.build.buildQueryOp({
         opId: handle.nextOpId('q'),
         resource: handle.storeName,
         params
     })
-    const results = await executeOps(handle, [op], context)
+    const results = await executeOps(clientRuntime, [op], context)
     const result = requireSingleResult(results, 'Missing query result')
     if (!(result as any).ok) throw toOpsError(result, 'query')
     const data = (result as any).data as QueryResultData
@@ -55,7 +55,7 @@ export async function executeQuery<T extends Entity>(handle: StoreHandle<T>, par
     }
 }
 
-export async function executeWrite<T extends Entity>(handle: StoreHandle<T>, args: {
+export async function executeWrite<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>, args: {
     action: WriteAction
     items: WriteItem[]
     options?: WriteOptions
@@ -70,9 +70,8 @@ export async function executeWrite<T extends Entity>(handle: StoreHandle<T>, arg
             ...(args.options ? { options: args.options } : {})
         }
     })
-    const results = await executeOps(handle, [op], args.context)
+    const results = await executeOps(clientRuntime, [op], args.context)
     const result = requireSingleResult(results, 'Missing write result')
     if (!(result as any).ok) throw toOpsError(result, 'write')
     return (result as any).data as WriteResultData
 }
-

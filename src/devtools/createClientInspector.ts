@@ -25,7 +25,7 @@ export function createClientInspector(args: CreateClientDevtoolsArgs): DevtoolsC
 
     const dispose = () => {
         try {
-            entry.stopHandleListener?.()
+            entry.stopStoreListener?.()
         } catch {
             // ignore
         }

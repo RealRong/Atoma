@@ -1,8 +1,9 @@
-import { Core, applyStoreWriteback, type DeleteItem } from '#core'
+import { applyStoreWriteback, type DeleteItem } from '#core'
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type Change, type EntityId, type Meta, type Operation, type OperationResult, type QueryParams, type QueryResultData, type WriteAction, type WriteItem, type WriteItemMeta, type WriteOptions, type WriteResultData } from '#protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync'
 import type { AtomaClientSyncConfig, ClientRuntime, ResolvedBackend } from '../../types'
+import { requireStoreHandle } from '../../../core/store/internals/storeAccess'
 
 export function createSyncReplicatorApplier(args: {
     runtime: ClientRuntime
@@ -223,8 +224,7 @@ export function createSyncReplicatorApplier(args: {
 
         for (const [resource, changesForResource] of byResource.entries()) {
             const store = args.runtime.resolveStore(resource)
-            const handle = Core.store.getHandle(store)
-            if (!handle) continue
+            const handle = requireStoreHandle(store, `SyncReplicatorApplier.pull:${resource}`)
 
             const deleteKeys: EntityId[] = []
             const upsertEntityIds: EntityId[] = []
@@ -240,9 +240,7 @@ export function createSyncReplicatorApplier(args: {
             const uniqueUpsertKeys = Array.from(new Set(upsertEntityIds))
             const uniqueDeleteKeys = Array.from(new Set(deleteKeys))
 
-            const ctx: ObservabilityContext = handle.createObservabilityContext
-                ? handle.createObservabilityContext({})
-                : (undefined as any)
+            const ctx: ObservabilityContext = args.runtime.createObservabilityContext(handle.storeName)
 
             const remoteOpsClient = args.backend?.opsClient
             const upserts = (remoteOpsClient && uniqueUpsertKeys.length)
@@ -264,13 +262,12 @@ export function createSyncReplicatorApplier(args: {
 
     async function applyWriteAck(ack: SyncWriteAck): Promise<void> {
         const store = args.runtime.resolveStore(ack.resource)
-        const handle = Core.store.getHandle(store)
-        if (!handle) return
+        const handle = requireStoreHandle(store, `SyncReplicatorApplier.ack:${ack.resource}`)
         const key = (ack.item as any)?.meta && typeof (ack.item as any).meta === 'object'
             ? (ack.item as any).meta.idempotencyKey
             : undefined
         if (typeof key === 'string' && key) {
-            handle.services.mutation.acks.ack(key)
+            args.runtime.mutation.acks.ack(key)
         }
 
         const upserts: any[] = []
@@ -332,13 +329,12 @@ export function createSyncReplicatorApplier(args: {
         conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
     ): Promise<void> {
         const store = args.runtime.resolveStore(reject.resource)
-        const handle = Core.store.getHandle(store)
-        if (!handle) return
+        const handle = requireStoreHandle(store, `SyncReplicatorApplier.reject:${reject.resource}`)
         const key = (reject.item as any)?.meta && typeof (reject.item as any).meta === 'object'
             ? (reject.item as any).meta.idempotencyKey
             : undefined
         if (typeof key === 'string' && key) {
-            handle.services.mutation.acks.reject(key, (reject.result as any)?.error ?? reject.result)
+            args.runtime.mutation.acks.reject(key, (reject.result as any)?.error ?? reject.result)
         }
         const upserts: any[] = []
         const deletes: EntityId[] = []
