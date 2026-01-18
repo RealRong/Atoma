@@ -1,12 +1,12 @@
 import { useRef, useSyncExternalStore } from 'react'
-import type { Entity, StoreHandleOwner } from '#core'
+import type { Entity, StoreApi } from '#core'
 import type { EntityId } from '#protocol'
 import { getStoreSnapshot, subscribeStore } from '../../../core/store/internals/storeAccess'
 
 type StoreSnapshot<T extends Entity> = ReadonlyMap<EntityId, T>
 
 export function useStoreSnapshot<T extends Entity, Relations = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     tag: string
 ): StoreSnapshot<T> {
     const getSnapshot = () => getStoreSnapshot(store, tag) as StoreSnapshot<T>
@@ -15,7 +15,7 @@ export function useStoreSnapshot<T extends Entity, Relations = {}>(
 }
 
 export function useStoreSelector<T extends Entity, Relations = {}, Selected = unknown>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     selector: (snapshot: StoreSnapshot<T>) => Selected,
     isEqual: (a: Selected, b: Selected) => boolean,
     tag: string
@@ -25,7 +25,7 @@ export function useStoreSelector<T extends Entity, Relations = {}, Selected = un
     selectorRef.current = selector
     isEqualRef.current = isEqual
 
-    const cacheRef = useRef<{ store: StoreHandleOwner<T, Relations>; snapshot: StoreSnapshot<T>; selection: Selected } | null>(null)
+    const cacheRef = useRef<{ store: StoreApi<T, Relations>; snapshot: StoreSnapshot<T>; selection: Selected } | null>(null)
 
     const getSnapshot = () => {
         const snapshot = getStoreSnapshot(store, tag) as StoreSnapshot<T>

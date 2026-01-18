@@ -1,21 +1,20 @@
 import { Observability } from '#observability'
 import type { Explain } from '#observability'
-import type { ClientRuntime, Entity, FindManyOptions, FindManyResult, PartialWithId } from '../../../types'
+import type { CoreRuntime, Entity, FindManyOptions, FindManyResult, PartialWithId } from '../../../types'
 import type { EntityId } from '#protocol'
-import { bulkAdd, bulkRemove } from '../../internals/atomMapOps'
-import { commitAtomMapUpdateDelta } from '../../internals/cacheWriter'
-import { toError } from '../../internals/errors'
+import { bulkAdd, bulkRemove, commitAtomMapUpdateDelta } from '../../internals/atomMap'
+import { toErrorWithFallback as toError } from '#shared'
 import { preserveReferenceShallow } from '../../internals/preserveReference'
 import { resolveCachePolicy } from './cachePolicy'
 import { evaluateWithIndexes } from './localEvaluate'
 import { summarizeFindManyParams } from './paramsSummary'
 import { applyQuery } from '../../../query'
 import { resolveObservabilityContext } from '../../internals/runtime'
-import type { StoreHandle } from '../../../types'
-import { executeQuery } from '../../internals/opsExecutor'
+import type { StoreHandle } from '../../internals/handleTypes'
+import { executeQuery } from '../../../ops/opsExecutor'
 import { normalizeAtomaServerQueryParams } from '../../internals/queryParams'
 
-export function createFindMany<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>) {
+export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom, indexes, matcher, transform } = handle
 
     return async (options?: FindManyOptions<T>): Promise<FindManyResult<T>> => {

@@ -6,7 +6,8 @@
 import type { Patch } from 'immer'
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import type { EntityId, Operation, WriteAction, WriteItem, WriteOptions } from '#protocol'
-import type { Entity, OperationContext, PersistWriteback, StoreDispatchEvent, StoreHandle } from '../../types'
+import type { Entity, OperationContext, PersistWriteback, StoreDispatchEvent } from '../../types'
+import type { StoreHandle } from '../../store/internals/handleTypes'
 
 export type PersistMode = 'direct' | 'outbox'
 export type PersistStatus = 'confirmed' | 'enqueued'

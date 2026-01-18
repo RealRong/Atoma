@@ -1,7 +1,7 @@
 import { Observability } from '#observability'
 import { Sync, type SyncClient, type SyncCreateConfig, type SyncEvent, type SyncOutboxEvents, type SyncOutboxItem, type SyncPhase, type SyncTransport } from '#sync'
 import type { AtomaClientSyncConfig, AtomaSyncStartMode, ResolvedBackend, AtomaSync } from '../../types'
-import type { ClientRuntime } from '../../types'
+import type { ClientRuntimeInternal } from '../types'
 import { createSyncReplicatorApplier } from './SyncReplicatorApplier'
 
 const SYNC_INSTANCE_ID_SESSION_KEY = 'atoma:sync:instanceId'
@@ -45,7 +45,7 @@ const resolveSyncInstanceId = (() => {
 })()
 
 export function createSyncController(args: {
-    runtime: ClientRuntime
+    runtime: ClientRuntimeInternal
     backend?: ResolvedBackend
     localBackend?: ResolvedBackend
     syncConfig?: AtomaClientSyncConfig

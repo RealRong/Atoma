@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { Entity, WithRelations, RelationIncludeInput, StoreHandleOwner } from '#core'
+import type { Entity, WithRelations, RelationIncludeInput, StoreApi } from '#core'
 import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
 import { useStoreSelector } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
@@ -9,7 +9,7 @@ import { useRelations } from './useRelations'
  * Uses store selector for fine-grained updates - only re-renders when this specific item changes
  */
 export function useOne<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     id?: T['id'],
     options?: { include?: RelationIncludeInput<Relations> & Include }
 ): (keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined) {

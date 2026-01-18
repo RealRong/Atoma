@@ -1,5 +1,8 @@
-import type { PartialWithId } from '../../types'
+import type { Entity, PartialWithId } from '../../types'
 import type { EntityId } from '#protocol'
+import type { StoreHandle } from './handleTypes'
+
+export type ChangedIds = ReadonlyArray<EntityId> | ReadonlySet<EntityId>
 
 export function clear<T>(data: Map<EntityId, T>): Map<EntityId, T> {
     if (data.size === 0) return data
@@ -72,4 +75,38 @@ export function get<T>(id: EntityId | undefined, data: Map<EntityId, T>): T | un
     if (id !== undefined && id !== null) {
         return data.get(id)
     }
+}
+
+export function commitAtomMapUpdate<T extends Entity>(params: {
+    handle: StoreHandle<T>
+    before: Map<EntityId, T>
+    after: Map<EntityId, T>
+}) {
+    const { handle, before, after } = params
+    const { jotaiStore, atom, indexes } = handle
+
+    if (before === after) return
+
+    jotaiStore.set(atom, after)
+    indexes?.applyMapDiff(before, after)
+}
+
+export function commitAtomMapUpdateDelta<T extends Entity>(params: {
+    handle: StoreHandle<T>
+    before: Map<EntityId, T>
+    after: Map<EntityId, T>
+    changedIds: ChangedIds
+}) {
+    const { handle, before, after, changedIds } = params
+    const { jotaiStore, atom, indexes } = handle
+
+    if (before === after) return
+
+    const size = Array.isArray(changedIds)
+        ? changedIds.length
+        : (changedIds as ReadonlySet<EntityId>).size
+    if (size === 0) return
+
+    jotaiStore.set(atom, after)
+    indexes?.applyChangedIds(before, after, changedIds)
 }

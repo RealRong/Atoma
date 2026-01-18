@@ -1,6 +1,7 @@
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type Meta, type Operation, type OperationResult, type QueryParams, type QueryResultData, type WriteAction, type WriteItem, type WriteOptions, type WriteResultData } from '#protocol'
-import type { ClientRuntime, Entity, StoreHandle } from '../types'
+import type { CoreRuntime, Entity } from '../types'
+import type { StoreHandle } from '../store/internals/handleTypes'
 
 function requireSingleResult(results: OperationResult[], missingMessage: string): OperationResult {
     const result = results[0]
@@ -18,7 +19,7 @@ function toOpsError(result: OperationResult, tag: string): Error {
     return err
 }
 
-export async function executeOps<T extends Entity>(clientRuntime: ClientRuntime, ops: Operation[], context?: ObservabilityContext): Promise<OperationResult[]> {
+export async function executeOps<T extends Entity>(clientRuntime: CoreRuntime, ops: Operation[], context?: ObservabilityContext): Promise<OperationResult[]> {
     const traceId = (typeof context?.traceId === 'string' && context.traceId) ? context.traceId : undefined
     const opsWithTrace = Protocol.ops.build.withTraceMeta({
         ops,
@@ -39,7 +40,7 @@ export async function executeOps<T extends Entity>(clientRuntime: ClientRuntime,
     return Array.isArray(res.results) ? res.results : []
 }
 
-export async function executeQuery<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>, params: QueryParams, context?: ObservabilityContext): Promise<{ data: unknown[]; pageInfo?: any }> {
+export async function executeQuery<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>, params: QueryParams, context?: ObservabilityContext): Promise<{ data: unknown[]; pageInfo?: any }> {
     const op: Operation = Protocol.ops.build.buildQueryOp({
         opId: handle.nextOpId('q'),
         resource: handle.storeName,
@@ -55,7 +56,7 @@ export async function executeQuery<T extends Entity>(clientRuntime: ClientRuntim
     }
 }
 
-export async function executeWrite<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>, args: {
+export async function executeWrite<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>, args: {
     action: WriteAction
     items: WriteItem[]
     options?: WriteOptions

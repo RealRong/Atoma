@@ -1,9 +1,10 @@
-import type { ClientRuntime, Entity, StoreHandle, StoreOperationOptions } from '../../types'
+import type { CoreRuntime, Entity, StoreOperationOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
-import { ensureActionId } from '../internals/ensureActionId'
+import { ensureActionId } from '../internals/writePipeline'
+import type { StoreHandle } from '../internals/handleTypes'
 
 export function createCreateServerAssignedMany<T extends Entity>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>
 ) {
     return async (items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]> => {

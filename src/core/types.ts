@@ -1,10 +1,9 @@
-import { Atom, PrimitiveAtom } from 'jotai/vanilla'
+import { Atom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
 import type { MutationPipeline } from './mutation/MutationPipeline'
+import type { StoreHandle } from './store/internals/handleTypes'
 import type { DebugConfig, DebugEvent, Explain, ObservabilityContext } from '#observability'
 import type { EntityId, Meta, Operation, OperationResult, WriteAction, WriteItem, WriteOptions } from '#protocol'
-import type { QueryMatcherOptions } from './query/QueryMatcher'
-import type { StoreIndexes } from './indexes/StoreIndexes'
 
 /**
  * Minimal entity interface - all stored entities must have an id
@@ -342,7 +341,7 @@ export interface LifecycleHooks<T> {
  */
 export interface StoreConfig<T> {
     /** Transform data before storing in atom */
-    transformData?: (item: T) => T
+    transformData?: (item: T) => T | undefined
 
     /** Custom ID generator (defaults to Snowflake-like generator) */
     idGenerator?: () => EntityId
@@ -410,9 +409,9 @@ export type OutboxRuntime = Readonly<{
 }>
 
 /**
- * ClientRuntime：唯一上下文，承载跨 store 能力（ops/mutation/outbox/observability/resolveStore）
+ * CoreRuntime：唯一上下文，承载跨 store 能力（ops/mutation/outbox/observability/resolveStore）
  */
-export type ClientRuntime = Readonly<{
+export type CoreRuntime = Readonly<{
     opsClient: OpsClientLike
     mutation: MutationPipeline
     resolveStore: (name: StoreToken) => IStore<any> | undefined
@@ -546,22 +545,15 @@ export interface IStore<T, Relations = {}> {
 }
 
 /**
- * Store object that has a storeHandle attached.
+ * Store API shape used by hooks and derived views.
  *
  * 说明：
  * - outbox 视图（例如 `Store(...).Outbox`）会显式移除 server-assigned create（direct-only 能力）
- * - React hooks / handle registry 只依赖 handle 与常规 API，因此这里把这两个方法标为可选
+ * - hooks 仅依赖常规 API，因此这里把 server-assigned create 标为可选
  */
-export type StoreHandleOwner<T extends Entity, Relations = {}> =
+export type StoreApi<T extends Entity, Relations = {}> =
     Omit<IStore<T, Relations>, 'createServerAssignedOne' | 'createServerAssignedMany'>
     & Partial<Pick<IStore<T, Relations>, 'createServerAssignedOne' | 'createServerAssignedMany'>>
-
-type InferTargetType<R> =
-    R extends BelongsToConfig<any, infer U, any> ? U
-    : R extends HasManyConfig<any, infer U, any> ? U
-    : R extends HasOneConfig<any, infer U, any> ? U
-    : R extends VariantsConfig<any> ? unknown
-    : never
 
 type InferStoreRelations<R> =
     R extends BelongsToConfig<any, any, infer TR> ? TR
@@ -641,39 +633,3 @@ export interface IEventEmitter {
 
 /** Helper type alias for Jotai store to reduce `any` usage */
 export type JotaiStore = ReturnType<typeof import('jotai/vanilla').createStore>
-
-/**
- * Store 内部写入策略（仅影响“隐式行为”）
- */
-export type StoreWritePolicies = {
-    /**
-     * 写入时遇到 cache 缺失，是否允许自动补读（bulkGet/get）：
-     * - direct：通常允许（提升 DX）
-     * - sync/outbox：必须禁止（enqueue 阶段不触网），需由上层显式 fetch
-     */
-    allowImplicitFetchForWrite: boolean
-}
-
-/**
- * Store internal handle bindings exposed across layers.
- * - Internal store operations use it alongside ClientRuntime for cross-store abilities.
- * - React/client/adapters use it to access atom/jotaiStore/indexes, without bloating IStore.
- */
-export type StoreHandle<T extends Entity = any> = {
-    atom: PrimitiveAtom<Map<EntityId, T>>
-    jotaiStore: JotaiStore
-    matcher?: QueryMatcherOptions
-    storeName: string
-    relations?: () => any | undefined
-    indexes: StoreIndexes<T> | null
-    hooks: StoreConfig<T>['hooks']
-    schema: StoreConfig<T>['schema']
-    idGenerator: StoreConfig<T>['idGenerator']
-    transform: (item: T) => T
-
-    /** 内部：生成本 store 的 opId */
-    nextOpId: (prefix: 'q' | 'w') => string
-
-    /** 运行时写入策略（允许被 client/controller 动态切换） */
-    writePolicies?: StoreWritePolicies
-}

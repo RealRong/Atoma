@@ -3,11 +3,12 @@
  * Purpose: Resolves persist mode (direct/outbox) and executes or enqueues write operations.
  * Call chain: executeMutationFlow -> executeMutationPersistence -> executeWriteOps or outbox.enqueueOps.
  */
-import type { ClientRuntime, Entity, StoreDispatchEvent, StoreHandle } from '../../types'
+import type { CoreRuntime, Entity, StoreDispatchEvent } from '../../types'
 import type { PersistResult } from './types'
 import type { MutationProgram } from './types'
 import { executeWriteOps } from './WriteOps'
 import type { ObservabilityContext } from '#observability'
+import type { StoreHandle } from '../../store/internals/handleTypes'
 
 export function derivePersistModeFromOperations<T extends Entity>(operations: Array<StoreDispatchEvent<T>>): 'direct' | 'outbox' {
     const set = new Set<'direct' | 'outbox'>()
@@ -21,7 +22,7 @@ export function derivePersistModeFromOperations<T extends Entity>(operations: Ar
 }
 
 export async function executeMutationPersistence<T extends Entity>(args: {
-    clientRuntime: ClientRuntime
+    clientRuntime: CoreRuntime
     handle: StoreHandle<T>
     program: MutationProgram<T>
     context?: ObservabilityContext

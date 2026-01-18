@@ -1,12 +1,12 @@
-import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreReadOptions } from '../../types'
+import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { bulkAdd } from '../internals/atomMapOps'
-import { commitAtomMapUpdateDelta } from '../internals/cacheWriter'
+import { bulkAdd, commitAtomMapUpdateDelta } from '../internals/atomMap'
 import { preserveReferenceShallow } from '../internals/preserveReference'
 import { resolveObservabilityContext } from '../internals/runtime'
-import { executeQuery } from '../internals/opsExecutor'
+import { executeQuery } from '../../ops/opsExecutor'
+import type { StoreHandle } from '../internals/handleTypes'
 
-export function createGetMany<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>) {
+export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom, transform } = handle
 
     return async (ids: EntityId[], cache = true, options?: StoreReadOptions) => {

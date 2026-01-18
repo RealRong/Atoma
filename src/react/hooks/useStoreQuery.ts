@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Core } from '#core'
-import type { Entity, FindManyOptions, StoreHandleOwner } from '#core'
+import type { Entity, FindManyOptions, StoreApi } from '#core'
 import { getStoreIndexes, getStoreMatcher } from '../../core/store/internals/storeAccess'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 
@@ -16,7 +16,7 @@ type StoreQueryResult<T extends Entity> = {
 }
 
 function useStoreQueryInternal<T extends Entity, Relations = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     options?: UseStoreQueryOptions<T>
 ): StoreQueryResult<T> {
     const map = useStoreSnapshot(store, 'useStoreQuery')
@@ -60,12 +60,12 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
 }
 
 export function useStoreQuery<T extends Entity, Relations = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     options: UseStoreQueryOptions<T> & { select: 'ids' }
 ): Array<T['id']>
 
 export function useStoreQuery<T extends Entity, Relations = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     options?: UseStoreQueryOptions<T>
 ): T[] {
     const select: UseStoreQuerySelect = (options as any)?.select || 'entities'

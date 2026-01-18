@@ -1,9 +1,15 @@
 import { defaultSnowflakeGenerator } from './idGenerator'
-import type { Entity, PartialWithId } from '../../types'
+import { createActionId } from '../../operationContext'
+import type { Entity, OperationContext, PartialWithId, WriteTicket } from '../../types'
 import type { EntityId } from '#protocol'
 import { runBeforeSave } from './hooks'
 import { validateWithSchema } from './validation'
-import type { StoreHandle } from '../../types'
+import type { StoreHandle } from './handleTypes'
+
+export type StoreWriteConfig = Readonly<{
+    persistMode: 'direct' | 'outbox'
+    allowImplicitFetchForWrite: boolean
+}>
 
 function initBaseObject<T>(obj: Partial<T>, idGenerator?: () => EntityId): PartialWithId<T> {
     const generator = idGenerator || defaultSnowflakeGenerator
@@ -42,4 +48,28 @@ export async function prepareForUpdate<T extends Entity>(
     merged = runtime.transform(merged as T) as unknown as PartialWithId<T>
     merged = await validateWithSchema(merged as T, runtime.schema) as unknown as PartialWithId<T>
     return merged
+}
+
+export function ignoreTicketRejections(ticket: WriteTicket) {
+    void ticket.enqueued.catch(() => {
+        // avoid unhandled rejection when optimistic writes never await enqueued
+    })
+    void ticket.confirmed.catch(() => {
+        // avoid unhandled rejection when optimistic writes never await confirmed
+    })
+}
+
+export function ensureActionId(opContext: OperationContext | undefined): OperationContext | undefined {
+    if (!opContext) {
+        return {
+            scope: 'default',
+            origin: 'user',
+            actionId: createActionId()
+        }
+    }
+    if (typeof opContext.actionId === 'string' && opContext.actionId) return opContext
+    return {
+        ...opContext,
+        actionId: createActionId()
+    }
 }

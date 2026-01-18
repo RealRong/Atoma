@@ -1,7 +1,7 @@
-import type { ClientRuntime as CoreClientRuntime, CoreStore, OutboxEnqueuer, OutboxQueueMode } from '#core'
+import type { CoreRuntime, CoreStore, OutboxEnqueuer, OutboxQueueMode } from '#core'
 import type { SyncStore } from '#core'
 
-export type ClientRuntime = CoreClientRuntime & Readonly<{
+export type ClientRuntime = CoreRuntime & Readonly<{
     Store: (name: string) => CoreStore<any, any>
     SyncStore: (name: string) => SyncStore<any, any>
     listStores: () => Iterable<CoreStore<any, any>>

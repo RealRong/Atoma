@@ -1,10 +1,10 @@
 import type { OperationContext } from '#core'
 import type { Patch } from 'immer'
-import type { AtomaHistory, ClientRuntime } from '../../types'
-import { requireStoreHandle } from '../../../core/store/internals/storeAccess'
+import type { AtomaHistory } from '../../types'
+import type { ClientRuntimeInternal } from '../types'
 
 export function createHistoryController(args: {
-    runtime: ClientRuntime
+    runtime: ClientRuntimeInternal
 }): Readonly<{
     history: AtomaHistory
     dispose: () => void
@@ -20,19 +20,11 @@ export function createHistoryController(args: {
         inversePatches: Patch[],
         opContext: OperationContext
     ): Promise<void> => {
-        const store = args.runtime.resolveStore(storeName)
-        const handle = requireStoreHandle(store, `HistoryController:${storeName}`)
-
-        return new Promise<void>((resolve, reject) => {
-            args.runtime.mutation.api.dispatch({
-                type: 'patches',
-                patches,
-                inversePatches,
-                handle,
-                opContext,
-                onSuccess: resolve,
-                onFail: (error?: Error) => reject(error ?? new Error('[Atoma] history: patches 写入失败'))
-            } as any)
+        return args.runtime.internal.dispatchPatches({
+            storeName,
+            patches,
+            inversePatches,
+            opContext
         })
     }
 

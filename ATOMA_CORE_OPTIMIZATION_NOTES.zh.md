@@ -83,7 +83,7 @@
 
 现象：
 
-- core 大量使用“返回新 Map”的方式更新 atom（例如 `atomMapOps`、`commitAtomMapUpdateDelta`）。
+- core 大量使用“返回新 Map”的方式更新 atom（例如 `atomMap`、`commitAtomMapUpdateDelta`）。
 - 在写入路径中，有些场景会先把“补读的 base”写回缓存，然后立刻又在同一 action 中写入更新（updateOne/updateMany/deleteMany 的 cache-miss 分支）。
 
 建议：
@@ -176,7 +176,7 @@
 - “缓存缺失时是否允许隐式补读”也下沉为 view 配置（而非 options override）：
   - outbox: 默认禁止
   - local-first outbox: 允许（仍可受 handle 写策略约束）
-  - 具体实现为 `src/core/store/internals/writeConfig.ts`
+  - 具体实现为 `src/core/store/internals/writePipeline.ts`
 
 ### 3.2 `remove` vs `forceRemove` 语义统一与显式化
 

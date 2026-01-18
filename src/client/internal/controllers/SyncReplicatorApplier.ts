@@ -1,12 +1,12 @@
-import { applyStoreWriteback, type DeleteItem } from '#core'
+import type { DeleteItem } from '#core'
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type Change, type EntityId, type Meta, type Operation, type OperationResult, type QueryParams, type QueryResultData, type WriteAction, type WriteItem, type WriteItemMeta, type WriteOptions, type WriteResultData } from '#protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync'
-import type { AtomaClientSyncConfig, ClientRuntime, ResolvedBackend } from '../../types'
-import { requireStoreHandle } from '../../../core/store/internals/storeAccess'
+import type { AtomaClientSyncConfig, ResolvedBackend } from '../../types'
+import type { ClientRuntimeInternal } from '../types'
 
 export function createSyncReplicatorApplier(args: {
-    runtime: ClientRuntime
+    runtime: ClientRuntimeInternal
     backend?: ResolvedBackend
     localBackend?: ResolvedBackend
     syncConfig?: AtomaClientSyncConfig
@@ -223,9 +223,6 @@ export function createSyncReplicatorApplier(args: {
         }
 
         for (const [resource, changesForResource] of byResource.entries()) {
-            const store = args.runtime.resolveStore(resource)
-            const handle = requireStoreHandle(store, `SyncReplicatorApplier.pull:${resource}`)
-
             const deleteKeys: EntityId[] = []
             const upsertEntityIds: EntityId[] = []
 
@@ -240,7 +237,7 @@ export function createSyncReplicatorApplier(args: {
             const uniqueUpsertKeys = Array.from(new Set(upsertEntityIds))
             const uniqueDeleteKeys = Array.from(new Set(deleteKeys))
 
-            const ctx: ObservabilityContext = args.runtime.createObservabilityContext(handle.storeName)
+            const ctx: ObservabilityContext = args.runtime.createObservabilityContext(resource)
 
             const remoteOpsClient = args.backend?.opsClient
             const upserts = (remoteOpsClient && uniqueUpsertKeys.length)
@@ -248,7 +245,7 @@ export function createSyncReplicatorApplier(args: {
                     .filter((i: any): i is any => i !== undefined)
                 : []
 
-            await applyStoreWriteback(handle as any, {
+            await args.runtime.internal.applyWriteback(resource, {
                 upserts,
                 deletes: uniqueDeleteKeys
             })
@@ -261,8 +258,6 @@ export function createSyncReplicatorApplier(args: {
     }
 
     async function applyWriteAck(ack: SyncWriteAck): Promise<void> {
-        const store = args.runtime.resolveStore(ack.resource)
-        const handle = requireStoreHandle(store, `SyncReplicatorApplier.ack:${ack.resource}`)
         const key = (ack.item as any)?.meta && typeof (ack.item as any).meta === 'object'
             ? (ack.item as any).meta.idempotencyKey
             : undefined
@@ -292,7 +287,7 @@ export function createSyncReplicatorApplier(args: {
                 throw new Error('[Atoma] sync: create ack returned mismatched id (client-id create must not change id)')
             }
 
-            const before = handle.jotaiStore.get(handle.atom) as Map<EntityId, any>
+            const before = args.runtime.internal.getStoreSnapshot(ack.resource)
             const existing = before.get(nextKey)
 
             const serverData = ack.result.data
@@ -311,7 +306,7 @@ export function createSyncReplicatorApplier(args: {
             }
         }
 
-        await applyStoreWriteback(handle as any, {
+        await args.runtime.internal.applyWriteback(ack.resource, {
             upserts,
             deletes,
             versionUpdates
@@ -328,8 +323,6 @@ export function createSyncReplicatorApplier(args: {
         reject: SyncWriteReject,
         conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
     ): Promise<void> {
-        const store = args.runtime.resolveStore(reject.resource)
-        const handle = requireStoreHandle(store, `SyncReplicatorApplier.reject:${reject.resource}`)
         const key = (reject.item as any)?.meta && typeof (reject.item as any).meta === 'object'
             ? (reject.item as any).meta.idempotencyKey
             : undefined
@@ -356,7 +349,7 @@ export function createSyncReplicatorApplier(args: {
             upserts.push(current.value)
         }
 
-        await applyStoreWriteback(handle as any, { upserts, deletes })
+        await args.runtime.internal.applyWriteback(reject.resource, { upserts, deletes })
 
         await persistToLocal(reject.resource, { upserts, deletes })
     }

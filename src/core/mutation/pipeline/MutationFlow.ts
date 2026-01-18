@@ -4,15 +4,16 @@
  * Call chain: Scheduler.executeSegment -> executeMutationFlow -> buildMutationProgram -> executeMutationPersistence -> finalize callbacks.
  */
 import type { ObservabilityContext } from '#observability'
-import type { ClientRuntime, Entity, StoreDispatchEvent, StoreHandle } from '../../types'
+import type { CoreRuntime, Entity, StoreDispatchEvent } from '../../types'
 import type { EntityId } from '#protocol'
 import { preserveReferenceShallow } from '../../store/internals/preserveReference'
 import { buildMutationProgram } from './MutationProgram'
 import { executeMutationPersistence } from './Persist'
 import type { MutationCommitInfo, MutationSegment, PersistResult } from './types'
+import type { StoreHandle } from '../../store/internals/handleTypes'
 
 export async function executeMutationFlow<T extends Entity>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     args: MutationSegment<T>
 ): Promise<MutationCommitInfo | null> {
     const { handle, operations, opContext } = args
@@ -88,7 +89,7 @@ export async function executeMutationFlow<T extends Entity>(
     return null
 }
 
-function createObservabilityContext<T extends Entity>(clientRuntime: ClientRuntime, handle: StoreHandle<T>): ObservabilityContext {
+function createObservabilityContext<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>): ObservabilityContext {
     return clientRuntime.createObservabilityContext(handle.storeName)
 }
 

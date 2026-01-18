@@ -1,13 +1,11 @@
-import type { ClientRuntime, Entity, StoreOperationOptions, StoreHandle } from '../../types'
+import type { CoreRuntime, Entity, StoreOperationOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
-import { ensureActionId } from '../internals/ensureActionId'
 import { runAfterSave } from '../internals/hooks'
-import { ignoreTicketRejections } from '../internals/tickets'
-import { prepareForAdd } from '../internals/writePipeline'
-import type { StoreWriteConfig } from '../internals/writeConfig'
+import { ensureActionId, ignoreTicketRejections, prepareForAdd, type StoreWriteConfig } from '../internals/writePipeline'
+import type { StoreHandle } from '../internals/handleTypes'
 
 export function createAddMany<T extends Entity>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>,
     writeConfig: StoreWriteConfig
 ) {

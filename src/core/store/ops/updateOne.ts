@@ -1,18 +1,17 @@
 import { produce } from 'immer'
 import type { Draft } from 'immer'
-import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreOperationOptions } from '../../types'
+import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { dispatch } from '../internals/dispatch'
 import { runAfterSave } from '../internals/hooks'
 import { resolveObservabilityContext } from '../internals/runtime'
-import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
-import { prepareForUpdate } from '../internals/writePipeline'
-import type { StoreWriteConfig } from '../internals/writeConfig'
-import { executeQuery } from '../internals/opsExecutor'
+import { ignoreTicketRejections, prepareForUpdate, type StoreWriteConfig } from '../internals/writePipeline'
+import { executeQuery } from '../../ops/opsExecutor'
+import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpdateOne<T extends Entity>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>,
     writeConfig: StoreWriteConfig
 ) {

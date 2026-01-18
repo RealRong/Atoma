@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { Entity, StoreHandleOwner, WithRelations, RelationIncludeInput } from '#core'
+import type { Entity, StoreApi, WithRelations, RelationIncludeInput } from '#core'
 import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
@@ -9,7 +9,7 @@ import { useRelations } from './useRelations'
  * Returns all items as an array
  */
 export function useAll<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     options?: { include?: RelationIncludeInput<Relations> & Include }
 ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
     type Result = keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]

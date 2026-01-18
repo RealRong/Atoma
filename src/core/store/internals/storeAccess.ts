@@ -1,8 +1,9 @@
-import type { Entity, StoreHandle, StoreHandleOwner, ClientRuntime } from '../../types'
+import type { Entity, StoreApi, CoreRuntime } from '../../types'
 import type { EntityId } from '#protocol'
 import type { StoreIndexes } from '../../indexes/StoreIndexes'
 import type { QueryMatcherOptions } from '../../query/QueryMatcher'
-import { getStoreHandle as getStoreHandleInternal, getStoreRuntime as getStoreRuntimeInternal } from '../../storeHandleRegistry'
+import type { StoreHandle } from './handleTypes'
+import { getStoreHandle as getStoreHandleInternal, getStoreRuntime as getStoreRuntimeInternal } from './handleRegistry'
 
 type StoreSnapshot<T extends Entity> = ReadonlyMap<EntityId, T>
 
@@ -11,7 +12,7 @@ const buildMissingHandleError = (tag: string) => {
 }
 
 const resolveStoreHandle = <T extends Entity>(
-    store: StoreHandleOwner<T, any> | undefined,
+    store: StoreApi<T, any> | undefined,
     tag?: string
 ): StoreHandle<T> | null => {
     const handle = getStoreHandleInternal(store)
@@ -22,13 +23,13 @@ const resolveStoreHandle = <T extends Entity>(
 }
 
 export const getStoreHandle = <T extends Entity>(
-    store: StoreHandleOwner<T, any> | undefined
+    store: StoreApi<T, any> | undefined
 ): StoreHandle<T> | null => {
     return resolveStoreHandle(store)
 }
 
 export const requireStoreHandle = <T extends Entity>(
-    store: StoreHandleOwner<T, any>,
+    store: StoreApi<T, any>,
     tag: string
 ): StoreHandle<T> => {
     const handle = resolveStoreHandle(store, tag)
@@ -37,13 +38,13 @@ export const requireStoreHandle = <T extends Entity>(
 }
 
 export const getStoreRuntime = <T extends Entity>(
-    store: StoreHandleOwner<T, any> | undefined
-): ClientRuntime | null => {
+    store: StoreApi<T, any> | undefined
+): CoreRuntime | null => {
     return getStoreRuntimeInternal(store)
 }
 
 export const getStoreSnapshot = <T extends Entity>(
-    store: StoreHandleOwner<T, any>,
+    store: StoreApi<T, any>,
     tag?: string
 ): StoreSnapshot<T> => {
     const handle = resolveStoreHandle(store, tag)
@@ -52,7 +53,7 @@ export const getStoreSnapshot = <T extends Entity>(
 }
 
 export const subscribeStore = <T extends Entity>(
-    store: StoreHandleOwner<T, any>,
+    store: StoreApi<T, any>,
     listener: () => void,
     tag?: string
 ): (() => void) => {
@@ -63,7 +64,7 @@ export const subscribeStore = <T extends Entity>(
 }
 
 export const getStoreIndexes = <T extends Entity>(
-    store: StoreHandleOwner<T, any>,
+    store: StoreApi<T, any>,
     tag?: string
 ): StoreIndexes<T> | null => {
     const handle = resolveStoreHandle(store, tag)
@@ -71,7 +72,7 @@ export const getStoreIndexes = <T extends Entity>(
 }
 
 export const getStoreMatcher = <T extends Entity>(
-    store: StoreHandleOwner<T, any> | undefined,
+    store: StoreApi<T, any> | undefined,
     tag?: string
 ): QueryMatcherOptions | undefined => {
     const handle = resolveStoreHandle(store, tag)
@@ -79,7 +80,7 @@ export const getStoreMatcher = <T extends Entity>(
 }
 
 export const getStoreRelations = <T extends Entity>(
-    store: StoreHandleOwner<T, any>,
+    store: StoreApi<T, any>,
     tag?: string
 ): any | undefined => {
     const handle = resolveStoreHandle(store, tag)
@@ -87,7 +88,7 @@ export const getStoreRelations = <T extends Entity>(
 }
 
 export const getStoreName = <T extends Entity>(
-    store: StoreHandleOwner<T, any>,
+    store: StoreApi<T, any>,
     tag?: string
 ): string => {
     const handle = resolveStoreHandle(store, tag)
@@ -95,7 +96,7 @@ export const getStoreName = <T extends Entity>(
 }
 
 export const hydrateStore = <T extends Entity>(
-    store: StoreHandleOwner<T, any>,
+    store: StoreApi<T, any>,
     items: T[],
     tag?: string
 ): void => {

@@ -1,8 +1,9 @@
-import type { ClientRuntime, Entity, StoreHandle, StoreOperationOptions } from '../../types'
+import type { CoreRuntime, Entity, StoreOperationOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
+import type { StoreHandle } from '../internals/handleTypes'
 
 export function createCreateServerAssignedOne<T extends Entity>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>
 ) {
     return async (item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {

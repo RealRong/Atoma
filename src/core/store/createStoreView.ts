@@ -1,8 +1,9 @@
 import type { CoreStore } from '../createStore'
-import type { ClientRuntime, Entity, RelationConfig, StoreHandle, StoreOperationOptions } from '../types'
+import type { CoreRuntime, Entity, RelationConfig, StoreOperationOptions } from '../types'
 import type { EntityId } from '#protocol'
-import { attachStoreHandle, attachStoreRuntime } from '../storeHandleRegistry'
-import type { StoreWriteConfig } from './internals/writeConfig'
+import { attachStoreHandle, attachStoreRuntime } from './internals/handleRegistry'
+import type { StoreWriteConfig } from './internals/writePipeline'
+import type { StoreHandle } from './internals/handleTypes'
 import {
     createAddMany,
     createAddOne,
@@ -37,7 +38,7 @@ function applyRelations<T extends Entity>(handle: StoreHandle<T>, factory?: () =
 }
 
 export function createStoreView<T extends Entity, Relations = {}>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>,
     config?: StoreViewConfig
 ): CoreStore<T, Relations> {

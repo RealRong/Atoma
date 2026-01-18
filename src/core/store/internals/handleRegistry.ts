@@ -1,4 +1,5 @@
-import type { ClientRuntime, Entity, StoreHandle, StoreHandleOwner } from './types'
+import type { CoreRuntime, Entity, StoreApi } from '../../types'
+import type { StoreHandle } from './handleTypes'
 
 const REGISTRY_KEY = Symbol.for('atoma.storeHandleRegistry')
 const HANDLE_KEY = Symbol.for('atoma.storeHandle')
@@ -14,24 +15,24 @@ function getGlobalRegistry(): WeakMap<object, StoreHandle<any>> {
     return next
 }
 
-function getGlobalRuntimeRegistry(): WeakMap<object, ClientRuntime> {
+function getGlobalRuntimeRegistry(): WeakMap<object, CoreRuntime> {
     const anyGlobal = globalThis as any
-    const existing = anyGlobal[RUNTIME_REGISTRY_KEY] as WeakMap<object, ClientRuntime> | undefined
+    const existing = anyGlobal[RUNTIME_REGISTRY_KEY] as WeakMap<object, CoreRuntime> | undefined
     if (existing) return existing
-    const next = new WeakMap<object, ClientRuntime>()
+    const next = new WeakMap<object, CoreRuntime>()
     anyGlobal[RUNTIME_REGISTRY_KEY] = next
     return next
 }
 
 export const registerStoreHandle = <T extends Entity, Relations>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     handle: StoreHandle<T>
 ): void => {
     getGlobalRegistry().set(store, handle)
 }
 
 export const attachStoreHandle = <T extends Entity, Relations>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     handle: StoreHandle<T>
 ): void => {
     registerStoreHandle(store, handle)
@@ -42,15 +43,15 @@ export const attachStoreHandle = <T extends Entity, Relations>(
 }
 
 export const registerStoreRuntime = <T extends Entity, Relations>(
-    store: StoreHandleOwner<T, Relations>,
-    runtime: ClientRuntime
+    store: StoreApi<T, Relations>,
+    runtime: CoreRuntime
 ): void => {
     getGlobalRuntimeRegistry().set(store, runtime)
 }
 
 export const attachStoreRuntime = <T extends Entity, Relations>(
-    store: StoreHandleOwner<T, Relations>,
-    runtime: ClientRuntime
+    store: StoreApi<T, Relations>,
+    runtime: CoreRuntime
 ): void => {
     registerStoreRuntime(store, runtime)
     const anyStore: any = store as any
@@ -60,18 +61,18 @@ export const attachStoreRuntime = <T extends Entity, Relations>(
 }
 
 export const getStoreRuntime = <T extends Entity, Relations>(
-    store: StoreHandleOwner<T, Relations> | undefined
-): ClientRuntime | null => {
+    store: StoreApi<T, Relations> | undefined
+): CoreRuntime | null => {
     if (!store) return null
-    const fromRegistry = (getGlobalRuntimeRegistry().get(store) as ClientRuntime | undefined)
+    const fromRegistry = (getGlobalRuntimeRegistry().get(store) as CoreRuntime | undefined)
     if (fromRegistry) return fromRegistry
     const anyStore: any = store as any
-    const fromAttached = anyStore && typeof anyStore === 'object' ? (anyStore[RUNTIME_KEY] as ClientRuntime | undefined) : undefined
+    const fromAttached = anyStore && typeof anyStore === 'object' ? (anyStore[RUNTIME_KEY] as CoreRuntime | undefined) : undefined
     return fromAttached ?? null
 }
 
 export const getStoreHandle = <T extends Entity, Relations>(
-    store: StoreHandleOwner<T, Relations> | undefined
+    store: StoreApi<T, Relations> | undefined
 ): StoreHandle<T> | null => {
     if (!store) return null
     const fromRegistry = (getGlobalRegistry().get(store) as StoreHandle<T> | undefined)

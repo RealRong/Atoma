@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
-import type { Entity, RelationIncludeInput, StoreHandleOwner, WithRelations } from '#core'
+import type { Entity, RelationIncludeInput, StoreApi, WithRelations } from '#core'
 import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'
 import { useStoreSelector } from './internal/useStoreSelector'
@@ -13,7 +13,7 @@ interface UseMultipleOptions<T, Relations = {}> {
 }
 
 export function useMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     ids: Array<T['id']> = [],
     options?: UseMultipleOptions<T, Relations> & { include?: Include }
 ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {

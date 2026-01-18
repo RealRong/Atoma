@@ -1,6 +1,7 @@
 import type { CoreStore } from '../createStore'
-import type { ClientRuntime, Entity, StoreHandle } from '../types'
+import type { CoreRuntime, Entity } from '../types'
 import { createStoreView } from './createStoreView'
+import type { StoreHandle } from './internals/handleTypes'
 
 export type SyncStore<T extends Entity, Relations = {}> =
     Omit<CoreStore<T, Relations>, 'createServerAssignedOne' | 'createServerAssignedMany'>
@@ -17,7 +18,7 @@ type SyncStoreViewConfig = {
 }
 
 export function createSyncStoreView<T extends Entity, Relations = {}>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>,
     viewConfig?: SyncStoreViewConfig
 ): SyncStore<T, Relations> {

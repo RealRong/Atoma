@@ -3,12 +3,13 @@
  * Purpose: Compiles a local mutation plan into an executable program and write operations.
  * Call chain: executeMutationFlow -> buildMutationProgram -> buildLocalMutationPlan -> buildWriteIntentsFromEvents/buildWriteIntentsFromPatches -> translateWriteIntentsToOps.
  */
-import type { Entity, StoreDispatchEvent, StoreHandle } from '../../types'
+import type { Entity, StoreDispatchEvent } from '../../types'
 import type { MutationProgram, MutationProgramKind } from './types'
 import { buildLocalMutationPlan } from './LocalPlan'
 import { translateWriteIntentsToOps } from './WriteOps'
 import { derivePersistModeFromOperations } from './Persist'
 import type { EntityId } from '#protocol'
+import type { StoreHandle } from '../../store/internals/handleTypes'
 
 export function buildMutationProgram<T extends Entity>({ handle, operations, currentState, fallbackClientTimeMs }: {
     handle: StoreHandle<T>

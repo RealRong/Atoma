@@ -52,8 +52,9 @@ React 层通过 `useStoreSnapshot/useStoreSelector` 订阅与选择，仍然锚�
 ## 3) 目前仍使用 StoreHandle 的区域
 
 StoreHandle 仍存在于 core 内部（主要是核心执行链路）：
-- `src/core/types.ts`（类型定义、StoreDispatchEvent.handle）
-- `src/core/storeHandleRegistry.ts`
+- `src/core/types.ts`（StoreDispatchEvent.handle）
+- `src/core/store/internals/handleTypes.ts`
+- `src/core/store/internals/handleRegistry.ts`
 - `src/core/ops/opsExecutor.ts`
 - `src/core/mutation/pipeline/*`
 - `src/core/store/create*View.ts`
@@ -75,6 +76,7 @@ StoreHandle 仍存在于 core 内部（主要是核心执行链路）：
 
 建议：
 - 保持 `StoreHandle` 为 core 内部类型，不再从 `src/core/index.ts` 或 `src/index.ts` 对外导出（已完成）。
+- 对外类型 `StoreHandleOwner` 已移除，统一为 `StoreApi`。
 - 如果需要调试能力，新增只读 `StoreDebugView` 或 `DevtoolsSnapshot` 类型即可。
 
 ---

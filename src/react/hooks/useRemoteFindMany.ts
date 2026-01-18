@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Entity, FindManyOptions, PageInfo, StoreHandleOwner } from '#core'
+import type { Entity, FindManyOptions, PageInfo, StoreApi } from '#core'
 import { getStoreName, getStoreRuntime, hydrateStore } from '../../core/store/internals/storeAccess'
 
 type RemoteState<T extends Entity> = Readonly<{
@@ -66,7 +66,7 @@ function publish<T extends Entity>(entry: CacheEntry<T>, patch: Partial<RemoteSt
 }
 
 export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
-    store: StoreHandleOwner<T, Relations>
+    store: StoreApi<T, Relations>
     options?: FindManyOptions<T>
     behavior: RemoteBehavior
     enabled?: boolean

@@ -1,11 +1,11 @@
-import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreOperationOptions } from '../../types'
+import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { dispatch } from '../internals/dispatch'
-import { ignoreTicketRejections } from '../internals/tickets'
-import type { StoreWriteConfig } from '../internals/writeConfig'
+import { ignoreTicketRejections, type StoreWriteConfig } from '../internals/writePipeline'
+import type { StoreHandle } from '../internals/handleTypes'
 
 export function createDeleteOne<T extends Entity>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>,
     writeConfig: StoreWriteConfig
 ) {

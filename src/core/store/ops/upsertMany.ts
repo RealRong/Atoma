@@ -1,16 +1,14 @@
-import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from '../../types'
+import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
 import { dispatch } from '../internals/dispatch'
-import { toError } from '../internals/errors'
-import { ensureActionId } from '../internals/ensureActionId'
+import { toErrorWithFallback as toError } from '#shared'
 import { runAfterSave, runBeforeSave } from '../internals/hooks'
-import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
-import { prepareForAdd, prepareForUpdate } from '../internals/writePipeline'
-import type { StoreWriteConfig } from '../internals/writeConfig'
+import { ensureActionId, ignoreTicketRejections, prepareForAdd, prepareForUpdate, type StoreWriteConfig } from '../internals/writePipeline'
+import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpsertMany<T extends Entity>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>,
     writeConfig: StoreWriteConfig
 ) {

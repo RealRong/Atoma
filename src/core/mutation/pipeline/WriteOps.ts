@@ -5,10 +5,11 @@
  */
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type OperationResult, type StandardError, type WriteAction, type WriteItemResult, type WriteOp, type WriteResultData } from '#protocol'
-import type { ClientRuntime, Entity, PersistWriteback, StoreHandle } from '../../types'
+import type { CoreRuntime, Entity, PersistWriteback } from '../../types'
 import { executeOps } from '../../ops/opsExecutor'
 import type { TranslatedWriteOp, WriteIntent } from './types'
 import { createWritebackCollector } from './WritebackCollector'
+import type { StoreHandle } from '../../store/internals/handleTypes'
 
 export function translateWriteIntentsToOps<T extends Entity>(args: {
     handle: StoreHandle<T>
@@ -39,7 +40,7 @@ export function translateWriteIntentsToOps<T extends Entity>(args: {
 }
 
 export async function executeWriteOps<T extends Entity>(args: {
-    clientRuntime: ClientRuntime
+    clientRuntime: CoreRuntime
     handle: StoreHandle<T>
     ops: Array<TranslatedWriteOp>
     context?: ObservabilityContext

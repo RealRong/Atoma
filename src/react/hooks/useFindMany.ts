@@ -6,7 +6,7 @@ import type {
     PageInfo,
     RelationIncludeInput,
     WithRelations,
-    StoreHandleOwner
+    StoreApi
 } from '#core'
 import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
 import { useRelations } from './useRelations'
@@ -46,17 +46,17 @@ const stripRuntimeOptions = (options?: any) => {
 }
 
 export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     options?: FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy; select?: 'entities' }
 ): UseFindManyEntitiesResult<T, Relations, Include>
 
 export function useFindMany<T extends Entity, Relations = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     options: Omit<FindManyOptions<T, any>, 'include'> & { include?: never; fetchPolicy?: FetchPolicy; select: 'ids' }
 ): UseFindManyIdsResult<T>
 
 export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreHandleOwner<T, Relations>,
+    store: StoreApi<T, Relations>,
     options?: (FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy; select?: UseFindManySelect })
 ): UseFindManyEntitiesResult<T, Relations, Include> | UseFindManyIdsResult<T> {
     const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'cache-and-network'

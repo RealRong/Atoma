@@ -1,9 +1,9 @@
 import { atom } from 'jotai/vanilla'
-import { createStoreHandle } from './store'
+import { createStoreHandle } from './store/internals/runtime'
 import type { JotaiStore } from './types'
 import { createDirectStoreView } from './store/createDirectStoreView'
 import type {
-    ClientRuntime,
+    CoreRuntime,
     Entity,
     IStore,
     IndexDefinition,
@@ -16,7 +16,7 @@ import type { EntityId } from '#protocol'
 
 export interface CoreStoreConfig<T extends Entity> extends StoreConfig<T> {
     name: string
-    clientRuntime: ClientRuntime
+    clientRuntime: CoreRuntime
     store?: JotaiStore
     transformData?: (data: T) => T | undefined
     idGenerator?: () => EntityId

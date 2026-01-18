@@ -1,9 +1,10 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import { StoreIndexes } from '../../indexes/StoreIndexes'
-import type { ClientRuntime, IndexDefinition, JotaiStore, StoreConfig, StoreHandle, StoreOperationOptions, StoreReadOptions, Entity } from '../../types'
+import type { CoreRuntime, IndexDefinition, JotaiStore, StoreConfig, StoreOperationOptions, StoreReadOptions, Entity } from '../../types'
 import type { EntityId } from '#protocol'
 import type { QueryMatcherOptions } from '../../query/QueryMatcher'
 import type { ObservabilityContext } from '#observability'
+import type { StoreHandle } from './handleTypes'
 
 export function createStoreHandle<T extends Entity>(params: {
     atom: PrimitiveAtom<Map<EntityId, T>>
@@ -50,7 +51,7 @@ export function createStoreHandle<T extends Entity>(params: {
 }
 
 export function resolveObservabilityContext<T extends Entity>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>,
     options?: StoreOperationOptions | StoreReadOptions | { explain?: boolean }
 ): ObservabilityContext {

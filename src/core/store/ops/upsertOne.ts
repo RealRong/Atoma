@@ -1,13 +1,12 @@
-import type { ClientRuntime, Entity, PartialWithId, StoreHandle, StoreOperationOptions, UpsertWriteOptions } from '../../types'
+import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, UpsertWriteOptions } from '../../types'
 import { dispatch } from '../internals/dispatch'
 import { runAfterSave, runBeforeSave } from '../internals/hooks'
-import { ignoreTicketRejections } from '../internals/tickets'
 import { validateWithSchema } from '../internals/validation'
-import { prepareForAdd, prepareForUpdate } from '../internals/writePipeline'
-import type { StoreWriteConfig } from '../internals/writeConfig'
+import { ignoreTicketRejections, prepareForAdd, prepareForUpdate, type StoreWriteConfig } from '../internals/writePipeline'
+import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpsertOne<T extends Entity>(
-    clientRuntime: ClientRuntime,
+    clientRuntime: CoreRuntime,
     handle: StoreHandle<T>,
     writeConfig: StoreWriteConfig
 ) {

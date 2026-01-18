@@ -1,14 +1,15 @@
 import type { CoreStore, JotaiStore, OpsClientLike, OutboxEnqueuer, OutboxQueueMode, OutboxRuntime } from '#core'
-import { Core, MutationPipeline } from '#core'
+import { applyStoreWriteback, Core, MutationPipeline } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import type { EntityId } from '#protocol'
 import { Observability } from '#observability'
 import type { DebugConfig, DebugEvent } from '#observability'
 import { executeMutationFlow } from '../../../core/mutation/pipeline/MutationFlow'
 import { createStoreInstance } from './createStore'
-import type { AtomaSchema, ClientRuntime } from '../../types'
+import type { AtomaSchema } from '../../types'
 import type { SyncStore } from '#core'
-import { requireStoreHandle } from '../../../core/store/internals/storeAccess'
+import { getStoreSnapshot, requireStoreHandle } from '../../../core/store/internals/storeAccess'
+import type { ClientRuntimeInternal } from '../types'
 
 export function createClientRuntime(args: {
     schema: AtomaSchema<any>
@@ -19,8 +20,8 @@ export function createClientRuntime(args: {
     syncStore?: {
         queue?: 'queue' | 'local-first'
     }
-}): ClientRuntime {
-    let runtimeRef: ClientRuntime | null = null
+}): ClientRuntimeInternal {
+    let runtimeRef: ClientRuntimeInternal | null = null
 
     const mutation = new MutationPipeline({
         execute: async (segment) => {
@@ -125,7 +126,7 @@ export function createClientRuntime(args: {
 
     const resolveStore = (name: string) => getOrCreateStore(String(name)) as any
 
-    const clientRuntime: ClientRuntime = {
+    const clientRuntime: ClientRuntimeInternal = {
         opsClient: args.opsClient,
         mutation,
         resolveStore,
@@ -150,7 +151,31 @@ export function createClientRuntime(args: {
         },
         listStores: () => storeCache.values(),
         onStoreCreated,
-        installOutboxRuntime
+        installOutboxRuntime,
+        internal: {
+            getStoreSnapshot: (storeName: string) => {
+                const store = getOrCreateStore(String(storeName))
+                return getStoreSnapshot(store, `runtime.snapshot:${storeName}`)
+            },
+            applyWriteback: async (storeName: string, args2) => {
+                const handle = requireStoreHandle(getOrCreateStore(String(storeName)), `runtime.applyWriteback:${storeName}`)
+                await applyStoreWriteback(handle as any, args2 as any)
+            },
+            dispatchPatches: (args2) => {
+                const handle = requireStoreHandle(getOrCreateStore(String(args2.storeName)), `runtime.dispatchPatches:${args2.storeName}`)
+                return new Promise<void>((resolve, reject) => {
+                    mutation.api.dispatch({
+                        type: 'patches',
+                        patches: args2.patches,
+                        inversePatches: args2.inversePatches,
+                        handle,
+                        opContext: args2.opContext,
+                        onSuccess: resolve,
+                        onFail: (error?: Error) => reject(error ?? new Error('[Atoma] runtime: patches 写入失败'))
+                    } as any)
+                })
+            }
+        }
     }
 
     runtimeRef = clientRuntime

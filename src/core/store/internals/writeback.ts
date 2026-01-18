@@ -1,8 +1,9 @@
-import type { Entity, StoreHandle } from '../../types'
+import type { Entity } from '../../types'
 import type { EntityId } from '#protocol'
-import { commitAtomMapUpdateDelta } from './cacheWriter'
+import { commitAtomMapUpdateDelta } from './atomMap'
 import { preserveReferenceShallow } from './preserveReference'
 import { validateWithSchema } from './validation'
+import type { StoreHandle } from './handleTypes'
 
 export type WritebackVersionUpdate = {
     key: EntityId

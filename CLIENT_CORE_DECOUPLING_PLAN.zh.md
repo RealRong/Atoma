@@ -29,7 +29,7 @@
 ### 影响范围
 - `src/core/types.ts`
 - `src/core/index.ts`
-- `src/react/hooks/*`（如依赖 `StoreHandleOwner`/handle 的地方需改为基于 store API）
+- `src/react/hooks/*`（如依赖 `StoreApi`/内部 handle 的地方需改为基于 store API）
 - `src/devtools/*`（如直接依赖 handle）
 
 ### 验收标准
@@ -40,7 +40,7 @@
 目标：hooks 不再直接拿 handle，仅依赖 store API + core 适配器。
 
 - 统一入参类型：
-  - 将 `StoreHandleOwner` 改为 `IStore` / `CoreStore` / `StoreLike`（可新建类型，兼容 Outbox view）。
+  - 统一使用 `StoreApi`（兼容 Outbox view）。
 - 读取/订阅改为适配器：
   - `useAll/useOne/useMany/useStoreQuery`：用 `Core.store.getSnapshot/subscribe` 替代 `getHandle` + `useAtomValue`。
   - `useLocalQuery`：通过 `Core.store.getMatcher(store)` 获取 matcher（无 store 则走纯 query）。
@@ -61,7 +61,7 @@
 - 避免跨 bundle 或多加载环境产生意外共享。
 
 ### 现状
-- `storeHandleRegistry` 使用 `Symbol.for` + `globalThis` 维护全局 WeakMap。
+- `handleRegistry` 使用 `Symbol.for` + `globalThis` 维护全局 WeakMap。
 
 ### 方案
 - 方案 A（推荐）：将 registry 迁移为 runtime 私有缓存
@@ -70,7 +70,7 @@
   - 仅用于 devtools 或诊断时启用，默认不挂 global。
 
 ### 影响范围
-- `src/core/storeHandleRegistry.ts`
+- `src/core/store/internals/handleRegistry.ts`
 - `src/core/store/createStoreView.ts`
 - `src/client/internal/create/createClientRuntime.ts`
 
