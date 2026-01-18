@@ -16,7 +16,7 @@ export function createCreateServerAssignedOne<T extends Entity>(handle: StoreHan
         }
 
         const strictOptions: StoreOperationOptions = { ...(options || {}), confirmation: 'strict' }
-        const { ticket } = services.mutation.runtime.beginWrite()
+        const { ticket } = services.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
             dispatch<T>({
@@ -33,7 +33,7 @@ export function createCreateServerAssignedOne<T extends Entity>(handle: StoreHan
 
         await Promise.all([
             resultPromise,
-            services.mutation.runtime.await(ticket, strictOptions)
+            services.mutation.api.awaitTicket(ticket, strictOptions)
         ])
 
         return resultPromise

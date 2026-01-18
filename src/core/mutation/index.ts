@@ -4,7 +4,7 @@ enableMapSet()
 enablePatches()
 
 export { MutationPipeline } from './MutationPipeline'
-export type { MutationControl, MutationRuntime } from './MutationPipeline'
+export type { MutationAcks, MutationApi } from './MutationPipeline'
 export type {
     PersistResult
 } from './pipeline/types'

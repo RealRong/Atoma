@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { EntityId } from '#protocol'
-import { buildRestoreWriteItemsFromPatches, translateMutationToWriteOps } from '../../src/core/mutation/pipeline/Ops'
+import { buildRestoreWriteItemsFromPatches, buildWriteIntentsFromPatches } from '../../src/core/mutation/pipeline/WriteIntents'
+import { translateWriteIntentsToOps } from '../../src/core/mutation/pipeline/WriteOps'
 
 describe('patches restore/replace translation', () => {
     it('统一翻译为 upsert + delete（包含 baseVersion）', () => {
@@ -57,14 +58,13 @@ describe('patches restore/replace translation', () => {
             })()
         }
 
-        const ops = translateMutationToWriteOps({
-            handle,
-            operations: [{ type: 'patches', patches: patchesOp.patches, inversePatches: patchesOp.inversePatches } as any],
+        const intents = buildWriteIntentsFromPatches({
             optimisticState: patchesOp.nextState,
-            baseState: new Map(),
-            fallbackClientTimeMs: 123,
-            persistMode: 'outbox'
+            patches: patchesOp.patches,
+            inversePatches: patchesOp.inversePatches,
+            fallbackClientTimeMs: 123
         })
+        const ops = translateWriteIntentsToOps({ handle, intents })
 
         expect(ops).toHaveLength(2)
 

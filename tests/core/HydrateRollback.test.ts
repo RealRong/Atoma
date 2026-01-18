@@ -1,7 +1,7 @@
 import { atom, createStore } from 'jotai/vanilla'
 import { describe, expect, it, vi } from 'vitest'
 import '../../src/core/mutation'
-import { runMutationFlow } from '../../src/core/mutation/pipeline/Flow'
+import { executeMutationFlow } from '../../src/core/mutation/pipeline/MutationFlow'
 
 describe('hydrate (A 语义)', () => {
     it('persist 失败 rollback 后仍保留补读 base 缓存', async () => {
@@ -37,7 +37,7 @@ describe('hydrate (A 语义)', () => {
             { type: 'update', handle, data: { id: '1', name: 'n' }, persist: 'direct', onFail }
         ]
 
-        await runMutationFlow({
+        await executeMutationFlow({
             handle,
             operations: operations as any,
             opContext: { scope: 'default', origin: 'user', actionId: 'a' }

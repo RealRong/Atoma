@@ -94,7 +94,7 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>, write
             const validObj = entry.value
             const action = entry.action
 
-            const { ticket } = services.mutation.runtime.beginWrite()
+            const { ticket } = services.mutation.api.beginWrite()
 
             const resultPromise = new Promise<T>((resolve, reject) => {
                 dispatch<T>({
@@ -126,7 +126,7 @@ export function createUpsertMany<T extends Entity>(handle: StoreHandle<T>, write
                     })()
                     : Promise.all([
                         resultPromise,
-                        services.mutation.runtime.await(ticket, options)
+                        services.mutation.api.awaitTicket(ticket, options)
                     ]).then(([value]) => value)
                 ).then((value) => {
                     results[index] = { index, ok: true, value }

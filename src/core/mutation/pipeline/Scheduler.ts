@@ -1,3 +1,9 @@
+/**
+ * Mutation Pipeline: Scheduler
+ * Purpose: Queues dispatch events, normalizes opContext, segments by context, and drains in microtasks.
+ * Call chain: MutationPipeline.api.dispatch -> Scheduler.enqueue -> Scheduler.executeSegment -> executeMutationFlow.
+ */
+import { toErrorWithFallback } from '#shared'
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import type { StoreDispatchEvent } from '../../types'
 import { createActionId, normalizeOperationContext } from '../../operationContext'
@@ -6,20 +12,10 @@ import type { MutationCommitInfo, MutationSegment } from './types'
 
 type AtomKey = PrimitiveAtom<any>
 
-function segmentKey(op: StoreDispatchEvent<any>) {
+function opContextSegmentKey(op: StoreDispatchEvent<any>) {
     const c = op.opContext
     const persist = op.persist ?? ''
     return `${c?.scope ?? 'default'}|${c?.origin ?? 'user'}|${c?.actionId ?? ''}|${persist}`
-}
-
-function toError(reason: unknown, fallbackMessage: string): Error {
-    if (reason instanceof Error) return reason
-    if (typeof reason === 'string' && reason) return new Error(reason)
-    try {
-        return new Error(`${fallbackMessage}: ${JSON.stringify(reason)}`)
-    } catch {
-        return new Error(fallbackMessage)
-    }
 }
 
 export class Scheduler {
@@ -43,10 +39,10 @@ export class Scheduler {
             this.queueMap.set(atom, [event])
         }
 
-        this.flush()
+        this.scheduleDrain()
     }
 
-    flush() {
+    scheduleDrain() {
         if (this.scheduled) return
         this.scheduled = true
         queueMicrotask(() => {
@@ -55,7 +51,7 @@ export class Scheduler {
         })
     }
 
-    flushSync() {
+    drainSync() {
         this.scheduled = false
         void this.drainLoop()
     }
@@ -73,9 +69,9 @@ export class Scheduler {
                     const processed = this.normalizeDispatchEvents(events)
                     if (!processed.length) continue
 
-                    const segments = this.segmentByContext(processed)
+                    const segments = this.segmentByOpContext(processed)
                     for (const ops of segments) {
-                        await this.runSegment(ops)
+                        await this.executeSegment(ops)
                     }
                 }
             }
@@ -98,7 +94,7 @@ export class Scheduler {
 
                 processed.push(normalized)
             } catch (error) {
-                const err = toError(error, '[Atoma] dispatch failed')
+                const err = toErrorWithFallback(error, '[Atoma] dispatch failed')
                 original.ticket?.settle('enqueued', err)
                 original.onFail?.(err)
             }
@@ -107,13 +103,13 @@ export class Scheduler {
         return processed
     }
 
-    private segmentByContext(events: Array<StoreDispatchEvent<any>>) {
+    private segmentByOpContext(events: Array<StoreDispatchEvent<any>>) {
         const segments: Array<Array<StoreDispatchEvent<any>>> = []
         let current: Array<StoreDispatchEvent<any>> = []
         let currentKey: string | undefined
 
         events.forEach((op) => {
-            const key = segmentKey(op)
+            const key = opContextSegmentKey(op)
             if (!current.length) {
                 current = [op]
                 currentKey = key
@@ -132,7 +128,7 @@ export class Scheduler {
         return segments
     }
 
-    private async runSegment(ops: Array<StoreDispatchEvent<any>>) {
+    private async executeSegment(ops: Array<StoreDispatchEvent<any>>) {
         const handle = ops[0].handle
 
         const baseOpContext = ops[0].opContext

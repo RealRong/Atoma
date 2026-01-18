@@ -87,7 +87,7 @@ export { applyStoreWriteback } from './store/internals/writeback'
 
 export type { CoreStore, CoreStoreConfig } from './createStore'
 export { MutationPipeline } from './mutation/MutationPipeline'
-export type { MutationRuntime, MutationControl } from './mutation/MutationPipeline'
+export type { MutationApi, MutationAcks } from './mutation/MutationPipeline'
 export type {
     PersistResult
 } from './mutation'

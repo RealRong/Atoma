@@ -9,7 +9,7 @@ export function createAddOne<T extends Entity>(handle: StoreHandle<T>, writeConf
     const { services, hooks } = handle
     return async (obj: Partial<T>, options?: StoreOperationOptions) => {
         const validObj = await prepareForAdd<T>(handle, obj)
-        const { ticket } = services.mutation.runtime.beginWrite()
+        const { ticket } = services.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
             dispatch<T>({
@@ -42,7 +42,7 @@ export function createAddOne<T extends Entity>(handle: StoreHandle<T>, writeConf
 
         const [value] = await Promise.all([
             resultPromise,
-            services.mutation.runtime.await(ticket, options)
+            services.mutation.api.awaitTicket(ticket, options)
         ])
 
         return value

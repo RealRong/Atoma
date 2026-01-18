@@ -270,7 +270,7 @@ export function createSyncReplicatorApplier(args: {
             ? (ack.item as any).meta.idempotencyKey
             : undefined
         if (typeof key === 'string' && key) {
-            handle.services.mutation.control.onAck(key)
+            handle.services.mutation.acks.ack(key)
         }
 
         const upserts: any[] = []
@@ -338,7 +338,7 @@ export function createSyncReplicatorApplier(args: {
             ? (reject.item as any).meta.idempotencyKey
             : undefined
         if (typeof key === 'string' && key) {
-            handle.services.mutation.control.onReject(key, (reject.result as any)?.error ?? reject.result)
+            handle.services.mutation.acks.reject(key, (reject.result as any)?.error ?? reject.result)
         }
         const upserts: any[] = []
         const deletes: EntityId[] = []

@@ -1,9 +1,14 @@
+/**
+ * Mutation Pipeline: Types
+ * Purpose: Shared types for program planning, persistence, write intents, and segments.
+ * Call chain: Used across Scheduler/LocalPlan/MutationProgram/MutationFlow/Persist/WriteOps.
+ */
 import type { Patch } from 'immer'
 import type { PrimitiveAtom } from 'jotai/vanilla'
-import type { EntityId, Operation } from '#protocol'
+import type { EntityId, Operation, WriteAction, WriteItem, WriteOptions } from '#protocol'
 import type { Entity, OperationContext, PersistWriteback, StoreDispatchEvent, StoreHandle } from '../../types'
 
-export type PersistMode = 'direct' | 'outbox' | 'custom'
+export type PersistMode = 'direct' | 'outbox'
 export type PersistStatus = 'confirmed' | 'enqueued'
 
 export type PersistResult<T extends Entity> = Readonly<{
@@ -11,6 +16,15 @@ export type PersistResult<T extends Entity> = Readonly<{
     status: PersistStatus
     created?: T[]
     writeback?: PersistWriteback<T>
+}>
+
+export type WriteIntent = Readonly<{
+    action: WriteAction
+    item: WriteItem
+    options?: WriteOptions
+    entityId?: EntityId
+    intent?: 'created'
+    requireCreatedData?: boolean
 }>
 
 export type TranslatedWriteOp = Readonly<{
@@ -21,12 +35,13 @@ export type TranslatedWriteOp = Readonly<{
     requireCreatedData?: boolean
 }>
 
-export type MutationProgramKind = 'noop' | 'hydrate' | 'writes' | 'patches' | 'serverCreate'
+export type MutationProgramKind = 'noop' | 'hydrate' | 'writes' | 'patches' | 'serverAssignedCreate'
 
 export type LocalMutationPlan<T extends Entity> = Readonly<{
     baseState: Map<EntityId, T>
     optimisticState: Map<EntityId, T>
     writeEvents: Array<StoreDispatchEvent<T>>
+    writeIntents: WriteIntent[]
     hasCreate: boolean
     hasPatches: boolean
     changedIds: Set<EntityId>
@@ -55,13 +70,14 @@ type MutationProgramBase<T extends Entity> = Readonly<{
     optimisticState: Map<EntityId, T>
     rollbackState: Map<EntityId, T>
     changedIds: ReadonlySet<EntityId>
+    writeIntents: WriteIntent[]
     writeOps: TranslatedWriteOp[]
     patches: Patch[]
     inversePatches: Patch[]
 }>
 
 export type MutationProgram<T extends Entity> =
-    | (MutationProgramBase<T> & { kind: 'noop' | 'hydrate'; writeOps: [] })
+    | (MutationProgramBase<T> & { kind: 'noop' | 'hydrate'; writeIntents: []; writeOps: [] })
     | (MutationProgramBase<T> & { kind: 'writes' })
     | (MutationProgramBase<T> & { kind: 'patches' })
-    | (MutationProgramBase<T> & { kind: 'serverCreate' })
+    | (MutationProgramBase<T> & { kind: 'serverAssignedCreate' })

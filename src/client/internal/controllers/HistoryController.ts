@@ -27,7 +27,7 @@ export function createHistoryController(args: {
         }
 
         return new Promise<void>((resolve, reject) => {
-            args.runtime.mutation.runtime.dispatch({
+            args.runtime.mutation.api.dispatch({
                 type: 'patches',
                 patches,
                 inversePatches,

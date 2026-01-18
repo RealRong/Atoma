@@ -1,20 +1,28 @@
+/**
+ * Mutation Pipeline: Local Plan
+ * Purpose: Builds base/optimistic state, patches, and write intents for a batch of dispatch events.
+ * Call chain: buildMutationProgram -> buildLocalMutationPlan -> deriveOptimisticState -> buildWriteIntentsFromEvents/buildWriteIntentsFromPatches.
+ */
 import { applyPatches, createDraft, finishDraft, type Draft, type Patch, type WritableDraft } from 'immer'
 import type { EntityId } from '#protocol'
 import type { Entity, StoreDispatchEvent } from '../../types'
-import type { LocalMutationPlan } from './types'
+import type { LocalMutationPlan, PersistMode } from './types'
+import { buildWriteIntentsFromEvents, buildWriteIntentsFromPatches } from './WriteIntents'
 
-export function planLocalMutation<T extends Entity>({ operations, currentState }: {
+export function buildLocalMutationPlan<T extends Entity>({ operations, currentState, fallbackClientTimeMs, persistMode }: {
     operations: Array<StoreDispatchEvent<T>>
     currentState: Map<EntityId, T>
+    fallbackClientTimeMs: number
+    persistMode: PersistMode
 }): LocalMutationPlan<T> {
     const base = applyHydrateToBaseState({
         baseState: currentState,
         operations
     })
 
-    const { writeEvents, hasCreate, hasPatches } = resolveWriteEvents(operations)
+    const { writeEvents, hasCreate, hasPatches } = validateAndCollectWriteEvents(operations)
 
-    const optimistic = buildOptimisticStateAndPatches({
+    const optimistic = deriveOptimisticState({
         baseState: base.baseState,
         writeEvents,
         hasCreate,
@@ -25,10 +33,28 @@ export function planLocalMutation<T extends Entity>({ operations, currentState }
     unionInto(changedIds, base.changedIds)
     unionInto(changedIds, optimistic.changedIds)
 
+    const writeIntents = (writeEvents.length === 0)
+        ? []
+        : (hasPatches
+            ? buildWriteIntentsFromPatches({
+                optimisticState: optimistic.optimisticState,
+                patches: optimistic.patches,
+                inversePatches: optimistic.inversePatches,
+                fallbackClientTimeMs
+            })
+            : buildWriteIntentsFromEvents({
+                writeEvents,
+                optimisticState: optimistic.optimisticState,
+                baseState: base.baseState,
+                fallbackClientTimeMs,
+                persistMode
+            }))
+
     return {
         baseState: base.baseState,
         optimisticState: optimistic.optimisticState,
         writeEvents,
+        writeIntents,
         hasCreate,
         hasPatches,
         changedIds,
@@ -79,7 +105,7 @@ function applyHydrateToBaseState<T extends Entity>(args: {
     return { baseState: nextState ?? baseState, changedIds }
 }
 
-function resolveWriteEvents<T extends Entity>(operations: Array<StoreDispatchEvent<T>>) {
+function validateAndCollectWriteEvents<T extends Entity>(operations: Array<StoreDispatchEvent<T>>) {
     const writeEvents: Array<StoreDispatchEvent<T>> = []
     let batchKind: 'create' | 'patches' | 'writes' | undefined
 
@@ -101,11 +127,11 @@ function resolveWriteEvents<T extends Entity>(operations: Array<StoreDispatchEve
 
         if (batchKind === kind) continue
 
-        // create/patches 必须独占一个 segment；writes 也不能与它们混合
+        // create/patches must be exclusive in a segment; writes cannot mix with them
         if (batchKind === 'create' || kind === 'create') {
-            throw new Error('[Atoma] create 操作不能与其他操作混合批处理')
+            throw new Error('[Atoma] create operations cannot be batched with other operations')
         }
-        throw new Error('[Atoma] patches 操作不能与其他操作混合批处理')
+        throw new Error('[Atoma] patches operations cannot be batched with other operations')
     }
 
     return {
@@ -146,7 +172,7 @@ function collectChangedIdsFromPatches(patches: Patch[], changedIds: Set<EntityId
     }
 }
 
-function buildOptimisticStateAndPatches<T extends Entity>(args: {
+function deriveOptimisticState<T extends Entity>(args: {
     baseState: Map<EntityId, T>
     writeEvents: Array<StoreDispatchEvent<T>>
     hasCreate: boolean

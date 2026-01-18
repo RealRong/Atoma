@@ -25,7 +25,7 @@ export function createCreateServerAssignedMany<T extends Entity>(handle: StoreHa
         const tickets = new Array(items.length)
 
         const tasks = items.map((item, idx) => {
-            const { ticket } = services.mutation.runtime.beginWrite()
+            const { ticket } = services.mutation.api.beginWrite()
             tickets[idx] = ticket
 
             const resultPromise = new Promise<void>((resolve, reject) => {
@@ -46,7 +46,7 @@ export function createCreateServerAssignedMany<T extends Entity>(handle: StoreHa
 
             return Promise.all([
                 resultPromise,
-                services.mutation.runtime.await(ticket, strictOptions)
+                services.mutation.api.awaitTicket(ticket, strictOptions)
             ])
         })
 

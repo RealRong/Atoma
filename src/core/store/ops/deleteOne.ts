@@ -7,7 +7,7 @@ import type { StoreWriteConfig } from '../internals/writeConfig'
 export function createDeleteOne<T extends Entity>(handle: StoreHandle<T>, writeConfig: StoreWriteConfig) {
     const { services } = handle
     return async (id: EntityId, options?: StoreOperationOptions) => {
-        const { ticket } = services.mutation.runtime.beginWrite()
+        const { ticket } = services.mutation.api.beginWrite()
 
         const resultPromise = new Promise<boolean>((resolve, reject) => {
             dispatch<T>({
@@ -34,7 +34,7 @@ export function createDeleteOne<T extends Entity>(handle: StoreHandle<T>, writeC
 
         const [value] = await Promise.all([
             resultPromise,
-            services.mutation.runtime.await(ticket, options)
+            services.mutation.api.awaitTicket(ticket, options)
         ])
 
         return value

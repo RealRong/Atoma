@@ -1,10 +1,15 @@
+/**
+ * Mutation Pipeline: Persist
+ * Purpose: Resolves persist mode (direct/outbox) and executes or enqueues write operations.
+ * Call chain: executeMutationFlow -> executeMutationPersistence -> executeWriteOps or outbox.enqueueOps.
+ */
 import type { Entity, StoreDispatchEvent, StoreHandle } from '../../types'
 import type { PersistResult } from './types'
 import type { MutationProgram } from './types'
-import { executeWriteOps } from './Ops'
+import { executeWriteOps } from './WriteOps'
 import type { ObservabilityContext } from '#observability'
 
-export function resolvePersistModeFromOperations<T extends Entity>(operations: Array<StoreDispatchEvent<T>>): 'direct' | 'outbox' {
+export function derivePersistModeFromOperations<T extends Entity>(operations: Array<StoreDispatchEvent<T>>): 'direct' | 'outbox' {
     const set = new Set<'direct' | 'outbox'>()
     for (const op of operations) {
         const m = op.persist
@@ -15,7 +20,7 @@ export function resolvePersistModeFromOperations<T extends Entity>(operations: A
     throw new Error('[Atoma] mixed persist modes in one mutation segment (direct vs outbox)')
 }
 
-export async function persistMutation<T extends Entity>(args: {
+export async function executeMutationPersistence<T extends Entity>(args: {
     handle: StoreHandle<T>
     program: MutationProgram<T>
     context?: ObservabilityContext

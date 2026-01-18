@@ -1,47 +1,52 @@
+/**
+ * Mutation Pipeline: Entry
+ * Purpose: Wires scheduling, ticket tracking, and history recording for store mutations.
+ * Call chain: Store.dispatch -> MutationPipeline.api.dispatch -> Scheduler.enqueue -> executeMutationFlow -> HistoryManager.record.
+ */
 import type { StoreDispatchEvent, StoreOperationOptions, WriteItemMeta, WriteTicket } from '../types'
-import { runMutationFlow } from './pipeline/Flow'
+import { executeMutationFlow } from './pipeline/MutationFlow'
 import { Scheduler } from './pipeline/Scheduler'
-import { TicketTracker } from './pipeline/TicketTracker'
+import { WriteTicketManager } from './pipeline/WriteTicketManager'
 import { HistoryManager } from '../history/HistoryManager'
 
-export type MutationRuntime = Readonly<{
+export type MutationApi = Readonly<{
     dispatch: (event: StoreDispatchEvent<any>) => void
     beginWrite: () => { ticket: WriteTicket; meta: WriteItemMeta }
-    await: (ticket: WriteTicket, options?: StoreOperationOptions) => Promise<void>
+    awaitTicket: (ticket: WriteTicket, options?: StoreOperationOptions) => Promise<void>
 }>
 
-export type MutationControl = Readonly<{
-    onAck: (idempotencyKey: string) => void
-    onReject: (idempotencyKey: string, reason?: unknown) => void
+export type MutationAcks = Readonly<{
+    ack: (idempotencyKey: string) => void
+    reject: (idempotencyKey: string, reason?: unknown) => void
 }>
 
 export class MutationPipeline {
-    readonly runtime: MutationRuntime
-    readonly control: MutationControl
+    readonly api: MutationApi
+    readonly acks: MutationAcks
     readonly history: HistoryManager
 
     private readonly scheduler: Scheduler
-    private readonly tickets: TicketTracker
+    private readonly tickets: WriteTicketManager
 
     constructor() {
         this.history = new HistoryManager()
         this.scheduler = new Scheduler({
             run: async (args) => {
-                const committed = await runMutationFlow(args)
+                const committed = await executeMutationFlow(args)
                 if (committed) this.history.record(committed)
             }
         })
-        this.tickets = new TicketTracker()
+        this.tickets = new WriteTicketManager()
 
-        this.runtime = {
+        this.api = {
             dispatch: (event) => this.scheduler.enqueue(event),
             beginWrite: () => this.tickets.beginWrite(),
-            await: (ticket, options) => this.tickets.await(ticket, options)
+            awaitTicket: (ticket, options) => this.tickets.awaitTicket(ticket, options)
         }
 
-        this.control = {
-            onAck: (idempotencyKey) => this.tickets.onAck(idempotencyKey),
-            onReject: (idempotencyKey, reason) => this.tickets.onReject(idempotencyKey, reason)
+        this.acks = {
+            ack: (idempotencyKey) => this.tickets.ack(idempotencyKey),
+            reject: (idempotencyKey, reason) => this.tickets.reject(idempotencyKey, reason)
         }
     }
 }

@@ -104,7 +104,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
                 }
                 continue
             }
-            const { ticket } = services.mutation.runtime.beginWrite()
+            const { ticket } = services.mutation.api.beginWrite()
 
             const resultPromise = new Promise<boolean>((resolve, reject) => {
                 dispatch<T>({
@@ -126,7 +126,7 @@ export function createDeleteMany<T extends Entity>(handle: StoreHandle<T>, write
                         return resultPromise
                     })()
                     : Promise.all([
-                        services.mutation.runtime.await(ticket, options),
+                        services.mutation.api.awaitTicket(ticket, options),
                         resultPromise
                     ]).then(([_awaited, value]) => value)
                 ).then((value) => {

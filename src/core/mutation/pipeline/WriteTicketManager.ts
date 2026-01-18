@@ -1,3 +1,9 @@
+/**
+ * Mutation Pipeline: Write Ticket Manager
+ * Purpose: Creates write tickets and resolves optimistic/strict confirmations with ack/reject.
+ * Call chain: MutationPipeline.api.beginWrite/awaitTicket -> WriteTicketManager.awaitTicket -> MutationPipeline.acks.ack/reject.
+ */
+import { toErrorWithFallback } from '#shared'
 import type { StoreOperationOptions, WriteItemMeta, WriteTicket, WriteTimeoutBehavior, WriteConfirmation } from '../../types'
 import { Protocol } from '#protocol'
 
@@ -31,16 +37,6 @@ function createDeferred<T>(): Deferred<T> {
     return deferred
 }
 
-function toError(reason: unknown, fallbackMessage: string): Error {
-    if (reason instanceof Error) return reason
-    if (typeof reason === 'string' && reason) return new Error(reason)
-    try {
-        return new Error(`${fallbackMessage}: ${JSON.stringify(reason)}`)
-    } catch {
-        return new Error(fallbackMessage)
-    }
-}
-
 export class WriteTimeoutError extends Error {
     name = 'WriteTimeoutError'
 
@@ -49,7 +45,7 @@ export class WriteTimeoutError extends Error {
     }
 }
 
-export class TicketTracker {
+export class WriteTicketManager {
     private readonly pending = new Map<string, WriteTicket>()
 
     constructor(private readonly now: () => number = () => Date.now()) { }
@@ -71,7 +67,7 @@ export class TicketTracker {
             settle: (stage, error) => {
                 if (stage === 'enqueued') {
                     if (error !== undefined) {
-                        const err = toError(error, 'Write enqueued failed')
+                        const err = toErrorWithFallback(error, 'Write enqueued failed')
                         enqueued.reject(err)
                         confirmed.reject(err)
                         return
@@ -85,7 +81,7 @@ export class TicketTracker {
                 }
 
                 if (error !== undefined) {
-                    confirmed.reject(toError(error, 'Write confirmed failed'))
+                    confirmed.reject(toErrorWithFallback(error, 'Write confirmed failed'))
                     return
                 }
 
@@ -96,7 +92,7 @@ export class TicketTracker {
         return { ticket, meta }
     }
 
-    async await(ticket: WriteTicket, options?: StoreOperationOptions): Promise<void> {
+    async awaitTicket(ticket: WriteTicket, options?: StoreOperationOptions): Promise<void> {
         const confirmation: WriteConfirmation = options?.confirmation ?? 'optimistic'
 
         if (confirmation === 'optimistic') {
@@ -143,18 +139,17 @@ export class TicketTracker {
         }
     }
 
-    onAck(idempotencyKey: string) {
+    ack(idempotencyKey: string) {
         const ticket = this.pending.get(idempotencyKey)
         if (!ticket) return
         ticket.settle('confirmed')
         this.pending.delete(idempotencyKey)
     }
 
-    onReject(idempotencyKey: string, reason?: unknown) {
+    reject(idempotencyKey: string, reason?: unknown) {
         const ticket = this.pending.get(idempotencyKey)
         if (!ticket) return
         ticket.settle('confirmed', reason)
         this.pending.delete(idempotencyKey)
     }
 }
-

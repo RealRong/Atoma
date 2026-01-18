@@ -48,7 +48,7 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>, writeC
             return next as PartialWithId<T>
         })()
 
-        const { ticket } = services.mutation.runtime.beginWrite()
+        const { ticket } = services.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
             dispatch<T>({
@@ -80,7 +80,7 @@ export function createUpsertOne<T extends Entity>(handle: StoreHandle<T>, writeC
 
         await Promise.all([
             resultPromise,
-            services.mutation.runtime.await(ticket, options)
+            services.mutation.api.awaitTicket(ticket, options)
         ])
 
         return resultPromise

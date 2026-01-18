@@ -47,7 +47,7 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>, writeC
         const patched = { ...(next as any), id } as PartialWithId<T>
         const validObj = await prepareForUpdate<T>(handle, base, patched)
 
-        const { ticket } = services.mutation.runtime.beginWrite()
+        const { ticket } = services.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
             if (hydrate) {
@@ -85,7 +85,7 @@ export function createUpdateOne<T extends Entity>(handle: StoreHandle<T>, writeC
 
         await Promise.all([
             resultPromise,
-            services.mutation.runtime.await(ticket, options)
+            services.mutation.api.awaitTicket(ticket, options)
         ])
 
         return resultPromise
