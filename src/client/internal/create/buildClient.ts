@@ -1,7 +1,7 @@
-import type { CoreStore, Entity } from '#core'
-import { createHistoryController } from '../controllers/HistoryController'
-import { createSyncController } from '../controllers/SyncController'
-import { createClientRuntime } from './createClientRuntime'
+import type { CoreStore, Entity, StoreDataProcessor } from '#core'
+import { HistoryController } from '../controllers/HistoryController'
+import { SyncController } from '../controllers/SyncController'
+import { ClientRuntime } from './createClientRuntime'
 import type {
     AtomaClient,
     AtomaSchema,
@@ -22,6 +22,7 @@ export function buildAtomaClient<
     const Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
 >(args: {
     schema: Schema
+    dataProcessor?: StoreDataProcessor<any>
     storeBackendState: StoreBackendState
     storeBatch?: StoreBatchArgs
     syncEndpoint?: BackendEndpointConfig
@@ -77,15 +78,16 @@ export function buildAtomaClient<
 
     const storeBackend = resolved.store.store
 
-    const clientRuntime = createClientRuntime({
+    const clientRuntime = new ClientRuntime({
         schema: args.schema,
+        dataProcessor: args.dataProcessor,
         opsClient: storeBackend.opsClient,
         syncStore: {
             queue
         }
     })
 
-    const historyController = createHistoryController({ runtime: clientRuntime })
+    const historyController = new HistoryController({ runtime: clientRuntime })
 
     const syncConfig = wantsSync
         ? ({
@@ -120,7 +122,7 @@ export function buildAtomaClient<
         } as any)
         : undefined
 
-    const syncController = createSyncController({
+    const syncController = new SyncController({
         runtime: clientRuntime,
         backend: resolved.sync.sync,
         localBackend: resolved.store.local,

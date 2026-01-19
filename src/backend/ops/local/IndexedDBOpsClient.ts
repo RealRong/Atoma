@@ -15,8 +15,6 @@ import type {
 import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import { OpsClient } from '../OpsClient'
 
-type TransformData = (args: { resource: string; data: any }) => any | undefined
-
 function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -106,7 +104,6 @@ function serializeValue(value: any) {
 export class IndexedDBOpsClient extends OpsClient {
     constructor(private readonly config: {
         tableForResource: (resource: string) => Table<any, string>
-        transformData?: TransformData
     }) {
         super()
         if (!config?.tableForResource || typeof config.tableForResource !== 'function') {
@@ -192,7 +189,7 @@ export class IndexedDBOpsClient extends OpsClient {
     private async executeQuery(resource: string, params: QueryParams): Promise<QueryResultData> {
         const table = this.config.tableForResource(resource)
         const raw = await table.toArray()
-        const items = this.applyTransform(resource, raw)
+        const items = raw
 
         const where = params.where
         const orderBy = Array.isArray(params.orderBy) && params.orderBy.length
@@ -300,7 +297,7 @@ export class IndexedDBOpsClient extends OpsClient {
                     const id = String(entityId)
                     const key = id
                     const existing = await table.get(key as any)
-                    const current = existing ? this.applyTransformOne(resource, existing) : undefined
+                    const current = existing ?? undefined
                     if (current) {
                         const currentVersion = (current as any)?.version
                         results[index] = {
@@ -341,7 +338,7 @@ export class IndexedDBOpsClient extends OpsClient {
                     }
                     const key = id
                     const existing = await table.get(key as any)
-                    const current = existing ? this.applyTransformOne(resource, existing) : undefined
+                    const current = existing ?? undefined
                     if (!current) {
                         results[index] = { index, ok: false, error: standardError({ code: 'NOT_FOUND', message: 'Not found', kind: 'not_found', details: { resource, entityId: id } }) }
                         continue
@@ -394,7 +391,7 @@ export class IndexedDBOpsClient extends OpsClient {
                     }
                     const key = id
                     const existing = await table.get(key as any)
-                    const current = existing ? this.applyTransformOne(resource, existing) : undefined
+                    const current = existing ?? undefined
 
                     const baseVersion = raw?.baseVersion
                     const value = raw?.value
@@ -483,7 +480,7 @@ export class IndexedDBOpsClient extends OpsClient {
                 }
                 const key = id
                 const existing = await table.get(key as any)
-                const current = existing ? this.applyTransformOne(resource, existing) : undefined
+                const current = existing ?? undefined
                 if (!current) {
                     results[index] = { index, ok: false, error: standardError({ code: 'NOT_FOUND', message: 'Not found', kind: 'not_found', details: { resource, entityId: id } }) }
                     continue
@@ -522,20 +519,4 @@ export class IndexedDBOpsClient extends OpsClient {
         return { transactionApplied: false, results } as WriteResultData
     }
 
-    private applyTransform(resource: string, list: any[]): any[] {
-        const t = this.config.transformData
-        if (!t) return list
-        const out: any[] = []
-        list.forEach((row) => {
-            const next = t({ resource, data: row })
-            if (next !== undefined) out.push(next)
-        })
-        return out
-    }
-
-    private applyTransformOne(resource: string, row: any): any | undefined {
-        const t = this.config.transformData
-        if (!t) return row
-        return t({ resource, data: row })
-    }
 }

@@ -1,10 +1,8 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
-import { dispatch } from '../internals/dispatch'
 import { toErrorWithFallback as toError } from '#shared'
-import { resolveObservabilityContext } from '../internals/runtime'
-import { validateWithSchema } from '../internals/validation'
-import { ensureActionId, ignoreTicketRejections, type StoreWriteConfig } from '../internals/writePipeline'
+import { storeHandleManager } from '../internals/storeHandleManager'
+import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
 import { executeQuery } from '../../ops/opsExecutor'
 import type { StoreHandle } from '../internals/handleTypes'
 
@@ -13,12 +11,12 @@ export function createDeleteMany<T extends Entity>(
     handle: StoreHandle<T>,
     writeConfig: StoreWriteConfig
 ) {
-    const { jotaiStore, atom, schema, transform } = handle
+    const { jotaiStore, atom } = handle
 
     return async (ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
-        const opContext = ensureActionId(options?.opContext)
+        const opContext = storeWriteEngine.ensureActionId(options?.opContext)
         const confirmation = options?.confirmation ?? 'optimistic'
-        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
         const results: WriteManyResult<boolean> = new Array(ids.length)
 
         const firstIndexById = new Map<EntityId, number>()
@@ -63,15 +61,15 @@ export function createDeleteMany<T extends Entity>(
 
                 for (const fetched of data) {
                     if (!fetched) continue
-                    const transformed = transform(fetched as T)
-                    const validFetched = await validateWithSchema(transformed, schema)
-                    const id = (validFetched as any).id as EntityId
+                    const processed = await clientRuntime.dataProcessor.writeback(handle, fetched as T, opContext)
+                    if (!processed) continue
+                    const id = (processed as any).id as EntityId
                     hydratedIds.add(id)
-                    toHydrate.push(validFetched as any)
+                    toHydrate.push(processed as any)
                 }
 
                 if (toHydrate.length) {
-                    dispatch<T>(clientRuntime, {
+                    storeWriteEngine.dispatch<T>(clientRuntime, {
                         type: 'hydrateMany',
                         handle,
                         items: toHydrate,
@@ -110,7 +108,7 @@ export function createDeleteMany<T extends Entity>(
             const { ticket } = clientRuntime.mutation.api.beginWrite()
 
             const resultPromise = new Promise<boolean>((resolve, reject) => {
-                dispatch<T>(clientRuntime, {
+                storeWriteEngine.dispatch<T>(clientRuntime, {
                     type: options?.force ? 'forceRemove' : 'remove',
                     data: { id } as PartialWithId<T>,
                     handle,
@@ -125,7 +123,7 @@ export function createDeleteMany<T extends Entity>(
             tasks.push(
                 (confirmation === 'optimistic'
                     ? (() => {
-                        ignoreTicketRejections(ticket)
+                        storeWriteEngine.ignoreTicketRejections(ticket)
                         return resultPromise
                     })()
                     : Promise.all([

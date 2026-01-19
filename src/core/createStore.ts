@@ -1,15 +1,12 @@
 import { atom } from 'jotai/vanilla'
-import { createStoreHandle } from './store/internals/runtime'
-import type { JotaiStore } from './types'
+import { storeHandleManager } from './store/internals/storeHandleManager'
 import { createDirectStoreView } from './store/createDirectStoreView'
 import type {
     CoreRuntime,
     Entity,
     IStore,
     IndexDefinition,
-    LifecycleHooks,
     RelationConfig,
-    SchemaValidator,
     StoreConfig,
 } from './types'
 import type { EntityId } from '#protocol'
@@ -17,11 +14,7 @@ import type { EntityId } from '#protocol'
 export interface CoreStoreConfig<T extends Entity> extends StoreConfig<T> {
     name: string
     clientRuntime: CoreRuntime
-    store?: JotaiStore
-    transformData?: (data: T) => T | undefined
     idGenerator?: () => EntityId
-    schema?: SchemaValidator<T>
-    hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>
 }
 
@@ -45,9 +38,9 @@ export function createStore<T extends Entity, const Relations = {}>(
 export function createStore<T extends Entity, Relations = {}>(
     config: CoreStoreConfig<T> & { relations?: () => Relations }
 ): CoreStore<T, Relations> {
-    const { name, transformData } = config
+    const { name } = config
     const clientRuntime = config.clientRuntime
-    const jotaiStore = config.store ?? clientRuntime.jotaiStore
+    const jotaiStore = clientRuntime.jotaiStore
     const objectMapAtom = atom(new Map<EntityId, T>())
 
     clientRuntime.registerStoreObservability?.({
@@ -56,13 +49,12 @@ export function createStore<T extends Entity, Relations = {}>(
         debugSink: config.debugSink
     })
 
-    const handle = createStoreHandle<T>({
+    const handle = storeHandleManager.createStoreHandle<T>({
         atom: objectMapAtom,
+        jotaiStore,
         config: {
-            transformData: transformData ? (item: T) => transformData(item) ?? item : undefined,
             idGenerator: config.idGenerator,
-            store: jotaiStore,
-            schema: config.schema,
+            dataProcessor: config.dataProcessor,
             hooks: config.hooks,
             indexes: config.indexes,
             storeName: name

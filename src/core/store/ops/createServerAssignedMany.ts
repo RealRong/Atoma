@@ -1,6 +1,5 @@
 import type { CoreRuntime, Entity, StoreOperationOptions } from '../../types'
-import { dispatch } from '../internals/dispatch'
-import { ensureActionId } from '../internals/writePipeline'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createCreateServerAssignedMany<T extends Entity>(
@@ -21,7 +20,7 @@ export function createCreateServerAssignedMany<T extends Entity>(
         }
 
         const strictOptions: StoreOperationOptions = { ...(options || {}), confirmation: 'strict' }
-        const opContext = ensureActionId(strictOptions.opContext)
+        const opContext = storeWriteEngine.ensureActionId(strictOptions.opContext)
 
         const results: T[] = new Array(items.length)
         const tickets = new Array(items.length)
@@ -31,7 +30,7 @@ export function createCreateServerAssignedMany<T extends Entity>(
             tickets[idx] = ticket
 
             const resultPromise = new Promise<void>((resolve, reject) => {
-                dispatch<T>(clientRuntime, {
+                storeWriteEngine.dispatch<T>(clientRuntime, {
                     type: 'create',
                     data: item,
                     handle,

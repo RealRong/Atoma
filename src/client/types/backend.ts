@@ -34,7 +34,6 @@ export type MemoryBackendConfig = {
 
 export type IndexedDBBackendConfig = {
     tableForResource: (resource: string) => Table<any, string>
-    transformData?: (args: { resource: string; data: any }) => any | undefined
 }
 
 export type StoreCustomOpsBackendConfig = {

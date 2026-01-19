@@ -1,10 +1,24 @@
-import type { CoreStore } from '../../../core/types'
+import type { CoreStore, StoreDataProcessor } from '../../../core/types'
 import { Core } from '#core'
 import type { EntityId } from '#protocol'
 import type { AtomaSchema, ClientRuntime } from '../../types'
 
-export const createStore = (clientRuntime: ClientRuntime, options: any, defaultIdGenerator?: () => EntityId) => {
+const mergeDataProcessor = <T>(base?: StoreDataProcessor<T>, override?: StoreDataProcessor<T>): StoreDataProcessor<T> | undefined => {
+    if (!base && !override) return undefined
+    return {
+        ...(base ?? {}),
+        ...(override ?? {})
+    } as StoreDataProcessor<T>
+}
+
+export const createStore = (
+    clientRuntime: ClientRuntime,
+    options: any,
+    defaultIdGenerator?: () => EntityId,
+    defaultDataProcessor?: StoreDataProcessor<any>
+) => {
     const idGenerator = options.idGenerator ?? defaultIdGenerator
+    const dataProcessor = mergeDataProcessor(defaultDataProcessor, options.dataProcessor)
 
     const createRelationsFromSchema = (schema: any) => {
         const relations: Record<string, any> = {}
@@ -42,7 +56,7 @@ export const createStore = (clientRuntime: ClientRuntime, options: any, defaultI
         ...(options as any),
         name: options.name,
         ...(idGenerator ? { idGenerator } : {}),
-        store: clientRuntime.jotaiStore as any,
+        ...(dataProcessor ? { dataProcessor } : {}),
         relations: relationsFactory as any,
         clientRuntime
     })
@@ -53,10 +67,16 @@ export function createStoreInstance(args: {
     schema: AtomaSchema<any>
     clientRuntime: ClientRuntime
     defaultIdGenerator?: () => EntityId
+    defaultDataProcessor?: StoreDataProcessor<any>
 }): CoreStore<any, any> {
     const name = String(args.name)
     const storeSchema = (args.schema as any)?.[name] ?? {}
 
-    const created = createStore(args.clientRuntime, { ...(storeSchema as any), name }, args.defaultIdGenerator)
+    const created = createStore(
+        args.clientRuntime,
+        { ...(storeSchema as any), name },
+        args.defaultIdGenerator,
+        args.defaultDataProcessor
+    )
     return created
 }

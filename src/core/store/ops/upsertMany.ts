@@ -1,10 +1,7 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
-import { dispatch } from '../internals/dispatch'
 import { toErrorWithFallback as toError } from '#shared'
-import { runAfterSave, runBeforeSave } from '../internals/hooks'
-import { validateWithSchema } from '../internals/validation'
-import { ensureActionId, ignoreTicketRejections, prepareForAdd, prepareForUpdate, type StoreWriteConfig } from '../internals/writePipeline'
+import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpsertMany<T extends Entity>(
@@ -18,7 +15,7 @@ export function createUpsertMany<T extends Entity>(
         items: Array<PartialWithId<T>>,
         options?: StoreOperationOptions & UpsertWriteOptions
     ): Promise<WriteManyResult<T>> => {
-        const opContext = ensureActionId(options?.opContext)
+        const opContext = storeWriteEngine.ensureActionId(options?.opContext)
         const confirmation = options?.confirmation ?? 'optimistic'
         const results: WriteManyResult<T> = new Array(items.length)
 
@@ -53,10 +50,10 @@ export function createUpsertMany<T extends Entity>(
             try {
                 if (!base) {
                     action = 'add'
-                    validObj = await prepareForAdd<T>(handle, item as any)
+                    validObj = await storeWriteEngine.prepareForAdd<T>(clientRuntime, handle, item as any, opContext)
                 } else if (merge) {
                     action = 'update'
-                    validObj = await prepareForUpdate<T>(handle, base, item)
+                    validObj = await storeWriteEngine.prepareForUpdate<T>(clientRuntime, handle, base, item, opContext)
                 } else {
                     action = 'update'
                     const now = Date.now()
@@ -75,10 +72,12 @@ export function createUpsertMany<T extends Entity>(
                         candidate._etag = (base as any)._etag
                     }
 
-                    let next = await runBeforeSave(handle.hooks, candidate as any, 'update')
-                    next = handle.transform(next as any) as any
-                    next = await validateWithSchema(next as any, handle.schema as any)
-                    validObj = next as PartialWithId<T>
+                    let next = await storeWriteEngine.runBeforeSave(handle.hooks, candidate as any, 'update')
+                    const processed = await clientRuntime.dataProcessor.inbound(handle, next as any, opContext)
+                    if (!processed) {
+                        throw new Error('[Atoma] upsertMany: dataProcessor returned empty')
+                    }
+                    validObj = processed as PartialWithId<T>
                 }
             } catch (error) {
                 results[index] = { index, ok: false, error: toError(error, `Failed to prepare upsert for id ${String(id)}`) }
@@ -99,7 +98,7 @@ export function createUpsertMany<T extends Entity>(
             const { ticket } = clientRuntime.mutation.api.beginWrite()
 
             const resultPromise = new Promise<T>((resolve, reject) => {
-                dispatch<T>(clientRuntime, {
+                storeWriteEngine.dispatch<T>(clientRuntime, {
                     type: 'upsert',
                     data: validObj,
                     upsert: {
@@ -111,7 +110,7 @@ export function createUpsertMany<T extends Entity>(
                     ticket,
                     persist: writeConfig.persistMode,
                     onSuccess: async (o) => {
-                        await runAfterSave(hooks, validObj, action)
+                        await storeWriteEngine.runAfterSave(hooks, validObj, action)
                         resolve(o)
                     },
                     onFail: (error) => {
@@ -123,7 +122,7 @@ export function createUpsertMany<T extends Entity>(
             tasks.push(
                 (confirmation === 'optimistic'
                     ? (() => {
-                        ignoreTicketRejections(ticket)
+                        storeWriteEngine.ignoreTicketRejections(ticket)
                         return resultPromise
                     })()
                     : Promise.all([

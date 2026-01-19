@@ -1,40 +1,40 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { bulkAdd, bulkRemove, commitAtomMapUpdateDelta } from '../internals/atomMap'
-import { preserveReferenceShallow } from '../internals/preserveReference'
-import { resolveObservabilityContext } from '../internals/runtime'
+import { storeHandleManager } from '../internals/storeHandleManager'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import { executeQuery } from '../../ops/opsExecutor'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
-    const { jotaiStore, atom, transform } = handle
+    const { jotaiStore, atom } = handle
 
     return async (filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions) => {
         const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
-        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
 
         const { data } = await executeQuery(clientRuntime, handle, {}, observabilityContext)
-        const fetched = filter ? (data as any[]).filter(filter as any) : (data as any[])
-
-        const arr: T[] = new Array(fetched.length)
+        const fetched = Array.isArray(data) ? data : []
+        const arr: T[] = []
         const itemsToCache: Array<PartialWithId<T>> = []
         const incomingIds = new Set<EntityId>()
 
         for (let i = 0; i < fetched.length; i++) {
-            const transformed = transform(fetched[i] as T)
-            const id = (transformed as any).id as EntityId
+            const processed = await clientRuntime.dataProcessor.writeback(handle, fetched[i] as T)
+            if (!processed) continue
+            if (filter && !filter(processed)) continue
+            const id = (processed as any).id as EntityId
             incomingIds.add(id)
 
-            const shouldCache = cacheFilter ? cacheFilter(transformed) : true
+            const shouldCache = cacheFilter ? cacheFilter(processed) : true
             if (!shouldCache) {
-                arr[i] = transformed
+                arr.push(processed)
                 continue
             }
 
             const existing = existingMap.get(id)
-            const preserved = preserveReferenceShallow(existing, transformed)
+            const preserved = storeWriteEngine.preserveReferenceShallow(existing, processed)
             itemsToCache.push(preserved as any)
-            arr[i] = preserved
+            arr.push(preserved)
         }
 
         const toRemove: EntityId[] = []
@@ -42,9 +42,9 @@ export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handl
             if (!incomingIds.has(id)) toRemove.push(id)
         })
 
-        const withRemovals = bulkRemove(toRemove, existingMap)
+        const withRemovals = storeWriteEngine.bulkRemove(toRemove, existingMap)
         const next = itemsToCache.length
-            ? bulkAdd(itemsToCache as PartialWithId<T>[], withRemovals)
+            ? storeWriteEngine.bulkAdd(itemsToCache as PartialWithId<T>[], withRemovals)
             : withRemovals
 
         const changedIds = new Set<EntityId>(toRemove)
@@ -56,7 +56,7 @@ export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handl
             }
         }
 
-        commitAtomMapUpdateDelta({ handle, before: existingMap, after: next, changedIds })
+        storeWriteEngine.commitAtomMapUpdateDelta({ handle, before: existingMap, after: next, changedIds })
 
         return arr
     }

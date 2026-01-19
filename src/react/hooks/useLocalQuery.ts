@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Core } from '#core'
 import type { Entity, FindManyOptions, StoreApi } from '#core'
-import { getStoreMatcher } from '../../core/store/internals/storeAccess'
+import { storeHandleManager } from '../../core/store/internals/storeHandleManager'
 
 type UseLocalQueryOptions<T> = Pick<FindManyOptions<T>, 'where' | 'orderBy' | 'limit' | 'offset'>
 
@@ -22,7 +22,7 @@ export function useLocalQuery<T extends Entity>(
 
     // Resolve matcher from store if provided, for advanced features like fuzzy search
     const matcher = useMemo(() => {
-        return store ? getStoreMatcher(store) : undefined
+        return store ? storeHandleManager.getStoreMatcher(store) : undefined
     }, [store])
 
     return useMemo(() => {

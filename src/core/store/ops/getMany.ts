@@ -1,13 +1,12 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { bulkAdd, commitAtomMapUpdateDelta } from '../internals/atomMap'
-import { preserveReferenceShallow } from '../internals/preserveReference'
-import { resolveObservabilityContext } from '../internals/runtime'
+import { storeHandleManager } from '../internals/storeHandleManager'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import { executeQuery } from '../../ops/opsExecutor'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
-    const { jotaiStore, atom, transform } = handle
+    const { jotaiStore, atom } = handle
 
     return async (ids: EntityId[], cache = true, options?: StoreReadOptions) => {
         const beforeMap = jotaiStore.get(atom) as Map<EntityId, T>
@@ -31,7 +30,7 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
         }
 
         if (missingUnique.length) {
-            const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
+            const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
             const { data } = await executeQuery(clientRuntime, handle, { where: { id: { in: missingUnique } } } as any, observabilityContext)
 
             const before = jotaiStore.get(atom) as Map<EntityId, T>
@@ -40,11 +39,12 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
 
             for (const got of data) {
                 if (got === undefined) continue
-                const transformed = transform(got as T)
-                const id = (transformed as any).id as EntityId
+                const processed = await clientRuntime.dataProcessor.writeback(handle, got as T)
+                if (!processed) continue
+                const id = (processed as any).id as EntityId
 
                 const existing = before.get(id)
-                const preserved = preserveReferenceShallow(existing, transformed)
+                const preserved = storeWriteEngine.preserveReferenceShallow(existing, processed)
 
                 fetchedById.set(id, preserved)
                 if (cache) {
@@ -53,7 +53,7 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
             }
 
             if (cache && itemsToCache.length) {
-                const after = bulkAdd(itemsToCache as PartialWithId<T>[], before)
+                const after = storeWriteEngine.bulkAdd(itemsToCache as PartialWithId<T>[], before)
                 if (after !== before) {
                     const changedIds = new Set<EntityId>()
                     for (const item of itemsToCache) {
@@ -62,7 +62,7 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
                             changedIds.add(id)
                         }
                     }
-                    commitAtomMapUpdateDelta({ handle, before, after, changedIds })
+                    storeWriteEngine.commitAtomMapUpdateDelta({ handle, before, after, changedIds })
                 }
             }
 

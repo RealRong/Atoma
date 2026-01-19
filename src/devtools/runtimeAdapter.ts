@@ -2,7 +2,7 @@ import type { ClientRuntime } from '../client/types'
 import type { EntityId } from '#protocol'
 import type { DevtoolsEvent, SyncProvider, HistoryProvider } from './types'
 import type { ClientEntry } from './registry'
-import { getStoreIndexes, getStoreName, getStoreSnapshot } from '../core/store/internals/storeAccess'
+import { storeHandleManager } from '../core/store/internals/storeHandleManager'
 
 function emit(entry: ClientEntry, e: DevtoolsEvent): void {
     if (!entry.subscribers.size) return
@@ -22,11 +22,11 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
 
     entry.stopStoreListener?.()
     entry.stopStoreListener = runtime.onStoreCreated((store) => {
-        const name = getStoreName(store, 'devtools')
+        const name = storeHandleManager.getStoreName(store, 'devtools')
 
         if (!entry.storeProviders.has(name)) {
             const snapshot = () => {
-                const map = getStoreSnapshot(store, 'devtools') as Map<EntityId, any>
+                const map = storeHandleManager.getStoreSnapshot(store, 'devtools') as Map<EntityId, any>
                 const sample = Array.from(map.values()).slice(0, 5)
                 const approxSize = (() => {
                     try {
@@ -51,7 +51,7 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
             emit(entry, { type: 'store:registered', payload: { clientId: entry.id, name } })
         }
 
-        const indexesRef = getStoreIndexes(store, 'devtools')
+        const indexesRef = storeHandleManager.getStoreIndexes(store, 'devtools')
         if (indexesRef && !entry.indexProviders.has(name)) {
             const snapshot = () => {
                 const indexes = indexesRef.getIndexSnapshots().map(s => ({

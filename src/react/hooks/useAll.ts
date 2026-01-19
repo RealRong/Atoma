@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { Entity, StoreApi, WithRelations, RelationIncludeInput } from '#core'
-import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
+import { storeHandleManager } from '../../core/store/internals/storeHandleManager'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
 
@@ -17,10 +17,10 @@ export function useAll<T extends Entity, Relations = {}, const Include extends R
     const all = useStoreSnapshot(store, 'useAll')
     const memoedArr = useMemo(() => Array.from(all.values()), [all])
 
-    const relations = getStoreRelations(store, 'useAll')
+    const relations = storeHandleManager.getStoreRelations(store, 'useAll')
     if (!options?.include || !relations) return memoedArr as Result
 
-    const runtime = getStoreRuntime(store)
+    const runtime = storeHandleManager.getStoreRuntime(store)
     const resolveStore = runtime?.resolveStore
     const relationsResult = useRelations<T, Relations, Include>(memoedArr, options.include, relations as Relations, resolveStore)
     return relationsResult.data as unknown as Result

@@ -123,6 +123,7 @@ export function createClient<
 
     return buildAtomaClient<E, S>({
         schema: (options.schema ?? ({} as S)) as S,
+        ...(options.dataProcessor ? { dataProcessor: options.dataProcessor } : {}),
         storeBackendState,
         ...(typeof options.storeBatch !== 'undefined' ? { storeBatch: options.storeBatch } : {}),
         ...(syncEndpoint ? { syncEndpoint } : {}),

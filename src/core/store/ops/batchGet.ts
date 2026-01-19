@@ -1,7 +1,7 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { bulkAdd, commitAtomMapUpdateDelta } from '../internals/atomMap'
-import { resolveObservabilityContext } from '../internals/runtime'
+import { storeHandleManager } from '../internals/storeHandleManager'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { ObservabilityContext } from '#observability'
 import { executeQuery } from '../../ops/opsExecutor'
 import type { StoreHandle } from '../internals/handleTypes'
@@ -67,7 +67,7 @@ const dedupeTaskIds = <T>(tasks: GetOneTask<T>[]): EntityId[] => {
 }
 
 export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
-    const { jotaiStore, atom, transform } = handle
+    const { jotaiStore, atom } = handle
 
     let batchGetOneTaskQueue: GetOneTask<T>[] = []
     let batchFetchOneTaskQueue: GetOneTask<T>[] = []
@@ -91,15 +91,16 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
 
                 for (const got of data) {
                     if (got === undefined) continue
-                    const item = transform(got as T)
-                    const id = (item as any).id as EntityId
-                    idToItem.set(id, item)
-                    itemsToCache.push(item)
+                    const processed = await clientRuntime.dataProcessor.writeback(handle, got as T)
+                    if (!processed) continue
+                    const id = (processed as any).id as EntityId
+                    idToItem.set(id, processed)
+                    itemsToCache.push(processed)
                 }
 
                 const before = jotaiStore.get(atom)
                 const after = itemsToCache.length
-                    ? bulkAdd(itemsToCache as PartialWithId<T>[], before)
+                    ? storeWriteEngine.bulkAdd(itemsToCache as PartialWithId<T>[], before)
                     : before
 
                 if (before !== after && itemsToCache.length) {
@@ -108,7 +109,7 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
                         const id = (item as any).id as EntityId
                         if (before.get(id) !== item) changedIds.add(id)
                     }
-                    commitAtomMapUpdateDelta({ handle, before, after, changedIds })
+                    storeWriteEngine.commitAtomMapUpdateDelta({ handle, before, after, changedIds })
                 }
 
                 const currentMap = after
@@ -146,9 +147,10 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
                 const idToItem = new Map<EntityId, T>()
                 for (const got of data) {
                     if (got === undefined) continue
-                    const item = transform(got as T)
-                    const id = (item as any).id as EntityId
-                    idToItem.set(id, item)
+                    const processed = await clientRuntime.dataProcessor.writeback(handle, got as T)
+                    if (!processed) continue
+                    const id = (processed as any).id as EntityId
+                    idToItem.set(id, processed)
                 }
 
                 for (const task of group.tasks) {
@@ -176,7 +178,7 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
         reject: (error: unknown) => void,
         options?: StoreReadOptions
     ) => {
-        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
         if (batchGetOneTaskQueue.length) {
             batchGetOneTaskQueue.push({ resolve, reject, id, observabilityContext })
         } else {
@@ -193,7 +195,7 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
         reject: (error: unknown) => void,
         options?: StoreReadOptions
     ) => {
-        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
         if (batchFetchOneTaskQueue.length) {
             batchFetchOneTaskQueue.push({ resolve, reject, id, observabilityContext })
         } else {

@@ -236,13 +236,8 @@ function deriveOptimisticState<T extends Entity>(args: {
                     break
                 }
 
-                const merge = event.upsert?.merge !== false
-                const candidate: DraftEntityObject = merge
-                    ? Object.assign({}, origin as unknown as DraftEntityObject, event.data as unknown as DraftEntityObject, { updatedAt: now })
-                    : Object.assign({}, event.data as unknown as DraftEntityObject, { updatedAt: now })
-
                 const originObj = origin as unknown as WritableDraft<DraftEntityObject>
-                syncObjectIntoDraft(originObj, candidate)
+                syncObjectIntoDraft(originObj, event.data as unknown as DraftEntityObject)
                 originObj.id = id
                 break
             }
@@ -254,14 +249,8 @@ function deriveOptimisticState<T extends Entity>(args: {
                 const origin = draft.get(event.data.id)
                 if (!origin) break
 
-                const candidate = Object.assign({}, origin, event.data, { updatedAt: now })
-                const next = event.transformData
-                    ? event.transformData(candidate as T)
-                    : candidate
-                if (!next) break
-
                 const originObj = origin as unknown as WritableDraft<DraftEntityObject>
-                syncObjectIntoDraft(originObj, next as unknown as DraftEntityObject)
+                syncObjectIntoDraft(originObj, event.data as unknown as DraftEntityObject)
                 originObj.id = event.data.id
                 break
             }

@@ -6,7 +6,7 @@
 import type { ObservabilityContext } from '#observability'
 import type { CoreRuntime, Entity, StoreDispatchEvent } from '../../types'
 import type { EntityId } from '#protocol'
-import { preserveReferenceShallow } from '../../store/internals/preserveReference'
+import { storeWriteEngine } from '../../store/internals/storeWriteEngine'
 import { buildMutationProgram } from './MutationProgram'
 import { executeMutationPersistence } from './Persist'
 import type { MutationCommitInfo, MutationSegment, PersistResult } from './types'
@@ -215,7 +215,7 @@ function applyCreatedWriteback<T extends Entity>(args: {
 
         const currentMap = next ?? args.current
         const existing = currentMap.get(serverId)
-        const value = preserveReferenceShallow(existing, serverItem)
+        const value = storeWriteEngine.preserveReferenceShallow(existing, serverItem)
         if (!currentMap.has(serverId) || existing !== value) {
             if (!next) next = new Map(args.current)
             next.set(serverId, value)
@@ -248,7 +248,7 @@ function applyVersionWriteback<T extends Entity>(args: {
         if (curVersioned.version === version) continue
         if (!next) next = new Map(args.current)
         const merged = { ...curVersioned, version }
-        next.set(key, preserveReferenceShallow(curVersioned, merged))
+        next.set(key, storeWriteEngine.preserveReferenceShallow(curVersioned, merged))
         changedIds.add(key)
     }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Entity, FindManyOptions, PageInfo, StoreApi } from '#core'
-import { getStoreName, getStoreRuntime, hydrateStore } from '../../core/store/internals/storeAccess'
+import { storeHandleManager } from '../../core/store/internals/storeHandleManager'
 
 type RemoteState<T extends Entity> = Readonly<{
     isFetching: boolean
@@ -72,8 +72,8 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
     enabled?: boolean
 }): UseRemoteFindManyResult<T> {
     const enabled = args.enabled !== false
-    const storeName = getStoreName(args.store, 'useRemoteFindMany')
-    const runtime = getStoreRuntime(args.store)
+    const storeName = storeHandleManager.getStoreName(args.store, 'useRemoteFindMany')
+    const runtime = storeHandleManager.getStoreRuntime(args.store)
 
     const key = useMemo(() => {
         const optionsKey = Core.query.stableStringify(stripRuntimeOptions(args.options))
@@ -115,10 +115,10 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
         }
 
         const p = args.store.findMany(effectiveOptions)
-            .then((res: any) => {
+            .then(async (res: any) => {
                 const { data, pageInfo } = normalizeResult<T>(res)
                 if (!transient) {
-                    hydrateStore(args.store, data, 'useRemoteFindMany')
+                    await storeHandleManager.hydrateStore(args.store, data, 'useRemoteFindMany')
                 }
                 publish(entry, {
                     isFetching: false,

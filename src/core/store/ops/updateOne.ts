@@ -2,11 +2,8 @@ import { produce } from 'immer'
 import type { Draft } from 'immer'
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { dispatch } from '../internals/dispatch'
-import { runAfterSave } from '../internals/hooks'
-import { resolveObservabilityContext } from '../internals/runtime'
-import { validateWithSchema } from '../internals/validation'
-import { ignoreTicketRejections, prepareForUpdate, type StoreWriteConfig } from '../internals/writePipeline'
+import { storeHandleManager } from '../internals/storeHandleManager'
+import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
 import { executeQuery } from '../../ops/opsExecutor'
 import type { StoreHandle } from '../internals/handleTypes'
 
@@ -15,9 +12,9 @@ export function createUpdateOne<T extends Entity>(
     handle: StoreHandle<T>,
     writeConfig: StoreWriteConfig
 ) {
-    const { jotaiStore, atom, hooks, schema, transform } = handle
+    const { jotaiStore, atom, hooks } = handle
     return async (id: EntityId, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
-        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
 
         const resolveBase = async (): Promise<{ base: PartialWithId<T>; hydrate?: PartialWithId<T> }> => {
             const cached = jotaiStore.get(atom).get(id) as T | undefined
@@ -36,11 +33,13 @@ export function createUpdateOne<T extends Entity>(
                 throw new Error(`Item with id ${id} not found`)
             }
 
-            const transformed = transform(fetched)
-            const validFetched = await validateWithSchema(transformed, schema)
+            const processed = await clientRuntime.dataProcessor.writeback(handle, fetched, options?.opContext)
+            if (!processed) {
+                throw new Error(`Item with id ${id} not found`)
+            }
             return {
-                base: validFetched as unknown as PartialWithId<T>,
-                hydrate: validFetched as unknown as PartialWithId<T>
+                base: processed as unknown as PartialWithId<T>,
+                hydrate: processed as unknown as PartialWithId<T>
             }
         }
 
@@ -48,13 +47,13 @@ export function createUpdateOne<T extends Entity>(
 
         const next = produce(base as any, (draft: Draft<T>) => recipe(draft)) as any
         const patched = { ...(next as any), id } as PartialWithId<T>
-        const validObj = await prepareForUpdate<T>(handle, base, patched)
+        const validObj = await storeWriteEngine.prepareForUpdate<T>(clientRuntime, handle, base, patched, options?.opContext)
 
         const { ticket } = clientRuntime.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
             if (hydrate) {
-                dispatch<T>(clientRuntime, {
+                storeWriteEngine.dispatch<T>(clientRuntime, {
                     type: 'hydrate',
                     handle,
                     data: hydrate,
@@ -63,7 +62,7 @@ export function createUpdateOne<T extends Entity>(
                 })
             }
 
-            dispatch<T>(clientRuntime, {
+            storeWriteEngine.dispatch<T>(clientRuntime, {
                 type: 'update',
                 handle,
                 data: validObj,
@@ -71,7 +70,7 @@ export function createUpdateOne<T extends Entity>(
                 ticket,
                 persist: writeConfig.persistMode,
                 onSuccess: async updated => {
-                    await runAfterSave(hooks, validObj, 'update')
+                    await storeWriteEngine.runAfterSave(hooks, validObj, 'update')
                     resolve(updated)
                 },
                 onFail: (error) => {
@@ -82,7 +81,7 @@ export function createUpdateOne<T extends Entity>(
 
         const confirmation = options?.confirmation ?? 'optimistic'
         if (confirmation === 'optimistic') {
-            ignoreTicketRejections(ticket)
+            storeWriteEngine.ignoreTicketRejections(ticket)
             return resultPromise
         }
 

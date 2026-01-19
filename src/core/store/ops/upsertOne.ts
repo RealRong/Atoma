@@ -1,8 +1,5 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, UpsertWriteOptions } from '../../types'
-import { dispatch } from '../internals/dispatch'
-import { runAfterSave, runBeforeSave } from '../internals/hooks'
-import { validateWithSchema } from '../internals/validation'
-import { ignoreTicketRejections, prepareForAdd, prepareForUpdate, type StoreWriteConfig } from '../internals/writePipeline'
+import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpsertOne<T extends Entity>(
@@ -22,11 +19,11 @@ export function createUpsertOne<T extends Entity>(
 
         const validObj = await (async () => {
             if (!base) {
-                return await prepareForAdd<T>(handle, item as any)
+                return await storeWriteEngine.prepareForAdd<T>(clientRuntime, handle, item as any, options?.opContext)
             }
 
             if (merge) {
-                return await prepareForUpdate<T>(handle, base, item)
+                return await storeWriteEngine.prepareForUpdate<T>(clientRuntime, handle, base, item, options?.opContext)
             }
 
             const now = Date.now()
@@ -45,16 +42,18 @@ export function createUpsertOne<T extends Entity>(
                 candidate._etag = (base as any)._etag
             }
 
-            let next = await runBeforeSave(handle.hooks, candidate as any, 'update')
-            next = handle.transform(next as any) as any
-            next = await validateWithSchema(next as any, handle.schema as any)
-            return next as PartialWithId<T>
+            let next = await storeWriteEngine.runBeforeSave(handle.hooks, candidate as any, 'update')
+            const processed = await clientRuntime.dataProcessor.inbound(handle, next as any, options?.opContext)
+            if (!processed) {
+                throw new Error('[Atoma] upsertOne: dataProcessor returned empty')
+            }
+            return processed as PartialWithId<T>
         })()
 
         const { ticket } = clientRuntime.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
-            dispatch<T>(clientRuntime, {
+            storeWriteEngine.dispatch<T>(clientRuntime, {
                 type: 'upsert',
                 data: validObj,
                 upsert: {
@@ -66,7 +65,7 @@ export function createUpsertOne<T extends Entity>(
                 ticket,
                 persist: writeConfig.persistMode,
                 onSuccess: async (o) => {
-                    await runAfterSave(hooks, validObj, base ? 'update' : 'add')
+                    await storeWriteEngine.runAfterSave(hooks, validObj, base ? 'update' : 'add')
                     resolve(o)
                 },
                 onFail: (error) => {
@@ -77,7 +76,7 @@ export function createUpsertOne<T extends Entity>(
 
         const confirmation = options?.confirmation ?? 'optimistic'
         if (confirmation === 'optimistic') {
-            ignoreTicketRejections(ticket)
+            storeWriteEngine.ignoreTicketRejections(ticket)
             return resultPromise
         }
 

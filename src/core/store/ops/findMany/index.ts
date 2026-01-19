@@ -1,27 +1,26 @@
 import { Observability } from '#observability'
 import type { Explain } from '#observability'
-import type { CoreRuntime, Entity, FindManyOptions, FindManyResult, PartialWithId } from '../../../types'
+import type { CoreRuntime, Entity, FindManyOptions, FindManyResult } from '../../../types'
 import type { EntityId } from '#protocol'
-import { bulkAdd, bulkRemove, commitAtomMapUpdateDelta } from '../../internals/atomMap'
 import { toErrorWithFallback as toError } from '#shared'
-import { preserveReferenceShallow } from '../../internals/preserveReference'
+import { storeWriteEngine } from '../../internals/storeWriteEngine'
 import { resolveCachePolicy } from './cachePolicy'
 import { evaluateWithIndexes } from './localEvaluate'
 import { summarizeFindManyParams } from './paramsSummary'
 import { applyQuery } from '../../../query'
-import { resolveObservabilityContext } from '../../internals/runtime'
+import { storeHandleManager } from '../../internals/storeHandleManager'
 import type { StoreHandle } from '../../internals/handleTypes'
 import { executeQuery } from '../../../ops/opsExecutor'
 import { normalizeAtomaServerQueryParams } from '../../internals/queryParams'
 
 export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
-    const { jotaiStore, atom, indexes, matcher, transform } = handle
+    const { jotaiStore, atom, indexes, matcher } = handle
 
     return async (options?: FindManyOptions<T>): Promise<FindManyResult<T>> => {
         const explainEnabled = options?.explain === true
         const cachePolicy = resolveCachePolicy(options)
 
-        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
 
         const optionsForRemote = options
             ? ({ ...options, explain: undefined } as any as FindManyOptions<T>)
@@ -79,9 +78,12 @@ export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, han
             const durationMs = Date.now() - startedAt
 
             const fetched = Array.isArray(data) ? data : []
-            const remote: T[] = new Array(fetched.length)
+            const remote: T[] = []
             for (let i = 0; i < fetched.length; i++) {
-                remote[i] = transform(fetched[i] as T)
+                const processed = await clientRuntime.dataProcessor.writeback(handle, fetched[i] as T)
+                if (processed !== undefined) {
+                    remote.push(processed)
+                }
             }
 
             if (cachePolicy.effectiveSkipStore) {
@@ -113,7 +115,7 @@ export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, han
                 const item = remote[i] as T
                 const id = (item as any).id as EntityId
                 const existing = existingMap.get(id)
-                const preserved = preserveReferenceShallow(existing, item)
+                const preserved = storeWriteEngine.preserveReferenceShallow(existing, item)
                 processed[i] = preserved
                 if (existing === preserved) continue
                 changedIds.add(id)
@@ -122,7 +124,7 @@ export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, han
             }
 
             if (next && changedIds.size) {
-                commitAtomMapUpdateDelta({
+                storeWriteEngine.commitAtomMapUpdateDelta({
                     handle,
                     before: existingMap,
                     after: next,

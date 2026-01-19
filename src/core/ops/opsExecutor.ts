@@ -62,12 +62,22 @@ export async function executeWrite<T extends Entity>(clientRuntime: CoreRuntime,
     options?: WriteOptions
     context?: ObservabilityContext
 }): Promise<WriteResultData> {
+    const processedItems = await Promise.all(args.items.map(async (item) => {
+        if (!item || typeof item !== 'object' || !('value' in item)) return item
+        const value = (item as any).value
+        if (value === undefined) return item
+        const processed = await clientRuntime.dataProcessor.outbound(handle, value as T)
+        if (processed === undefined) {
+            throw new Error('[Atoma] dataProcessor returned empty for outbound write')
+        }
+        return { ...(item as any), value: processed } as WriteItem
+    }))
     const op: Operation = Protocol.ops.build.buildWriteOp({
         opId: handle.nextOpId('w'),
         write: {
             resource: handle.storeName,
             action: args.action,
-            items: args.items,
+            items: processedItems,
             ...(args.options ? { options: args.options } : {})
         }
     })

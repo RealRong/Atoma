@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { Entity, WithRelations, RelationIncludeInput, StoreApi } from '#core'
-import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
+import { storeHandleManager } from '../../core/store/internals/storeHandleManager'
 import { useStoreSelector } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
 
@@ -28,10 +28,10 @@ export function useOne<T extends Entity, Relations = {}, const Include extends R
         store.getOne(id)
     }, [id, base, store])
 
-    const relations = getStoreRelations(store, 'useOne')
+    const relations = storeHandleManager.getStoreRelations(store, 'useOne')
     if (!options?.include || !relations) return base as Result
 
-    const runtime = getStoreRuntime(store)
+    const runtime = storeHandleManager.getStoreRuntime(store)
     const resolveStore = runtime?.resolveStore
     const rel = useRelations<T, Relations, Include>(base ? [base] : [], options.include, relations as Relations, resolveStore)
     return rel.data[0] as unknown as Result

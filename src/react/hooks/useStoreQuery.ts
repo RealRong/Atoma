@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Core } from '#core'
 import type { Entity, FindManyOptions, StoreApi } from '#core'
-import { getStoreIndexes, getStoreMatcher } from '../../core/store/internals/storeAccess'
+import { storeHandleManager } from '../../core/store/internals/storeHandleManager'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 
 type UseStoreQuerySelect = 'entities' | 'ids'
@@ -20,8 +20,8 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
     options?: UseStoreQueryOptions<T>
 ): StoreQueryResult<T> {
     const map = useStoreSnapshot(store, 'useStoreQuery')
-    const indexes = getStoreIndexes(store, 'useStoreQuery')
-    const matcher = getStoreMatcher(store, 'useStoreQuery')
+    const indexes = storeHandleManager.getStoreIndexes(store, 'useStoreQuery')
+    const matcher = storeHandleManager.getStoreMatcher(store, 'useStoreQuery')
     const queryKey = useMemo(() => Core.query.stableStringify(options), [options])
 
     return useMemo(() => {

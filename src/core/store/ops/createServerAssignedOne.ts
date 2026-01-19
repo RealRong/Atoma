@@ -1,5 +1,5 @@
 import type { CoreRuntime, Entity, StoreOperationOptions } from '../../types'
-import { dispatch } from '../internals/dispatch'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createCreateServerAssignedOne<T extends Entity>(
@@ -21,7 +21,7 @@ export function createCreateServerAssignedOne<T extends Entity>(
         const { ticket } = clientRuntime.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
-            dispatch<T>(clientRuntime, {
+            storeWriteEngine.dispatch<T>(clientRuntime, {
                 type: 'create',
                 data: item,
                 handle,

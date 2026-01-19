@@ -2,12 +2,9 @@ import { produce } from 'immer'
 import type { Draft } from 'immer'
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
-import { dispatch } from '../internals/dispatch'
 import { toErrorWithFallback as toError } from '#shared'
-import { runAfterSave } from '../internals/hooks'
-import { resolveObservabilityContext } from '../internals/runtime'
-import { validateWithSchema } from '../internals/validation'
-import { ensureActionId, ignoreTicketRejections, prepareForUpdate, type StoreWriteConfig } from '../internals/writePipeline'
+import { storeHandleManager } from '../internals/storeHandleManager'
+import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
 import { executeQuery } from '../../ops/opsExecutor'
 import type { StoreHandle } from '../internals/handleTypes'
 
@@ -16,15 +13,15 @@ export function createUpdateMany<T extends Entity>(
     handle: StoreHandle<T>,
     writeConfig: StoreWriteConfig
 ) {
-    const { jotaiStore, atom, hooks, schema, transform } = handle
+    const { jotaiStore, atom, hooks } = handle
 
     return async (
         items: Array<{ id: EntityId; recipe: (draft: Draft<T>) => void }>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>> => {
-        const opContext = ensureActionId(options?.opContext)
+        const opContext = storeWriteEngine.ensureActionId(options?.opContext)
         const confirmation = options?.confirmation ?? 'optimistic'
-        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
 
         const results: WriteManyResult<T> = new Array(items.length)
 
@@ -73,15 +70,15 @@ export function createUpdateMany<T extends Entity>(
 
                 for (const fetched of data) {
                     if (!fetched) continue
-                    const transformed = transform(fetched as T)
-                    const validFetched = await validateWithSchema(transformed, schema)
-                    const id = (validFetched as any).id as EntityId
-                    baseById.set(id, validFetched as any)
-                    toHydrate.push(validFetched as any)
+                    const processed = await clientRuntime.dataProcessor.writeback(handle, fetched as T, opContext)
+                    if (!processed) continue
+                    const id = (processed as any).id as EntityId
+                    baseById.set(id, processed as any)
+                    toHydrate.push(processed as any)
                 }
 
                 if (toHydrate.length) {
-                    dispatch<T>(clientRuntime, {
+                    storeWriteEngine.dispatch<T>(clientRuntime, {
                         type: 'hydrateMany',
                         handle,
                         items: toHydrate,
@@ -113,7 +110,7 @@ export function createUpdateMany<T extends Entity>(
             try {
                 const next = produce(base as any, (draft: Draft<T>) => item.recipe(draft)) as any
                 const patched = { ...(next as any), id } as PartialWithId<T>
-                validObj = await prepareForUpdate<T>(handle, base, patched)
+                validObj = await storeWriteEngine.prepareForUpdate<T>(clientRuntime, handle, base, patched, opContext)
             } catch (error) {
                 results[index] = { index, ok: false, error: toError(error, `Failed to prepare update for id ${String(id)}`) }
                 continue
@@ -132,7 +129,7 @@ export function createUpdateMany<T extends Entity>(
             const { ticket } = clientRuntime.mutation.api.beginWrite()
 
             const resultPromise = new Promise<T>((resolve, reject) => {
-                dispatch<T>(clientRuntime, {
+                storeWriteEngine.dispatch<T>(clientRuntime, {
                     type: 'update',
                     handle,
                     data: validObj,
@@ -140,7 +137,7 @@ export function createUpdateMany<T extends Entity>(
                     ticket,
                     persist: writeConfig.persistMode,
                     onSuccess: async (updated) => {
-                        await runAfterSave(hooks, validObj, 'update')
+                        await storeWriteEngine.runAfterSave(hooks, validObj, 'update')
                         resolve(updated)
                     },
                     onFail: (error) => {
@@ -152,7 +149,7 @@ export function createUpdateMany<T extends Entity>(
             tasks.push(
                 (confirmation === 'optimistic'
                     ? (() => {
-                        ignoreTicketRejections(ticket)
+                        storeWriteEngine.ignoreTicketRejections(ticket)
                         return resultPromise
                     })()
                     : Promise.all([

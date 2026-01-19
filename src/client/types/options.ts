@@ -1,4 +1,4 @@
-import type { Entity } from '#core'
+import type { Entity, StoreDataProcessor } from '#core'
 import type { Table } from 'dexie'
 import type { AtomaSchema } from './schema'
 import type { BackendEndpointConfig, HttpBackendConfig, StoreBackendEndpointConfig } from './backend'
@@ -239,6 +239,8 @@ export type CreateClientOptions<
 > = {
     /** Domain schema (indexes/relations/validators/etc). */
     schema?: Schema
+    /** Global dataProcessor applied to all stores (per-store config overrides). */
+    dataProcessor?: StoreDataProcessor<any>
     /**
      * Shared HTTP defaults applied to both Store and Sync lanes.
      * Use `store.http` / `sync.http` to override per lane.

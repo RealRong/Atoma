@@ -1,8 +1,8 @@
 import type { CoreStore } from '../createStore'
 import type { CoreRuntime, Entity, RelationConfig, StoreOperationOptions } from '../types'
 import type { EntityId } from '#protocol'
-import { attachStoreHandle, attachStoreRuntime } from './internals/handleRegistry'
-import type { StoreWriteConfig } from './internals/writePipeline'
+import { storeHandleManager } from './internals/storeHandleManager'
+import type { StoreWriteConfig } from './internals/storeWriteEngine'
 import type { StoreHandle } from './internals/handleTypes'
 import {
     createAddMany,
@@ -115,7 +115,7 @@ export function createStoreView<T extends Entity, Relations = {}>(
         return store as unknown as CoreStore<T, NewRelations>
     }
 
-    attachStoreHandle(store as any, handle)
-    attachStoreRuntime(store as any, clientRuntime)
+    storeHandleManager.attachStoreHandle(store as any, handle)
+    storeHandleManager.attachStoreRuntime(store as any, clientRuntime)
     return store as CoreStore<T, Relations>
 }

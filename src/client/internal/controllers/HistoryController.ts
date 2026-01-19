@@ -3,24 +3,56 @@ import type { Patch } from 'immer'
 import type { AtomaHistory } from '../../types'
 import type { ClientRuntimeInternal } from '../types'
 
-export function createHistoryController(args: {
-    runtime: ClientRuntimeInternal
-}): Readonly<{
-    history: AtomaHistory
-    dispose: () => void
-    devtools: Readonly<{
+export class HistoryController {
+    readonly history: AtomaHistory
+    readonly devtools: Readonly<{
         snapshot: () => { scopes: Array<{ scope: string; canUndo: boolean; canRedo: boolean }> }
     }>
-}> {
-    const historyManager = args.runtime.mutation.history
+    readonly dispose: () => void
 
-    const dispatchPatches = (
+    private readonly runtime: ClientRuntimeInternal
+    private readonly historyManager: ClientRuntimeInternal['mutation']['history']
+
+    constructor(args: { runtime: ClientRuntimeInternal }) {
+        this.runtime = args.runtime
+        this.historyManager = this.runtime.mutation.history
+
+        this.history = {
+            canUndo: (scope?: string) => this.historyManager.canUndo(this.scopeKey(scope)),
+            canRedo: (scope?: string) => this.historyManager.canRedo(this.scopeKey(scope)),
+            clear: (scope?: string) => this.historyManager.clear(this.scopeKey(scope)),
+            undo: (undoArgs?: { scope?: string }) => {
+                return this.historyManager.undo({
+                    scope: this.scopeKey(undoArgs?.scope),
+                    apply: this.apply
+                })
+            },
+            redo: (redoArgs?: { scope?: string }) => {
+                return this.historyManager.redo({
+                    scope: this.scopeKey(redoArgs?.scope),
+                    apply: this.apply
+                })
+            }
+        }
+
+        this.devtools = {
+            snapshot: this.snapshotDevtools
+        } as const
+
+        this.dispose = () => {
+            // history 由 mutation pipeline 内置维护，无需 dispose
+        }
+    }
+
+    private scopeKey = (scope?: string) => String(scope || 'default')
+
+    private dispatchPatches = (
         storeName: string,
         patches: Patch[],
         inversePatches: Patch[],
         opContext: OperationContext
     ): Promise<void> => {
-        return args.runtime.internal.dispatchPatches({
+        return this.runtime.internal.dispatchPatches({
             storeName,
             patches,
             inversePatches,
@@ -28,48 +60,18 @@ export function createHistoryController(args: {
         })
     }
 
-    const scopeKey = (scope?: string) => String(scope || 'default')
-
-    const apply = (applyArgs: { storeName: string; patches: Patch[]; inversePatches: Patch[]; opContext: OperationContext }) => {
-        return dispatchPatches(applyArgs.storeName, applyArgs.patches, applyArgs.inversePatches, applyArgs.opContext)
+    private apply = (applyArgs: { storeName: string; patches: Patch[]; inversePatches: Patch[]; opContext: OperationContext }) => {
+        return this.dispatchPatches(applyArgs.storeName, applyArgs.patches, applyArgs.inversePatches, applyArgs.opContext)
     }
 
-    const history: AtomaHistory = {
-        canUndo: (scope?: string) => historyManager.canUndo(scopeKey(scope)),
-        canRedo: (scope?: string) => historyManager.canRedo(scopeKey(scope)),
-        clear: (scope?: string) => historyManager.clear(scopeKey(scope)),
-        undo: (undoArgs?: { scope?: string }) => {
-            return historyManager.undo({
-                scope: scopeKey(undoArgs?.scope),
-                apply
-            })
-        },
-        redo: (redoArgs?: { scope?: string }) => {
-            return historyManager.redo({
-                scope: scopeKey(redoArgs?.scope),
-                apply
-            })
-        }
-    }
-
-    const devtools = {
-        snapshot: () => {
-            const scopes = historyManager.listScopes()
-                .map(scope => ({
-                    scope,
-                    canUndo: historyManager.canUndo(scope),
-                    canRedo: historyManager.canRedo(scope)
-                }))
-                .sort((a, b) => a.scope.localeCompare(b.scope))
-            return { scopes }
-        }
-    } as const
-
-    return {
-        history,
-        devtools,
-        dispose: () => {
-            // history 由 mutation pipeline 内置维护，无需 dispose
-        }
+    private snapshotDevtools = () => {
+        const scopes = this.historyManager.listScopes()
+            .map(scope => ({
+                scope,
+                canUndo: this.historyManager.canUndo(scope),
+                canRedo: this.historyManager.canRedo(scope)
+            }))
+            .sort((a, b) => a.scope.localeCompare(b.scope))
+        return { scopes }
     }
 }

@@ -1,59 +1,123 @@
-import type { CoreStore, JotaiStore, OpsClientLike, OutboxEnqueuer, OutboxQueueMode, OutboxRuntime } from '#core'
-import { applyStoreWriteback, Core, MutationPipeline } from '#core'
+import type { CoreStore, JotaiStore, OpsClientLike, OutboxEnqueuer, OutboxQueueMode, OutboxRuntime, StoreDataProcessor } from '#core'
+import { Core, MutationPipeline } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import type { EntityId } from '#protocol'
 import { Observability } from '#observability'
 import type { DebugConfig, DebugEvent } from '#observability'
-import { executeMutationFlow } from '../../../core/mutation/pipeline/MutationFlow'
 import { createStoreInstance } from './createStore'
 import type { AtomaSchema } from '../../types'
 import type { SyncStore } from '#core'
-import { getStoreSnapshot, requireStoreHandle } from '../../../core/store/internals/storeAccess'
+import { storeHandleManager } from '../../../core/store/internals/storeHandleManager'
+import { RuntimeStoreWriteEngine } from '../../../core/store/internals/storeWriteEngine'
 import type { ClientRuntimeInternal } from '../types'
+import { DataProcessor } from '../../../core/store/internals/dataProcessor'
 
-export function createClientRuntime(args: {
-    schema: AtomaSchema<any>
-    opsClient: OpsClientLike
-    defaults?: {
-        idGenerator?: () => EntityId
-    }
-    syncStore?: {
-        queue?: 'queue' | 'local-first'
-    }
-}): ClientRuntimeInternal {
-    let runtimeRef: ClientRuntimeInternal | null = null
+type StoreListener = (store: CoreStore<any, any>) => void
+const toStoreKey = (name: unknown) => String(name)
+const toStoreScope = (name?: string) => String(name || 'store')
 
-    const mutation = new MutationPipeline({
-        execute: async (segment) => {
-            if (!runtimeRef) {
-                throw new Error('[Atoma] runtime not initialized')
-            }
-            return await executeMutationFlow(runtimeRef, segment)
+class ObservabilityRegistry {
+    private observabilityConfigByStore = new Map<string, { debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }>()
+    private observabilityByStore = new Map<string, ReturnType<typeof Observability.runtime.create>>()
+
+    registerStoreObservability = (config: { storeName: string; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => {
+        const key = toStoreScope(config.storeName)
+        this.observabilityConfigByStore.set(key, { debug: config.debug, debugSink: config.debugSink })
+    }
+
+    createObservabilityContext = (storeName: string, ctxArgs?: { traceId?: string; explain?: boolean }) => {
+        return this.getObservabilityRuntime(storeName).createContext(ctxArgs)
+    }
+
+    private getObservabilityRuntime = (storeName: string) => {
+        const key = toStoreScope(storeName)
+        const existing = this.observabilityByStore.get(key)
+        if (existing) return existing
+
+        const config = this.observabilityConfigByStore.get(key)
+        const runtime = Observability.runtime.create({
+            scope: key,
+            debug: config?.debug,
+            onEvent: config?.debugSink
+        })
+        this.observabilityByStore.set(key, runtime)
+        return runtime
+    }
+}
+
+class OutboxRuntimeManager {
+    private outboxRuntime: OutboxRuntime | undefined
+
+    install = (args: { queueMode: OutboxQueueMode; ensureEnqueuer: () => OutboxEnqueuer }) => {
+        this.outboxRuntime = {
+            queueMode: args.queueMode,
+            ensureEnqueuer: args.ensureEnqueuer
         }
-    })
-
-    const storeCache = new Map<string, CoreStore<any, any>>()
-    const syncStoreCache = new Map<string, SyncStore<any, any>>()
-    const jotaiStore: JotaiStore = createJotaiStore()
-
-    const createdStores: CoreStore<any, any>[] = []
-    const storeListeners = new Set<(store: CoreStore<any, any>) => void>()
-
-    const notifyStoreCreated = (store: CoreStore<any, any>) => {
-        createdStores.push(store)
-
-        for (const listener of storeListeners) {
-            try {
-                listener(store)
-            } catch {
-                // ignore
-            }
-        }
     }
 
-    const onStoreCreated = (listener: (store: CoreStore<any, any>) => void, options?: { replay?: boolean }) => {
+    get outbox(): OutboxRuntime | undefined {
+        return this.outboxRuntime
+    }
+}
+
+class StoreRegistry {
+    private storeCache = new Map<string, CoreStore<any, any>>()
+    private syncStoreCache = new Map<string, SyncStore<any, any>>()
+    private createdStores: CoreStore<any, any>[] = []
+    private storeListeners = new Set<StoreListener>()
+
+    constructor(
+        private runtime: ClientRuntimeInternal,
+        private args: {
+            schema: AtomaSchema<any>
+            dataProcessor?: StoreDataProcessor<any>
+            defaults?: {
+                idGenerator?: () => EntityId
+            }
+            syncStore?: {
+                queue?: 'queue' | 'local-first'
+            }
+        }
+    ) {}
+
+    getOrCreateStore = (name: string) => {
+        const key = toStoreKey(name)
+        const existing = this.storeCache.get(key)
+        if (existing) return existing
+
+        const created = createStoreInstance({
+            name: key,
+            schema: this.args.schema,
+            clientRuntime: this.runtime,
+            defaultIdGenerator: this.args.defaults?.idGenerator,
+            defaultDataProcessor: this.args.dataProcessor
+        })
+
+        this.storeCache.set(key, created)
+        this.notifyStoreCreated(created)
+        return created
+    }
+
+    resolveStore = (name: string) => this.getOrCreateStore(toStoreKey(name)) as any
+
+    getOrCreateSyncStore = (name: string) => {
+        const key = toStoreKey(name)
+        const existing = this.syncStoreCache.get(key)
+        if (existing) return existing
+
+        const base = this.getOrCreateStore(key)
+        const handle = storeHandleManager.requireStoreHandle(base, `Store.SyncStore:${key}`)
+
+        const view = Core.store.createSyncStoreView(this.runtime, handle, this.args.syncStore)
+        this.syncStoreCache.set(key, view as any)
+        return view as any
+    }
+
+    listStores = () => this.storeCache.values()
+
+    onStoreCreated = (listener: StoreListener, options?: { replay?: boolean }) => {
         if (options?.replay) {
-            for (const store of createdStores) {
+            for (const store of this.createdStores) {
                 try {
                     listener(store)
                 } catch {
@@ -61,124 +125,85 @@ export function createClientRuntime(args: {
                 }
             }
         }
-        storeListeners.add(listener)
+        this.storeListeners.add(listener)
         return () => {
-            storeListeners.delete(listener)
+            this.storeListeners.delete(listener)
         }
     }
 
-    let outboxRuntime: OutboxRuntime | undefined
-
-    const installOutboxRuntime = (args2: { queueMode: OutboxQueueMode; ensureEnqueuer: () => OutboxEnqueuer }) => {
-        outboxRuntime = {
-            queueMode: args2.queueMode,
-            ensureEnqueuer: args2.ensureEnqueuer
-        }
-    }
-
-    const observabilityConfigByStore = new Map<string, { debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }>()
-    const observabilityByStore = new Map<string, ReturnType<typeof Observability.runtime.create>>()
-
-    const registerStoreObservability = (config: { storeName: string; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => {
-        const key = String(config.storeName || 'store')
-        observabilityConfigByStore.set(key, { debug: config.debug, debugSink: config.debugSink })
-    }
-
-    const getObservabilityRuntime = (storeName: string) => {
-        const key = String(storeName || 'store')
-        const existing = observabilityByStore.get(key)
-        if (existing) return existing
-
-        const config = observabilityConfigByStore.get(key)
-        const runtime = Observability.runtime.create({
-            scope: key,
-            debug: config?.debug,
-            onEvent: config?.debugSink
-        })
-        observabilityByStore.set(key, runtime)
-        return runtime
-    }
-
-    const createObservabilityContext = (storeName: string, ctxArgs?: { traceId?: string; explain?: boolean }) => {
-        return getObservabilityRuntime(storeName).createContext(ctxArgs)
-    }
-
-    const getOrCreateStore = (name: string) => {
-        if (!runtimeRef) {
-            throw new Error('[Atoma] runtime not initialized')
-        }
-
-        const key = String(name)
-        const existing = storeCache.get(key)
-        if (existing) return existing
-
-        const created = createStoreInstance({
-            name: key,
-            schema: args.schema,
-            clientRuntime: runtimeRef,
-            defaultIdGenerator: args.defaults?.idGenerator
-        })
-
-        storeCache.set(key, created)
-        notifyStoreCreated(created)
-        return created
-    }
-
-    const resolveStore = (name: string) => getOrCreateStore(String(name)) as any
-
-    const clientRuntime: ClientRuntimeInternal = {
-        opsClient: args.opsClient,
-        mutation,
-        resolveStore,
-        createObservabilityContext,
-        registerStoreObservability,
-        get outbox() {
-            return outboxRuntime
-        },
-        jotaiStore,
-        Store: getOrCreateStore,
-        SyncStore: (name: string) => {
-            const key = String(name)
-            const existing = syncStoreCache.get(key)
-            if (existing) return existing
-
-            const base = getOrCreateStore(key)
-            const handle = requireStoreHandle(base, `Store.SyncStore:${key}`)
-
-            const view = Core.store.createSyncStoreView(clientRuntime, handle, args.syncStore)
-            syncStoreCache.set(key, view as any)
-            return view as any
-        },
-        listStores: () => storeCache.values(),
-        onStoreCreated,
-        installOutboxRuntime,
-        internal: {
-            getStoreSnapshot: (storeName: string) => {
-                const store = getOrCreateStore(String(storeName))
-                return getStoreSnapshot(store, `runtime.snapshot:${storeName}`)
-            },
-            applyWriteback: async (storeName: string, args2) => {
-                const handle = requireStoreHandle(getOrCreateStore(String(storeName)), `runtime.applyWriteback:${storeName}`)
-                await applyStoreWriteback(handle as any, args2 as any)
-            },
-            dispatchPatches: (args2) => {
-                const handle = requireStoreHandle(getOrCreateStore(String(args2.storeName)), `runtime.dispatchPatches:${args2.storeName}`)
-                return new Promise<void>((resolve, reject) => {
-                    mutation.api.dispatch({
-                        type: 'patches',
-                        patches: args2.patches,
-                        inversePatches: args2.inversePatches,
-                        handle,
-                        opContext: args2.opContext,
-                        onSuccess: resolve,
-                        onFail: (error?: Error) => reject(error ?? new Error('[Atoma] runtime: patches 写入失败'))
-                    } as any)
-                })
+    private notifyStoreCreated = (store: CoreStore<any, any>) => {
+        this.createdStores.push(store)
+        for (const listener of this.storeListeners) {
+            try {
+                listener(store)
+            } catch {
+                // ignore
             }
         }
     }
+}
 
-    runtimeRef = clientRuntime
+export class ClientRuntime implements ClientRuntimeInternal {
+    readonly opsClient: OpsClientLike
+    readonly mutation: MutationPipeline
+    readonly dataProcessor: DataProcessor
+    readonly resolveStore: ClientRuntimeInternal['resolveStore']
+    readonly createObservabilityContext: ClientRuntimeInternal['createObservabilityContext']
+    readonly registerStoreObservability: ClientRuntimeInternal['registerStoreObservability']
+    readonly jotaiStore: JotaiStore
+    readonly Store: ClientRuntimeInternal['Store']
+    readonly SyncStore: ClientRuntimeInternal['SyncStore']
+    readonly listStores: ClientRuntimeInternal['listStores']
+    readonly onStoreCreated: ClientRuntimeInternal['onStoreCreated']
+    readonly installOutboxRuntime: ClientRuntimeInternal['installOutboxRuntime']
+    readonly internal: ClientRuntimeInternal['internal']
 
-    return clientRuntime
+    private readonly storeRegistry: StoreRegistry
+    private readonly observabilityRegistry: ObservabilityRegistry
+    private readonly outboxManager: OutboxRuntimeManager
+    private readonly storeWriteEngine: RuntimeStoreWriteEngine
+
+    constructor(args: {
+        schema: AtomaSchema<any>
+        opsClient: OpsClientLike
+        dataProcessor?: StoreDataProcessor<any>
+        defaults?: {
+            idGenerator?: () => EntityId
+        }
+        syncStore?: {
+            queue?: 'queue' | 'local-first'
+        }
+    }) {
+        this.opsClient = args.opsClient
+        this.jotaiStore = createJotaiStore()
+        this.mutation = new MutationPipeline(this)
+        this.dataProcessor = new DataProcessor(() => this)
+        this.outboxManager = new OutboxRuntimeManager()
+        this.observabilityRegistry = new ObservabilityRegistry()
+        this.storeRegistry = new StoreRegistry(this, {
+            schema: args.schema,
+            dataProcessor: args.dataProcessor,
+            defaults: args.defaults,
+            syncStore: args.syncStore
+        })
+        this.storeWriteEngine = new RuntimeStoreWriteEngine(this, this.storeRegistry.getOrCreateStore, storeHandleManager)
+
+        this.resolveStore = this.storeRegistry.resolveStore
+        this.createObservabilityContext = this.observabilityRegistry.createObservabilityContext
+        this.registerStoreObservability = this.observabilityRegistry.registerStoreObservability
+        this.Store = this.storeRegistry.getOrCreateStore
+        this.SyncStore = this.storeRegistry.getOrCreateSyncStore
+        this.listStores = this.storeRegistry.listStores
+        this.onStoreCreated = this.storeRegistry.onStoreCreated
+        this.installOutboxRuntime = this.outboxManager.install
+        this.internal = {
+            getStoreSnapshot: this.storeWriteEngine.getStoreSnapshot,
+            applyWriteback: this.storeWriteEngine.applyWriteback,
+            dispatchPatches: this.storeWriteEngine.dispatchPatches
+        }
+    }
+
+    get outbox() {
+        return this.outboxManager.outbox
+    }
 }

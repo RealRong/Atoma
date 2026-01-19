@@ -29,9 +29,8 @@ export type StoreHandle<T extends Entity = any> = {
     relations?: () => any | undefined
     indexes: StoreIndexes<T> | null
     hooks: StoreConfig<T>['hooks']
-    schema: StoreConfig<T>['schema']
     idGenerator: StoreConfig<T>['idGenerator']
-    transform: (item: T) => T
+    dataProcessor: StoreConfig<T>['dataProcessor']
 
     /** 内部：生成本 store 的 opId */
     nextOpId: (prefix: 'q' | 'w') => string

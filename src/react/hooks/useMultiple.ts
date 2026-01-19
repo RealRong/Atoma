@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
+import { storeHandleManager } from '../../core/store/internals/storeHandleManager'
 import type { Entity, RelationIncludeInput, StoreApi, WithRelations } from '#core'
 import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'
@@ -56,8 +56,8 @@ export function useMany<T extends Entity, Relations = {}, const Include extends 
 
     const baseList = useStoreSelector(store, selectorFn, shallowEqual, 'useMany')
 
-    const relations = getStoreRelations(store, 'useMany') as Relations | undefined
-    const runtime = getStoreRuntime(store)
+    const relations = storeHandleManager.getStoreRelations(store, 'useMany') as Relations | undefined
+    const runtime = storeHandleManager.getStoreRuntime(store)
     const resolveStore = runtime?.resolveStore
     const effectiveInclude = (include ?? ({} as Include))
     const relationsResult = useRelations<T, Relations, Include>(baseList, effectiveInclude, relations, resolveStore)

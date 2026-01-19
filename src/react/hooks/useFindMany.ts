@@ -8,7 +8,7 @@ import type {
     WithRelations,
     StoreApi
 } from '#core'
-import { getStoreRelations, getStoreRuntime } from '../../core/store/internals/storeAccess'
+import { storeHandleManager } from '../../core/store/internals/storeHandleManager'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'
 import { useRemoteFindMany } from './useRemoteFindMany'
@@ -151,8 +151,8 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
         } satisfies UseFindManyIdsResult<T>
     }
 
-    const relations = getStoreRelations(store, 'useFindMany') as Relations | undefined
-    const runtime = getStoreRuntime(store)
+    const relations = storeHandleManager.getStoreRelations(store, 'useFindMany') as Relations | undefined
+    const runtime = storeHandleManager.getStoreRuntime(store)
     const resolveStore = runtime?.resolveStore
     const effectiveInclude = (options as any)?.include ?? ({} as Include)
 

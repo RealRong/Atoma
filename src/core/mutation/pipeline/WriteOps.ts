@@ -45,8 +45,53 @@ export async function executeWriteOps<T extends Entity>(args: {
     ops: Array<TranslatedWriteOp>
     context?: ObservabilityContext
 }): Promise<{ created?: T[]; writeback?: PersistWriteback<T> }> {
-    const ops = args.ops.map(o => o.op)
-    if (!ops.length) return {}
+    if (!args.ops.length) return {}
+
+    const processedOps: TranslatedWriteOp[] = []
+    for (const entry of args.ops) {
+        const op = entry.op as WriteOp
+        if (op.kind !== 'write') {
+            processedOps.push(entry)
+            continue
+        }
+
+        const write = (op as any).write
+        const items = Array.isArray(write?.items) ? (write.items as any[]) : []
+        if (!items.length) {
+            processedOps.push(entry)
+            continue
+        }
+
+        const nextItems = []
+        for (const item of items) {
+            if (!item || typeof item !== 'object' || !('value' in item)) {
+                nextItems.push(item)
+                continue
+            }
+            const value = (item as any).value
+            if (value === undefined) {
+                nextItems.push(item)
+                continue
+            }
+            const processed = await args.clientRuntime.dataProcessor.outbound(args.handle, value as T)
+            if (processed === undefined) {
+                throw new Error('[Atoma] dataProcessor returned empty for outbound write')
+            }
+            nextItems.push({ ...(item as any), value: processed })
+        }
+
+        const nextOp = {
+            ...(op as any),
+            write: {
+                ...(write as any),
+                items: nextItems
+            }
+        } as WriteOp
+
+        processedOps.push({ ...entry, op: nextOp })
+    }
+
+    const ops = processedOps.map(o => o.op)
 
     const results = await executeOps(args.clientRuntime, ops, args.context)
     const resultByOpId = new Map<string, OperationResult>()
@@ -54,7 +99,7 @@ export async function executeWriteOps<T extends Entity>(args: {
 
     const writeback = createWritebackCollector<T>()
 
-    for (const entry of args.ops) {
+    for (const entry of processedOps) {
         const result = findOpResult(resultByOpId, entry.op.opId)
         if (!result.ok) {
             const err = new Error(`[Atoma] op failed: ${result.error.message || 'Operation failed'}`)
@@ -70,7 +115,29 @@ export async function executeWriteOps<T extends Entity>(args: {
         writeback.collect(entry, itemRes)
     }
 
-    return writeback.result()
+    const result = writeback.result()
+
+    const created = result.created
+        ? (await Promise.all(result.created.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
+            .filter((item): item is T => item !== undefined)
+        : undefined
+
+    const writebackResult = result.writeback
+        ? {
+            ...result.writeback,
+            ...(result.writeback.upserts
+                ? {
+                    upserts: (await Promise.all(result.writeback.upserts.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
+                        .filter((item): item is T => item !== undefined)
+                }
+                : {})
+        }
+        : undefined
+
+    return {
+        ...(created && created.length ? { created } : {}),
+        ...(writebackResult ? { writeback: writebackResult } : {})
+    }
 }
 
 function toWriteItemError(action: WriteAction, result: WriteItemResult): Error {

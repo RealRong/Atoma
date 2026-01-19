@@ -63,6 +63,12 @@ export type {
     OutboxQueueMode,
     OutboxRuntime,
     CoreRuntime,
+    DataProcessor,
+    DataProcessorContext,
+    DataProcessorMode,
+    DataProcessorStage,
+    DataProcessorStageFn,
+    DataProcessorValidate,
     OrderBy,
     PageInfo,
     PersistWriteback,
@@ -71,14 +77,13 @@ export type {
     SchemaValidator,
     StoreConfig,
     StoreApi,
+    StoreDataProcessor,
     StoreToken,
     UpsertWriteOptions,
     WithRelations,
     WhereOperator,
     WriteManyResult
 } from './types'
-
-export { applyStoreWriteback } from './store/internals/writeback'
 
 export type { CoreStore, CoreStoreConfig } from './createStore'
 export { MutationPipeline } from './mutation/MutationPipeline'

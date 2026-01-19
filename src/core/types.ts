@@ -188,7 +188,6 @@ export type StoreDispatchEvent<T extends Entity> = {
         | {
             type: 'update'
             data: PartialWithId<T>
-            transformData?: (o: T) => T | undefined
             onSuccess?: (o: T) => void
         }
         | {
@@ -331,6 +330,42 @@ export type SchemaValidator<T> =
         validate: (data: unknown) => Promise<T> | T
     }
 
+export type DataProcessorMode = 'inbound' | 'writeback' | 'outbound'
+
+export type DataProcessorStage = 'deserialize' | 'normalize' | 'transform' | 'validate' | 'sanitize' | 'serialize'
+
+export type DataProcessorBaseContext<T> = Readonly<{
+    storeName: string
+    runtime: CoreRuntime
+    opContext?: OperationContext
+    adapter?: unknown
+}>
+
+export type DataProcessorContext<T> = DataProcessorBaseContext<T> & Readonly<{
+    mode: DataProcessorMode
+    stage: DataProcessorStage
+}>
+
+export type DataProcessorStageFn<T> = (value: T, context: DataProcessorContext<T>) => T | undefined | Promise<T | undefined>
+
+export type DataProcessorValidate<T> = SchemaValidator<T> | DataProcessorStageFn<T>
+
+export type StoreDataProcessor<T> = Readonly<{
+    deserialize?: DataProcessorStageFn<T>
+    normalize?: DataProcessorStageFn<T>
+    transform?: DataProcessorStageFn<T>
+    validate?: DataProcessorValidate<T>
+    sanitize?: DataProcessorStageFn<T>
+    serialize?: DataProcessorStageFn<T>
+}>
+
+export type DataProcessor = Readonly<{
+    process: <T>(mode: DataProcessorMode, data: T, context: DataProcessorBaseContext<T> & { dataProcessor?: StoreDataProcessor<T> }) => Promise<T | undefined>
+    inbound: <T extends Entity>(handle: StoreHandle<T>, data: T, opContext?: OperationContext) => Promise<T | undefined>
+    writeback: <T extends Entity>(handle: StoreHandle<T>, data: T, opContext?: OperationContext) => Promise<T | undefined>
+    outbound: <T extends Entity>(handle: StoreHandle<T>, data: T, opContext?: OperationContext) => Promise<T | undefined>
+}>
+
 export interface LifecycleHooks<T> {
     beforeSave?: (args: { action: 'add' | 'update'; item: PartialWithId<T> }) => PartialWithId<T> | Promise<PartialWithId<T>>
     afterSave?: (args: { action: 'add' | 'update'; item: PartialWithId<T> }) => void | Promise<void>
@@ -340,17 +375,11 @@ export interface LifecycleHooks<T> {
  * Store configuration options
  */
 export interface StoreConfig<T> {
-    /** Transform data before storing in atom */
-    transformData?: (item: T) => T | undefined
-
     /** Custom ID generator (defaults to Snowflake-like generator) */
     idGenerator?: () => EntityId
 
-    /** Custom Jotai store instance */
-    store?: JotaiStore  // ReturnType<typeof createStore> from 'jotai/vanilla'
-
-    /** Optional schema validator (zod/yup/custom) */
-    schema?: SchemaValidator<T>
+    /** Data processor pipeline (deserialize/normalize/transform/validate/sanitize/serialize) */
+    dataProcessor?: StoreDataProcessor<T>
 
     /** Lifecycle hooks for add/update */
     hooks?: LifecycleHooks<T>
@@ -414,6 +443,7 @@ export type OutboxRuntime = Readonly<{
 export type CoreRuntime = Readonly<{
     opsClient: OpsClientLike
     mutation: MutationPipeline
+    dataProcessor: DataProcessor
     resolveStore: (name: StoreToken) => IStore<any> | undefined
     createObservabilityContext: (storeName: StoreToken, args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
     registerStoreObservability?: (args: { storeName: StoreToken; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => void

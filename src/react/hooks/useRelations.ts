@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Core } from '#core'
 import type { Entity, IStore, RelationIncludeInput, StoreToken, WithRelations } from '#core'
 import type { EntityId } from '#protocol'
-import { getStoreIndexes, getStoreSnapshot, subscribeStore } from '../../core/store/internals/storeAccess'
+import { storeHandleManager } from '../../core/store/internals/storeHandleManager'
 import { useShallowStableArray } from './useShallowStableArray'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
@@ -81,8 +81,8 @@ export function useRelations<T extends Entity>(
         const store = resolveStore(storeToken)
         if (!store) return undefined
         return {
-            map: getStoreSnapshot(store, 'useRelations') as Map<EntityId, any>,
-            indexes: getStoreIndexes(store, 'useRelations')
+            map: storeHandleManager.getStoreSnapshot(store, 'useRelations') as Map<EntityId, any>,
+            indexes: storeHandleManager.getStoreIndexes(store, 'useRelations')
         }
     }
 
@@ -187,7 +187,7 @@ export function useRelations<T extends Entity>(
         tokens.forEach(token => {
             const store = resolveStore(token)
             if (!store) return
-            const unsub = subscribeStore(store, () => setLiveTick(t => t + 1), 'useRelations')
+            const unsub = storeHandleManager.subscribeStore(store, () => setLiveTick(t => t + 1), 'useRelations')
             unsubscribers.push(unsub)
         })
 

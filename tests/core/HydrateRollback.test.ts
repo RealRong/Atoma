@@ -29,6 +29,9 @@ describe('hydrate (A 语义)', () => {
                     throw new Error('boom')
                 }
             },
+            dataProcessor: {
+                process: async (_mode: any, data: any) => data
+            },
             createObservabilityContext: () => ({
                 active: false,
                 traceId: 't',
