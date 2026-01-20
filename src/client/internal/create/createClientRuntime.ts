@@ -1,4 +1,4 @@
-import type { CoreStore, JotaiStore, OpsClientLike, OutboxEnqueuer, OutboxQueueMode, OutboxRuntime, StoreDataProcessor } from '#core'
+import type { CoreStore, JotaiStore, OpsClientLike, OutboxRuntime, StoreDataProcessor } from '#core'
 import { Core, MutationPipeline } from '#core'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import type { EntityId } from '#protocol'
@@ -42,21 +42,6 @@ class ObservabilityRegistry {
         })
         this.observabilityByStore.set(key, runtime)
         return runtime
-    }
-}
-
-class OutboxRuntimeManager {
-    private outboxRuntime: OutboxRuntime | undefined
-
-    install = (args: { queueMode: OutboxQueueMode; ensureEnqueuer: () => OutboxEnqueuer }) => {
-        this.outboxRuntime = {
-            queueMode: args.queueMode,
-            ensureEnqueuer: args.ensureEnqueuer
-        }
-    }
-
-    get outbox(): OutboxRuntime | undefined {
-        return this.outboxRuntime
     }
 }
 
@@ -155,12 +140,11 @@ export class ClientRuntime implements ClientRuntimeInternal {
     readonly SyncStore: ClientRuntimeInternal['SyncStore']
     readonly listStores: ClientRuntimeInternal['listStores']
     readonly onStoreCreated: ClientRuntimeInternal['onStoreCreated']
-    readonly installOutboxRuntime: ClientRuntimeInternal['installOutboxRuntime']
     readonly internal: ClientRuntimeInternal['internal']
+    readonly outbox?: OutboxRuntime
 
     private readonly storeRegistry: StoreRegistry
     private readonly observabilityRegistry: ObservabilityRegistry
-    private readonly outboxManager: OutboxRuntimeManager
     private readonly storeWriteEngine: RuntimeStoreWriteEngine
 
     constructor(args: {
@@ -173,12 +157,12 @@ export class ClientRuntime implements ClientRuntimeInternal {
         syncStore?: {
             queue?: 'queue' | 'local-first'
         }
+        outbox?: OutboxRuntime
     }) {
         this.opsClient = args.opsClient
         this.jotaiStore = createJotaiStore()
         this.mutation = new MutationPipeline(this)
         this.dataProcessor = new DataProcessor(() => this)
-        this.outboxManager = new OutboxRuntimeManager()
         this.observabilityRegistry = new ObservabilityRegistry()
         this.storeRegistry = new StoreRegistry(this, {
             schema: args.schema,
@@ -187,6 +171,7 @@ export class ClientRuntime implements ClientRuntimeInternal {
             syncStore: args.syncStore
         })
         this.storeWriteEngine = new RuntimeStoreWriteEngine(this, this.storeRegistry.getOrCreateStore, storeHandleManager)
+        this.outbox = args.outbox
 
         this.resolveStore = this.storeRegistry.resolveStore
         this.createObservabilityContext = this.observabilityRegistry.createObservabilityContext
@@ -195,15 +180,10 @@ export class ClientRuntime implements ClientRuntimeInternal {
         this.SyncStore = this.storeRegistry.getOrCreateSyncStore
         this.listStores = this.storeRegistry.listStores
         this.onStoreCreated = this.storeRegistry.onStoreCreated
-        this.installOutboxRuntime = this.outboxManager.install
         this.internal = {
             getStoreSnapshot: this.storeWriteEngine.getStoreSnapshot,
             applyWriteback: this.storeWriteEngine.applyWriteback,
             dispatchPatches: this.storeWriteEngine.dispatchPatches
         }
-    }
-
-    get outbox() {
-        return this.outboxManager.outbox
     }
 }

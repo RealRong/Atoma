@@ -1,50 +1,9 @@
 import { Observability } from '#observability'
-import { Sync, type SyncApplier, type SyncClient, type SyncCreateConfig, type SyncEvent, type SyncOutboxEvents, type SyncOutboxItem, type SyncPhase, type SyncTransport } from '#sync'
+import { Sync, type CursorStore, type OutboxStore, type SyncApplier, type SyncClient, type SyncCreateConfig, type SyncEvent, type SyncOutboxEvents, type SyncOutboxItem, type SyncPhase, type SyncTransport } from '#sync'
 import type { AtomaClientSyncConfig, AtomaSyncStartMode, ResolvedBackend, AtomaSync } from '../../types'
 import type { ClientRuntimeInternal } from '../types'
 import { SyncReplicatorApplier } from './SyncReplicatorApplier'
-
-const SYNC_INSTANCE_ID_SESSION_KEY = 'atoma:sync:instanceId'
-
-type EngineMode = AtomaSyncStartMode | 'enqueue-only'
-
-function createSyncInstanceId(): string {
-    const cryptoAny = typeof crypto !== 'undefined' ? (crypto as any) : undefined
-    const uuid = cryptoAny?.randomUUID?.()
-    if (typeof uuid === 'string' && uuid) return `i_${uuid}`
-    return `i_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`
-}
-
-const resolveSyncInstanceId = (() => {
-    let fallback: string | undefined
-
-    const safeFallback = () => {
-        if (!fallback) fallback = createSyncInstanceId()
-        return fallback
-    }
-
-    return (): string => {
-        if (typeof window === 'undefined') return safeFallback()
-
-        let storage: Storage | undefined
-        try {
-            storage = window.sessionStorage
-        } catch {
-            storage = undefined
-        }
-        if (!storage) return safeFallback()
-
-        try {
-            const existing = storage.getItem(SYNC_INSTANCE_ID_SESSION_KEY)
-            if (existing && existing.trim()) return existing.trim()
-            const next = createSyncInstanceId()
-            storage.setItem(SYNC_INSTANCE_ID_SESSION_KEY, next)
-            return next
-        } catch {
-            return safeFallback()
-        }
-    }
-})()
+type EngineMode = AtomaSyncStartMode
 
 export class SyncController {
     readonly sync: AtomaSync
@@ -61,6 +20,9 @@ export class SyncController {
     private readonly syncConfigured: boolean
     private readonly now: () => number
     private readonly applier: SyncApplier
+    private readonly outboxStore?: OutboxStore
+    private readonly cursorStore?: CursorStore
+    private readonly lockKey?: string
 
     private queuePending = 0
     private queueFailed = 0
@@ -76,14 +38,14 @@ export class SyncController {
     private subscribeTraceId: string | undefined
     private subscribeRequestSequencer: ReturnType<typeof Observability.trace.createRequestSequencer> | undefined
 
-    private readonly defaultOutboxKey: string
-    private readonly defaultCursorKey: string
-
     constructor(args: {
         runtime: ClientRuntimeInternal
         backend?: ResolvedBackend
         localBackend?: ResolvedBackend
         syncConfig?: AtomaClientSyncConfig
+        outboxStore?: OutboxStore
+        cursorStore?: CursorStore
+        lockKey?: string
     }) {
         this.runtime = args.runtime
         this.backend = args.backend
@@ -92,18 +54,27 @@ export class SyncController {
         this.syncConfigured = Boolean(this.syncConfig)
         this.now = this.syncConfig?.now ?? (() => Date.now())
         this.applier = new SyncReplicatorApplier(this.runtime, this.backend, this.localBackend, this.syncConfig)
-
-        const syncDefaultsKey = this.backend?.key ? String(this.backend.key) : 'default'
-        const syncInstanceId = (this.syncConfig?.deviceId && String(this.syncConfig.deviceId).trim())
-            ? String(this.syncConfig.deviceId).trim()
-            : resolveSyncInstanceId()
-        this.defaultOutboxKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:outbox`
-        this.defaultCursorKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:cursor`
+        this.outboxStore = args.outboxStore
+        this.cursorStore = args.cursorStore
+        this.lockKey = args.lockKey
 
         this.devtools = {
             snapshot: this.snapshotDevtools,
             subscribe: this.subscribeDevtools
         } as const
+
+        if (this.syncConfig && !this.cursorStore) {
+            throw new Error('[Atoma] sync: cursor store 未配置')
+        }
+        if (this.syncConfig && !this.lockKey) {
+            throw new Error('[Atoma] sync: lockKey 未配置')
+        }
+        if (this.syncConfig?.queue && !this.outboxStore) {
+            throw new Error('[Atoma] sync: queue 启用时必须提供 outbox store')
+        }
+        if (this.syncConfig?.queue) {
+            this.attachOutboxEvents()
+        }
 
         this.sync = {
             start: (mode) => {
@@ -147,20 +118,6 @@ export class SyncController {
                 // ignore
             }
         }
-
-        if (this.syncConfig?.queue) {
-            this.runtime.installOutboxRuntime({
-                queueMode: this.syncConfig.queue === 'local-first' ? 'local-first' : 'queue',
-                ensureEnqueuer: () => {
-                    const engine = this.ensureSyncEngine({ mode: 'enqueue-only' })
-                    return {
-                        enqueueOps: async (enqueueArgs) => {
-                            await engine.enqueueOps(enqueueArgs)
-                        }
-                    }
-                }
-            })
-        }
     }
 
     private safe = (fn: () => void) => {
@@ -169,6 +126,48 @@ export class SyncController {
         } catch {
             // ignore
         }
+    }
+
+    private attachOutboxEvents = () => {
+        if (!this.outboxStore || !this.syncConfig) return
+        const syncConfig = this.syncConfig
+        const outboxEvents: SyncOutboxEvents = {
+            onQueueChange: (size: number) => {
+                const previous = this.queuePending
+                this.queuePending = Math.max(0, Math.floor(size))
+                this.emitSyncDevtools('sync:queue', { pending: this.queuePending, failed: this.queueFailed })
+                this.safe(() => syncConfig.outboxEvents?.onQueueChange?.(size))
+                if (this.queuePending > previous && this.shouldRequestPushFlush(size)) {
+                    void this.syncEngine?.flush().catch(() => {
+                        // ignore
+                    })
+                }
+            },
+            onQueueFull: (droppedOp: SyncOutboxItem, maxQueueSize: number) => {
+                this.queueFailed += 1
+                this.emitSyncDevtools('sync:queue_full', { droppedOp, maxQueueSize })
+                this.safe(() => syncConfig.outboxEvents?.onQueueFull?.(droppedOp, maxQueueSize))
+            }
+        }
+        this.outboxStore.setEvents?.(outboxEvents)
+        const snapshot = this.outboxStore.size()
+        if (typeof snapshot === 'number') {
+            this.queuePending = Math.max(0, Math.floor(snapshot))
+            this.emitSyncDevtools('sync:queue', { pending: this.queuePending, failed: this.queueFailed })
+        } else {
+            snapshot.then((size) => {
+                this.queuePending = Math.max(0, Math.floor(size))
+                this.emitSyncDevtools('sync:queue', { pending: this.queuePending, failed: this.queueFailed })
+            }).catch(() => {
+                // ignore
+            })
+        }
+    }
+
+    private shouldRequestPushFlush = (pending: number) => {
+        if (!this.syncStarted || !this.syncEngine) return false
+        if (pending <= 0) return false
+        return this.engineModeKey === 'full' || this.engineModeKey === 'push-only'
     }
 
     private emitDevtools = (e: { type: string; payload?: any }) => {
@@ -266,8 +265,6 @@ export class SyncController {
         const backend = configured.backend
 
         const adv = syncConfig.advanced
-        const outboxKey = adv?.outboxKey ?? this.defaultOutboxKey
-        const cursorKey = adv?.cursorKey ?? this.defaultCursorKey
 
         const onEventWrapped = (event: SyncEvent) => {
             this.emitSyncDevtools('sync:event', event)
@@ -280,21 +277,13 @@ export class SyncController {
             this.safe(() => syncConfig.onError?.(error, context))
         }
 
-        const outboxEvents: SyncOutboxEvents = {
-            onQueueChange: (size: number) => {
-                this.queuePending = Math.max(0, Math.floor(size))
-                this.emitSyncDevtools('sync:queue', { pending: this.queuePending, failed: this.queueFailed })
-                this.safe(() => syncConfig.outboxEvents?.onQueueChange?.(size))
-            },
-            onQueueFull: (droppedOp: SyncOutboxItem, maxQueueSize: number) => {
-                this.queueFailed += 1
-                this.emitSyncDevtools('sync:queue_full', { droppedOp, maxQueueSize })
-                this.safe(() => syncConfig.outboxEvents?.onQueueFull?.(droppedOp, maxQueueSize))
-            }
-        }
-
         const wantsSubscribe = (mode === 'subscribe-only' || mode === 'pull+subscribe' || mode === 'full')
             && syncConfig.subscribe !== false
+
+        const wantsPush = (mode === 'push-only' || mode === 'full')
+        if (wantsPush && !this.outboxStore) {
+            throw new Error('[Atoma] sync: push 模式需要配置 outbox')
+        }
 
         if (wantsSubscribe && !backend.subscribe && !backend.sse?.buildUrl) {
             throw new Error('[Atoma] sync: subscribe 已启用，但未配置 subscribe 能力（请配置 sync.sse，或在 sync.backend 提供 subscribe/sse）')
@@ -333,12 +322,11 @@ export class SyncController {
         const createArgs: SyncCreateConfig = {
             transport,
             applier: this.applier,
-            outboxKey,
-            cursorKey,
+            outbox: this.outboxStore,
+            cursor: this.cursorStore!,
             mode: mode as any,
             ...syncOptions,
-            outboxEvents,
-            lockKey: adv?.lockKey,
+            lockKey: adv?.lockKey ?? this.lockKey!,
             lockTtlMs: adv?.lockTtlMs,
             lockRenewIntervalMs: adv?.lockRenewIntervalMs,
             onError: onErrorWrapped,

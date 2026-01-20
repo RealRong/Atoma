@@ -59,7 +59,6 @@ export type {
     OpsClientLike,
     OperationContext,
     OperationOrigin,
-    OutboxEnqueuer,
     OutboxQueueMode,
     OutboxRuntime,
     CoreRuntime,

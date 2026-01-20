@@ -69,10 +69,10 @@ Disposing (`dispose()`):
 
 Path:
 
-- `SyncEngine.enqueueOps(...)`
+- `outbox.enqueueOps(...)` (runtime-owned outbox)
   - Requires each `WriteOp` to contain exactly one `WriteItem` with `meta.idempotencyKey`
   - Stores `SyncOutboxItem` entries (including prebuilt `op`) in `DefaultOutboxStore`
-  - Triggers `PushLane.requestFlush()`
+  - When sync is started in push/full mode, queue changes trigger `PushLane.requestFlush()`
 
 Then:
 

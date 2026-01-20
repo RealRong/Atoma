@@ -2,6 +2,7 @@ import type { CoreStore, Entity, StoreDataProcessor } from '#core'
 import { HistoryController } from '../controllers/HistoryController'
 import { SyncController } from '../controllers/SyncController'
 import { ClientRuntime } from './createClientRuntime'
+import { DefaultCursorStore, DefaultOutboxStore } from '../../../sync/store'
 import type {
     AtomaClient,
     AtomaSchema,
@@ -16,6 +17,60 @@ import type {
 } from '../../types'
 import { resolveBackend } from '../resolveBackend'
 import { Devtools } from '#devtools'
+
+const SYNC_INSTANCE_ID_SESSION_KEY = 'atoma:sync:instanceId'
+
+function createSyncInstanceId(): string {
+    const cryptoAny = typeof crypto !== 'undefined' ? (crypto as any) : undefined
+    const uuid = cryptoAny?.randomUUID?.()
+    if (typeof uuid === 'string' && uuid) return `i_${uuid}`
+    return `i_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`
+}
+
+const resolveSyncInstanceId = (() => {
+    let fallback: string | undefined
+
+    const safeFallback = () => {
+        if (!fallback) fallback = createSyncInstanceId()
+        return fallback
+    }
+
+    return (): string => {
+        if (typeof window === 'undefined') return safeFallback()
+
+        let storage: Storage | undefined
+        try {
+            storage = window.sessionStorage
+        } catch {
+            storage = undefined
+        }
+        if (!storage) return safeFallback()
+
+        try {
+            const existing = storage.getItem(SYNC_INSTANCE_ID_SESSION_KEY)
+            if (existing && existing.trim()) return existing.trim()
+            const next = createSyncInstanceId()
+            storage.setItem(SYNC_INSTANCE_ID_SESSION_KEY, next)
+            return next
+        } catch {
+            return safeFallback()
+        }
+    }
+})()
+
+function resolveSyncKeys(args: { backendKey?: string; deviceId?: string }) {
+    const syncDefaultsKey = args.backendKey ? String(args.backendKey) : 'default'
+    const syncInstanceId = (args.deviceId && String(args.deviceId).trim())
+        ? String(args.deviceId).trim()
+        : resolveSyncInstanceId()
+    const outboxKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:outbox`
+    const cursorKey = `atoma:sync:${syncDefaultsKey}:${syncInstanceId}:cursor`
+    return {
+        outboxKey,
+        cursorKey,
+        lockKey: `${outboxKey}:lock`
+    }
+}
 
 export function buildAtomaClient<
     const Entities extends Record<string, Entity>,
@@ -76,19 +131,6 @@ export function buildAtomaClient<
         throw new Error('[Atoma] createClient: sync 对端必须支持同步（需要 remote opsClient 能力）')
     }
 
-    const storeBackend = resolved.store.store
-
-    const clientRuntime = new ClientRuntime({
-        schema: args.schema,
-        dataProcessor: args.dataProcessor,
-        opsClient: storeBackend.opsClient,
-        syncStore: {
-            queue
-        }
-    })
-
-    const historyController = new HistoryController({ runtime: clientRuntime })
-
     const syncConfig = wantsSync
         ? ({
             mode: defaults?.mode,
@@ -122,11 +164,54 @@ export function buildAtomaClient<
         } as any)
         : undefined
 
+    const syncKeys = syncConfig
+        ? resolveSyncKeys({
+            backendKey: resolved.sync?.key,
+            deviceId: syncConfig.deviceId
+        })
+        : undefined
+
+    const outboxKey = syncConfig ? (syncConfig.advanced?.outboxKey ?? syncKeys!.outboxKey) : undefined
+    const cursorKey = syncConfig ? (syncConfig.advanced?.cursorKey ?? syncKeys!.cursorKey) : undefined
+    const lockKey = syncConfig ? (syncConfig.advanced?.lockKey ?? syncKeys!.lockKey) : undefined
+
+    const outboxStore = syncConfig?.queue
+        ? new DefaultOutboxStore(
+            outboxKey!,
+            undefined,
+            syncConfig.maxQueueSize ?? 1000,
+            syncConfig.now ?? (() => Date.now()),
+            syncConfig.inFlightTimeoutMs ?? 30_000,
+            syncConfig.queue === 'local-first' ? 'local-first' : 'queue'
+        )
+        : undefined
+
+    const cursorStore = syncConfig
+        ? new DefaultCursorStore(cursorKey!)
+        : undefined
+
+    const storeBackend = resolved.store.store
+
+    const clientRuntime = new ClientRuntime({
+        schema: args.schema,
+        dataProcessor: args.dataProcessor,
+        opsClient: storeBackend.opsClient,
+        syncStore: {
+            queue
+        },
+        outbox: outboxStore
+    })
+
+    const historyController = new HistoryController({ runtime: clientRuntime })
+
     const syncController = new SyncController({
         runtime: clientRuntime,
         backend: resolved.sync.sync,
         localBackend: resolved.store.local,
-        syncConfig
+        syncConfig,
+        outboxStore,
+        cursorStore,
+        lockKey
     })
 
     const Store = (<Name extends keyof Entities & string>(name: Name) => {

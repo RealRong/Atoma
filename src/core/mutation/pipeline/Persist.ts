@@ -57,8 +57,7 @@ export async function executeMutationPersistence<T extends Entity>(args: {
 
         const ops = args.program.writeOps.map(o => o.op)
         if (ops.length) {
-            const enqueuer = outbox.ensureEnqueuer()
-            await enqueuer.enqueueOps({ ops })
+            await outbox.enqueueOps({ ops })
         }
 
         return {

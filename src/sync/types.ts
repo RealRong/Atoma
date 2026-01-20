@@ -20,6 +20,7 @@ export type SyncOutboxItem = {
 
 export interface OutboxStore {
     enqueue: (items: SyncOutboxItem[]) => Promise<void> | void
+    enqueueOps: (args: { ops: Operation[] }) => Promise<string[]>
     peek: (limit: number) => Promise<SyncOutboxItem[]> | SyncOutboxItem[]
     ack: (idempotencyKeys: string[]) => Promise<void> | void
     reject: (idempotencyKeys: string[], reason?: unknown) => Promise<void> | void
@@ -37,6 +38,7 @@ export interface OutboxStore {
         afterEnqueuedAtMs?: number
     }) => Promise<void> | void
     size: () => Promise<number> | number
+    setEvents?: (events?: SyncOutboxEvents) => void
 }
 
 export interface CursorStore {
@@ -115,17 +117,15 @@ export type SyncRetryConfig = {
     maxAttempts?: number
 }
 
-export type SyncMode = 'enqueue-only' | 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full'
+export type SyncMode = 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full'
 
 export type SyncCreateConfig = {
     transport: SyncTransport
     applier: SyncApplier
-    outboxKey: string
-    cursorKey: string
+    outbox?: OutboxStore
+    cursor: CursorStore
     /** High-level behavior mode. Default: 'full' */
     mode?: SyncMode
-    maxQueueSize?: number
-    outboxEvents?: SyncOutboxEvents
     maxPushItems?: number
     pullLimit?: number
     pullDebounceMs?: number
@@ -140,7 +140,7 @@ export type SyncCreateConfig = {
     inFlightTimeoutMs?: number
     retry?: SyncRetryConfig
     backoff?: SyncBackoffConfig
-    lockKey?: string
+    lockKey: string
     lockTtlMs?: number
     lockRenewIntervalMs?: number
     now?: () => number
@@ -152,7 +152,6 @@ export interface SyncClient {
     start: () => void
     stop: () => void
     dispose: () => void
-    enqueueOps: (args: { ops: Operation[] }) => Promise<string[]>
     flush: () => Promise<void>
     pull: () => Promise<ChangeBatch | undefined>
 }

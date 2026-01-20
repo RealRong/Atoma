@@ -19,6 +19,8 @@ export type {
     SyncApplier,
     SyncSubscribe,
     SyncOutboxItem,
+    OutboxStore,
+    CursorStore,
     SyncWriteAck,
     SyncWriteReject,
     SyncTransport,

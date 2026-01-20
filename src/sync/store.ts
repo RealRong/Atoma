@@ -1,12 +1,13 @@
 import { createKVStore } from './kvStore'
-import type { OutboxStore, CursorStore, SyncOutboxItem } from './types'
+import type { CursorStore, OutboxStore, SyncOutboxItem, SyncOutboxEvents } from './types'
 import { defaultCompareCursor } from './policies/cursorGuard'
-import type { Cursor } from '#protocol'
-import type { SyncOutboxEvents } from './types'
+import { Protocol, type Cursor, type Operation, type WriteAction, type WriteItem, type WriteOptions } from '#protocol'
+import type { OutboxQueueMode } from '#core'
 
 export type SyncStoresConfig = {
     outboxKey: string
     cursorKey: string
+    queueMode?: OutboxQueueMode
     maxQueueSize?: number
     outboxEvents?: SyncOutboxEvents
     now?: () => number
@@ -23,7 +24,8 @@ export function createStores(config: SyncStoresConfig): {
             config.outboxEvents,
             config.maxQueueSize ?? 1000,
             config.now ?? (() => Date.now()),
-            config.inFlightTimeoutMs ?? 30_000
+            config.inFlightTimeoutMs ?? 30_000,
+            config.queueMode
         ),
         cursor: new DefaultCursorStore(config.cursorKey)
     }
@@ -34,15 +36,22 @@ export class DefaultOutboxStore implements OutboxStore {
     private queue: Array<SyncOutboxItem & { inFlightAtMs?: number }> = []
     private byKey = new Map<string, SyncOutboxItem & { inFlightAtMs?: number }>()
     private initialized: Promise<void>
+    readonly queueMode: OutboxQueueMode
 
     constructor(
         private readonly storageKey: string,
-        private readonly events?: SyncOutboxEvents,
+        private events?: SyncOutboxEvents,
         private readonly maxQueueSize: number = 1000,
         private readonly now: () => number = () => Date.now(),
-        private readonly inFlightTimeoutMs: number = 30_000
+        private readonly inFlightTimeoutMs: number = 30_000,
+        queueMode: OutboxQueueMode = 'queue'
     ) {
+        this.queueMode = queueMode === 'local-first' ? 'local-first' : 'queue'
         this.initialized = this.restore()
+    }
+
+    setEvents(events?: SyncOutboxEvents) {
+        this.events = events
     }
 
     async enqueue(items: SyncOutboxItem[]) {
@@ -162,6 +171,49 @@ export class DefaultOutboxStore implements OutboxStore {
         return this.queue.length
     }
 
+    async enqueueOps(args: { ops: Operation[] }) {
+        const now = this.now()
+        const items: SyncOutboxItem[] = []
+
+        for (const op of args.ops) {
+            if (!op || (op as any).kind !== 'write') {
+                throw new Error('[Sync] enqueueOps only supports write ops')
+            }
+
+            const write = (op as any).write as any
+            const resource = String(write?.resource ?? '')
+            const action = write?.action as WriteAction
+            const options = (write?.options && typeof write.options === 'object') ? (write.options as WriteOptions) : undefined
+            const opItems: WriteItem[] = Array.isArray(write?.items) ? (write.items as WriteItem[]) : []
+            if (!resource || !action || opItems.length !== 1) {
+                throw new Error('[Sync] enqueueOps requires single-item write ops')
+            }
+
+            const baseItem = opItems[0] as WriteItem
+            const meta = this.requireItemMeta(baseItem)
+            const ensuredItem = { ...(baseItem as any), meta } as WriteItem
+
+            const ensuredOp: Operation = Protocol.ops.build.buildWriteOp({
+                opId: String((op as any).opId || this.nextOpId('w')),
+                write: {
+                    resource,
+                    action,
+                    items: [ensuredItem],
+                    ...(options ? { options } : {})
+                }
+            })
+
+            items.push({
+                idempotencyKey: meta.idempotencyKey!,
+                op: ensuredOp,
+                enqueuedAtMs: now
+            })
+        }
+
+        await this.enqueue(items)
+        return items.map(i => i.idempotencyKey)
+    }
+
     private async removeByKeys(keys: string[]) {
         await this.initialized
         if (!keys.length) return
@@ -200,6 +252,24 @@ export class DefaultOutboxStore implements OutboxStore {
             }
         }
         if (changed) await this.persist()
+    }
+
+    private requireItemMeta(item: WriteItem) {
+        const meta = (item as any)?.meta
+        if (!meta || typeof meta !== 'object') {
+            throw new Error('[Sync] write item meta is required for enqueueOps')
+        }
+        if (typeof (meta as any).idempotencyKey !== 'string' || !(meta as any).idempotencyKey) {
+            throw new Error('[Sync] write item meta.idempotencyKey is required for enqueueOps')
+        }
+        if (typeof (meta as any).clientTimeMs !== 'number' || !Number.isFinite((meta as any).clientTimeMs)) {
+            throw new Error('[Sync] write item meta.clientTimeMs is required for enqueueOps')
+        }
+        return meta as any
+    }
+
+    private nextOpId(prefix: 'w' | 'c') {
+        return Protocol.ids.createOpId(prefix, { now: () => this.now() })
     }
 }
 

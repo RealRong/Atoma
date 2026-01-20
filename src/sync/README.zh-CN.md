@@ -69,10 +69,10 @@
 
 路径：
 
-- `SyncEngine.enqueueOps(...)`
+- `outbox.enqueueOps(...)`（runtime 内建 outbox）
   - 要求每个 `WriteOp` 必须是单 item，并包含 `meta.idempotencyKey`
   - 以 `SyncOutboxItem` 形式写入 `DefaultOutboxStore`（包含预构建的 `op`）
-  - 触发 `PushLane.requestFlush()`
+  - 当 sync 处于 push/full 且已启动时，队列变化触发 `PushLane.requestFlush()`
 
 然后：
 

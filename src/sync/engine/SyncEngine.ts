@@ -1,10 +1,9 @@
-import type { SyncApplier, SyncBackoffConfig, SyncClient, SyncCreateConfig, SyncMode, SyncOutboxItem, SyncRetryConfig, SyncTransport } from '../types'
+import type { CursorStore, OutboxStore, SyncApplier, SyncBackoffConfig, SyncClient, SyncCreateConfig, SyncMode, SyncRetryConfig, SyncTransport } from '../types'
 import { toError } from '../internal'
 import { PushLane } from '../lanes/PushLane'
 import { PullLane } from '../lanes/PullLane'
 import { NotifyLane } from '../lanes/NotifyLane'
-import { createStores } from '../store'
-import type { ChangeBatch, Cursor, Meta, Operation, WriteAction, WriteItem, WriteOptions } from '#protocol'
+import type { ChangeBatch, Cursor, Meta } from '#protocol'
 import { Protocol } from '#protocol'
 import { SingleInstanceLock } from '../policies/singleInstanceLock'
 import { RetryBackoff } from '../policies/retryBackoff'
@@ -43,8 +42,6 @@ type ResolvedSyncConfig = {
 
 function resolveMode(mode: SyncMode) {
     switch (mode) {
-        case 'enqueue-only':
-            return { push: false, pull: false, subscribe: false, pullIntervalMs: 0 }
         case 'pull-only':
             return { push: false, pull: true, subscribe: false }
         case 'subscribe-only':
@@ -120,11 +117,11 @@ export class SyncEngine implements SyncClient {
 
     private readonly resolved: ResolvedSyncConfig
 
-    private readonly outbox
-    private readonly cursor
+    private readonly outbox?: OutboxStore
+    private readonly cursor: CursorStore
     private readonly applier: SyncApplier
 
-    private readonly pushLane: PushLane
+    private readonly pushLane: PushLane | null
     private readonly pullLane: PullLane
     private readonly notifyLane: NotifyLane
     private periodicPullTimer?: ReturnType<typeof setTimeout>
@@ -154,34 +151,31 @@ export class SyncEngine implements SyncClient {
 
         this.transport = config.transport
 
-        const stores = createStores({
-            outboxKey: config.outboxKey,
-            cursorKey: config.cursorKey,
-            maxQueueSize: config.maxQueueSize,
-            outboxEvents: config.outboxEvents,
-            now: () => this.now(),
-            inFlightTimeoutMs: config.inFlightTimeoutMs ?? 30_000
-        })
-
-        this.outbox = stores.outbox
-        this.cursor = stores.cursor
+        this.outbox = config.outbox
+        this.cursor = config.cursor
         this.applier = config.applier
 
-        this.pushLane = new PushLane({
-            outbox: this.outbox,
-            transport: this.transport,
-            applier: this.applier,
-            maxPushItems: this.resolved.push.maxItems,
-            returning: this.resolved.push.returning,
-            conflictStrategy: this.resolved.push.conflictStrategy,
-            retry: this.resolved.push.retry,
-            backoff: this.resolved.push.backoff,
-            now: () => this.now(),
-            buildMeta: () => this.buildMeta(),
-            onError: config.onError,
-            onEvent: config.onEvent
-        })
-        this.pushLane.setEnabled(false)
+        if (this.resolved.push.enabled && !this.outbox) {
+            throw new Error('[Sync] push 模式需要 outbox store')
+        }
+
+        this.pushLane = this.outbox
+            ? new PushLane({
+                outbox: this.outbox,
+                transport: this.transport,
+                applier: this.applier,
+                maxPushItems: this.resolved.push.maxItems,
+                returning: this.resolved.push.returning,
+                conflictStrategy: this.resolved.push.conflictStrategy,
+                retry: this.resolved.push.retry,
+                backoff: this.resolved.push.backoff,
+                now: () => this.now(),
+                buildMeta: () => this.buildMeta(),
+                onError: config.onError,
+                onEvent: config.onEvent
+            })
+            : null
+        this.pushLane?.setEnabled(false)
 
         this.pullLane = new PullLane({
             cursor: this.cursor,
@@ -227,7 +221,7 @@ export class SyncEngine implements SyncClient {
         this.started = false
         this.config.onEvent?.({ type: 'lifecycle:stopped' })
         this.notifyLane.stop()
-        this.pushLane.setEnabled(false)
+        this.pushLane?.setEnabled(false)
         this.clearPeriodicPull()
         this.clearPullTimer()
         this.rejectPullWaiters(new Error('[Sync] stopped'))
@@ -241,61 +235,14 @@ export class SyncEngine implements SyncClient {
         if (this.disposed) return
         this.disposed = true
         this.stop()
-        this.pushLane.dispose()
+        this.pushLane?.dispose()
         this.pullLane.dispose()
         this.notifyLane.dispose()
     }
 
-    async enqueueOps(args: { ops: Operation[] }) {
-        if (this.disposed) throw new Error('SyncEngine disposed')
-        const now = this.now()
-        const items: SyncOutboxItem[] = []
-
-        for (const op of args.ops) {
-            if (!op || (op as any).kind !== 'write') {
-                throw new Error('[Sync] enqueueOps only supports write ops')
-            }
-
-            const write = (op as any).write as any
-            const resource = String(write?.resource ?? '')
-            const action = write?.action as WriteAction
-            const options = (write?.options && typeof write.options === 'object') ? (write.options as WriteOptions) : undefined
-            const opItems: WriteItem[] = Array.isArray(write?.items) ? (write.items as WriteItem[]) : []
-            if (!resource || !action || opItems.length !== 1) {
-                throw new Error('[Sync] enqueueOps requires single-item write ops')
-            }
-
-            const baseItem = opItems[0] as WriteItem
-            const meta = this.requireItemMeta(baseItem)
-            const ensuredItem = { ...(baseItem as any), meta } as WriteItem
-
-            const ensuredOp: Operation = Protocol.ops.build.buildWriteOp({
-                opId: String((op as any).opId || this.nextOpId('w')),
-                write: {
-                    resource,
-                    action,
-                    items: [ensuredItem],
-                    ...(options ? { options } : {})
-                }
-            })
-
-            items.push({
-                idempotencyKey: meta.idempotencyKey!,
-                op: ensuredOp,
-                enqueuedAtMs: now
-            })
-        }
-
-        await this.outbox.enqueue(items)
-        if (this.started && this.lock && this.resolved.push.enabled) {
-            this.pushLane.requestFlush()
-        }
-        return items.map(i => i.idempotencyKey)
-    }
-
     async flush() {
         if (this.disposed) throw new Error('SyncEngine disposed')
-        if (!this.resolved.push.enabled) {
+        if (!this.resolved.push.enabled || !this.pushLane) {
             throw new Error('[Sync] push is disabled')
         }
         await this.ensureStarted()
@@ -309,20 +256,6 @@ export class SyncEngine implements SyncClient {
         }
         await this.ensureStarted()
         return this.schedulePull({ cause: 'manual', debounceMs: 0 })
-    }
-
-    private requireItemMeta(item: WriteItem) {
-        const meta = (item as any)?.meta
-        if (!meta || typeof meta !== 'object') {
-            throw new Error('[Sync] write item meta is required for enqueueOps')
-        }
-        if (typeof (meta as any).idempotencyKey !== 'string' || !(meta as any).idempotencyKey) {
-            throw new Error('[Sync] write item meta.idempotencyKey is required for enqueueOps')
-        }
-        if (typeof (meta as any).clientTimeMs !== 'number' || !Number.isFinite((meta as any).clientTimeMs)) {
-            throw new Error('[Sync] write item meta.clientTimeMs is required for enqueueOps')
-        }
-        return meta as any
     }
 
     private buildMeta(): Meta {
@@ -347,7 +280,10 @@ export class SyncEngine implements SyncClient {
     }
 
     private lockKey() {
-        return this.config.lockKey ?? `${this.config.outboxKey}:lock`
+        if (!this.config.lockKey) {
+            throw new Error('[Sync] lockKey is required')
+        }
+        return this.config.lockKey
     }
 
     private async startWithLock() {
@@ -389,9 +325,9 @@ export class SyncEngine implements SyncClient {
 
         this.notifyLane.start()
         this.notifyLane.setEnabled(this.resolved.subscribe.enabled)
-        this.pushLane.setEnabled(Boolean(this.resolved.push.enabled))
+        this.pushLane?.setEnabled(Boolean(this.resolved.push.enabled))
         if (this.resolved.push.enabled) {
-            this.pushLane.requestFlush()
+            this.pushLane?.requestFlush()
         }
         if (this.resolved.pull.enabled) {
             this.schedulePeriodicPull(0)
