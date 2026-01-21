@@ -16,7 +16,7 @@ function toThrowDetails(details: unknown): StandardErrorDetails | undefined {
 
 export function normalizeOpsRequest(value: unknown): OpsRequest {
     try {
-        return Protocol.ops.validate.assertOpsRequestV1(value)
+        return Protocol.ops.validate.assertOpsRequest(value)
     } catch (err) {
         const standard = Protocol.error.wrap(err, { code: 'INVALID_REQUEST', message: 'Invalid request', kind: 'validation' })
         const details = toThrowDetails(standard.details)
@@ -26,7 +26,7 @@ export function normalizeOpsRequest(value: unknown): OpsRequest {
 
 export function normalizeOperation(value: unknown): Operation {
     try {
-        return Protocol.ops.validate.assertOperationV1(value)
+        return Protocol.ops.validate.assertOperation(value)
     } catch (err) {
         const standard = Protocol.error.wrap(err, { code: 'INVALID_REQUEST', message: 'Invalid op', kind: 'validation' })
         const details = toThrowDetails(standard.details)
@@ -34,7 +34,7 @@ export function normalizeOperation(value: unknown): Operation {
     }
 }
 
-export function ensureV1(meta: Meta) {
+export function ensureProtocolVersion(meta: Meta) {
     if (meta.v === 1) return
     throwError('PROTOCOL_UNSUPPORTED_VERSION', 'Unsupported protocol version', {
         kind: 'validation',
@@ -49,7 +49,7 @@ export function clampQueryLimit(params: QueryParams, maxLimit: number) {
     }
 }
 
-export function parseCursorV1(cursor: string): number {
+export function parseCursor(cursor: string): number {
     if (!cursor.match(/^[0-9]+$/)) {
         throwError('INVALID_REQUEST', 'Invalid cursor', { kind: 'validation' })
     }

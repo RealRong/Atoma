@@ -423,7 +423,7 @@ export type StoreToken = string
  */
 export type OutboxQueueMode = 'queue' | 'local-first'
 
-export type OutboxRuntime = Readonly<{
+export type OutboxWriter = Readonly<{
     queueMode: OutboxQueueMode
     /**
      * enqueue 统一为 ops（写入语义以 ops 为唯一载体）。
@@ -436,14 +436,22 @@ export type OutboxRuntime = Readonly<{
 /**
  * CoreRuntime：唯一上下文，承载跨 store 能力（ops/mutation/outbox/observability/resolveStore）
  */
+export interface RuntimeStores {
+    resolveStore: (name: StoreToken) => IStore<any> | undefined
+}
+
+export interface RuntimeObservability {
+    createContext: (storeName: StoreToken, args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
+    registerStore?: (args: { storeName: StoreToken; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => void
+}
+
 export type CoreRuntime = Readonly<{
     opsClient: OpsClientLike
     mutation: MutationPipeline
     dataProcessor: DataProcessor
-    resolveStore: (name: StoreToken) => IStore<any> | undefined
-    createObservabilityContext: (storeName: StoreToken, args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
-    registerStoreObservability?: (args: { storeName: StoreToken; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => void
-    outbox?: OutboxRuntime
+    stores: RuntimeStores
+    observability: RuntimeObservability
+    outbox?: OutboxWriter
     jotaiStore: JotaiStore
 }>
 

@@ -2,30 +2,90 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
+      "atoma-sync": [
+        "packages/atoma-sync/src/index.ts"
+      ],
+      "atoma-sync/*": [
+        "packages/atoma-sync/src/*"
+      ],
+      "atoma": [
+        "src/index.ts"
+      ],
+      "atoma/client": [
+        "src/client/index.ts"
+      ],
+      "atoma/core": [
+        "src/core/index.ts"
+      ],
+      "atoma/core/*": [
+        "src/core/*"
+      ],
+      "atoma/shared": [
+        "src/shared/index.ts"
+      ],
+      "atoma/shared/*": [
+        "src/shared/*"
+      ],
+      "atoma/observability": [
+        "src/observability/index.ts"
+      ],
+      "atoma/observability/*": [
+        "src/observability/*"
+      ],
+      "atoma/protocol": [
+        "src/protocol/index.ts"
+      ],
+      "atoma/protocol/*": [
+        "src/protocol/*"
+      ],
+      "atoma/backend": [
+        "src/backend/index.ts"
+      ],
+      "atoma/backend/*": [
+        "src/backend/*"
+      ],
+      "#client": [
+        "src/client/index.ts"
+      ],
+      "#client/*": [
+        "src/client/*"
+      ],
       "#core": [
         "src/core/index.ts"
+      ],
+      "#core/*": [
+        "src/core/*"
       ],
       "#shared": [
         "src/shared/index.ts"
       ],
+      "#shared/*": [
+        "src/shared/*"
+      ],
       "#observability": [
         "src/observability/index.ts"
+      ],
+      "#observability/*": [
+        "src/observability/*"
       ],
       "#protocol": [
         "src/protocol/index.ts"
       ],
-      "#sync": [
-        "src/sync/index.ts"
+      "#protocol/*": [
+        "src/protocol/*"
       ],
       "#backend": [
         "src/backend/index.ts"
+      ],
+      "#backend/*": [
+        "src/backend/*"
       ],
       "#devtools": [
         "src/devtools/index.ts"
       ]
     },
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
@@ -42,7 +102,8 @@
     "jsx": "react-jsx"
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "packages/atoma-sync/src/**/*"
   ],
   "exclude": [
     "node_modules",

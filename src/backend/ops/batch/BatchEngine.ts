@@ -4,6 +4,9 @@ import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import { QueryLane } from './queryLane'
 import { WriteLane } from './writeLane'
 import { Protocol } from '#protocol'
+import { Shared } from '#shared'
+
+const { parseOrThrow, z } = Shared.zod
 
 export interface BatchEngineConfig {
     /** Ops endpoint (for observability payloads only). */
@@ -67,11 +70,38 @@ export class BatchEngine {
     private readonly writeLane: WriteLane
 
     constructor(private readonly config: BatchEngineConfig) {
-        if (!config.executeFn || typeof config.executeFn !== 'function') {
-            throw new Error('[BatchEngine] config.executeFn is required')
-        }
-        this.endpoint = (config.endpoint || Protocol.http.paths.OPS).replace(/\/$/, '')
-        this.executeFn = config.executeFn
+        const anyFunction = () => z.custom<(...args: any[]) => any>(value => typeof value === 'function')
+        this.config = parseOrThrow(
+            z.object({
+                executeFn: z.any(),
+                endpoint: z.string().optional(),
+                maxQueueLength: z.union([
+                    z.number().finite().int().positive(),
+                    z.object({
+                        query: z.number().finite().int().positive().optional(),
+                        write: z.number().finite().int().positive().optional()
+                    }).loose()
+                ]).optional(),
+                queryOverflowStrategy: z.union([z.literal('reject_new'), z.literal('drop_old_queries')]).optional(),
+                maxBatchSize: z.number().finite().int().positive().optional(),
+                flushIntervalMs: z.number().finite().nonnegative().optional(),
+                queryMaxInFlight: z.number().finite().int().positive().optional(),
+                writeMaxInFlight: z.number().finite().int().positive().optional(),
+                maxOpsPerRequest: z.number().finite().int().positive().optional(),
+                onError: anyFunction().optional()
+            })
+                .loose()
+                .superRefine((value: any, ctx) => {
+                    if (typeof value.executeFn !== 'function') {
+                        ctx.addIssue({ code: 'custom', message: '[BatchEngine] config.executeFn is required' })
+                    }
+                }),
+            config,
+            { prefix: '' }
+        ) as any
+
+        this.endpoint = (this.config.endpoint || Protocol.http.paths.OPS).replace(/\/$/, '')
+        this.executeFn = this.config.executeFn
 
         this.queryLane = new QueryLane({
             endpoint: () => this.endpoint,

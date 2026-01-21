@@ -1,3 +1,4 @@
-export { assertOperationV1 } from './v1/operation'
-export { assertOpsRequestV1, assertOutgoingOpsV1 } from './v1/opsRequest'
-
+export { assertMeta } from './meta'
+export { assertOperation } from './operation'
+export { assertOpsRequest, assertOutgoingOps } from './opsRequest'
+export { assertOperationResult, assertOperationResults, assertQueryResultData, assertWriteResultData } from './result'

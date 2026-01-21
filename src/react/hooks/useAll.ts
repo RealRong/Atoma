@@ -21,7 +21,7 @@ export function useAll<T extends Entity, Relations = {}, const Include extends R
     if (!options?.include || !relations) return memoedArr as Result
 
     const runtime = storeHandleManager.getStoreRuntime(store)
-    const resolveStore = runtime?.resolveStore
+    const resolveStore = runtime?.stores?.resolveStore
     const relationsResult = useRelations<T, Relations, Include>(memoedArr, options.include, relations as Relations, resolveStore)
     return relationsResult.data as unknown as Result
 }

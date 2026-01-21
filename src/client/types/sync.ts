@@ -1,73 +1,84 @@
-import type { SyncEvent, SyncOutboxEvents, SyncPhase, SyncOutboxItem } from '#sync'
-import type { HttpBackendConfig } from './backend'
+import type { Cursor } from '#protocol'
+import type {
+    SyncBackoffConfig,
+    SyncEvent,
+    SyncOutboxEvents,
+    SyncPhase,
+    SyncRetryConfig
+} from 'atoma-sync'
 import type { AtomaSyncStartMode } from './client'
+import type { HttpEndpointOptions } from './options'
 
-export type SyncQueueMode = 'queue' | 'local-first'
+export type SyncMode = AtomaSyncStartMode
+export type OutboxMode = 'queue' | 'local-first'
 
-export type SyncQueueWritesArgs = {
-    maxQueueSize?: number
-    onQueueChange?: (size: number) => void
-    onQueueFull?: (args: { maxQueueSize: number; droppedOp: SyncOutboxItem }) => void
-}
+export type SyncEndpointConfig = Readonly<{
+    url: string
+    http?: HttpEndpointOptions
+    sse?: string
+}>
 
-export type SyncAdvancedArgs = {
-    outboxKey?: string
-    cursorKey?: string
-    lockKey?: string
-    lockTtlMs?: number
-    lockRenewIntervalMs?: number
-}
-
-export type SyncDefaultsArgs = {
-    mode?: AtomaSyncStartMode
-    deviceId?: string
-    advanced?: SyncAdvancedArgs
+export type SyncEngineConfig = Readonly<{
+    mode: SyncMode
     resources?: string[]
-    returning?: boolean
-    subscribe?: boolean
-    subscribeEventName?: string
-    pullLimit?: number
-    pullDebounceMs?: number
-    pullIntervalMs?: number
-    reconnectDelayMs?: number
-    inFlightTimeoutMs?: number
-    retry?: HttpBackendConfig['retry']
-    backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
-    now?: () => number
-    conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
-    onEvent?: (event: any) => void
-    onError?: (error: Error, context: any) => void
-}
+    initialCursor?: Cursor
 
-export type AtomaClientSyncConfig = {
-    /** Default mode used by `Sync.start()` when called without args. */
-    mode?: AtomaSyncStartMode
-    /** Device identity used to derive internal persistence keys (outbox/cursor/lock). */
-    deviceId?: string
-    /** Advanced persistence overrides (rare). */
-    advanced?: SyncAdvancedArgs
-    /** Store(...).Outbox queued 写入策略（默认由 store.backend 推导） */
-    queue?: false | SyncQueueMode
-    /** 是否启用 subscribe（默认：true） */
-    subscribe?: boolean
-    /** SSE event name（默认：Protocol.sse.events.NOTIFY） */
-    subscribeEventName?: string
-    /** 同步资源过滤（默认：不过滤；服务端返回所有 changes） */
-    resources?: string[]
-    maxQueueSize?: number
-    maxPushItems?: number
-    pullLimit?: number
-    pullDebounceMs?: number
-    reconnectDelayMs?: number
-    pullIntervalMs?: number
-    inFlightTimeoutMs?: number
-    retry?: HttpBackendConfig['retry']
-    backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
+    pull: Readonly<{
+        limit: number
+        debounceMs: number
+        intervalMs: number
+    }>
+
+    push: Readonly<{
+        maxItems: number
+        returning: boolean
+        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
+    }>
+
+    subscribe: Readonly<{
+        enabled: boolean
+        eventName?: string
+        reconnectDelayMs: number
+    }>
+
+    retry: SyncRetryConfig
+    backoff: SyncBackoffConfig
     now?: () => number
-    conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
-    returning?: boolean
-    /** outbox 事件（例如队列大小变化） */
-    outboxEvents?: SyncOutboxEvents
+
     onError?: (error: Error, context: { phase: SyncPhase }) => void
     onEvent?: (event: SyncEvent) => void
-}
+}>
+
+export type SyncOutboxConfig = false | Readonly<{
+    mode: OutboxMode
+    storage: Readonly<{
+        maxSize: number
+        inFlightTimeoutMs: number
+    }>
+    events?: SyncOutboxEvents
+}>
+
+export type SyncStateConfig = Readonly<{
+    deviceId: string
+    keys: Readonly<{
+        outbox: string
+        cursor: string
+        lock: string
+    }>
+    lock: Readonly<{
+        ttlMs?: number
+        renewIntervalMs?: number
+    }>
+}>
+
+/**
+ * 最终内部模型（Normalized）：
+ * - endpoint/engine/outbox/state 的结构与默认值都已归一化
+ * - 不再存在 queue/maxQueueSize/outboxEvents/advanced 等旧字段
+ */
+export type AtomaClientSyncConfig = Readonly<{
+    endpoint: SyncEndpointConfig
+    engine: SyncEngineConfig
+    outbox: SyncOutboxConfig
+    state: SyncStateConfig
+}>

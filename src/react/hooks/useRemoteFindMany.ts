@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Entity, FindManyOptions, PageInfo, StoreApi } from '#core'
+import { Core } from '#core'
 import { storeHandleManager } from '../../core/store/internals/storeHandleManager'
 
 type RemoteState<T extends Entity> = Readonly<{

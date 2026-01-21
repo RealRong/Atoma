@@ -73,9 +73,12 @@ export const presets = {
             },
             sync: {
                 url: args.url,
-                queue: 'local-first',
                 ...(args.sse ? { sse: args.sse } : { sse: '/sync/subscribe' }),
-                ...(args.resources ? { resources: args.resources } : {})
+                outbox: 'local-first',
+                engine: {
+                    mode: 'full',
+                    ...(args.resources ? { resources: args.resources } : {})
+                }
             }
         }
     },
@@ -116,4 +119,3 @@ export const presets = {
         }
     }
 } as const
-

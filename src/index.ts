@@ -1,39 +1,15 @@
 /**
- * Atoma（React-first public API）
+ * Atoma（core package）
  *
- * 约定：用户不直接接触 core 的 createStore/Core 等低层入口；
- * 对外统一从顶层 client + react hooks 入口进入（createClient/createOpContext/useFindMany 等）。
+ * 目标：让主包保持“本地状态库（core + protocol）”的最小心智负担。
+ * - client（createClient）改为子入口：`atoma/client`
+ * - react hooks 改为子入口：`atoma/react`
  */
 
-export { createClient, presets } from './client'
-export type { CreateClientOptions } from './client'
-export { createOpContext } from './core/operationContext'
-export type { CreateOpContextArgs } from './core/operationContext'
-export type {
-    AtomaClient,
-    AtomaHistory,
-    AtomaSync,
-    AtomaSyncStartMode,
-    AtomaSyncStatus,
-    AtomaSchema,
-    AtomaStoreSchema,
-    BackendConfig,
-    BackendEndpointConfig,
-    CustomOpsBackendConfig,
-    HttpBackendConfig,
-    HttpSubscribeConfig,
-    HttpSyncBackendConfig,
-    IndexedDBBackendConfig,
-    MemoryBackendConfig,
-    ResolvedBackend,
-    ResolvedBackends,
-    StoreBackendEndpointConfig,
-    StoreCustomOpsBackendConfig,
-} from './client/types'
-export { Backend } from '#backend'
-export type { OpsClient, ExecuteOpsInput, ExecuteOpsOutput } from '#backend'
-export type { OperationContext, OperationOrigin } from './core'
+export { Core } from './core'
 
-export type { DebugEvent } from './observability'
+export { Protocol } from './protocol'
 
-export * from './react'
+export { Shared } from './shared'
+
+export { Observability } from './observability'

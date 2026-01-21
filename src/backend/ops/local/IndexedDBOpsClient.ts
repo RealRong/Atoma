@@ -14,6 +14,9 @@ import type {
 } from '#protocol'
 import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import { OpsClient } from '../OpsClient'
+import { Shared } from '#shared'
+
+const { parseOrThrow, z } = Shared.zod
 
 function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -106,9 +109,17 @@ export class IndexedDBOpsClient extends OpsClient {
         tableForResource: (resource: string) => Table<any, string>
     }) {
         super()
-        if (!config?.tableForResource || typeof config.tableForResource !== 'function') {
-            throw new Error('[IndexedDBOpsClient] config.tableForResource is required')
-        }
+        this.config = parseOrThrow(
+            z.object({ tableForResource: z.any() })
+                .loose()
+                .superRefine((value: any, ctx) => {
+                    if (typeof value.tableForResource !== 'function') {
+                        ctx.addIssue({ code: 'custom', message: '[IndexedDBOpsClient] config.tableForResource is required' })
+                    }
+                }),
+            config,
+            { prefix: '' }
+        ) as any
     }
 
     async executeOps(input: ExecuteOpsInput): Promise<ExecuteOpsOutput> {

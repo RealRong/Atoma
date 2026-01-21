@@ -14,9 +14,6 @@ export class NumberDateIndex<T> implements IIndex<T> {
     private dirty = false
 
     constructor(config: IndexDefinition<T> & { type: 'number' | 'date' }) {
-        if (config.type !== 'number' && config.type !== 'date') {
-            throw new Error(`[Atoma Index] Invalid type "${(config as any).type}" for NumberDateIndex.`)
-        }
         this.type = config.type
         this.config = config
     }

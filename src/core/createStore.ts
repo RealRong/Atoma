@@ -1,6 +1,7 @@
 import { atom } from 'jotai/vanilla'
 import { storeHandleManager } from './store/internals/storeHandleManager'
 import { createDirectStoreView } from './store/createDirectStoreView'
+import { Shared } from '#shared'
 import type {
     CoreRuntime,
     Entity,
@@ -10,6 +11,8 @@ import type {
     StoreConfig,
 } from './types'
 import type { EntityId } from '#protocol'
+
+const { parseOrThrow, z } = Shared.zod
 
 export interface CoreStoreConfig<T extends Entity> extends StoreConfig<T> {
     name: string
@@ -38,12 +41,26 @@ export function createStore<T extends Entity, const Relations = {}>(
 export function createStore<T extends Entity, Relations = {}>(
     config: CoreStoreConfig<T> & { relations?: () => Relations }
 ): CoreStore<T, Relations> {
+    config = parseOrThrow(
+        z.object({
+            relations: z.any().optional()
+        })
+            .loose()
+            .superRefine((value: any, ctx) => {
+                if (value.relations !== undefined && typeof value.relations !== 'function') {
+                    ctx.addIssue({ code: 'custom', message: 'config.relations 必须是返回 RelationMap 的函数' })
+                }
+            }),
+        config,
+        { prefix: '[Atoma] createStore: ' }
+    ) as any
+
     const { name } = config
     const clientRuntime = config.clientRuntime
     const jotaiStore = clientRuntime.jotaiStore
     const objectMapAtom = atom(new Map<EntityId, T>())
 
-    clientRuntime.registerStoreObservability?.({
+    clientRuntime.observability.registerStore?.({
         storeName: name,
         debug: config.debug,
         debugSink: config.debugSink
@@ -65,9 +82,6 @@ export function createStore<T extends Entity, Relations = {}>(
     const getRelations = (() => {
         const relationsFactory = config.relations
         if (!relationsFactory) return undefined
-        if (typeof relationsFactory !== 'function') {
-            throw new Error('[Atoma] config.relations 必须是返回 RelationMap 的函数')
-        }
         let cache: Relations | undefined
         return () => {
             if (!cache) {

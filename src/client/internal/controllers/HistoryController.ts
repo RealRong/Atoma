@@ -1,7 +1,7 @@
 import type { OperationContext } from '#core'
 import type { Patch } from 'immer'
-import type { AtomaHistory } from '../../types'
-import type { ClientRuntimeInternal } from '../types'
+import type { AtomaHistory } from '#client/types'
+import type { ClientRuntimeInternal } from '#client/internal/types'
 
 export class HistoryController {
     readonly history: AtomaHistory

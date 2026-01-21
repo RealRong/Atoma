@@ -1,6 +1,6 @@
 import type { OpsClient, RetryOptions } from '#backend'
 import type { Envelope, OpsResponseData } from '#protocol'
-import type { SyncSubscribe } from '#sync'
+import type { SyncSubscribe } from 'atoma-sync'
 import type { Table } from 'dexie'
 
 export type HttpBackendConfig = {
@@ -21,9 +21,10 @@ export type HttpBackendConfig = {
 }
 
 export type HttpSubscribeConfig = {
-    subscribePath?: string
-    subscribeUrl?: (args?: { resources?: string[] }) => string
-    eventSourceFactory?: (url: string) => EventSource
+    subscribe?: {
+        buildUrl?: (args?: { resources?: string[] }) => string
+        connect?: (url: string) => EventSource
+    }
 }
 
 export type HttpSyncBackendConfig = HttpBackendConfig & HttpSubscribeConfig
@@ -44,8 +45,8 @@ export type StoreCustomOpsBackendConfig = {
 export type CustomOpsBackendConfig = StoreCustomOpsBackendConfig & {
     subscribe?: SyncSubscribe
     sse?: {
-        subscribeUrl: (args?: { resources?: string[] }) => string
-        eventSourceFactory?: (url: string) => EventSource
+        buildUrl: (args?: { resources?: string[] }) => string
+        connect?: (url: string) => EventSource
     }
 }
 
@@ -82,7 +83,7 @@ export type ResolvedBackend = {
     subscribe?: SyncSubscribe
     sse?: {
         buildUrl: (args?: { resources?: string[] }) => string
-        eventSourceFactory?: (url: string) => EventSource
+        connect?: (url: string) => EventSource
     }
 }
 

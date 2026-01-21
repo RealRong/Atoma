@@ -21,7 +21,7 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
     entry.runtime = runtime
 
     entry.stopStoreListener?.()
-    entry.stopStoreListener = runtime.onStoreCreated((store) => {
+    entry.stopStoreListener = runtime.stores.onStoreCreated((store) => {
         const name = storeHandleManager.getStoreName(store, 'devtools')
 
         if (!entry.storeProviders.has(name)) {

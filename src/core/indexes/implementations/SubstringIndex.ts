@@ -41,9 +41,6 @@ export class SubstringIndex<T> implements IIndex<T> {
     private dirty = false
 
     constructor(config: IndexDefinition<T>) {
-        if (config.type !== 'substring') {
-            throw new Error(`[Atoma Index] Invalid type "${config.type}" for SubstringIndex.`)
-        }
         this.config = config
         this.ngramSize = Math.max(2, Math.min(6, config.options?.ngramSize ?? 3))
     }

@@ -51,7 +51,6 @@ export type {
 
 export type {
     AtomaClientSyncConfig,
-    SyncDefaultsArgs,
-    SyncQueueMode,
-    SyncQueueWritesArgs
+    SyncMode,
+    OutboxMode,
 } from './sync'

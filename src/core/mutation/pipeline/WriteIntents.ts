@@ -55,9 +55,10 @@ export function buildWriteIntentsFromEvents<T extends Entity>(args: {
             const entityId = op.data.id
             const value = args.optimisticState.get(entityId)
             if (!value) continue
+            const baseForVersion = args.baseState.get(entityId) ?? value
             pushIntent({
                 action: 'update',
-                item: { entityId, baseVersion: Shared.version.requireBaseVersion(entityId, value), value, meta }
+                item: { entityId, baseVersion: Shared.version.requireBaseVersion(entityId, baseForVersion), value, meta }
             })
             continue
         }

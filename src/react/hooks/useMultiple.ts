@@ -25,7 +25,7 @@ export function useMany<T extends Entity, Relations = {}, const Include extends 
 
     const selectorFn = useMemo(() => {
         const idsSnapshot = stableIds.slice()
-        return (map: Map<T['id'], T>): T[] => {
+        return (map: ReadonlyMap<T['id'], T>): T[] => {
             if (!idsSnapshot.length) return []
             const seen = new Set<T['id']>()
             const arr: T[] = []
@@ -58,7 +58,7 @@ export function useMany<T extends Entity, Relations = {}, const Include extends 
 
     const relations = storeHandleManager.getStoreRelations(store, 'useMany') as Relations | undefined
     const runtime = storeHandleManager.getStoreRuntime(store)
-    const resolveStore = runtime?.resolveStore
+    const resolveStore = runtime?.stores?.resolveStore
     const effectiveInclude = (include ?? ({} as Include))
     const relationsResult = useRelations<T, Relations, Include>(baseList, effectiveInclude, relations, resolveStore)
     const withRelations = relationsResult.data

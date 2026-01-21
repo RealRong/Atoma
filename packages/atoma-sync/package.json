@@ -1,0 +1,26 @@
+{
+    "name": "atoma-sync",
+    "version": "0.0.0",
+    "type": "module",
+    "description": "Atoma Sync Engine (optional extension package)",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "dependencies": {
+        "p-queue": "^8.1.1",
+        "p-retry": "^7.1.0",
+        "xstate": "^5.25.1"
+    },
+    "peerDependencies": {
+        "atoma": "^1.0.0"
+    },
+    "devDependencies": {
+        "atoma": "file:../.."
+    }
+}

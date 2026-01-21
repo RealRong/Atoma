@@ -153,7 +153,7 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
 
     const relations = storeHandleManager.getStoreRelations(store, 'useFindMany') as Relations | undefined
     const runtime = storeHandleManager.getStoreRuntime(store)
-    const resolveStore = runtime?.resolveStore
+    const resolveStore = runtime?.stores?.resolveStore
     const effectiveInclude = (options as any)?.include ?? ({} as Include)
 
     const relationsResult = useRelations<T, Relations, Include>(

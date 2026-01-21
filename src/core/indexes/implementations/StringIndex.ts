@@ -11,9 +11,6 @@ export class StringIndex<T> implements IIndex<T> {
     private valueMap = new Map<string, Set<EntityId>>()
 
     constructor(config: IndexDefinition<T>) {
-        if (config.type !== 'string') {
-            throw new Error(`[Atoma Index] Invalid type "${config.type}" for StringIndex.`)
-        }
         this.config = config
     }
 

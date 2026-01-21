@@ -1,7 +1,7 @@
 import { envelope } from '../core/envelope'
 import { buildChangesPullOp, buildQueryOp, buildRequestMeta, buildWriteOp, withTraceMeta } from './build'
 import { ensureWriteItemMeta, newWriteItemMeta } from './meta'
-import { assertOpsRequestV1, assertOperationV1, assertOutgoingOpsV1 } from './validate'
+import { assertMeta, assertOperation, assertOpsRequest, assertOutgoingOps, assertOperationResult, assertOperationResults, assertQueryResultData, assertWriteResultData } from './validate'
 
 export const ops = {
     parse: {
@@ -23,9 +23,14 @@ export const ops = {
         newWriteItemMeta
     },
     validate: {
-        assertOpsRequestV1,
-        assertOperationV1,
-        assertOutgoingOpsV1
+        assertMeta,
+        assertOpsRequest,
+        assertOperation,
+        assertOutgoingOps,
+        assertOperationResult,
+        assertOperationResults,
+        assertQueryResultData,
+        assertWriteResultData
     }
 } as const
 

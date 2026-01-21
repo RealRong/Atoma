@@ -31,7 +31,7 @@ export async function executeOps<T extends Entity>(clientRuntime: CoreRuntime, o
         traceId,
         requestId: context ? context.requestId() : undefined
     })
-    Protocol.ops.validate.assertOutgoingOpsV1({ ops: opsWithTrace, meta })
+    Protocol.ops.validate.assertOutgoingOps({ ops: opsWithTrace, meta })
     const res = await clientRuntime.opsClient.executeOps({
         ops: opsWithTrace,
         meta,

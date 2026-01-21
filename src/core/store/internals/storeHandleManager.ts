@@ -64,7 +64,7 @@ export class StoreHandleManager {
         options?: StoreOperationOptions | StoreReadOptions | { explain?: boolean }
     ): ObservabilityContext {
         const anyOptions = options as any
-        return clientRuntime.createObservabilityContext(handle.storeName, {
+        return clientRuntime.observability.createContext(handle.storeName, {
             explain: anyOptions?.explain === true
         })
     }
@@ -144,7 +144,7 @@ export class StoreHandleManager {
         const runtime = this.getStoreRuntime(store)
         const processed = runtime
             ? (await Promise.all(items.map(async (item) => runtime.dataProcessor.writeback(handle, item))))
-                .filter((item): item is T => item !== undefined)
+                .filter(Boolean) as T[]
             : items
 
         if (!processed.length) return

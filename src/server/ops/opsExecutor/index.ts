@@ -9,7 +9,7 @@ import type {
     WriteOp
 } from '#protocol'
 import type { IOrmAdapter } from '../../adapters/ports'
-import { clampQueryLimit, ensureV1, normalizeOpsRequest, parseCursorV1 } from './normalize'
+import { clampQueryLimit, ensureProtocolVersion, normalizeOpsRequest, parseCursor } from './normalize'
 import { executeQueryOps } from './query'
 import { executeWriteOps } from './write'
 
@@ -56,7 +56,7 @@ export function createOpsExecutor<Ctx>(args: {
 
             const bodyRaw = await args.readBodyJson(incoming)
             const req = normalizeOpsRequest(bodyRaw)
-            ensureV1(req.meta)
+            ensureProtocolVersion(req.meta)
 
             const ops = req.ops
             const traceByOpId = new Map<string, { traceId?: string; requestId?: string }>()
@@ -188,7 +188,7 @@ export function createOpsExecutor<Ctx>(args: {
                     runtime: pluginRuntime
                 }, async () => {
                     try {
-                        const cursor = parseCursorV1(op.pull.cursor)
+                        const cursor = parseCursor(op.pull.cursor)
                         const maxLimit = args.config.sync?.pull?.maxLimit ?? args.config.limits?.syncPull?.maxLimit ?? 200
                         const limit = Math.min(Math.max(1, Math.floor(op.pull.limit)), maxLimit)
 

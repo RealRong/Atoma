@@ -18,9 +18,6 @@ export class TextIndex<T> implements IIndex<T> {
     private fuzzyDistance: 0 | 1 | 2
 
     constructor(config: IndexDefinition<T>) {
-        if (config.type !== 'text') {
-            throw new Error(`[Atoma Index] Invalid type "${config.type}" for TextIndex.`)
-        }
         this.config = config
         this.tokenizer = config.options?.tokenizer || defaultTokenizer
         this.minTokenLength = config.options?.minTokenLength ?? 3

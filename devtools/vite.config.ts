@@ -9,11 +9,12 @@ export default defineConfig({
         dedupe: ['react', 'react-dom'],
         alias: {
             atoma: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/index.ts'),
+            'atoma/client': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/client/index.ts'),
             'atoma/devtools': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/devtools/index.ts'),
             '#core': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/core/index.ts'),
             '#observability': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/observability/index.ts'),
             '#protocol': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/protocol/index.ts'),
-            '#sync': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/sync/index.ts'),
+            'atoma-sync': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma-sync/src/index.ts'),
             '#backend': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/backend/index.ts'),
             '#batch': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/batch/index.ts')
         }

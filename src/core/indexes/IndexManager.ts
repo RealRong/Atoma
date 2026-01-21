@@ -7,6 +7,15 @@ import { StringIndex } from './implementations/StringIndex'
 import { SubstringIndex } from './implementations/SubstringIndex'
 import { TextIndex } from './implementations/TextIndex'
 import { IIndex } from './base/IIndex'
+import { Shared } from '#shared'
+
+const { parseOrThrow, z } = Shared.zod
+
+const indexDefinitionSchema = z.object({
+    field: z.string().trim().min(1),
+    type: z.enum(['number', 'date', 'string', 'substring', 'text']),
+    options: z.any().optional()
+}).loose()
 
 export class IndexManager<T> {
     private indexes = new Map<string, IIndex<T>>()
@@ -161,6 +170,8 @@ export class IndexManager<T> {
     }
 
     private createIndex(def: IndexDefinition<T>): IIndex<T> {
+        def = parseOrThrow(indexDefinitionSchema, def, { prefix: '[Atoma Index] ' }) as any
+
         switch (def.type) {
             case 'number':
             case 'date':
@@ -171,8 +182,6 @@ export class IndexManager<T> {
                 return new SubstringIndex<T>(def)
             case 'text':
                 return new TextIndex<T>(def)
-            default:
-                throw new Error(`[Atoma Index] Unsupported index type "${(def as any).type}" for field "${def.field}".`)
         }
     }
 }

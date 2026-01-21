@@ -49,8 +49,11 @@ export class HttpOpsClient extends OpsClient {
         this.getHeaders = async () => {
             const headers = config.headers
             if (!headers) return {}
-            const resolved = headers()
-            return resolved instanceof Promise ? await resolved : resolved
+            if (typeof headers === 'function') {
+                const resolved = headers()
+                return resolved instanceof Promise ? await resolved : resolved
+            }
+            return headers
         }
 
         this.transport = createOpsHttpTransport({
@@ -106,7 +109,7 @@ export class HttpOpsClient extends OpsClient {
      */
     private async _executeOpsDirectly({ ops, meta, context, signal }: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
         const requestMeta = this.normalizeRequestMeta(meta)
-        Protocol.ops.validate.assertOutgoingOpsV1({ ops, meta: requestMeta })
+        Protocol.ops.validate.assertOutgoingOps({ ops, meta: requestMeta })
         const res = await this.transport.executeOps({
             baseURL: this.baseURL,
             opsPath: this.opsPath,

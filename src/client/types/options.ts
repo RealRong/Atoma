@@ -1,8 +1,9 @@
 import type { Entity, StoreDataProcessor } from '#core'
 import type { Table } from 'dexie'
 import type { AtomaSchema } from './schema'
-import type { BackendEndpointConfig, HttpBackendConfig, StoreBackendEndpointConfig } from './backend'
-import type { AtomaSyncStartMode } from './client'
+import type { HttpBackendConfig, StoreBackendEndpointConfig } from './backend'
+import type { Cursor } from '#protocol'
+import type { SyncBackoffConfig, SyncEvent, SyncOutboxEvents, SyncPhase, SyncRetryConfig } from 'atoma-sync'
 
 /**
  * Extra HTTP backend options shared by both Store (direct) and Sync (replication) endpoints.
@@ -119,118 +120,59 @@ export type StoreConfig =
     | MemoryStoreConfig
     | CustomStoreConfig
 
-export type SyncEventHandler = (event: unknown) => void
-export type SyncErrorHandler = (error: Error, context: unknown) => void
+export type SyncMode = 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full'
+export type OutboxMode = 'queue' | 'local-first'
 
-export interface SyncQueueEvents {
-    /** Maximum number of queued items allowed in outbox. */
-    maxQueueSize?: number
-    /** Called whenever the queue size changes. */
-    onQueueChange?: (size: number) => void
-    /** Called when the queue is full and an item is dropped. */
-    onQueueFull?: (args: { maxQueueSize: number; droppedOp: unknown }) => void
-}
+export type EndpointConfigInput =
+    | string
+    | {
+        url: string
+        http?: HttpEndpointOptions
+        sse?: string
+    }
 
-export interface SyncAdvancedOptions {
-    /**
-     * Advanced persistence keys. Usually you should NOT set these.
-     * - For most apps, prefer `sync.deviceId` and let keys be derived automatically.
-     * - These exist mainly for deterministic tests and migrations.
-     */
-    outboxKey?: string
-    cursorKey?: string
-    lockKey?: string
-    lockTtlMs?: number
-    lockRenewIntervalMs?: number
-}
+export type EngineConfigInput<ResourceName extends string = string> =
+    | SyncMode
+    | {
+        mode?: SyncMode
+        resources?: ResourceName[]
+        initialCursor?: Cursor
+        pull?: { limit?: number; debounceMs?: number; intervalMs?: number }
+        push?: { maxItems?: number; returning?: boolean; conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual' }
+        subscribe?: { enabled?: boolean; eventName?: string; reconnectDelayMs?: number }
+        retry?: SyncRetryConfig
+        backoff?: SyncBackoffConfig
+        now?: () => number
+        onError?: (error: Error, context: { phase: SyncPhase }) => void
+        onEvent?: (event: SyncEvent) => void
+    }
 
-export interface SyncTransportOptions {
-    /**
-     * SSE subscribe path (relative to `sync.url`) used by `Sync.start('subscribe-only' | 'pull+subscribe' | 'full')`.
-     * When omitted, those modes require a custom `sync.backend` with subscribe capability.
-     */
-    sse?: string
-}
+export type OutboxConfigInput =
+    | false
+    | OutboxMode
+    | {
+        mode?: OutboxMode
+        storage?: { maxSize?: number; inFlightTimeoutMs?: number }
+        events?: SyncOutboxEvents
+    }
 
-export interface SyncDefaultsInput<ResourceName extends string = string> {
-    /**
-     * Default sync start mode used when calling `Sync.start()` without explicit mode.
-     * When omitted, mode is derived from `queue` + subscribe capability.
-     */
-    mode?: AtomaSyncStartMode
-    /**
-     * Device identity used to derive internal persistence keys (outbox/cursor/lock).
-     * - Provide a stable ID to treat multiple tabs/windows as the same "device".
-     * - Provide a per-tab ID to treat each tab as an independent "device".
-     */
+export type SyncStateConfigInput = {
     deviceId?: string
-    /**
-     * Resources to replicate.
-     * - For best DX, this is typed to your store names (e.g. `keyof Entities`).
-     * - When omitted, server decides (or client defaults may derive it).
-     */
-    resources?: ResourceName[]
-    /** Whether to request server writeback payloads on write operations (when supported). */
-    returning?: boolean
-    /** Enable/disable subscribe (SSE) when the chosen start mode wants it. */
-    subscribe?: boolean
-    /**
-     * SSE event name for subscribe notifications.
-     * Defaults to the protocol event name on the server.
-     */
-    subscribeEventName?: string
-    /** Pull limit per request (max number of changes). */
-    pullLimit?: number
-    /** Debounce window for pull scheduling. */
-    pullDebounceMs?: number
-    /** Periodic pull interval. `0` typically disables periodic pulls. */
-    pullIntervalMs?: number
-    /** Reconnect delay for SSE subscribe. */
-    reconnectDelayMs?: number
-    /** Timeout for an in-flight push batch (ms). */
-    inFlightTimeoutMs?: number
-    /**
-     * Retry policy for sync network requests.
-     * Note: The sync engine currently mainly uses `maxAttempts`; other fields may be ignored by some lanes.
-     */
-    retry?: HttpBackendConfig['retry']
-    /** Backoff policy shared by pull/push/subscribe. */
-    backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
-    /** Custom clock source (advanced). */
-    now?: () => number
-    /** Conflict strategy for push rejections. */
-    conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
-    /** Sync event callback (observability/telemetry). */
-    onEvent?: SyncEventHandler
-    /** Sync error callback (observability/telemetry). */
-    onError?: SyncErrorHandler
+    keys?: { outbox?: string; cursor?: string; lock?: string }
+    lock?: { ttlMs?: number; renewIntervalMs?: number }
 }
 
-export type SyncQueueInput = false | 'queue' | 'local-first'
-
-export interface CreateClientSyncOptions<ResourceName extends string = string>
-    extends SyncDefaultsInput<ResourceName>, SyncTransportOptions, SyncQueueEvents {
-    /** Base URL of the sync target server (shortcut for HTTP backend). */
+/**
+ * 对外输入模型（Input）：允许简写，但会在内部归一化为 AtomaClientSyncConfig（Normalized）。
+ */
+export type SyncConfigInput<ResourceName extends string = string> = {
     url?: string
-    /**
-     * Optional per-lane HTTP overrides for sync transport.
-     * When omitted, falls back to top-level `http` defaults on `createClient`.
-     */
-    http?: HttpEndpointOptions
-    /** Advanced persistence overrides (rare). */
-    advanced?: SyncAdvancedOptions
-    /**
-     * Explicit backend endpoint config (advanced).
-     * When provided, `url/http/sse` are ignored for target selection.
-     */
-    backend?: BackendEndpointConfig
-    /**
-     * Queued write strategy for `client.Store(name).Outbox`.
-     * - `false` disables queued writes.
-     * - `'queue'` queues intents only (no local durable write).
-     * - `'local-first'` writes to local durable store first, then enqueues.
-     */
-    queue?: SyncQueueInput
+    sse?: string
+    mode?: SyncMode
+    outbox?: OutboxConfigInput
+    endpoint?: EndpointConfigInput
+    engine?: EngineConfigInput<ResourceName>
+    state?: SyncStateConfigInput
 }
 
 export type CreateClientOptions<
@@ -243,7 +185,7 @@ export type CreateClientOptions<
     dataProcessor?: StoreDataProcessor<any>
     /**
      * Shared HTTP defaults applied to both Store and Sync lanes.
-     * Use `store.http` / `sync.http` to override per lane.
+     * Use `store.http` / `sync.endpoint.http` to override per lane.
      */
     http?: HttpEndpointOptions
     /** Store backend used for direct CRUD (`client.Store(name)`). */
@@ -252,9 +194,7 @@ export type CreateClientOptions<
     storeBatch?: StoreBatchOptions
     /**
      * Sync/Replication config (optional).
-     * - `url`/`backend`: remote target. When omitted, it may be derived from `store` when `store` is remote.
-     * - `queue`: enables queued writes for `client.Store(name).Outbox`; can be `'queue' | 'local-first'`.
-     * - outbox/cursor/lock keys live under `sync.advanced`.
+     * 本模型已明确只支持 HTTP endpoint（无 custom/backend），并在内部归一化为 AtomaClientSyncConfig（Normalized）。
      */
-    sync?: string | CreateClientSyncOptions<keyof Entities & string>
+    sync?: SyncConfigInput<keyof Entities & string>
 }

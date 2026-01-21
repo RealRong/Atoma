@@ -1,9 +1,17 @@
 import type { DeleteItem } from '#core'
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type Change, type EntityId, type Operation, type OperationResult, type QueryParams, type QueryResultData, type WriteAction, type WriteItem, type WriteItemMeta, type WriteOptions, type WriteResultData } from '#protocol'
-import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync'
-import type { AtomaClientSyncConfig, ResolvedBackend } from '../../types'
-import type { ClientRuntimeInternal } from '../types'
+import type { SyncApplier, SyncWriteAck, SyncWriteReject } from 'atoma-sync'
+import type { AtomaClientSyncConfig, ResolvedBackend } from '#client/types'
+import type { ClientRuntimeInternal } from '#client/internal/types'
+
+function errorMessageFromStandardError(err: any, fallback: string): string {
+    if (err && typeof err === 'object') {
+        const msg = (err as any).message
+        if (typeof msg === 'string' && msg) return msg
+    }
+    return fallback
+}
 
 export class SyncReplicatorApplier implements SyncApplier {
     private opSeq = 0
@@ -14,6 +22,17 @@ export class SyncReplicatorApplier implements SyncApplier {
         private readonly localBackend?: ResolvedBackend,
         private readonly syncConfig?: AtomaClientSyncConfig
     ) {}
+
+    private toProtocolValidationError = (error: unknown, fallbackMessage: string): Error => {
+        const standard = Protocol.error.wrap(error, {
+            code: 'INVALID_RESPONSE',
+            message: fallbackMessage,
+            kind: 'validation'
+        })
+        const err = new Error(`[Atoma] sync: ${standard.message}`)
+        ;(err as any).error = standard
+        return err
+    }
 
     applyPullChanges = async (changes: Change[]) => {
         const list = Array.isArray(changes) ? changes : []
@@ -41,7 +60,7 @@ export class SyncReplicatorApplier implements SyncApplier {
             const uniqueUpsertKeys = Array.from(new Set(upsertEntityIds))
             const uniqueDeleteKeys = Array.from(new Set(deleteKeys))
 
-            const ctx: ObservabilityContext = this.runtime.createObservabilityContext(resource)
+            const ctx: ObservabilityContext = this.runtime.observability.createContext(resource)
 
             const remoteOpsClient = this.backend?.opsClient
             const upserts = (remoteOpsClient && uniqueUpsertKeys.length)
@@ -146,7 +165,7 @@ export class SyncReplicatorApplier implements SyncApplier {
             }
         }
 
-        const strategy = conflictStrategy ?? this.syncConfig?.conflictStrategy ?? 'server-wins'
+        const strategy = conflictStrategy ?? this.syncConfig?.engine?.push?.conflictStrategy ?? 'server-wins'
         const error = (reject.result as any)?.error
         const current = (reject.result as any)?.current
         if (error?.code === 'CONFLICT' && current?.value && strategy === 'server-wins') {
@@ -179,9 +198,13 @@ export class SyncReplicatorApplier implements SyncApplier {
             traceId,
             requestId: context ? context.requestId() : undefined
         })
-        Protocol.ops.validate.assertOutgoingOpsV1({ ops: opsWithTrace, meta })
+        Protocol.ops.validate.assertOutgoingOps({ ops: opsWithTrace, meta })
         const res = await opsClient.executeOps({ ops: opsWithTrace, meta, context })
-        return Array.isArray(res.results) ? (res.results as any) : []
+        try {
+            return Protocol.ops.validate.assertOperationResults((res as any).results)
+        } catch (error) {
+            throw this.toProtocolValidationError(error, 'Invalid ops response')
+        }
     }
 
     private queryResource = async (
@@ -196,16 +219,27 @@ export class SyncReplicatorApplier implements SyncApplier {
         const results = await this.executeOps(opsClient, [op], args2.context)
         const result = results[0]
         if (!result) throw new Error('[Atoma] Missing query result')
-        if ((result as any).ok !== true) {
-            const errObj = (result as any).error
-            const msg = (errObj && typeof errObj.message === 'string') ? errObj.message : 'Query failed'
-            const err = new Error(msg)
+        let parsedResult: OperationResult
+        try {
+            parsedResult = Protocol.ops.validate.assertOperationResult(result)
+        } catch (error) {
+            throw this.toProtocolValidationError(error, 'Invalid query result')
+        }
+        if (parsedResult.ok !== true) {
+            const errObj = parsedResult.error
+            const err = new Error(errorMessageFromStandardError(errObj, 'Query failed'))
             ;(err as any).error = errObj
             throw err
         }
-        const data = (result as any).data as QueryResultData
+
+        let data: QueryResultData
+        try {
+            data = Protocol.ops.validate.assertQueryResultData(parsedResult.data) as QueryResultData
+        } catch (error) {
+            throw this.toProtocolValidationError(error, 'Invalid query result data')
+        }
         return {
-            items: Array.isArray((data as any)?.items) ? ((data as any).items as any[]) : [],
+            items: (data as any).items as any[],
             pageInfo: (data as any)?.pageInfo
         }
     }
@@ -226,24 +260,36 @@ export class SyncReplicatorApplier implements SyncApplier {
         const results = await this.executeOps(opsClient, [op], args2.context)
         const result = results[0]
         if (!result) throw new Error('[Atoma] Missing write result')
-        if ((result as any).ok !== true) {
-            const errObj = (result as any).error
-            const msg = (errObj && typeof errObj.message === 'string') ? errObj.message : 'Write failed'
-            const err = new Error(msg)
+        let parsedResult: OperationResult
+        try {
+            parsedResult = Protocol.ops.validate.assertOperationResult(result)
+        } catch (error) {
+            throw this.toProtocolValidationError(error, 'Invalid write result')
+        }
+        if (parsedResult.ok !== true) {
+            const errObj = parsedResult.error
+            const err = new Error(errorMessageFromStandardError(errObj, 'Write failed'))
             ;(err as any).error = errObj
             throw err
         }
-        const data = (result as any).data as WriteResultData
+
+        let data: WriteResultData
+        try {
+            data = Protocol.ops.validate.assertWriteResultData(parsedResult.data) as WriteResultData
+        } catch (error) {
+            throw this.toProtocolValidationError(error, 'Invalid write result data')
+        }
+
         const itemResults = Array.isArray((data as any)?.results) ? ((data as any).results as any[]) : []
         for (const r of itemResults) {
-            if (!r) continue
             if (r.ok === true) continue
-            const msg = r.error && typeof r.error.message === 'string' ? r.error.message : 'Write failed'
+            const msg = errorMessageFromStandardError((r as any).error, 'Write failed')
             const err = new Error(msg)
-            ;(err as any).error = r.error
-            ;(err as any).current = r.current
+            ;(err as any).error = (r as any).error
+            ;(err as any).current = (r as any).current
             throw err
         }
+
         return data
     }
 

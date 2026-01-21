@@ -32,13 +32,18 @@ describe('hydrate (A 语义)', () => {
             dataProcessor: {
                 process: async (_mode: any, data: any) => data
             },
-            createObservabilityContext: () => ({
-                active: false,
-                traceId: 't',
-                requestId: () => 'r',
-                emit: vi.fn(),
-                with: () => ({ active: false, traceId: 't', requestId: () => 'r', emit: vi.fn(), with: () => ({}) })
-            })
+            stores: {
+                resolveStore: () => undefined
+            },
+            observability: {
+                createContext: () => ({
+                    active: false,
+                    traceId: 't',
+                    requestId: () => 'r',
+                    emit: vi.fn(),
+                    with: () => ({ active: false, traceId: 't', requestId: () => 'r', emit: vi.fn(), with: () => ({}) })
+                })
+            }
         }
 
         const base = { id: '1', version: 1, createdAt: 1, updatedAt: 1 }

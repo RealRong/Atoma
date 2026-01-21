@@ -1,0 +1,185 @@
+import type {
+    Change,
+    ChangeBatch,
+    Cursor,
+    Operation,
+    WriteAction,
+    WriteItem,
+    WriteItemResult,
+} from 'atoma/protocol'
+import type { OpsClientLike, OutboxWriter as CoreOutboxWriter } from 'atoma/core'
+
+export type SyncOutboxItem = {
+    idempotencyKey: string
+    /** 已构建好的 op（必须为单 item 的 write op），PushLane 直接发送 */
+    op: Operation
+    enqueuedAtMs: number
+}
+
+export type OutboxWriter = CoreOutboxWriter
+
+export type OutboxReader = Readonly<{
+    peek: (limit: number) => Promise<SyncOutboxItem[]> | SyncOutboxItem[]
+    ack: (idempotencyKeys: string[]) => Promise<void> | void
+    reject: (idempotencyKeys: string[], reason?: unknown) => Promise<void> | void
+    markInFlight?: (idempotencyKeys: string[], atMs: number) => Promise<void> | void
+    releaseInFlight?: (idempotencyKeys: string[]) => Promise<void> | void
+    /**
+     * Virtual baseVersion rewrite:
+     * - 当某条写入已被服务端确认（拿到 version）后，把同 entity 的后续 outbox items 的 baseVersion 重写为该 version，
+     *   以避免离线连续写导致的自冲突。
+     */
+    rebase?: (args: {
+        resource: string
+        entityId: string
+        baseVersion: number
+        afterEnqueuedAtMs?: number
+    }) => Promise<void> | void
+    size: () => Promise<number> | number
+}>
+
+export type OutboxEvents = Readonly<{
+    setEvents?: (events?: SyncOutboxEvents) => void
+}>
+
+export type OutboxStore = OutboxWriter & OutboxReader & OutboxEvents
+
+export interface CursorStore {
+    get: () => Promise<Cursor | undefined> | Cursor | undefined
+    set: (next: Cursor) => Promise<boolean> | boolean
+}
+
+export type SyncWriteAck = {
+    resource: string
+    action: WriteAction
+    item: WriteItem
+    result: Extract<WriteItemResult, { ok: true }>
+}
+
+export type SyncWriteReject = {
+    resource: string
+    action: WriteAction
+    item: WriteItem
+    result: Extract<WriteItemResult, { ok: false }>
+}
+
+export interface SyncApplier {
+    applyPullChanges: (changes: Change[]) => Promise<void> | void
+    applyWriteAck: (ack: SyncWriteAck) => Promise<void> | void
+    applyWriteReject: (reject: SyncWriteReject, conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual') => Promise<void> | void
+}
+
+export type NotifyMessage = {
+    resources?: string[]
+    traceId?: string
+}
+
+export type SyncSubscribe = (args: {
+    resources?: string[]
+    onMessage: (msg: NotifyMessage) => void
+    onError: (error: unknown) => void
+}) => { close: () => void }
+
+export interface SyncTransport {
+    opsClient: OpsClientLike
+    subscribe?: SyncSubscribe
+}
+
+export type SyncPhase = 'push' | 'pull' | 'notify' | 'lifecycle'
+
+export type SyncEvent =
+    | { type: 'lifecycle:starting' }
+    | { type: 'lifecycle:started' }
+    | { type: 'lifecycle:stopped' }
+    | { type: 'lifecycle:lock_failed'; error: Error }
+    | { type: 'lifecycle:lock_lost'; error: Error }
+    | { type: 'outbox:queue'; size: number }
+    | { type: 'outbox:queue_full'; droppedOp: SyncOutboxItem; maxQueueSize: number }
+    | { type: 'push:start' }
+    | { type: 'push:idle' }
+    | { type: 'push:backoff'; attempt: number; delayMs: number }
+    | { type: 'pull:scheduled'; cause: 'manual' | 'periodic' | 'notify' }
+    | { type: 'pull:start' }
+    | { type: 'pull:idle' }
+    | { type: 'pull:backoff'; attempt: number; delayMs: number }
+    | { type: 'notify:connected' }
+    | { type: 'notify:message'; resources?: string[] }
+    | { type: 'notify:backoff'; attempt: number; delayMs: number }
+    | { type: 'notify:stopped' }
+
+export type SyncOutboxEvents = {
+    onQueueChange?: (size: number) => void
+    onQueueFull?: (droppedOp: SyncOutboxItem, maxQueueSize: number) => void
+}
+
+export type SyncBackoffConfig = {
+    baseDelayMs?: number
+    maxDelayMs?: number
+    jitterRatio?: number
+}
+
+export type SyncRetryConfig = {
+    maxAttempts?: number
+}
+
+export type SyncMode = 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full'
+
+export type SyncResolvedLaneConfig = {
+    retry: SyncRetryConfig
+    backoff: SyncBackoffConfig
+}
+
+export type SyncRuntimeConfig = {
+    transport: SyncTransport
+    applier: SyncApplier
+    outbox?: OutboxReader & OutboxEvents
+    outboxEvents?: SyncOutboxEvents
+    cursor: CursorStore
+
+    push: {
+        enabled: boolean
+        maxItems: number
+        returning: boolean
+        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
+        retry: SyncRetryConfig
+        backoff: SyncBackoffConfig
+    }
+
+    pull: {
+        enabled: boolean
+        limit: number
+        debounceMs: number
+        resources?: string[]
+        initialCursor?: Cursor
+        periodic: {
+            intervalMs: number
+            retry: SyncRetryConfig
+            backoff: SyncBackoffConfig
+        }
+    }
+
+    subscribe: {
+        enabled: boolean
+        reconnectDelayMs: number
+        retry: SyncRetryConfig
+        backoff: SyncBackoffConfig
+    }
+
+    lock: {
+        key: string
+        ttlMs?: number
+        renewIntervalMs?: number
+        backoff: SyncBackoffConfig
+    }
+    now?: () => number
+    onError?: (error: Error, context: { phase: SyncPhase }) => void
+    onEvent?: (event: SyncEvent) => void
+}
+
+export interface SyncClient {
+    start: () => void
+    stop: () => void
+    dispose: () => void
+    flush: () => Promise<void>
+    pull: () => Promise<ChangeBatch | undefined>
+}

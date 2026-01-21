@@ -6,7 +6,8 @@
     "workspaces": [
         "docs",
         "devtools",
-        "demo/server"
+        "demo/server",
+        "packages/*"
     ],
     "main": "dist/index.js",
     "module": "dist/index.js",
@@ -16,6 +17,10 @@
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js"
         },
+        "./client": {
+            "types": "./dist/client/index.d.ts",
+            "import": "./dist/client/index.js"
+        },
         "./devtools": {
             "types": "./dist/devtools/index.d.ts",
             "import": "./dist/devtools/index.js"
@@ -23,6 +28,26 @@
         "./react": {
             "types": "./dist/react/index.d.ts",
             "import": "./dist/react/index.js"
+        },
+        "./core": {
+            "types": "./dist/core/index.d.ts",
+            "import": "./dist/core/index.js"
+        },
+        "./shared": {
+            "types": "./dist/shared/index.d.ts",
+            "import": "./dist/shared/index.js"
+        },
+        "./observability": {
+            "types": "./dist/observability/index.d.ts",
+            "import": "./dist/observability/index.js"
+        },
+        "./protocol": {
+            "types": "./dist/protocol/index.d.ts",
+            "import": "./dist/protocol/index.js"
+        },
+        "./backend": {
+            "types": "./dist/backend/index.d.ts",
+            "import": "./dist/backend/index.js"
         },
         "./server": {
             "types": "./dist/server/index.d.ts",
@@ -57,10 +82,6 @@
         "#protocol": {
             "types": "./dist/protocol/index.d.ts",
             "import": "./dist/protocol/index.js"
-        },
-        "#sync": {
-            "types": "./dist/sync/index.d.ts",
-            "import": "./dist/sync/index.js"
         },
         "#backend": {
             "types": "./dist/backend/index.d.ts",
@@ -98,11 +119,11 @@
     "author": "Rendevoz Team",
     "license": "MIT",
     "peerDependencies": {
+        "@prisma/client": "^5.0.0",
         "immer": "^9.0.0 || ^10.0.0",
         "jotai": "^2.0.0",
         "react": "^18.0.0 || ^19.0.0",
-        "typeorm": "^0.3.20",
-        "@prisma/client": "^5.0.0"
+        "typeorm": "^0.3.20"
     },
     "peerDependenciesMeta": {
         "typeorm": {
@@ -114,7 +135,9 @@
     },
     "dependencies": {
         "lodash": "^4.17.21",
-        "p-limit": "^7.2.0"
+        "mitt": "^3.0.1",
+        "p-limit": "^7.2.0",
+        "zod": "^4.2.1"
     },
     "devDependencies": {
         "@testing-library/react": "^16.3.1",
@@ -126,14 +149,17 @@
         "immer": "^9.0.0 || ^10.0.0",
         "jotai": "^2.0.0",
         "jsdom": "^25.0.0",
+        "mitt": "^3.0.1",
+        "p-retry": "^7.1.1",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
         "reflect-metadata": "^0.1.13",
-        "typeorm": "^0.3.20",
         "tsup": "^8.0.0",
+        "typeorm": "^0.3.20",
         "typescript": "^5.9.3",
         "vite": "^7.2.0",
-        "vitest": "^4.0.16"
+        "vitest": "^4.0.16",
+        "xstate": "^5.25.1"
     },
     "optionalDependencies": {
         "dexie": "^3.2.0 || ^4.0.0"

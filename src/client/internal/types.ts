@@ -1,7 +1,7 @@
 import type { OperationContext, PersistWriteback } from '#core'
 import type { EntityId } from '#protocol'
 import type { Patch } from 'immer'
-import type { ClientRuntime } from '../types'
+import type { ClientRuntime } from '#client/types'
 
 export type ClientRuntimeInternal = ClientRuntime & Readonly<{
     internal: Readonly<{

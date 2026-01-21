@@ -32,7 +32,7 @@ export function useOne<T extends Entity, Relations = {}, const Include extends R
     if (!options?.include || !relations) return base as Result
 
     const runtime = storeHandleManager.getStoreRuntime(store)
-    const resolveStore = runtime?.resolveStore
+    const resolveStore = runtime?.stores?.resolveStore
     const rel = useRelations<T, Relations, Include>(base ? [base] : [], options.include, relations as Relations, resolveStore)
     return rel.data[0] as unknown as Result
 }

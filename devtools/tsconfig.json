@@ -16,6 +16,9 @@
             "atoma": [
                 "../src/index.ts"
             ],
+            "atoma/client": [
+                "../src/client/index.ts"
+            ],
             "atoma/devtools": [
                 "../src/devtools/index.ts"
             ],
@@ -28,8 +31,8 @@
             "#protocol": [
                 "../src/protocol/index.ts"
             ],
-            "#sync": [
-                "../src/sync/index.ts"
+            "atoma-sync": [
+                "../packages/atoma-sync/src/index.ts"
             ],
             "#backend": [
                 "../src/backend/index.ts"

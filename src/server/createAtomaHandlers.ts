@@ -5,6 +5,9 @@ import { createTopLevelErrorFormatter } from './runtime/errors'
 import { readJsonBodyWithLimit } from './runtime/http'
 import { createOpsExecutor } from './ops/opsExecutor'
 import { createSubscribeExecutor } from './ops/subscribeExecutor'
+import { Shared } from '#shared'
+
+const { parseOrThrow, z } = Shared.zod
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
     return Boolean(value && typeof value === 'object' && typeof (value as any)[Symbol.asyncIterator] === 'function')
@@ -101,17 +104,65 @@ function toIncoming(request: Request) {
 }
 
 export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx>) {
-    if (!config?.adapter?.orm) {
-        throw new Error('AtomaServerConfig.adapter.orm is required')
-    }
+    const parsed = parseOrThrow(
+        z.object({
+            adapter: z.object({
+                orm: z.any(),
+                sync: z.any().optional()
+            }).loose(),
+            sync: z.object({
+                enabled: z.boolean().optional()
+            }).loose().optional()
+        })
+            .loose()
+            .superRefine((value: any, ctx) => {
+                if (!value?.adapter?.orm) {
+                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.adapter.orm is required' })
+                    return
+                }
+
+                const syncEnabled = value.sync?.enabled ?? true
+                if (syncEnabled && !value.adapter.sync) {
+                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.adapter.sync is required when sync is enabled' })
+                }
+
+                const tx = (value.adapter.orm as any)?.transaction
+                if (syncEnabled && typeof tx !== 'function') {
+                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.adapter.orm.transaction is required when sync is enabled' })
+                }
+
+                const createCtx = (value.context as any)?.create
+                if (createCtx !== undefined && typeof createCtx !== 'function') {
+                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.context.create must be a function' })
+                }
+
+                const format = (value.errors as any)?.format
+                if (format !== undefined && typeof format !== 'function') {
+                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.errors.format must be a function' })
+                }
+
+                const hooks = (value.observability as any)?.hooks
+                const onRequest = hooks?.onRequest
+                const onResponse = hooks?.onResponse
+                const onError = hooks?.onError
+                if (onRequest !== undefined && typeof onRequest !== 'function') ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.observability.hooks.onRequest must be a function' })
+                if (onResponse !== undefined && typeof onResponse !== 'function') ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.observability.hooks.onResponse must be a function' })
+                if (onError !== undefined && typeof onError !== 'function') ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.observability.hooks.onError must be a function' })
+            })
+            .transform((value: any) => {
+                const syncEnabled = value.sync?.enabled ?? true
+                return {
+                    ...value,
+                    sync: { ...(value.sync ?? {}), enabled: syncEnabled }
+                } as AtomaServerConfig<Ctx>
+            }),
+        config,
+        { prefix: '' }
+    )
+
+    config = parsed
 
     const syncEnabled = config.sync?.enabled ?? true
-    if (syncEnabled && !config.adapter.sync) {
-        throw new Error('AtomaServerConfig.adapter.sync is required when sync is enabled')
-    }
-    if (syncEnabled && typeof (config.adapter.orm as any)?.transaction !== 'function') {
-        throw new Error('AtomaServerConfig.adapter.orm.transaction is required when sync is enabled')
-    }
 
     const formatTopLevelError = createTopLevelErrorFormatter(config)
     const createRuntime = createRuntimeFactory({ config })

@@ -119,7 +119,7 @@ export async function executeWriteOps<T extends Entity>(args: {
 
     const created = result.created
         ? (await Promise.all(result.created.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
-            .filter((item): item is T => item !== undefined)
+            .filter(Boolean) as T[]
         : undefined
 
     const writebackResult = result.writeback
@@ -128,7 +128,7 @@ export async function executeWriteOps<T extends Entity>(args: {
             ...(result.writeback.upserts
                 ? {
                     upserts: (await Promise.all(result.writeback.upserts.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
-                        .filter((item): item is T => item !== undefined)
+                        .filter(Boolean) as T[]
                 }
                 : {})
         }
