@@ -1,24 +1,23 @@
 /**
  * Mutation Pipeline: Persist
- * Purpose: Resolves persist mode (direct/outbox) and executes or enqueues write operations.
- * Call chain: executeMutationFlow -> executeMutationPersistence -> executeWriteOps or outbox.enqueueOps.
+ * Purpose: Delegates persistence side-effects to `CoreRuntime.persistence.persist`.
+ * Call chain: executeMutationFlow -> executeMutationPersistence -> runtime.persistence.persist.
  */
 import type { CoreRuntime, Entity, StoreDispatchEvent } from '../../types'
-import type { PersistResult } from './types'
+import type { PersistKey, PersistResult } from '../../types'
 import type { MutationProgram } from './types'
-import { executeWriteOps } from './WriteOps'
 import type { ObservabilityContext } from '#observability'
 import type { StoreHandle } from '../../store/internals/handleTypes'
 
-export function derivePersistModeFromOperations<T extends Entity>(operations: Array<StoreDispatchEvent<T>>): 'direct' | 'outbox' {
-    const set = new Set<'direct' | 'outbox'>()
+export function derivePersistKeyFromOperations<T extends Entity>(operations: Array<StoreDispatchEvent<T>>): PersistKey | undefined {
+    const set = new Set<string>()
     for (const op of operations) {
-        const m = op.persist
-        if (m === 'outbox' || m === 'direct') set.add(m)
+        const k = op.persistKey
+        if (typeof k === 'string' && k) set.add(k)
     }
-    if (set.size === 0) return 'direct'
-    if (set.size === 1) return Array.from(set)[0] as 'direct' | 'outbox'
-    throw new Error('[Atoma] mixed persist modes in one mutation segment (direct vs outbox)')
+    if (set.size === 0) return undefined
+    if (set.size === 1) return Array.from(set)[0]
+    throw new Error('[Atoma] mixed persist keys in one mutation segment')
 }
 
 export async function executeMutationPersistence<T extends Entity>(args: {
@@ -27,46 +26,11 @@ export async function executeMutationPersistence<T extends Entity>(args: {
     program: MutationProgram<T>
     context?: ObservabilityContext
 }): Promise<PersistResult<T>> {
-    const persistDirect = async (): Promise<PersistResult<T>> => {
-        const normalized = await executeWriteOps<T>({
-            clientRuntime: args.clientRuntime,
-            handle: args.handle,
-            ops: args.program.writeOps,
-            context: args.context
-        })
-        return {
-            mode: 'direct',
-            status: 'confirmed',
-            ...(normalized.created ? { created: normalized.created } : {}),
-            ...(normalized.writeback ? { writeback: normalized.writeback } : {})
-        }
-    }
-
-    const persistOutbox = async (): Promise<PersistResult<T>> => {
-        const outbox = args.clientRuntime.outbox
-        if (!outbox) {
-            throw new Error('[Atoma] outbox persist requested but runtime.outbox is not configured (sync not installed)')
-        }
-
-        const queueMode = outbox.queueMode === 'local-first' ? 'local-first' : 'queue'
-
-        let localPersist: PersistResult<T> | undefined
-        if (queueMode === 'local-first') {
-            localPersist = await persistDirect()
-        }
-
-        const ops = args.program.writeOps.map(o => o.op)
-        if (ops.length) {
-            await outbox.enqueueOps({ ops })
-        }
-
-        return {
-            mode: 'outbox',
-            status: 'enqueued',
-            ...(localPersist?.created ? { created: localPersist.created } : {}),
-            ...(localPersist?.writeback ? { writeback: localPersist.writeback } : {})
-        }
-    }
-
-    return args.program.persistMode === 'direct' ? persistDirect() : persistOutbox()
+    return await args.clientRuntime.persistence.persist({
+        storeName: String(args.handle.storeName),
+        persistKey: args.program.persistKey,
+        handle: args.handle,
+        writeOps: args.program.writeOps,
+        context: args.context
+    })
 }

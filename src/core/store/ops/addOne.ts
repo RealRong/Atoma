@@ -19,7 +19,7 @@ export function createAddOne<T extends Entity>(
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                persist: writeConfig.persistMode,
+                persistKey: writeConfig.persistKey,
                 onSuccess: (o) => {
                     void storeWriteEngine.runAfterSave(hooks, validObj, 'add')
                         .then(() => {

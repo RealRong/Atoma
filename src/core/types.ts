@@ -124,8 +124,8 @@ export type OperationContext = Readonly<{
 
 /**
  * 写入确认语义（只影响 `await store.addOne/updateOne/delete...` 何时完成）
- * - optimistic：等待 enqueued（系统已稳定接管：direct=持久化成功；outbox=enqueue 落盘成功）
- * - strict：等待 confirmed（direct≈持久化成功；outbox=服务端结果）
+ * - optimistic：等待 enqueued（持久化层已接管：例如已提交、已入队、已持久化到本地等）
+ * - strict：等待 confirmed（持久化层已确认：例如远端返回最终结果/版本）
  */
 export type WriteConfirmation = 'optimistic' | 'strict'
 
@@ -161,8 +161,12 @@ export type StoreDispatchEvent<T extends Entity> = {
     opContext?: OperationContext
     onFail?: (error?: Error) => void  // Accept error object for rejection
     ticket?: WriteTicket
-    /** 内部：显式持久化路径选择（默认 direct）。用于 Store(...).Outbox 这类封装。 */
-    persist?: 'direct' | 'outbox'
+    /**
+     * 内部：显式持久化策略 key（默认 undefined）。
+     * - core 不关心 key 的语义，只负责把它透传给 `CoreRuntime.persistence.persist`
+     * - 例如 client 层可用 'direct' / 'queue' / 'local-first' 等实现策略选择
+     */
+    persistKey?: PersistKey
 } & (
         | {
             type: 'add'
@@ -211,8 +215,8 @@ export type StoreDispatchEvent<T extends Entity> = {
         | {
             /**
              * Patch-based mutation (用于 history undo/redo 或其他高级场景)
-             * - direct：不会逐条把 patches 应用到后端，而是按受影响 id 做 restore/replace（bulkUpsert merge=false + 版本化 bulkDelete）。
-             * - outbox：与 direct 同语义，按受影响 id 做 restore/replace（upsert merge=false loose + delete），但写入会进入 outbox 队列等待推送。
+             * - 语义：不会逐条把 patches 应用到后端，而是按受影响 id 做 restore/replace（bulkUpsert merge=false + 版本化 bulkDelete）
+             * - 具体“如何持久化”（立即执行/延迟入队/本地优先）由 `CoreRuntime.persistence.persist` 决定
              */
             type: 'patches'
             patches: Patch[]
@@ -419,22 +423,42 @@ export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
 export type StoreToken = string
 
 /**
- * Outbox enqueue client（core 只依赖 enqueueOps 能力，避免与 #sync 强耦合）
+ * Persistence key (opaque to core).
+ * - 用于 store view / 上层 wiring 选择不同的持久化策略实现（例如 direct / enqueue / local-first）
  */
-export type OutboxQueueMode = 'queue' | 'local-first'
+export type PersistKey = string
 
-export type OutboxWriter = Readonly<{
-    queueMode: OutboxQueueMode
-    /**
-     * enqueue 统一为 ops（写入语义以 ops 为唯一载体）。
-     * - 方便 Direct/Outbox 共享“plan → ops”翻译
-     * - 方便 sync 推送侧直接发送 outbox 中的 ops（减少重复 build 逻辑）
-     */
-    enqueueOps: (args: { ops: Operation[] }) => Promise<string[]>
+export type PersistStatus = 'confirmed' | 'enqueued'
+
+export type TranslatedWriteOp = Readonly<{
+    op: Operation
+    action: 'create' | 'update' | 'upsert' | 'delete'
+    entityId?: EntityId
+    intent?: 'created'
+    requireCreatedData?: boolean
 }>
 
+export type PersistRequest<T extends Entity> = Readonly<{
+    storeName: StoreToken
+    persistKey?: PersistKey
+    handle: StoreHandle<T>
+    writeOps: Array<TranslatedWriteOp>
+    signal?: AbortSignal
+    context?: ObservabilityContext
+}>
+
+export type PersistResult<T extends Entity> = Readonly<{
+    status: PersistStatus
+    created?: T[]
+    writeback?: PersistWriteback<T>
+}>
+
+export interface Persistence {
+    persist: <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
+}
+
 /**
- * CoreRuntime：唯一上下文，承载跨 store 能力（ops/mutation/outbox/observability/resolveStore）
+ * CoreRuntime：唯一上下文，承载跨 store 能力（ops/mutation/persistence/observability/resolveStore）
  */
 export interface RuntimeStores {
     resolveStore: (name: StoreToken) => IStore<any> | undefined
@@ -451,7 +475,7 @@ export type CoreRuntime = Readonly<{
     dataProcessor: DataProcessor
     stores: RuntimeStores
     observability: RuntimeObservability
-    outbox?: OutboxWriter
+    persistence: Persistence
     jotaiStore: JotaiStore
 }>
 
@@ -524,13 +548,13 @@ export interface IStore<T, Relations = {}> {
 
     /**
      * Create one item with server-assigned id (non-optimistic).
-     * - 强语义：在线 + strict + direct（禁止 sync/outbox）；仅在服务端返回最终实体后才写入本地并 resolve。
+     * - 强语义：在线 + strict + 立即持久化；仅在服务端返回最终实体后才写入本地并 resolve。
      */
     createServerAssignedOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
 
     /**
      * Create many items with server-assigned ids (non-optimistic).
-     * - 强语义：在线 + strict + direct（禁止 sync/outbox）；仅在服务端返回最终实体后才写入本地并 resolve。
+     * - 强语义：在线 + strict + 立即持久化；仅在服务端返回最终实体后才写入本地并 resolve。
      */
     createServerAssignedMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
 
@@ -582,7 +606,7 @@ export interface IStore<T, Relations = {}> {
  * Store API shape used by hooks and derived views.
  *
  * 说明：
- * - outbox 视图（例如 `Store(...).Outbox`）会显式移除 server-assigned create（direct-only 能力）
+ * - 某些 derived view（例如“延迟持久化/队列化写入”的视图）会显式移除 server-assigned create（只适用于立即持久化）
  * - hooks 仅依赖常规 API，因此这里把 server-assigned create 标为可选
  */
 export type StoreApi<T extends Entity, Relations = {}> =

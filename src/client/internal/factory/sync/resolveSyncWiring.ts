@@ -1,7 +1,7 @@
 import { createStores } from 'atoma-sync'
 import type { AtomaClientSyncConfig } from '#client/types'
 import type { CursorStore, OutboxEvents, OutboxReader } from 'atoma-sync'
-import type { OutboxWriter } from '#core'
+import type { OutboxWriter } from 'atoma-sync'
 import { Shared } from '#shared'
 
 const { parseOrThrow, z } = Shared.zod

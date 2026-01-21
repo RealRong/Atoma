@@ -7,7 +7,7 @@ import type {
     WriteItem,
     WriteItemResult,
 } from 'atoma/protocol'
-import type { OpsClientLike, OutboxWriter as CoreOutboxWriter } from 'atoma/core'
+import type { OpsClientLike } from 'atoma/core'
 
 export type SyncOutboxItem = {
     idempotencyKey: string
@@ -16,7 +16,12 @@ export type SyncOutboxItem = {
     enqueuedAtMs: number
 }
 
-export type OutboxWriter = CoreOutboxWriter
+export type OutboxQueueMode = 'queue' | 'local-first'
+
+export type OutboxWriter = Readonly<{
+    queueMode: OutboxQueueMode
+    enqueueOps: (args: { ops: Operation[] }) => Promise<string[]>
+}>
 
 export type OutboxReader = Readonly<{
     peek: (limit: number) => Promise<SyncOutboxItem[]> | SyncOutboxItem[]

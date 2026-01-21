@@ -1,5 +1,5 @@
 import type { CoreRuntime, CoreStore, RuntimeStores } from '#core'
-import type { SyncStore } from '#core'
+import type { SyncStore } from './syncStore'
 
 export interface ClientRuntimeStoresApi extends RuntimeStores {
     Store: (name: string) => CoreStore<any, any>

@@ -2,11 +2,12 @@ import type { CoreStore, IStore, StoreDataProcessor, StoreToken } from '#core'
 import { Core } from '#core'
 import type { EntityId } from '#protocol'
 import type { AtomaSchema } from '#client/types'
-import type { SyncStore } from '#core'
 import { storeHandleManager } from '#core/store/internals/storeHandleManager'
 import type { ClientRuntimeInternal } from '#client/internal/types'
 import type { ClientRuntimeStoresApi } from '#client/types/runtime'
 import { resolveStoreCreateOptions } from '#client/internal/factory/runtime/storeConfig'
+import { createSyncStoreView } from '#client/internal/factory/runtime/createSyncStoreView'
+import type { SyncStore } from '#client/types/syncStore'
 
 type StoreListener = (store: CoreStore<any, any>) => void
 const toStoreKey = (name: unknown) => String(name)
@@ -69,7 +70,7 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
 
         const base = this.Store(key)
         const handle = storeHandleManager.requireStoreHandle(base, `Store.SyncStore:${key}`)
-        const view = Core.store.createSyncStoreView(this.runtime, handle, this.args.syncStore)
+        const view = createSyncStoreView(this.runtime, handle, this.args.syncStore)
 
         this.syncStoreCache.set(key, view as any)
         return view as any

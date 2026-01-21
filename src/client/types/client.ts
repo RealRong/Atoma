@@ -1,4 +1,5 @@
-import type { CoreStore, Entity, SyncStore } from '#core'
+import type { CoreStore, Entity } from '#core'
+import type { SyncStore } from './syncStore'
 import type { InferRelationsFromSchema } from './relations'
 import type { AtomaSchema } from './schema'
 

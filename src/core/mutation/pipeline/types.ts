@@ -5,32 +5,17 @@
  */
 import type { Patch } from 'immer'
 import type { PrimitiveAtom } from 'jotai/vanilla'
-import type { EntityId, Operation, WriteAction, WriteItem, WriteOptions } from '#protocol'
-import type { Entity, OperationContext, PersistWriteback, StoreDispatchEvent } from '../../types'
+import type { EntityId, WriteAction, WriteItem, WriteOptions } from '#protocol'
+import type { Entity, OperationContext, PersistKey, StoreDispatchEvent, TranslatedWriteOp } from '../../types'
 import type { StoreHandle } from '../../store/internals/handleTypes'
 
-export type PersistMode = 'direct' | 'outbox'
-export type PersistStatus = 'confirmed' | 'enqueued'
-
-export type PersistResult<T extends Entity> = Readonly<{
-    mode: PersistMode
-    status: PersistStatus
-    created?: T[]
-    writeback?: PersistWriteback<T>
-}>
+export type { PersistStatus, PersistResult } from '../../types'
+export type { TranslatedWriteOp } from '../../types'
 
 export type WriteIntent = Readonly<{
     action: WriteAction
     item: WriteItem
     options?: WriteOptions
-    entityId?: EntityId
-    intent?: 'created'
-    requireCreatedData?: boolean
-}>
-
-export type TranslatedWriteOp = Readonly<{
-    op: Operation
-    action: 'create' | 'update' | 'upsert' | 'delete'
     entityId?: EntityId
     intent?: 'created'
     requireCreatedData?: boolean
@@ -65,7 +50,7 @@ export type MutationSegment<T extends Entity> = Readonly<{
 
 type MutationProgramBase<T extends Entity> = Readonly<{
     kind: MutationProgramKind
-    persistMode: 'direct' | 'outbox'
+    persistKey?: PersistKey
     atom: PrimitiveAtom<Map<EntityId, T>>
     baseState: Map<EntityId, T>
     optimisticState: Map<EntityId, T>

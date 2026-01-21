@@ -82,7 +82,9 @@ export function buildAtomaClient<
         syncStore: {
             queue: wiring.queue
         },
-        outbox: outboxStore
+        sync: {
+            outboxWriter: outboxStore
+        }
     })
 
     const historyController = new HistoryController({ runtime: clientRuntime })

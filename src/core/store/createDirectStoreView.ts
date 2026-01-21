@@ -9,7 +9,7 @@ export function createDirectStoreView<T extends Entity, Relations = {}>(
 ): CoreStore<T, Relations> {
     return createStoreView<T, Relations>(clientRuntime, handle, {
         writeConfig: {
-            persistMode: 'direct',
+            persistKey: undefined,
             allowImplicitFetchForWrite: handle.writePolicies?.allowImplicitFetchForWrite !== false
         },
         includeServerAssignedCreate: true

@@ -15,7 +15,7 @@ import type { Patch } from 'immer'
 import type { StoreHandle } from './handleTypes'
 
 export type StoreWriteConfig = Readonly<{
-    persistMode: 'direct' | 'outbox'
+    persistKey?: string
     allowImplicitFetchForWrite: boolean
 }>
 

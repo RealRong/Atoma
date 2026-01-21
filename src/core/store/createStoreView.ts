@@ -47,7 +47,7 @@ export function createStoreView<T extends Entity, Relations = {}>(
 
     const allowImplicitFetchForWrite = handle.writePolicies?.allowImplicitFetchForWrite !== false
     const writeConfig: StoreWriteConfig = config?.writeConfig ?? {
-        persistMode: 'direct',
+        persistKey: undefined,
         allowImplicitFetchForWrite
     }
 

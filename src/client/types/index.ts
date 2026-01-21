@@ -39,6 +39,8 @@ export type {
 
 export type { AtomaSchema, AtomaStoreSchema } from './schema'
 
+export type { SyncStore } from './syncStore'
+
 export type {
     AtomaClient,
     AtomaClientDevtools,

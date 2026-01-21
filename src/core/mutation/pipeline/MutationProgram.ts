@@ -7,7 +7,7 @@ import type { Entity, StoreDispatchEvent } from '../../types'
 import type { MutationProgram, MutationProgramKind } from './types'
 import { buildLocalMutationPlan } from './LocalPlan'
 import { translateWriteIntentsToOps } from './WriteOps'
-import { derivePersistModeFromOperations } from './Persist'
+import { derivePersistKeyFromOperations } from './Persist'
 import type { EntityId } from '#protocol'
 import type { StoreHandle } from '../../store/internals/handleTypes'
 
@@ -19,13 +19,12 @@ export function buildMutationProgram<T extends Entity>({ handle, operations, cur
 }): MutationProgram<T> {
     const atom = handle.atom
 
-    const persistMode = derivePersistModeFromOperations(operations)
+    const persistKey = derivePersistKeyFromOperations(operations)
     
     const plan = buildLocalMutationPlan({
         operations,
         currentState,
-        fallbackClientTimeMs,
-        persistMode
+        fallbackClientTimeMs
     })
 
     const writeOps = plan.writeIntents.length
@@ -39,7 +38,7 @@ export function buildMutationProgram<T extends Entity>({ handle, operations, cur
             : (plan.writeEvents.length ? 'writes' : (plan.changedIds.size ? 'hydrate' : 'noop'))
 
     const baseProgram = {
-        persistMode,
+        persistKey,
         atom,
         baseState: plan.baseState,
         optimisticState: plan.optimisticState,

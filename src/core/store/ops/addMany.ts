@@ -26,7 +26,7 @@ export function createAddMany<T extends Entity>(
                     handle,
                     opContext,
                     ticket,
-                    persist: writeConfig.persistMode,
+                    persistKey: writeConfig.persistKey,
                     onSuccess: (o) => {
                         void storeWriteEngine.runAfterSave(hooks, validObj as any, 'add')
                             .then(() => {

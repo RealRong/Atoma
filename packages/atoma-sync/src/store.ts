@@ -2,7 +2,7 @@ import { createKVStore } from './kvStore'
 import type { CursorStore, OutboxStore, SyncOutboxItem, SyncOutboxEvents } from './types'
 import { defaultCompareCursor } from './policies/cursorGuard'
 import { Protocol, type Cursor, type Operation, type WriteAction, type WriteItem, type WriteOptions } from 'atoma/protocol'
-import type { OutboxQueueMode } from 'atoma/core'
+import type { OutboxQueueMode } from './types'
 import { assertOutboxItemValid } from './outboxSpec'
 
 export type SyncStoresConfig = {

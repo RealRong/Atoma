@@ -63,7 +63,7 @@ export function createUpsertOne<T extends Entity>(
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                persist: writeConfig.persistMode,
+                persistKey: writeConfig.persistKey,
                 onSuccess: async (o) => {
                     await storeWriteEngine.runAfterSave(hooks, validObj, base ? 'update' : 'add')
                     resolve(o)

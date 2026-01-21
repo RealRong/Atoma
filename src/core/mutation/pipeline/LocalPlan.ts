@@ -6,14 +6,13 @@
 import { applyPatches, createDraft, finishDraft, type Draft, type Patch, type WritableDraft } from 'immer'
 import type { EntityId } from '#protocol'
 import type { Entity, StoreDispatchEvent } from '../../types'
-import type { LocalMutationPlan, PersistMode } from './types'
+import type { LocalMutationPlan } from './types'
 import { buildWriteIntentsFromEvents, buildWriteIntentsFromPatches } from './WriteIntents'
 
-export function buildLocalMutationPlan<T extends Entity>({ operations, currentState, fallbackClientTimeMs, persistMode }: {
+export function buildLocalMutationPlan<T extends Entity>({ operations, currentState, fallbackClientTimeMs }: {
     operations: Array<StoreDispatchEvent<T>>
     currentState: Map<EntityId, T>
     fallbackClientTimeMs: number
-    persistMode: PersistMode
 }): LocalMutationPlan<T> {
     const base = applyHydrateToBaseState({
         baseState: currentState,
@@ -46,8 +45,7 @@ export function buildLocalMutationPlan<T extends Entity>({ operations, currentSt
                 writeEvents,
                 optimisticState: optimistic.optimisticState,
                 baseState: base.baseState,
-                fallbackClientTimeMs,
-                persistMode
+                fallbackClientTimeMs
             }))
 
     return {

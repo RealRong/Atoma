@@ -8,13 +8,11 @@ import { normalizeKey } from './relations/utils'
 import { HistoryManager } from './history/HistoryManager'
 import { fuzzySearch } from './search'
 import { createDirectStoreView } from './store/createDirectStoreView'
-import { createSyncStoreView } from './store/createSyncStoreView'
 
 export const Core = {
     store: {
         createStore,
-        createDirectStoreView,
-        createSyncStoreView
+        createDirectStoreView
     },
     operation: {
         createActionId,
@@ -59,11 +57,14 @@ export type {
     OpsClientLike,
     OperationContext,
     OperationOrigin,
-    OutboxQueueMode,
-    OutboxWriter,
     CoreRuntime,
     RuntimeObservability,
     RuntimeStores,
+    Persistence,
+    PersistKey,
+    PersistRequest,
+    PersistResult,
+    PersistStatus,
     DataProcessor,
     DataProcessorContext,
     DataProcessorMode,
@@ -89,10 +90,5 @@ export type {
 export type { CoreStore, CoreStoreConfig } from './createStore'
 export { MutationPipeline } from './mutation/MutationPipeline'
 export type { MutationApi, MutationAcks } from './mutation/MutationPipeline'
-export type {
-    PersistResult
-} from './mutation'
 export type { StoreIndexes } from './indexes/StoreIndexes'
 export type { FuzzySearchOptions, FuzzySearchResult } from './search'
-
-export type { SyncStore } from './store/createSyncStoreView'

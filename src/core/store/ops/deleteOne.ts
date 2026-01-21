@@ -18,7 +18,7 @@ export function createDeleteOne<T extends Entity>(
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                persist: writeConfig.persistMode,
+                persistKey: writeConfig.persistKey,
                 onSuccess: () => {
                     resolve(true)
                 },

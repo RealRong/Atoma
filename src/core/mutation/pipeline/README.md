@@ -7,7 +7,7 @@ This folder contains the mutation execution pipeline for Atoma stores. It turns 
 1. `MutationPipeline.api.dispatch` enqueues events in `Scheduler`.
 2. `Scheduler` normalizes `opContext`, segments compatible events, and calls `executeMutationFlow` per segment.
 3. `executeMutationFlow` builds a `MutationProgram` and applies optimistic state updates.
-4. `executeMutationPersistence` executes direct writes or enqueues outbox writes.
+4. `executeMutationPersistence` delegates to `CoreRuntime.persistence.persist`.
 5. Flow finalizes writeback, callbacks, and rollback on errors.
 
 ## Module map
@@ -19,17 +19,17 @@ This folder contains the mutation execution pipeline for Atoma stores. It turns 
 - `MutationFlow.ts`: Segment execution and orchestration.
 - `WriteIntents.ts`: Dispatch/patch translation into protocol write intents.
 - `WriteOps.ts`: Protocol op construction and execution.
-- `Persist.ts`: Persist mode selection (direct/outbox) and execution path.
+- `Persist.ts`: Derives `persistKey` and calls `runtime.persistence.persist`.
 - `WritebackCollector.ts`: Aggregation of server writeback (created, upserts, versions).
 - `WriteTicketManager.ts`: Write ticket creation and confirmation lifecycle.
 - `types.ts`: Shared pipeline types.
 
 ## Key concepts
 
-- **Segments**: A segment is a batch of dispatch events with compatible context and persist mode.
+- **Segments**: A segment is a batch of dispatch events with compatible context and `persistKey`.
 - **Optimistic state**: Local state updates applied before persistence completes.
 - **Patches**: Immer patches/inverse patches for history and rollback.
-- **Persist modes**: `direct` executes writes immediately; `outbox` enqueues writes for sync.
+- **Persistence**: Core does not choose a strategy; `persistKey` is opaque to core and interpreted by the injected `Persistence`.
 - **Tickets**: `beginWrite` creates a write ticket; `awaitTicket` controls optimistic vs strict confirmation.
 
 ## Error handling

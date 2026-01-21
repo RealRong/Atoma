@@ -11,7 +11,7 @@ export type StoreWritePolicies = {
     /**
      * 写入时遇到 cache 缺失，是否允许自动补读（bulkGet/get）：
      * - direct：通常允许（提升 DX）
-     * - sync/outbox：必须禁止（enqueue 阶段不触网），需由上层显式 fetch
+     * - 延迟持久化/队列化写入：通常必须禁止（提交阶段不触网），需由上层显式 fetch
      */
     allowImplicitFetchForWrite: boolean
 }

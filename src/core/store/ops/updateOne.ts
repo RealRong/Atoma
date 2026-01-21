@@ -58,7 +58,7 @@ export function createUpdateOne<T extends Entity>(
                     handle,
                     data: hydrate,
                     opContext: options?.opContext,
-                    persist: writeConfig.persistMode
+                    persistKey: writeConfig.persistKey
                 })
             }
 
@@ -68,7 +68,7 @@ export function createUpdateOne<T extends Entity>(
                 data: validObj,
                 opContext: options?.opContext,
                 ticket,
-                persist: writeConfig.persistMode,
+                persistKey: writeConfig.persistKey,
                 onSuccess: async updated => {
                     await storeWriteEngine.runAfterSave(hooks, validObj, 'update')
                     resolve(updated)

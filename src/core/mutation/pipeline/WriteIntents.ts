@@ -7,14 +7,13 @@ import type { Patch } from 'immer'
 import { Protocol, type EntityId, type WriteAction, type WriteItem, type WriteItemMeta, type WriteOptions } from '#protocol'
 import { Shared } from '#shared'
 import type { Entity, StoreDispatchEvent } from '../../types'
-import type { PersistMode, WriteIntent } from './types'
+import type { WriteIntent } from './types'
 
 export function buildWriteIntentsFromEvents<T extends Entity>(args: {
     writeEvents: Array<StoreDispatchEvent<T>>
     optimisticState: Map<EntityId, T>
     baseState: Map<EntityId, T>
     fallbackClientTimeMs: number
-    persistMode: PersistMode
 }): WriteIntent[] {
     const { intents, pushIntent } = createIntentCollector()
 
@@ -39,9 +38,6 @@ export function buildWriteIntentsFromEvents<T extends Entity>(args: {
         }
 
         if (op.type === 'create') {
-            if (args.persistMode === 'outbox') {
-                throw new Error('[Atoma] server-assigned create cannot be persisted via outbox')
-            }
             pushIntent({
                 action: 'create',
                 item: { value: op.data, meta },
