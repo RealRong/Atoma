@@ -1,9 +1,6 @@
-import { createKVStore } from './kvStore'
-import type { CursorStore, OutboxStore, SyncOutboxItem, SyncOutboxEvents } from './types'
-import { defaultCompareCursor } from './policies/cursorGuard'
-import { Protocol, type Cursor, type Operation, type WriteAction, type WriteItem, type WriteOptions } from 'atoma/protocol'
-import type { OutboxQueueMode } from './types'
-import { assertOutboxItemValid } from './outboxSpec'
+import { createKVStore } from '#sync/internal/kvStore'
+import { defaultCompareCursor } from '#sync/policies/cursorGuard'
+import type { CursorStore, OutboxStore, SyncOutboxItem, SyncOutboxEvents, OutboxWrite, OutboxQueueMode } from '#sync/types'
 
 export type SyncStoresConfig = {
     outboxKey: string
@@ -120,24 +117,17 @@ export class DefaultOutboxStore implements OutboxStore {
         for (const item of this.queue) {
             if (typeof item.inFlightAtMs === 'number') continue
             if (afterEnqueuedAtMs !== undefined && item.enqueuedAtMs <= afterEnqueuedAtMs) continue
+            if (item.resource !== resource) continue
 
-            const op: any = (item as any).op
-            if (!op || op.kind !== 'write') continue
-
-            const write: any = op.write
-            if (!write || write.resource !== resource) continue
-
-            const opItem: any = write?.items?.[0]
+            const opItem: any = item.item
             const curEntityId = opItem?.entityId
             if (typeof curEntityId !== 'string' || curEntityId !== entityId) continue
 
-            if (opItem && typeof opItem === 'object') {
-                if (typeof opItem.baseVersion === 'number' && Number.isFinite(opItem.baseVersion) && opItem.baseVersion > 0) {
-                    if (opItem.baseVersion === nextBaseVersion) continue
-                    if (opItem.baseVersion < nextBaseVersion) {
-                        opItem.baseVersion = nextBaseVersion
-                        changed = true
-                    }
+            if (typeof opItem.baseVersion === 'number' && Number.isFinite(opItem.baseVersion) && opItem.baseVersion > 0) {
+                if (opItem.baseVersion === nextBaseVersion) continue
+                if (opItem.baseVersion < nextBaseVersion) {
+                    opItem.baseVersion = nextBaseVersion
+                    changed = true
                 }
             }
         }
@@ -178,44 +168,33 @@ export class DefaultOutboxStore implements OutboxStore {
         return this.queue.length
     }
 
-    async enqueueOps(args: { ops: Operation[] }) {
+    async enqueueWrites(args: { writes: OutboxWrite[] }) {
         const now = this.now()
         const items: SyncOutboxItem[] = []
 
-        for (const op of args.ops) {
-            if (!op || (op as any).kind !== 'write') {
-                throw new Error('[Sync] enqueueOps only supports write ops')
+        for (const write of args.writes) {
+            const resource = String((write as any)?.resource ?? '')
+            const action = (write as any)?.action as any
+            const baseItem = (write as any)?.item as any
+            const options = ((write as any)?.options && typeof (write as any).options === 'object')
+                ? ((write as any).options as any)
+                : undefined
+
+            if (!resource || !action || !baseItem) {
+                throw new Error('[Sync] enqueueWrites requires { resource, action, item }')
             }
 
-            const write = (op as any).write as any
-            const resource = String(write?.resource ?? '')
-            const action = write?.action as WriteAction
-            const options = (write?.options && typeof write.options === 'object') ? (write.options as WriteOptions) : undefined
-            const opItems: WriteItem[] = Array.isArray(write?.items) ? (write.items as WriteItem[]) : []
-            if (!resource || !action || opItems.length !== 1) {
-                throw new Error('[Sync] enqueueOps requires single-item write ops')
-            }
-
-            const baseItem = opItems[0] as WriteItem
             const meta = this.requireItemMeta(baseItem)
-            const ensuredItem = { ...(baseItem as any), meta } as WriteItem
-
-            const ensuredOp: Operation = Protocol.ops.build.buildWriteOp({
-                opId: String((op as any).opId || this.nextOpId('w')),
-                write: {
-                    resource,
-                    action,
-                    items: [ensuredItem],
-                    ...(options ? { options } : {})
-                }
-            })
+            const ensuredItem = { ...(baseItem as any), meta } as any
 
             const entry = {
                 idempotencyKey: meta.idempotencyKey!,
-                op: ensuredOp,
+                resource,
+                action,
+                item: ensuredItem,
+                ...(options ? { options } : {}),
                 enqueuedAtMs: now
             } as SyncOutboxItem
-            assertOutboxItemValid(entry)
             items.push(entry)
         }
 
@@ -242,8 +221,20 @@ export class DefaultOutboxStore implements OutboxStore {
     private async restore() {
         const stored = await this.kv.get<any>(this.storageKey)
         if (Array.isArray(stored)) {
-            this.queue = stored as Array<SyncOutboxItem & { inFlightAtMs?: number }>
-            this.byKey = new Map(this.queue.map(item => [item.idempotencyKey, item]))
+            // Defensive decode: persisted IndexedDB data can be stale/corrupted across breaking changes.
+            const decoded: Array<SyncOutboxItem & { inFlightAtMs?: number }> = []
+            const seen = new Set<string>()
+
+            for (const raw of stored) {
+                const item = decodePersistedOutboxItem(raw)
+                if (!item) continue
+                if (seen.has(item.idempotencyKey)) continue
+                seen.add(item.idempotencyKey)
+                decoded.push(item)
+            }
+
+            this.queue = decoded
+            this.byKey = new Map(decoded.map(item => [item.idempotencyKey, item]))
             await this.recoverStaleInFlight()
         }
     }
@@ -263,33 +254,29 @@ export class DefaultOutboxStore implements OutboxStore {
         if (changed) await this.persist()
     }
 
-    private requireItemMeta(item: WriteItem) {
+    private requireItemMeta(item: any) {
         const meta = (item as any)?.meta
         if (!meta || typeof meta !== 'object') {
-            throw new Error('[Sync] write item meta is required for enqueueOps')
+            throw new Error('[Sync] write item meta is required for enqueueWrites')
         }
         if (typeof (meta as any).idempotencyKey !== 'string' || !(meta as any).idempotencyKey) {
-            throw new Error('[Sync] write item meta.idempotencyKey is required for enqueueOps')
+            throw new Error('[Sync] write item meta.idempotencyKey is required for enqueueWrites')
         }
         if (typeof (meta as any).clientTimeMs !== 'number' || !Number.isFinite((meta as any).clientTimeMs)) {
-            throw new Error('[Sync] write item meta.clientTimeMs is required for enqueueOps')
+            throw new Error('[Sync] write item meta.clientTimeMs is required for enqueueWrites')
         }
         return meta as any
-    }
-
-    private nextOpId(prefix: 'w' | 'c') {
-        return Protocol.ids.createOpId(prefix, { now: () => this.now() })
     }
 }
 
 export class DefaultCursorStore implements CursorStore {
     private readonly kv = createKVStore()
-    private cursor: Cursor | undefined
+    private cursor: string | undefined
     private initialized: Promise<void>
 
     constructor(
         private readonly storageKey: string,
-        private readonly initial?: Cursor
+        private readonly initial?: string
     ) {
         this.initialized = this.restore()
     }
@@ -299,7 +286,7 @@ export class DefaultCursorStore implements CursorStore {
         return this.cursor ?? this.initial
     }
 
-    async set(next: Cursor) {
+    async set(next: string) {
         await this.initialized
         if (this.cursor === undefined) {
             this.cursor = next
@@ -325,4 +312,35 @@ export class DefaultCursorStore implements CursorStore {
             this.cursor = stored
         }
     }
+}
+
+function decodePersistedOutboxItem(raw: any): (SyncOutboxItem & { inFlightAtMs?: number }) | undefined {
+    if (!raw || typeof raw !== 'object') return
+    const idempotencyKey = typeof raw.idempotencyKey === 'string' ? raw.idempotencyKey : ''
+    const resource = typeof raw.resource === 'string' ? raw.resource : ''
+    const action = typeof raw.action === 'string' ? raw.action : ''
+    const item = raw.item
+    const enqueuedAtMs = typeof raw.enqueuedAtMs === 'number' && Number.isFinite(raw.enqueuedAtMs) ? raw.enqueuedAtMs : undefined
+    if (!idempotencyKey || !resource || !action || !item || enqueuedAtMs === undefined) return
+
+    const meta = (item as any)?.meta
+    const metaKey = (meta && typeof meta === 'object') ? (meta as any).idempotencyKey : undefined
+    if (typeof metaKey !== 'string' || !metaKey) return
+    if (metaKey !== idempotencyKey) return
+
+    const inFlightAtMs = (typeof raw.inFlightAtMs === 'number' && Number.isFinite(raw.inFlightAtMs))
+        ? raw.inFlightAtMs
+        : undefined
+
+    const options = (raw.options && typeof raw.options === 'object') ? raw.options : undefined
+
+    return {
+        idempotencyKey,
+        resource,
+        action: action as any,
+        item,
+        ...(options ? { options } : {}),
+        enqueuedAtMs,
+        ...(inFlightAtMs !== undefined ? { inFlightAtMs } : {})
+    } as any
 }

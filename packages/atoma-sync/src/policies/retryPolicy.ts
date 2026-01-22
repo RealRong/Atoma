@@ -1,5 +1,5 @@
 import type { Options, RetryContext } from 'p-retry'
-import type { SyncBackoffConfig, SyncRetryConfig } from '../types'
+import type { SyncBackoffConfig, SyncRetryConfig } from '#sync/types'
 
 export function resolveRetryOptions(args: {
     retry?: SyncRetryConfig
@@ -57,4 +57,3 @@ export function estimateDelayFromRetryContext(ctx: RetryContext, options: Pick<O
         maxTimeout: options.maxTimeout
     })
 }
-

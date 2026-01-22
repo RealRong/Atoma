@@ -11,7 +11,6 @@ export default defineConfig({
         'observability/index': 'src/observability/index.ts',
         'protocol/index': 'src/protocol/index.ts',
         'backend/index': 'src/backend/index.ts',
-        'react/index': 'src/react/index.ts',
         'server/index': 'src/server/index.ts',
         'server/adapters': 'src/server/adapters/index.ts',
         'server/adapters/typeorm': 'src/server/adapters/typeorm/index.ts',

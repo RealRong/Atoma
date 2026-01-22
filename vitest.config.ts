@@ -22,6 +22,8 @@ export default defineConfig({
             { find: /^atoma-sync$/, replacement: path.resolve(__dirname, 'packages/atoma-sync/src/index.ts') },
             { find: /^atoma-sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma-sync/src/$1') },
 
+            { find: /^#sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma-sync/src/$1') },
+
             { find: /^#backend$/, replacement: path.resolve(__dirname, 'src/backend/index.ts') },
             { find: /^#backend\/(.*)$/, replacement: path.resolve(__dirname, 'src/backend/$1') },
 

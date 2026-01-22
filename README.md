@@ -20,14 +20,14 @@ npm i atoma
 ```
 
 Peer deps:
-- `react`, `jotai`, `immer`
+- `jotai`, `immer`
 - Server-side adapters: `typeorm` and/or `@prisma/client` (optional)
 
 ## Quick start (client + React)
 
 ```ts
 import { createClient } from 'atoma'
-import { useFindMany } from 'atoma/react'
+import { useFindMany } from 'atoma-react'
 
 type User = { id: string; name: string; version?: number }
 

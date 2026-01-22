@@ -39,7 +39,7 @@
    - `DefaultCursorStore.set(...)` 会通过 `defaultCompareCursor(...)` 做单调性判断。
 2) **outbox 追加为主**：enqueue 后的条目只会在 ack/reject 时移除。
    - **outbox item 规范**：
-     - `op.kind === 'write'` 且必须是 **单 item write**；
+     - 必须是单条写入意图：`resource/action/item`；
      - `item.meta.idempotencyKey` 必填，且必须等于 outbox entry 的 `idempotencyKey`；
      - `item.meta.clientTimeMs` 必填（用于排序/诊断/调试）。
 3) **inFlight 不会被重复拿到**：被标记 `inFlightAtMs` 的条目会被 `peek(...)` 跳过。
@@ -72,9 +72,9 @@
 
 路径：
 
-- `outbox.enqueueOps(...)`（runtime 内建 outbox）
-  - 要求每个 `WriteOp` 必须是单 item，并包含 `meta.idempotencyKey` 与 `meta.clientTimeMs`
-  - 以 `SyncOutboxItem` 形式写入 `DefaultOutboxStore`（包含预构建的 `op`）
+- `outbox.enqueueWrites(...)`（runtime 内建 outbox）
+  - 要求每条写入必须是单 item，并包含 `meta.idempotencyKey` 与 `meta.clientTimeMs`
+  - 以 `SyncOutboxItem` 形式写入 `DefaultOutboxStore`（仅存 write intent，发送时再构建协议 op）
   - 当 sync 处于 push/full 且已启动时，队列变化触发 `PushLane.requestFlush()`
 
 然后：
@@ -82,14 +82,15 @@
 - `PushLane.flush()` 循环执行：
   - `outbox.peek(max)` 取待发送条目
   - 可选：把这些 key 标记为 inFlight
-  - `transport.opsClient.executeOps({ ops, meta })`（ops 直接来自 outbox items）
-  - 对每条结果：
-    - ok：`applyWriteAck(...)` → `outbox.ack(keys)`
-    - not ok：`applyWriteReject(...)` → `outbox.reject(keys)`
+  - 调用 `transport.pushWrites({ entries, meta, returning })`
+  - 对每条 outcome：
+    - `ack`：`applyWriteAck(...)` → `outbox.ack(keys)`
+    - `reject`：`applyWriteReject(...)` → `outbox.reject(keys)`
+    - `retry`：release inFlight key 回 pending（并触发退避）
 
 备注：
 
-- 只有“可重试”的 operation error 才会进入退避重试（见 `isRetryableOpError`）。
+- 只有“可重试”的 operation error 才会进入退避重试（由 transport 层分类）。
 - 重试前会把 inFlight key release 回 pending，避免卡死。
 
 ### 2) 拉取变更（`changes.pull`）
@@ -98,7 +99,7 @@
 
 - `SyncEngine.pull()` → `PullLane.pull()`
   - 读取当前 cursor（没有则用 `initialCursor`，再没有则 `'0'`）
-  - `transport.opsClient.executeOps({ ops: [changes.pull], meta })`
+  - `transport.pullChanges({ cursor, limit, resources?, meta })`
   - `applier.applyPullChanges(batch.changes)`
   - `cursor.set(batch.nextCursor)`
 
@@ -132,7 +133,8 @@
 
 ## Transport & Applier（对接点）
 
-- `SyncTransport.opsClient` 是必需的服务端对接点（提供 `opsClient.executeOps(...)`）。
+- `SyncTransport.pullChanges` 用于 pull；可通过 `createOpsTransport(...)` 从 `opsClient` 生成。
+- `SyncTransport.pushWrites` 用于 push；可通过 `createOpsTransport(...)` 从 `opsClient` 生成。
 - 订阅能力（`transport.subscribe`）仅在启用 subscribe 时需要；SSE 模式下通常需要 `buildUrl`（可选 `connect`）。
 - `applier` 负责把 sync 事件转成用户回调：
   - `applier.applyPullChanges(changes)`

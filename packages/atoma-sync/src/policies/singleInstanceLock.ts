@@ -1,10 +1,18 @@
-import { createKVStore } from '../kvStore'
+import { createKVStore } from '#sync/internal/kvStore'
 import pRetry from 'p-retry'
-import { estimateDelayFromRetryContext, resolveRetryOptions } from './retryPolicy'
+import { estimateDelayFromRetryContext, resolveRetryOptions } from '#sync/policies/retryPolicy'
 
 type LockRecord = {
     ownerId: string
     expiresAtMs: number
+}
+
+function parseLockRecord(raw: unknown): LockRecord | null {
+    if (!raw || typeof raw !== 'object') return null
+    const ownerId = typeof (raw as any).ownerId === 'string' ? (raw as any).ownerId : ''
+    const expiresAtMs = typeof (raw as any).expiresAtMs === 'number' ? (raw as any).expiresAtMs : 0
+    if (!ownerId || !expiresAtMs) return null
+    return { ownerId, expiresAtMs }
 }
 
 function randomOwnerId(): string {
@@ -79,7 +87,16 @@ export class SingleInstanceLock {
         this.stopRenew()
         if (!this.held) return
         this.held = false
-        await this.kv.set(this.config.key, null)
+        await this.kv.update(this.config.key, (current) => {
+            const existing = parseLockRecord(current)
+            if (!existing) {
+                return { result: undefined, write: false }
+            }
+            if (existing.ownerId !== this.ownerId) {
+                return { result: undefined, write: false }
+            }
+            return { result: undefined, next: null, write: true }
+        })
     }
 
     private startRenew() {
@@ -101,13 +118,18 @@ export class SingleInstanceLock {
     private async renew() {
         if (!this.held) return
         const now = this.config.now()
-        const next: LockRecord = {
-            ownerId: this.ownerId,
-            expiresAtMs: now + Math.max(0, Math.floor(this.config.ttlMs))
-        }
-        await this.kv.set(this.config.key, next)
-        const confirm = await this.read()
-        if (!confirm || confirm.ownerId !== this.ownerId) {
+        const ttlMs = Math.max(0, Math.floor(this.config.ttlMs))
+
+        const ok = await this.kv.update(this.config.key, (current) => {
+            const existing = parseLockRecord(current)
+            if (!existing || existing.ownerId !== this.ownerId) {
+                return { result: false, write: false }
+            }
+            const next: LockRecord = { ownerId: this.ownerId, expiresAtMs: now + ttlMs }
+            return { result: true, next, write: true }
+        })
+
+        if (!ok) {
             this.held = false
             this.stopRenew()
             const error = new Error(`[Sync] Lock lost for lockKey="${this.config.key}"`)
@@ -118,29 +140,24 @@ export class SingleInstanceLock {
 
     private async tryAcquireOnce(): Promise<boolean> {
         const now = this.config.now()
-        const existing = await this.read()
         const ttlMs = Math.max(0, Math.floor(this.config.ttlMs))
 
-        const expired = !existing || existing.expiresAtMs <= now
-        if (!expired && existing.ownerId && existing.ownerId !== this.ownerId) {
-            return false
-        }
+        const claimed = await this.kv.update(this.config.key, (current) => {
+            const existing = parseLockRecord(current)
+            const expired = !existing || existing.expiresAtMs <= now
+            if (!expired && existing.ownerId !== this.ownerId) {
+                return { result: false, write: false }
+            }
 
-        const next: LockRecord = {
-            ownerId: this.ownerId,
-            expiresAtMs: now + ttlMs
-        }
-        await this.kv.set(this.config.key, next)
-        const confirm = await this.read()
+            const next: LockRecord = { ownerId: this.ownerId, expiresAtMs: now + ttlMs }
+            return { result: true, next, write: true }
+        })
+
+        if (!claimed) return false
+
+        // Cross-transaction race exists when multiple contenders see an expired lock.
+        // Verify after commit that we still own it.
+        const confirm = parseLockRecord(await this.kv.get<any>(this.config.key))
         return !!confirm && confirm.ownerId === this.ownerId
-    }
-
-    private async read(): Promise<LockRecord | null> {
-        const raw = await this.kv.get<any>(this.config.key)
-        if (!raw || typeof raw !== 'object') return null
-        const ownerId = typeof raw.ownerId === 'string' ? raw.ownerId : ''
-        const expiresAtMs = typeof raw.expiresAtMs === 'number' ? raw.expiresAtMs : 0
-        if (!ownerId || !expiresAtMs) return null
-        return { ownerId, expiresAtMs }
     }
 }

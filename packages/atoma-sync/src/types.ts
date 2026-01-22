@@ -2,17 +2,65 @@ import type {
     Change,
     ChangeBatch,
     Cursor,
-    Operation,
-    WriteAction,
-    WriteItem,
+    Meta,
     WriteItemResult,
 } from 'atoma/protocol'
-import type { OpsClientLike } from 'atoma/core'
+
+export type OutboxWrite = {
+    resource: string
+    action: OutboxWriteAction
+    item: OutboxWriteItem
+    options?: any
+}
+
+// Keep Outbox modeling protocol-shaped but protocol-independent.
+export type OutboxWriteAction = 'create' | 'update' | 'delete' | 'upsert'
+
+export type OutboxWriteItemMeta = {
+    idempotencyKey?: string
+    clientTimeMs?: number
+    [k: string]: unknown
+}
+
+export type OutboxWriteItemCreate = {
+    entityId?: string
+    value: unknown
+    meta?: OutboxWriteItemMeta
+}
+
+export type OutboxWriteItemUpdate = {
+    entityId: string
+    baseVersion: number
+    value: unknown
+    meta?: OutboxWriteItemMeta
+}
+
+export type OutboxWriteItemUpsert = {
+    entityId: string
+    baseVersion?: number
+    value: unknown
+    meta?: OutboxWriteItemMeta
+}
+
+export type OutboxWriteItemDelete = {
+    entityId: string
+    baseVersion: number
+    meta?: OutboxWriteItemMeta
+}
+
+export type OutboxWriteItem =
+    | OutboxWriteItemCreate
+    | OutboxWriteItemUpdate
+    | OutboxWriteItemDelete
+    | OutboxWriteItemUpsert
 
 export type SyncOutboxItem = {
     idempotencyKey: string
-    /** 已构建好的 op（必须为单 item 的 write op），PushLane 直接发送 */
-    op: Operation
+    /** 要推送的写入意图（PushLane 在发送前会构建为协议 op） */
+    resource: string
+    action: OutboxWriteAction
+    item: OutboxWriteItem
+    options?: any
     enqueuedAtMs: number
 }
 
@@ -20,7 +68,7 @@ export type OutboxQueueMode = 'queue' | 'local-first'
 
 export type OutboxWriter = Readonly<{
     queueMode: OutboxQueueMode
-    enqueueOps: (args: { ops: Operation[] }) => Promise<string[]>
+    enqueueWrites: (args: { writes: OutboxWrite[] }) => Promise<string[]>
 }>
 
 export type OutboxReader = Readonly<{
@@ -56,17 +104,22 @@ export interface CursorStore {
 
 export type SyncWriteAck = {
     resource: string
-    action: WriteAction
-    item: WriteItem
+    action: import('atoma/protocol').WriteAction
+    item: import('atoma/protocol').WriteItem
     result: Extract<WriteItemResult, { ok: true }>
 }
 
 export type SyncWriteReject = {
     resource: string
-    action: WriteAction
-    item: WriteItem
+    action: import('atoma/protocol').WriteAction
+    item: import('atoma/protocol').WriteItem
     result: Extract<WriteItemResult, { ok: false }>
 }
+
+export type SyncPushOutcome =
+    | { kind: 'ack'; result: Extract<WriteItemResult, { ok: true }> }
+    | { kind: 'reject'; result: Extract<WriteItemResult, { ok: false }> }
+    | { kind: 'retry'; error: unknown }
 
 export interface SyncApplier {
     applyPullChanges: (changes: Change[]) => Promise<void> | void
@@ -86,7 +139,17 @@ export type SyncSubscribe = (args: {
 }) => { close: () => void }
 
 export interface SyncTransport {
-    opsClient: OpsClientLike
+    pullChanges: (args: {
+        cursor: Cursor
+        limit: number
+        resources?: string[]
+        meta: Meta
+    }) => Promise<ChangeBatch>
+    pushWrites: (args: {
+        entries: SyncOutboxItem[]
+        meta: Meta
+        returning: boolean
+    }) => Promise<SyncPushOutcome[]>
     subscribe?: SyncSubscribe
 }
 

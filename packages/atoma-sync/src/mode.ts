@@ -1,4 +1,4 @@
-import type { SyncMode } from './types'
+import type { SyncMode } from '#sync/types'
 
 export function wantsPush(mode: SyncMode | string): boolean {
     return mode === 'push-only' || mode === 'full'
@@ -7,4 +7,3 @@ export function wantsPush(mode: SyncMode | string): boolean {
 export function wantsSubscribe(mode: SyncMode | string): boolean {
     return mode === 'subscribe-only' || mode === 'pull+subscribe' || mode === 'full'
 }
-

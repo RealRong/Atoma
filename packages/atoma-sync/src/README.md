@@ -68,9 +68,9 @@ Disposing (`dispose()`):
 
 Path:
 
-- `outbox.enqueueOps(...)` (runtime-owned outbox)
-  - Requires each `WriteOp` to contain exactly one `WriteItem` with `meta.idempotencyKey`
-  - Stores `SyncOutboxItem` entries (including prebuilt `op`) in `DefaultOutboxStore`
+- `outbox.enqueueWrites(...)` (runtime-owned outbox)
+  - Requires each write to contain a single `WriteItem` with `meta.idempotencyKey`
+  - Stores `SyncOutboxItem` write intents (`resource/action/item/options`) in `DefaultOutboxStore`
   - When sync is started in push/full mode, queue changes trigger `PushLane.requestFlush()`
 
 Then:
@@ -78,14 +78,15 @@ Then:
 - `PushLane.flush()` loops:
   - `outbox.peek(max)` to get pending items
   - Marks keys as in-flight (optional store method)
-  - Calls `transport.opsClient.executeOps({ ops, meta })` (ops are taken from outbox items)
-  - For each result:
-    - OK → `applyWriteAck(...)` then `outbox.ack(keys)`
-    - Not OK → `applyWriteReject(...)` then `outbox.reject(keys)`
+  - Calls `transport.pushWrites({ entries, meta, returning })`
+  - For each outcome:
+    - `ack` → `applyWriteAck(...)` then `outbox.ack(keys)`
+    - `reject` → `applyWriteReject(...)` then `outbox.reject(keys)`
+    - `retry` → releases in-flight keys back to pending (and triggers backoff)
 
 Notes:
 
-- Retry is only for retryable operation errors (see `isRetryableOpError`).
+- Retry is only for retryable operation errors (classified by the transport implementation).
 - On retry, in-flight keys are released back to pending.
 
 ### 2) Pull changes (`changes.pull`)
@@ -94,7 +95,7 @@ Path:
 
 - `SyncEngine.pull()` → `PullLane.pull()`
   - Reads current cursor (or `initialCursor`, or `'0'`)
-  - Calls `transport.opsClient.executeOps({ ops: [changes.pull], meta })`
+  - Calls `transport.pullChanges({ cursor, limit, resources?, meta })`
   - Applies `batch.changes` via `applier.applyPullChanges(...)`
   - Stores `batch.nextCursor` via `cursor.set(...)`
 
@@ -127,7 +128,8 @@ Important: cursor is advanced only by pull; notify never writes cursor.
 
 ## Transport & Applier (integration points)
 
-- `SyncTransport.opsClient` is the only required server integration (providing `opsClient.executeOps(...)`).
+- `SyncTransport.pullChanges` is required for pull; you can build it from `opsClient` via `createOpsTransport(...)`.
+- `SyncTransport.pushWrites` is required for push; you can build it from `opsClient` via `createOpsTransport(...)`.
 - Subscription capability (`transport.subscribe`) is needed only when subscribe is enabled; SSE usually requires `buildUrl` (and optionally `connect`).
 - `applier` is a wrapper that delegates to:
   - `applier.applyPullChanges(changes)`

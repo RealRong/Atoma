@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from 'atoma'
-import { useFindMany } from 'atoma/react'
+import { useFindMany } from 'atoma-react'
 import { buttonVariants } from 'fumadocs-ui/components/ui/button'
 import { Callout } from 'fumadocs-ui/components/callout'
 import { cn } from 'fumadocs-ui/utils/cn'

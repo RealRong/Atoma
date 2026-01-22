@@ -25,10 +25,6 @@
             "types": "./dist/devtools/index.d.ts",
             "import": "./dist/devtools/index.js"
         },
-        "./react": {
-            "types": "./dist/react/index.d.ts",
-            "import": "./dist/react/index.js"
-        },
         "./core": {
             "types": "./dist/core/index.d.ts",
             "import": "./dist/core/index.js"
@@ -99,7 +95,8 @@
         "dev:lib": "tsup --watch",
         "demo:web": "vite --config demo/web/vite.config.ts",
         "demo:server": "npm -w atoma-demo-server run dev",
-        "typecheck": "tsc --noEmit",
+        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/atoma-react/tsconfig.json --noEmit && tsc -p packages/atoma-sync/tsconfig.json --noEmit",
+        "check:sync-alias": "bash -lc \"if rg -n \\\"from '#sync/\\\" src packages -g'!packages/atoma-sync/**'; then echo 'ERROR: #sync alias must only be used inside packages/atoma-sync.'; exit 1; fi\"",
         "test": "vitest run",
         "test:ui": "vitest --ui",
         "start:docs": "npm run dev --prefix docs"
@@ -122,7 +119,6 @@
         "@prisma/client": "^5.0.0",
         "immer": "^9.0.0 || ^10.0.0",
         "jotai": "^2.0.0",
-        "react": "^18.0.0 || ^19.0.0",
         "typeorm": "^0.3.20"
     },
     "peerDependenciesMeta": {

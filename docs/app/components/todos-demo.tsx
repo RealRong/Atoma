@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useFindMany } from 'atoma/react';
+import { useFindMany } from 'atoma-react';
 import { createClient, createOpContext } from 'atoma';
 import { buttonVariants } from 'fumadocs-ui/components/ui/button';
 import { Callout } from 'fumadocs-ui/components/callout';

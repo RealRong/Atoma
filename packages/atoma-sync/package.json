@@ -12,7 +12,15 @@
             "import": "./dist/index.js"
         }
     },
+    "imports": {
+        "#sync/*": "./src/*"
+    },
+    "scripts": {
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
     "dependencies": {
+        "idb": "^8.0.3",
+        "p-debounce": "^5.1.0",
         "p-queue": "^8.1.1",
         "p-retry": "^7.1.0",
         "xstate": "^5.25.1"

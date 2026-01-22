@@ -1,6 +1,7 @@
-import { SyncEngine } from './engine/SyncEngine'
-import { subscribeNotifySse } from './lanes/NotifyLane'
-import type { SyncClient, SyncRuntimeConfig } from './types'
+import { SyncEngine } from '#sync/engine/SyncEngine'
+import { createOpsTransport } from '#sync/transport/opsTransport'
+import { subscribeNotifySse } from '#sync/transport/sseNotify'
+import type { SyncClient, SyncRuntimeConfig } from '#sync/types'
 export { wantsPush, wantsSubscribe } from './mode'
 
 export const createSyncEngine = (config: SyncRuntimeConfig): SyncClient => new SyncEngine(config)
@@ -8,10 +9,15 @@ export const createSyncEngine = (config: SyncRuntimeConfig): SyncClient => new S
 export const Sync: {
     create: (config: SyncRuntimeConfig) => SyncClient
     subscribeNotifySse: typeof subscribeNotifySse
+    createOpsTransport: typeof createOpsTransport
 } = {
     create: createSyncEngine,
-    subscribeNotifySse
+    subscribeNotifySse,
+    createOpsTransport
 }
+
+export { createOpsTransport } from './transport/opsTransport'
+export { subscribeNotifySse } from './transport/sseNotify'
 
 export type {
     SyncClient,
@@ -24,6 +30,7 @@ export type {
     SyncApplier,
     SyncSubscribe,
     SyncOutboxItem,
+    OutboxWrite,
     OutboxReader,
     OutboxWriter,
     OutboxEvents,
@@ -31,6 +38,7 @@ export type {
     SyncWriteAck,
     SyncWriteReject,
     SyncTransport,
+    SyncPushOutcome,
     SyncOutboxEvents
 } from './types'
 

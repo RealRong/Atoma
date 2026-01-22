@@ -1,14 +1,13 @@
 import pRetry, { AbortError } from 'p-retry'
 import { createActor, createMachine, fromPromise, waitFor } from 'xstate'
-import type { ChangeBatch, Cursor, Meta } from 'atoma/protocol'
-import { Protocol } from 'atoma/protocol'
-import { toError } from '../internal'
-import { NotifyLane } from '../lanes/NotifyLane'
-import { PullLane } from '../lanes/PullLane'
-import { PushLane } from '../lanes/PushLane'
-import { runPeriodic } from '../internal/periodic'
-import { estimateDelayFromRetryContext, resolveRetryOptions } from '../policies/retryPolicy'
-import { SingleInstanceLock } from '../policies/singleInstanceLock'
+import type { Meta } from 'atoma/protocol'
+import { toError } from '#sync/internal'
+import { runPeriodic } from '#sync/internal/periodic'
+import { NotifyLane } from '#sync/lanes/NotifyLane'
+import { PullLane } from '#sync/lanes/PullLane'
+import { PushLane } from '#sync/lanes/PushLane'
+import { estimateDelayFromRetryContext, resolveRetryOptions } from '#sync/policies/retryPolicy'
+import { SingleInstanceLock } from '#sync/policies/singleInstanceLock'
 import type {
     CursorStore,
     OutboxEvents,
@@ -20,7 +19,7 @@ import type {
     SyncPhase,
     SyncRuntimeConfig,
     SyncTransport
-} from '../types'
+} from '#sync/types'
 
 type SyncMachineState = { value: 'idle' | 'starting' | 'running' | 'disposed' }
 
@@ -213,7 +212,6 @@ export class SyncEngine implements SyncClient {
             resources: this.config.pull.resources,
             initialCursor: this.config.pull.initialCursor,
             buildMeta: () => this.buildMeta(),
-            nextOpId: (prefix) => this.nextOpId(prefix),
             onError: (error, context) => this.emitError(error, context),
             onEvent: (event) => this.emitEvent(event)
         })
@@ -268,7 +266,7 @@ export class SyncEngine implements SyncClient {
             throw new Error('[Sync] pull is disabled')
         }
         await this.ensureRunning()
-        return this.pullLane.requestPull({ cause: 'manual', debounceMs: 0 })
+        return this.pullLane.requestPull({ cause: 'manual' })
     }
 
     private isRunning(): boolean {
@@ -280,7 +278,7 @@ export class SyncEngine implements SyncClient {
         if (this.disposed) throw new Error('SyncEngine disposed')
         if (this.isRunning() && this.lock) return
         this.start()
-        await waitFor(this.actor as any, (state: SyncMachineState) => state.value === 'running' || state.value === 'idle' || state.value === 'disposed')
+        await waitFor(this.actor, (state: SyncMachineState) => state.value === 'running' || state.value === 'idle' || state.value === 'disposed')
         if (!this.isRunning() || !this.lock) {
             throw new Error('[Sync] not started')
         }
@@ -388,7 +386,7 @@ export class SyncEngine implements SyncClient {
                     shouldContinue: () => !this.disposed && this.isRunning() && this.config.pull.enabled,
                     runOnce: async () => {
                         await pRetry(
-                            () => this.pullLane.requestPull({ cause: 'periodic', debounceMs: 0 }),
+                            () => this.pullLane.requestPull({ cause: 'periodic' }),
                             {
                                 ...retryOptions,
                                 onFailedAttempt: (ctx) => {
@@ -418,7 +416,4 @@ export class SyncEngine implements SyncClient {
         }
     }
 
-    private nextOpId(prefix: 'w' | 'c') {
-        return Protocol.ids.createOpId(prefix, { now: () => this.now() })
-    }
 }

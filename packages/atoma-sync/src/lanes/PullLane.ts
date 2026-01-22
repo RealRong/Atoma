@@ -1,15 +1,18 @@
-import type { CursorStore, SyncApplier, SyncEvent, SyncPhase, SyncTransport } from '../types'
-import { Protocol, type ChangeBatch, type Cursor, type Meta, type Operation } from 'atoma/protocol'
-import { executeSingleOp, readCursorOrInitial, toError, toOperationError } from '../internal'
+import type { CursorStore, SyncApplier, SyncEvent, SyncPhase, SyncTransport } from '#sync/types'
+import type { ChangeBatch, Cursor, Meta } from 'atoma/protocol'
+import { readCursorOrInitial, toError } from '#sync/internal'
+import { createSingleflight } from '#sync/internal/singleflight'
+import PQueue from 'p-queue'
+import debounce from 'p-debounce'
 
 export class PullLane {
     private disposed = false
-    private pulling = false
-
     private pullPending = false
-    private pullInFlight?: Promise<ChangeBatch | undefined>
-    private pullWaiters: Array<{ resolve: (batch: ChangeBatch | undefined) => void; reject: (error: unknown) => void }> = []
-    private pullTimer?: ReturnType<typeof setTimeout>
+    private drainQueued = false
+    private readonly queue = new PQueue({ concurrency: 1 })
+    private readonly singleflight = createSingleflight<ChangeBatch | undefined>()
+    private debounceController?: AbortController
+    private debouncedDrain?: () => Promise<void>
 
     constructor(private readonly deps: {
         cursor: CursorStore
@@ -20,14 +23,15 @@ export class PullLane {
         resources?: string[]
         initialCursor?: Cursor
         buildMeta: () => Meta
-        nextOpId: (prefix: 'c') => string
         onError?: (error: Error, context: { phase: SyncPhase }) => void
         onEvent?: (event: SyncEvent) => void
-    }) {}
+    }) {
+        this.resetDebouncer()
+    }
 
     stop(reason: string) {
-        this.clearPullTimer()
-        this.rejectPullWaiters(new Error(reason))
+        this.resetDebouncer()
+        this.singleflight.cancel(new Error(reason))
         this.pullPending = false
     }
 
@@ -37,7 +41,7 @@ export class PullLane {
         this.stop('[Sync] pull disposed')
     }
 
-    requestPull(args: { cause: 'manual' | 'periodic' | 'notify'; resources?: string[]; debounceMs?: number }): Promise<ChangeBatch | undefined> {
+    requestPull(args: { cause: 'manual' | 'periodic' | 'notify'; resources?: string[] }): Promise<ChangeBatch | undefined> {
         if (this.disposed) return Promise.resolve(undefined)
 
         if (args.cause === 'notify' && !this.shouldPullForResources(args.resources)) {
@@ -47,29 +51,22 @@ export class PullLane {
         this.pullPending = true
         this.deps.onEvent?.({ type: 'pull:scheduled', cause: args.cause })
 
-        const delay = Math.max(0, Math.floor(typeof args.debounceMs === 'number' ? args.debounceMs : this.deps.debounceMs))
+        const flight = this.singleflight.start()
 
-        const promise = new Promise<ChangeBatch | undefined>((resolve, reject) => {
-            this.pullWaiters.push({ resolve, reject })
-        })
-
-        if (delay > 0 && !this.pulling) {
-            if (!this.pullTimer) {
-                this.pullTimer = setTimeout(() => {
-                    this.pullTimer = undefined
-                    void this.drainPull().catch(() => {
-                        // waiters are rejected inside drainPull
-                    })
-                }, delay)
-            }
-            return promise
+        // Only notify is debounced; periodic/manual are already explicitly scheduled.
+        if (args.cause !== 'notify') {
+            this.enqueueDrain()
+            return flight.promise
         }
 
-        this.clearPullTimer()
-        void this.drainPull().catch(() => {
-            // waiters are rejected inside drainPull
-        })
-        return promise
+        if (this.debouncedDrain) {
+            void this.debouncedDrain().catch(() => {
+                // errors are routed via drain + onError
+            })
+        } else {
+            this.enqueueDrain()
+        }
+        return flight.promise
     }
 
     private shouldPullForResources(resources: unknown): boolean {
@@ -83,50 +80,64 @@ export class PullLane {
         return false
     }
 
-    private clearPullTimer() {
-        if (!this.pullTimer) return
-        clearTimeout(this.pullTimer)
-        this.pullTimer = undefined
+    private resetDebouncer() {
+        try {
+            this.debounceController?.abort()
+        } catch {
+            // ignore
+        }
+
+        const delay = Math.max(0, Math.floor(this.deps.debounceMs))
+        if (delay <= 0) {
+            this.debounceController = undefined
+            this.debouncedDrain = undefined
+            return
+        }
+
+        this.debounceController = new AbortController()
+        this.debouncedDrain = debounce(async () => {
+            this.enqueueDrain()
+        }, delay, { signal: this.debounceController.signal })
     }
 
-    private rejectPullWaiters(error: Error) {
-        const waiters = this.pullWaiters
-        this.pullWaiters = []
-        waiters.forEach(w => w.reject(error))
-    }
+    private enqueueDrain() {
+        if (this.disposed) return
+        if (this.drainQueued) return
+        this.drainQueued = true
 
-    private async drainPull(): Promise<ChangeBatch | undefined> {
-        this.clearPullTimer()
-        if (this.pullInFlight) return this.pullInFlight
+        void this.queue.add(async () => {
+            if (this.disposed) return
+            if (!this.pullPending) return
 
-        const run = async (): Promise<ChangeBatch | undefined> => {
-            this.pulling = true
+            const flight = this.singleflight.peek()
+            const flightId = flight?.id
             this.deps.onEvent?.({ type: 'pull:start' })
             let lastBatch: ChangeBatch | undefined
+
             try {
                 while (this.pullPending && !this.disposed) {
                     this.pullPending = false
                     const batch = await this.pullOnce()
                     if (batch) lastBatch = batch
                 }
-                const waiters = this.pullWaiters
-                this.pullWaiters = []
-                waiters.forEach(w => w.resolve(lastBatch))
+                if (flightId !== undefined) {
+                    this.singleflight.resolve(flightId, lastBatch)
+                }
                 return lastBatch
             } catch (error) {
-                const waiters = this.pullWaiters
-                this.pullWaiters = []
-                waiters.forEach(w => w.reject(error))
+                if (flightId !== undefined) {
+                    this.singleflight.reject(flightId, error)
+                }
                 throw error
             } finally {
-                this.pulling = false
-                this.pullInFlight = undefined
                 this.deps.onEvent?.({ type: 'pull:idle' })
             }
-        }
-
-        this.pullInFlight = run()
-        return this.pullInFlight
+        }).finally(() => {
+            this.drainQueued = false
+            if (this.pullPending && !this.disposed) {
+                this.enqueueDrain()
+            }
+        })
     }
 
     private async pullOnce(): Promise<ChangeBatch | undefined> {
@@ -139,27 +150,14 @@ export class PullLane {
             })
             const limit = Math.max(1, Math.floor(this.deps.pullLimit))
             const meta = this.deps.buildMeta()
-            const opId = this.deps.nextOpId('c')
             const resources = this.deps.resources
 
-            const op: Operation = Protocol.ops.build.buildChangesPullOp({
-                opId,
+            const batch = await this.deps.transport.pullChanges({
                 cursor,
                 limit,
-                ...(resources?.length ? { resources } : {})
-            })
-
-            const opResult = await executeSingleOp({
-                transport: this.deps.transport,
-                op,
+                ...(resources?.length ? { resources } : {}),
                 meta
             })
-
-            if (!opResult.ok) {
-                throw toOperationError(opResult)
-            }
-
-            const batch = opResult.data as ChangeBatch
             if (batch.changes.length) {
                 await Promise.resolve(this.deps.applier.applyPullChanges(batch.changes))
             }
