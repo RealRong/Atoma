@@ -1,16 +1,20 @@
 import type { NotifyMessage, SyncEvent, SyncPhase, SyncTransport } from '#sync/types'
-import { toError } from '#sync/internal'
-import pRetry, { AbortError } from 'p-retry'
-import { estimateDelayFromRetryContext, resolveRetryOptions } from '#sync/policies/retryPolicy'
+import { AbortError, computeBackoffDelayMs, resolveRetryBackoff, sleepMs, toError } from '#sync/internal'
+import type { RetryBackoff } from '#sync/internal/backoff'
 
 export class NotifyLane {
     private disposed = false
     private started = false
     private enabled = false
+
     private subscription?: { close: () => void }
-    private reconnectController?: AbortController
-    private reconnectPromise?: Promise<void>
-    private readonly retryOptions: ReturnType<typeof resolveRetryOptions>
+    private reconnectPromise: Promise<void> | null = null
+
+    private controller = new AbortController()
+    private runSignal?: AbortSignal
+    private runSignalAbortHandler?: () => void
+
+    private readonly retry: RetryBackoff
 
     constructor(private readonly deps: {
         transport: SyncTransport
@@ -22,12 +26,45 @@ export class NotifyLane {
         onError?: (error: Error, context: { phase: SyncPhase }) => void
         onEvent?: (event: SyncEvent) => void
     }) {
-        this.retryOptions = resolveRetryOptions({
+        const baseDelayMs = Math.max(0, Math.floor(deps.reconnectDelayMs))
+        this.retry = resolveRetryBackoff({
             retry: deps.retry,
             backoff: deps.backoff,
-            baseDelayMs: Math.max(0, Math.floor(deps.reconnectDelayMs)),
-            unref: true
+            baseDelayMs
         })
+    }
+
+    setRunSignal(signal?: AbortSignal) {
+        if (this.runSignal && this.runSignalAbortHandler) {
+            try {
+                this.runSignal.removeEventListener('abort', this.runSignalAbortHandler)
+            } catch {
+                // ignore
+            }
+        }
+
+        this.runSignal = signal
+        this.runSignalAbortHandler = undefined
+
+        if (!signal) return
+        if (signal.aborted) {
+            try {
+                this.controller.abort(new AbortError('[Sync] notify stopped'))
+            } catch {
+                // ignore
+            }
+            return
+        }
+
+        const onAbort = () => {
+            try {
+                this.controller.abort(new AbortError('[Sync] notify stopped'))
+            } catch {
+                // ignore
+            }
+        }
+        this.runSignalAbortHandler = onAbort
+        signal.addEventListener('abort', onAbort, { once: true })
     }
 
     start() {
@@ -41,7 +78,13 @@ export class NotifyLane {
         }
         this.close()
         this.deps.onEvent?.({ type: 'notify:stopped' })
-        this.abortReconnect()
+        try {
+            this.controller.abort(new AbortError('[Sync] notify stopped'))
+        } catch {
+            // ignore
+        }
+        this.controller = new AbortController()
+        this.setRunSignal(this.runSignal)
     }
 
     dispose() {
@@ -51,11 +94,14 @@ export class NotifyLane {
     }
 
     setEnabled(enabled: boolean) {
-        this.enabled = enabled
-        if (!enabled) {
+        this.enabled = Boolean(enabled)
+        if (!this.enabled) {
             this.stop({ keepStarted: true })
             return
         }
+        // New run = new cancellation scope.
+        this.controller = new AbortController()
+        this.setRunSignal(this.runSignal)
         this.ensureConnected()
     }
 
@@ -63,80 +109,75 @@ export class NotifyLane {
         if (this.disposed || !this.started || !this.enabled) return
         if (this.subscription) return
         if (this.reconnectPromise) return
-        this.reconnectController = new AbortController()
 
-        this.reconnectPromise = pRetry(async () => {
-            if (this.disposed || !this.started || !this.enabled) {
-                throw new AbortError('[Sync] notify stopped')
+        this.reconnectPromise = this.reconnectLoop()
+            .catch((error) => {
+                if (error instanceof AbortError) return
+                this.deps.onError?.(toError(error), { phase: 'notify' })
+            })
+            .finally(() => {
+                this.reconnectPromise = null
+            })
+    }
+
+    private async reconnectLoop(): Promise<void> {
+        const maxAttempts = Math.max(1, Math.floor(this.retry.maxAttempts))
+        let attempt = 1
+
+        while (!this.disposed && this.started && this.enabled) {
+            if (this.controller.signal.aborted) throw new AbortError('[Sync] notify stopped')
+
+            try {
+                await this.openOnce()
+                return
+            } catch (error) {
+                if (this.controller.signal.aborted) throw new AbortError('[Sync] notify stopped')
+
+                if (attempt >= maxAttempts) throw error
+
+                const delayMs = computeBackoffDelayMs(this.retry, attempt)
+                this.deps.onEvent?.({ type: 'notify:backoff', attempt, delayMs })
+                await sleepMs(delayMs, this.controller.signal)
+                attempt++
             }
-            await this.openOnce()
-        }, {
-            ...this.retryOptions,
-            signal: this.reconnectController.signal,
-            onFailedAttempt: (ctx) => {
-                const delayMs = estimateDelayFromRetryContext(ctx, this.retryOptions)
-                this.deps.onEvent?.({ type: 'notify:backoff', attempt: ctx.attemptNumber, delayMs })
-            },
-            shouldRetry: (ctx) => {
-                // Only retry while still started/enabled; otherwise abort via AbortError above.
-                return !(ctx.error instanceof AbortError)
-            }
-        }).catch((error) => {
-            if (error instanceof AbortError) return
-            // Exhausted retries - report once.
-            this.deps.onError?.(toError(error), { phase: 'notify' })
-        }).finally(() => {
-            this.reconnectPromise = undefined
-            this.reconnectController = undefined
-        })
+        }
     }
 
     private async openOnce() {
-        try {
-            const subscribe = this.deps.transport.subscribe
-            if (!subscribe) return
+        const subscribe = this.deps.transport.subscribe
+        if (!subscribe) return
 
-            this.subscription = subscribe({
-                resources: this.deps.resources,
-                onMessage: async (msg) => {
-                    try {
-                        const resources = Array.isArray(msg.resources) ? msg.resources : undefined
-                        this.deps.onEvent?.({ type: 'notify:message', ...(resources ? { resources } : {}) })
-                        await Promise.resolve(this.deps.onNotify(msg))
-                    } catch (error) {
-                        this.deps.onError?.(toError(error), { phase: 'notify' })
-                    }
-                },
-                onError: (error) => {
+        this.subscription = subscribe({
+            resources: this.deps.resources,
+            onMessage: async (msg) => {
+                try {
+                    if (this.controller.signal.aborted) return
+                    const resources = Array.isArray(msg.resources) ? msg.resources : undefined
+                    this.deps.onEvent?.({ type: 'notify:message', ...(resources ? { resources } : {}) })
+                    await Promise.resolve(this.deps.onNotify(msg))
+                } catch (error) {
                     this.deps.onError?.(toError(error), { phase: 'notify' })
-                    this.close()
-                    this.abortReconnect()
-                    this.ensureConnected()
                 }
-            })
-            this.deps.onEvent?.({ type: 'notify:connected' })
-        } catch (error) {
-            this.deps.onError?.(toError(error), { phase: 'notify' })
-            throw error
-        }
+            },
+            onError: (error) => {
+                this.deps.onError?.(toError(error), { phase: 'notify' })
+                this.close()
+                this.ensureConnected()
+            },
+            signal: this.controller.signal
+        })
+
+        this.deps.onEvent?.({ type: 'notify:connected' })
     }
 
     private close() {
-        if (this.subscription) {
-            try {
-                this.subscription.close()
-            } catch {
-                // ignore
-            }
-            this.subscription = undefined
-        }
-    }
-
-    private abortReconnect() {
+        if (!this.subscription) return
         try {
-            this.reconnectController?.abort(new AbortError('[Sync] notify reconnect aborted'))
+            this.subscription.close()
         } catch {
             // ignore
         }
+        this.subscription = undefined
     }
 }
+

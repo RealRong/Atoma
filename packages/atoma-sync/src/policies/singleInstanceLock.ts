@@ -1,6 +1,7 @@
 import { createKVStore } from '#sync/internal/kvStore'
-import pRetry from 'p-retry'
-import { estimateDelayFromRetryContext, resolveRetryOptions } from '#sync/policies/retryPolicy'
+import { AbortError } from '#sync/internal/abort'
+import { computeBackoffDelayMs, resolveRetryBackoff } from '#sync/internal/backoff'
+import { sleepMs } from '#sync/internal/sleep'
 
 type LockRecord = {
     ownerId: string
@@ -29,7 +30,7 @@ export class SingleInstanceLock {
     private readonly kv = createKVStore()
     private readonly ownerId = randomOwnerId()
     private held = false
-    private renewTimer?: ReturnType<typeof setInterval>
+    private renewTimer?: ReturnType<typeof setTimeout>
 
     constructor(private readonly config: {
         key: string
@@ -45,37 +46,38 @@ export class SingleInstanceLock {
         return this.held
     }
 
-    async acquire() {
+    async acquire(args?: { signal?: AbortSignal }) {
         if (this.held) return
-
-        const maxAttempts = Math.max(1, Math.floor(this.config.maxAcquireAttempts ?? 5))
-        const retryOptions = resolveRetryOptions({
-            retry: { maxAttempts },
-            backoff: this.config.backoff,
-            baseDelayMs: this.config.backoff?.baseDelayMs ?? 300,
-            unref: true,
-            shouldRetry: () => !this.held
-        })
+        if (args?.signal?.aborted) {
+            throw new AbortError('aborted')
+        }
 
         try {
-            await pRetry(async () => {
+            const maxAttempts = Math.max(1, Math.floor(this.config.maxAcquireAttempts ?? 5))
+            const backoff = resolveRetryBackoff({
+                retry: { maxAttempts },
+                backoff: this.config.backoff,
+                baseDelayMs: this.config.backoff?.baseDelayMs ?? 300
+            })
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                if (args?.signal?.aborted) {
+                    throw new AbortError('aborted')
+                }
                 const ok = await this.tryAcquireOnce()
-                if (!ok) {
+                if (ok) break
+
+                if (attempt >= maxAttempts) {
                     throw new Error('LOCK_TAKEN')
                 }
-            }, {
-                ...retryOptions,
-                onFailedAttempt: (ctx) => {
-                    // No SyncEvent for lock acquire backoff today; keep the logic observable in logs if needed.
-                    void estimateDelayFromRetryContext(ctx, retryOptions)
-                },
-                shouldRetry: async (ctx) => {
-                    if (this.held) return false
-                    // Retry on lock contention or transient KV errors; callers will handle final failure.
-                    return ctx.error instanceof Error
-                }
-            })
-        } catch {
+
+                const delayMs = computeBackoffDelayMs(backoff, attempt)
+                await sleepMs(delayMs, args?.signal)
+            }
+        } catch (error) {
+            if (error instanceof AbortError || args?.signal?.aborted) {
+                throw error
+            }
             throw new Error(`[Sync] Another Sync instance is already active for lockKey="${this.config.key}"`)
         }
 
@@ -102,16 +104,30 @@ export class SingleInstanceLock {
     private startRenew() {
         this.stopRenew()
         const interval = Math.max(50, Math.floor(this.config.renewIntervalMs))
-        this.renewTimer = setInterval(() => {
-            void this.renew().catch(() => {
-                // ignore, will retry next tick
-            })
+
+        const tick = async () => {
+            if (!this.held) return
+            try {
+                await this.renew()
+            } catch {
+                // ignore, will stopRenew() if lock is lost
+            } finally {
+                if (this.held) {
+                    this.renewTimer = setTimeout(() => {
+                        void tick()
+                    }, interval)
+                }
+            }
+        }
+
+        this.renewTimer = setTimeout(() => {
+            void tick()
         }, interval)
     }
 
     private stopRenew() {
         if (!this.renewTimer) return
-        clearInterval(this.renewTimer)
+        clearTimeout(this.renewTimer)
         this.renewTimer = undefined
     }
 

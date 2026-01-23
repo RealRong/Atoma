@@ -3,11 +3,12 @@ export { presets } from './presets'
 export type { CreateClientOptions } from './types'
 
 export type {
+    ClientPlugin,
+    ClientPluginContext,
+    PersistHandler,
+    PluginCapableClient,
     AtomaClient,
-    AtomaHistory,
-    AtomaSync,
-    AtomaSyncStartMode,
-    AtomaSyncStatus
+    AtomaHistory
 } from './types'
 
 export type {

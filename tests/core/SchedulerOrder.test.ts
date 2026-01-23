@@ -1,6 +1,6 @@
 import { atom, createStore } from 'jotai/vanilla'
 import { describe, expect, it, vi } from 'vitest'
-import { Scheduler } from '../../src/core/mutation/pipeline/Scheduler'
+import { Scheduler } from '../../packages/atoma/src/core/mutation/pipeline/Scheduler'
 
 describe('Scheduler', () => {
     it('保持同一 tick 内 dispatch 顺序稳定', async () => {

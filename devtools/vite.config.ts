@@ -8,15 +8,15 @@ export default defineConfig({
     resolve: {
         dedupe: ['react', 'react-dom'],
         alias: {
-            atoma: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/index.ts'),
-            'atoma/client': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/client/index.ts'),
-            'atoma/devtools': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/devtools/index.ts'),
-            '#core': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/core/index.ts'),
-            '#observability': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/observability/index.ts'),
-            '#protocol': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/protocol/index.ts'),
+            atoma: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma/src/index.ts'),
+            'atoma/client': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma/src/client/index.ts'),
+            'atoma/devtools': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma/src/devtools/index.ts'),
+            '#core': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma/src/core/index.ts'),
+            '#observability': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma/src/observability/index.ts'),
+            '#protocol': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma/src/protocol/index.ts'),
             'atoma-sync': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma-sync/src/index.ts'),
-            '#backend': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/backend/index.ts'),
-            '#batch': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/batch/index.ts')
+            '#backend': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma/src/backend/index.ts'),
+            '#batch': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/atoma/src/batch/index.ts')
         }
     },
     build: {

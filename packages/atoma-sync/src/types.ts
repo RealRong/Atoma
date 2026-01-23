@@ -66,40 +66,50 @@ export type SyncOutboxItem = {
 
 export type OutboxQueueMode = 'queue' | 'local-first'
 
-export type OutboxWriter = Readonly<{
-    queueMode: OutboxQueueMode
+export type SyncOutboxStats = Readonly<{
+    pending: number
+    inFlight: number
+    total: number
+}>
+
+export type SyncOutboxEvents = {
+    onQueueChange?: (stats: SyncOutboxStats) => void
+    onQueueFull?: (stats: SyncOutboxStats, maxQueueSize: number) => void
+}
+
+export interface OutboxStore {
     enqueueWrites: (args: { writes: OutboxWrite[] }) => Promise<string[]>
-}>
 
-export type OutboxReader = Readonly<{
-    peek: (limit: number) => Promise<SyncOutboxItem[]> | SyncOutboxItem[]
-    ack: (idempotencyKeys: string[]) => Promise<void> | void
-    reject: (idempotencyKeys: string[], reason?: unknown) => Promise<void> | void
-    markInFlight?: (idempotencyKeys: string[], atMs: number) => Promise<void> | void
-    releaseInFlight?: (idempotencyKeys: string[]) => Promise<void> | void
     /**
-     * Virtual baseVersion rewrite:
-     * - 当某条写入已被服务端确认（拿到 version）后，把同 entity 的后续 outbox items 的 baseVersion 重写为该 version，
-     *   以避免离线连续写导致的自冲突。
+     * Atomically reserves up to `limit` pending entries and marks them in-flight.
+     * Returned entries are protocol-shaped write intents (same as previously returned by `peek()`).
      */
-    rebase?: (args: {
-        resource: string
-        entityId: string
-        baseVersion: number
-        afterEnqueuedAtMs?: number
-    }) => Promise<void> | void
-    size: () => Promise<number> | number
-}>
+    reserve: (args: { limit: number; nowMs: number }) => Promise<SyncOutboxItem[]>
 
-export type OutboxEvents = Readonly<{
+    /**
+     * Commits the outcomes for a previously reserved batch.
+     * - ack/reject: remove from outbox
+     * - retryable: move back to pending (clears inFlight marker)
+     * - rebase: optional virtual baseVersion rewrite for subsequent pending writes
+     */
+    commit: (args: {
+        ack: string[]
+        reject: string[]
+        retryable: string[]
+        rebase?: Array<{ resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs?: number }>
+    }) => Promise<void>
+
+    /** Crash recovery: releases stale in-flight entries back to pending. */
+    recover: (args: { nowMs: number; inFlightTimeoutMs: number }) => Promise<void>
+
+    stats: () => Promise<SyncOutboxStats>
+
     setEvents?: (events?: SyncOutboxEvents) => void
-}>
-
-export type OutboxStore = OutboxWriter & OutboxReader & OutboxEvents
+}
 
 export interface CursorStore {
     get: () => Promise<Cursor | undefined> | Cursor | undefined
-    set: (next: Cursor) => Promise<boolean> | boolean
+    advance: (next: Cursor) => Promise<{ advanced: boolean; previous?: Cursor }> | { advanced: boolean; previous?: Cursor }
 }
 
 export type SyncWriteAck = {
@@ -125,6 +135,17 @@ export interface SyncApplier {
     applyPullChanges: (changes: Change[]) => Promise<void> | void
     applyWriteAck: (ack: SyncWriteAck) => Promise<void> | void
     applyWriteReject: (reject: SyncWriteReject, conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual') => Promise<void> | void
+    /**
+     * Optional batch apply for push outcomes.
+     * When implemented, it SHOULD be atomic (e.g. a single transaction) to avoid partial apply.
+     */
+    atomicBatchApply?: boolean
+    applyWriteResults?: (args: {
+        acks: SyncWriteAck[]
+        rejects: SyncWriteReject[]
+        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
+        signal?: AbortSignal
+    }) => Promise<void> | void
 }
 
 export type NotifyMessage = {
@@ -136,6 +157,7 @@ export type SyncSubscribe = (args: {
     resources?: string[]
     onMessage: (msg: NotifyMessage) => void
     onError: (error: unknown) => void
+    signal?: AbortSignal
 }) => { close: () => void }
 
 export interface SyncTransport {
@@ -144,11 +166,13 @@ export interface SyncTransport {
         limit: number
         resources?: string[]
         meta: Meta
+        signal?: AbortSignal
     }) => Promise<ChangeBatch>
     pushWrites: (args: {
         entries: SyncOutboxItem[]
         meta: Meta
         returning: boolean
+        signal?: AbortSignal
     }) => Promise<SyncPushOutcome[]>
     subscribe?: SyncSubscribe
 }
@@ -161,8 +185,8 @@ export type SyncEvent =
     | { type: 'lifecycle:stopped' }
     | { type: 'lifecycle:lock_failed'; error: Error }
     | { type: 'lifecycle:lock_lost'; error: Error }
-    | { type: 'outbox:queue'; size: number }
-    | { type: 'outbox:queue_full'; droppedOp: SyncOutboxItem; maxQueueSize: number }
+    | { type: 'outbox:queue'; stats: SyncOutboxStats }
+    | { type: 'outbox:queue_full'; stats: SyncOutboxStats; maxQueueSize: number }
     | { type: 'push:start' }
     | { type: 'push:idle' }
     | { type: 'push:backoff'; attempt: number; delayMs: number }
@@ -174,11 +198,6 @@ export type SyncEvent =
     | { type: 'notify:message'; resources?: string[] }
     | { type: 'notify:backoff'; attempt: number; delayMs: number }
     | { type: 'notify:stopped' }
-
-export type SyncOutboxEvents = {
-    onQueueChange?: (size: number) => void
-    onQueueFull?: (droppedOp: SyncOutboxItem, maxQueueSize: number) => void
-}
 
 export type SyncBackoffConfig = {
     baseDelayMs?: number
@@ -200,7 +219,7 @@ export type SyncResolvedLaneConfig = {
 export type SyncRuntimeConfig = {
     transport: SyncTransport
     applier: SyncApplier
-    outbox?: OutboxReader & OutboxEvents
+    outbox?: OutboxStore
     outboxEvents?: SyncOutboxEvents
     cursor: CursorStore
 

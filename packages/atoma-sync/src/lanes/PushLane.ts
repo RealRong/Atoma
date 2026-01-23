@@ -1,19 +1,24 @@
-import pRetry, { AbortError } from 'p-retry'
-import PQueue from 'p-queue'
-import debounce from 'p-debounce'
-import { toError } from '#sync/internal'
-import { estimateDelayFromRetryContext, resolveRetryOptions } from '#sync/policies/retryPolicy'
-import type { OutboxReader, SyncApplier, SyncEvent, SyncOutboxItem, SyncPhase, SyncPushOutcome, SyncTransport, SyncWriteAck, SyncWriteReject } from '#sync/types'
+import { AbortError, computeBackoffDelayMs, resolveRetryBackoff, RetryableSyncError, sleepMs, toError } from '#sync/internal'
+import type { RetryBackoff } from '#sync/internal/backoff'
+import type { OutboxStore, SyncApplier, SyncEvent, SyncOutboxItem, SyncPhase, SyncPushOutcome, SyncTransport, SyncWriteAck, SyncWriteReject } from '#sync/types'
 
 export class PushLane {
     private disposed = false
     private enabled = true
-    private readonly queue = new PQueue({ concurrency: 1 })
-    private readonly retryOptions: ReturnType<typeof resolveRetryOptions>
-    private readonly scheduleDrain: () => Promise<void>
-    
+    private runId = 0
+
+    private controller = new AbortController()
+    private runSignal?: AbortSignal
+    private runSignalAbortHandler?: () => void
+
+    private draining = false
+    private drainPromise: Promise<void> | null = null
+    private pending = false
+
+    private readonly retry: RetryBackoff
+
     constructor(private readonly deps: {
-        outbox: OutboxReader
+        outbox: OutboxStore
         transport: SyncTransport
         applier: SyncApplier
         maxPushItems: number
@@ -26,84 +31,159 @@ export class PushLane {
         onError?: (error: Error, context: { phase: SyncPhase }) => void
         onEvent?: (event: SyncEvent) => void
     }) {
-        this.retryOptions = resolveRetryOptions({
+        this.retry = resolveRetryBackoff({
             retry: deps.retry,
             backoff: deps.backoff,
-            unref: true
+            baseDelayMs: 300
         })
+    }
 
-        // Coalesce flush requests:
-        // - concurrent calls share the same promise
-        // - if requests happen while draining, run one more time after the current drain completes
-        this.scheduleDrain = debounce.promise(async () => {
-            if (this.disposed || !this.enabled) return
-            await this.queue.add(() => this.runDrain())
-        }, { after: true })
+    setRunSignal(signal?: AbortSignal) {
+        if (this.runSignal && this.runSignalAbortHandler) {
+            try {
+                this.runSignal.removeEventListener('abort', this.runSignalAbortHandler)
+            } catch {
+                // ignore
+            }
+        }
+
+        this.runSignal = signal
+        this.runSignalAbortHandler = undefined
+
+        if (!signal) return
+        if (signal.aborted) {
+            try {
+                this.controller.abort(new AbortError('[Sync] push stopped'))
+            } catch {
+                // ignore
+            }
+            return
+        }
+
+        const onAbort = () => {
+            try {
+                this.controller.abort(new AbortError('[Sync] push stopped'))
+            } catch {
+                // ignore
+            }
+        }
+        this.runSignalAbortHandler = onAbort
+        signal.addEventListener('abort', onAbort, { once: true })
     }
 
     dispose() {
         if (this.disposed) return
         this.disposed = true
         this.enabled = false
-        this.queue.clear()
-        this.queue.pause()
+        this.runId++
+        try {
+            this.controller.abort(new AbortError('[Sync] push disposed'))
+        } catch {
+            // ignore
+        }
     }
 
     setEnabled(enabled: boolean) {
         if (this.disposed) return
-        this.enabled = Boolean(enabled)
-        if (!this.enabled) {
-            this.queue.clear()
-            this.queue.pause()
-        } else {
-            this.queue.start()
+
+        const next = Boolean(enabled)
+        if (this.enabled && !next) {
+            this.runId++
+            try {
+                this.controller.abort(new AbortError('[Sync] push stopped'))
+            } catch {
+                // ignore
+            }
+        }
+
+        this.enabled = next
+        if (this.enabled) {
+            // New run = new cancellation scope.
+            this.controller = new AbortController()
+            this.setRunSignal(this.runSignal)
         }
     }
 
     requestFlush() {
-        if (this.disposed) return
-        if (!this.enabled) return
-        void this.scheduleDrain().catch(() => {
-            // errors are reported inside the drain flow
-        })
+        if (this.disposed || !this.enabled) return
+        this.pending = true
+        this.scheduleDrain()
     }
 
     flush(): Promise<void> {
-        if (this.disposed) return Promise.resolve()
-        if (!this.enabled) return Promise.resolve()
-        void this.requestFlush()
-        return this.queue.onIdle()
+        if (this.disposed || !this.enabled) return Promise.resolve()
+        this.requestFlush()
+        return this.drainPromise ?? Promise.resolve()
+    }
+
+    private scheduleDrain() {
+        if (this.disposed || !this.enabled) return
+        if (this.drainPromise) return
+
+        this.drainPromise = this.runDrain()
+            .catch((error) => {
+                // Mirror old behavior: errors are surfaced via onError and stop this drain cycle.
+                if (!(error instanceof AbortError)) {
+                    this.deps.onError?.(toError(error), { phase: 'push' })
+                }
+            })
+            .finally(() => {
+                this.drainPromise = null
+                if (this.pending && !this.disposed && this.enabled) {
+                    this.scheduleDrain()
+                }
+            })
     }
 
     private async runDrain(): Promise<void> {
         if (this.disposed || !this.enabled) return
+        if (this.draining) return
+
+        this.draining = true
         this.deps.onEvent?.({ type: 'push:start' })
+
         try {
-            await this.drainUntilIdle()
+            while (!this.disposed && this.enabled) {
+                const hadPending = this.pending
+                this.pending = false
+                const result = await this.drainUntilIdle()
+                if (result === 'idle' && !this.pending && !hadPending) return
+                // If there were requests while draining, loop again.
+            }
         } finally {
             this.deps.onEvent?.({ type: 'push:idle' })
+            this.draining = false
         }
     }
 
-    private async drainUntilIdle(): Promise<void> {
+    private async drainUntilIdle(): Promise<'idle'> {
         while (!this.disposed && this.enabled) {
-            try {
-                const result = await pRetry(() => this.flushBatchOnce(), {
-                    ...this.retryOptions,
-                    onFailedAttempt: (ctx) => {
-                        const delayMs = estimateDelayFromRetryContext(ctx, this.retryOptions)
-                        this.deps.onEvent?.({ type: 'push:backoff', attempt: ctx.attemptNumber, delayMs })
-                    },
-                    shouldRetry: (ctx) => !(ctx.error instanceof AbortError)
-                })
+            const result = await this.flushBatchOnceWithRetry()
+            if (result === 'idle') return 'idle'
+        }
+        return 'idle'
+    }
 
-                if (result === 'idle') return
+    private async flushBatchOnceWithRetry(): Promise<'idle' | 'continue'> {
+        const maxAttempts = Math.max(1, Math.floor(this.retry.maxAttempts))
+        let attempt = 1
+
+        // Retry loop is intentionally narrow:
+        // - only RetryableSyncError triggers retry
+        // - applier/store errors are not retried (they may not be idempotent)
+        while (true) {
+            try {
+                return await this.flushBatchOnce()
             } catch (error) {
-                // Retry budget exhausted (or aborted). Mirror the old behavior: stop this drain cycle.
-                if (!(error instanceof AbortError)) {
-                    this.deps.onError?.(toError(error), { phase: 'push' })
-                }
-                return
+                if (error instanceof AbortError) throw error
+                if (!(error instanceof RetryableSyncError)) throw error
+                if (this.controller.signal.aborted) throw new AbortError('[Sync] push stopped')
+                if (attempt >= maxAttempts) throw error
+
+                const delayMs = computeBackoffDelayMs(this.retry, attempt)
+                this.deps.onEvent?.({ type: 'push:backoff', attempt, delayMs })
+                await sleepMs(delayMs, this.controller.signal)
+                attempt++
             }
         }
     }
@@ -113,101 +193,164 @@ export class PushLane {
             throw new AbortError('[Sync] push stopped')
         }
 
+        const runId = this.runId
+        const signal = this.controller.signal
+
         const max = Math.max(1, Math.floor(this.deps.maxPushItems))
-        const entries = await this.deps.outbox.peek(max)
+        const entries = await this.deps.outbox.reserve({ limit: max, nowMs: this.deps.now() })
+
+        if (this.disposed || !this.enabled || this.runId !== runId || signal.aborted) {
+            if (entries.length) {
+                await this.deps.outbox.commit({ ack: [], reject: [], retryable: entries.map(e => e.idempotencyKey) })
+            }
+            throw new AbortError('[Sync] push stopped')
+        }
+
         if (!entries.length) return 'idle'
 
         const meta = this.deps.buildMeta()
-
         const keys = entries.map(e => e.idempotencyKey)
-        await Promise.resolve(this.deps.outbox.markInFlight?.(keys, this.deps.now()))
 
         let outcomes: SyncPushOutcome[]
         try {
             outcomes = await this.deps.transport.pushWrites({
                 entries,
                 meta,
-                returning: this.deps.returning
+                returning: this.deps.returning,
+                signal
             })
         } catch (error) {
-            const err = toError(error)
-            await Promise.resolve(this.deps.outbox.releaseInFlight?.(keys))
-            throw err
+            await this.deps.outbox.commit({ ack: [], reject: [], retryable: keys })
+            if (signal.aborted) throw new AbortError('[Sync] push stopped')
+            throw new RetryableSyncError(toError(error))
         }
 
         if (outcomes.length !== entries.length) {
-            await Promise.resolve(this.deps.outbox.releaseInFlight?.(keys))
+            await this.deps.outbox.commit({ ack: [], reject: [], retryable: keys })
             throw new Error(`[Sync] transport.pushWrites returned outcomes.length=${outcomes.length}, expected=${entries.length}`)
         }
 
-        const acked: string[] = []
-        const rejected: string[] = []
-        const retryable: string[] = []
+        if (this.disposed || !this.enabled || this.runId !== runId || signal.aborted) {
+            await this.deps.outbox.commit({ ack: [], reject: [], retryable: keys })
+            throw new AbortError('[Sync] push stopped')
+        }
+
+        const acks: SyncWriteAck[] = []
+        const rejects: SyncWriteReject[] = []
+        const ackedKeys: string[] = []
+        const rejectedKeys: string[] = []
+        const retryableKeys: string[] = []
+
         const rebaseByEntityId = new Map<string, { resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs: number }>()
         let retryError: Error | undefined
 
-        try {
-            for (let i = 0; i < outcomes.length; i++) {
-                const outcome = outcomes[i]
-                const entry = entries[i]
-                if (outcome.kind === 'retry') {
-                    retryable.push(entry.idempotencyKey)
-                    retryError = retryError ?? toError(outcome.error)
-                    continue
-                }
+        for (let i = 0; i < outcomes.length; i++) {
+            if (this.disposed || !this.enabled || this.runId !== runId || signal.aborted) {
+                await this.deps.outbox.commit({ ack: [], reject: [], retryable: keys })
+                throw new AbortError('[Sync] push stopped')
+            }
 
-                if (outcome.kind === 'ack') {
-                    const ack: SyncWriteAck = {
-                        resource: entry.resource,
-                        action: entry.action as any,
-                        item: entry.item as any,
-                        result: outcome.result
-                    }
-                    await Promise.resolve(this.deps.applier.applyWriteAck(ack))
-                    acked.push(entry.idempotencyKey)
+            const outcome = outcomes[i]!
+            const entry = entries[i]!
 
-                    const entityId = outcome.result.entityId
-                    const version = outcome.result.version
-                    if (Number.isFinite(version) && version > 0) {
-                        const existing = rebaseByEntityId.get(entityId)
-                        const afterEnqueuedAtMs = entry.enqueuedAtMs
-                        if (!existing || afterEnqueuedAtMs > existing.afterEnqueuedAtMs) {
-                            rebaseByEntityId.set(entityId, {
-                                resource: entry.resource,
-                                entityId,
-                                baseVersion: version,
-                                afterEnqueuedAtMs
-                            })
-                        }
-                    }
-                    continue
-                }
+            if (outcome.kind === 'retry') {
+                retryableKeys.push(entry.idempotencyKey)
+                retryError = retryError ?? toError(outcome.error)
+                continue
+            }
 
-                const reject: SyncWriteReject = {
+            if (outcome.kind === 'ack') {
+                acks.push({
                     resource: entry.resource,
                     action: entry.action as any,
                     item: entry.item as any,
                     result: outcome.result
+                })
+                ackedKeys.push(entry.idempotencyKey)
+
+                const entityId = outcome.result.entityId
+                const version = outcome.result.version
+                if (Number.isFinite(version) && version > 0) {
+                    const existing = rebaseByEntityId.get(entityId)
+                    const afterEnqueuedAtMs = entry.enqueuedAtMs
+                    if (!existing || afterEnqueuedAtMs > existing.afterEnqueuedAtMs) {
+                        rebaseByEntityId.set(entityId, {
+                            resource: entry.resource,
+                            entityId,
+                            baseVersion: version,
+                            afterEnqueuedAtMs
+                        })
+                    }
                 }
-                await Promise.resolve(this.deps.applier.applyWriteReject(reject, this.deps.conflictStrategy))
-                rejected.push(entry.idempotencyKey)
+                continue
             }
 
-            await this.deps.outbox.ack(acked)
-            await this.deps.outbox.reject(rejected)
-            if (retryable.length) {
-                await Promise.resolve(this.deps.outbox.releaseInFlight?.(retryable))
-            }
+            rejects.push({
+                resource: entry.resource,
+                action: entry.action as any,
+                item: entry.item as any,
+                result: outcome.result
+            })
+            rejectedKeys.push(entry.idempotencyKey)
+        }
 
-            for (const rebase of rebaseByEntityId.values()) {
-                await Promise.resolve(this.deps.outbox.rebase?.(rebase))
+        // Apply results first, then commit the outbox.
+        // If apply fails midway, commit only what was successfully applied to avoid double-apply on next drain.
+        try {
+            if ((this.deps.applier as any).atomicBatchApply === true && typeof (this.deps.applier as any).applyWriteResults === 'function') {
+                await Promise.resolve((this.deps.applier as any).applyWriteResults({
+                    acks,
+                    rejects,
+                    conflictStrategy: this.deps.conflictStrategy,
+                    signal
+                }))
+            } else {
+                const appliedAcked: string[] = []
+                const appliedRejected: string[] = []
+
+                for (let i = 0; i < acks.length; i++) {
+                    if (signal.aborted) throw new AbortError('[Sync] push stopped')
+                    await Promise.resolve(this.deps.applier.applyWriteAck(acks[i]!))
+                    appliedAcked.push(ackedKeys[i]!)
+                }
+                for (let i = 0; i < rejects.length; i++) {
+                    if (signal.aborted) throw new AbortError('[Sync] push stopped')
+                    await Promise.resolve(this.deps.applier.applyWriteReject(rejects[i]!, this.deps.conflictStrategy))
+                    appliedRejected.push(rejectedKeys[i]!)
+                }
+
+                // Replace full lists with applied subsets (they should be identical here).
+                ackedKeys.length = 0
+                rejectedKeys.length = 0
+                ackedKeys.push(...appliedAcked)
+                rejectedKeys.push(...appliedRejected)
             }
         } catch (error) {
-            await Promise.resolve(this.deps.outbox.releaseInFlight?.(keys))
+            const appliedAckSet = new Set(ackedKeys)
+            const appliedRejectSet = new Set(rejectedKeys)
+
+            // Anything not applied must be released back to pending to avoid losing it.
+            const applied = [...appliedAckSet, ...appliedRejectSet]
+            const remaining = keys.filter(k => !appliedAckSet.has(k) && !appliedRejectSet.has(k))
+
+            await this.deps.outbox.commit({
+                ack: applied,
+                reject: [],
+                retryable: [...retryableKeys, ...remaining]
+            })
             throw error
         }
 
-        if (retryable.length) throw (retryError ?? new Error('RETRYABLE'))
+        await this.deps.outbox.commit({
+            ack: ackedKeys,
+            reject: rejectedKeys,
+            retryable: retryableKeys,
+            rebase: Array.from(rebaseByEntityId.values())
+        })
+
+        if (retryableKeys.length) {
+            throw new RetryableSyncError(retryError ?? new Error('RETRYABLE'))
+        }
 
         return 'continue'
     }

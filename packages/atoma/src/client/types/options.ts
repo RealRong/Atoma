@@ -2,8 +2,6 @@ import type { Entity, StoreDataProcessor } from '#core'
 import type { Table } from 'dexie'
 import type { AtomaSchema } from './schema'
 import type { HttpBackendConfig, StoreBackendEndpointConfig } from './backend'
-import type { Cursor } from '#protocol'
-import type { SyncBackoffConfig, SyncEvent, SyncOutboxEvents, SyncPhase, SyncRetryConfig } from 'atoma-sync'
 
 /**
  * Extra HTTP backend options shared by both Store (direct) and Sync (replication) endpoints.
@@ -120,61 +118,6 @@ export type StoreConfig =
     | MemoryStoreConfig
     | CustomStoreConfig
 
-export type SyncMode = 'pull-only' | 'subscribe-only' | 'pull+subscribe' | 'push-only' | 'full'
-export type OutboxMode = 'queue' | 'local-first'
-
-export type EndpointConfigInput =
-    | string
-    | {
-        url: string
-        http?: HttpEndpointOptions
-        sse?: string
-    }
-
-export type EngineConfigInput<ResourceName extends string = string> =
-    | SyncMode
-    | {
-        mode?: SyncMode
-        resources?: ResourceName[]
-        initialCursor?: Cursor
-        pull?: { limit?: number; debounceMs?: number; intervalMs?: number }
-        push?: { maxItems?: number; returning?: boolean; conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual' }
-        subscribe?: { enabled?: boolean; eventName?: string; reconnectDelayMs?: number }
-        retry?: SyncRetryConfig
-        backoff?: SyncBackoffConfig
-        now?: () => number
-        onError?: (error: Error, context: { phase: SyncPhase }) => void
-        onEvent?: (event: SyncEvent) => void
-    }
-
-export type OutboxConfigInput =
-    | false
-    | OutboxMode
-    | {
-        mode?: OutboxMode
-        storage?: { maxSize?: number; inFlightTimeoutMs?: number }
-        events?: SyncOutboxEvents
-    }
-
-export type SyncStateConfigInput = {
-    deviceId?: string
-    keys?: { outbox?: string; cursor?: string; lock?: string }
-    lock?: { ttlMs?: number; renewIntervalMs?: number }
-}
-
-/**
- * 对外输入模型（Input）：允许简写，但会在内部归一化为 AtomaClientSyncConfig（Normalized）。
- */
-export type SyncConfigInput<ResourceName extends string = string> = {
-    url?: string
-    sse?: string
-    mode?: SyncMode
-    outbox?: OutboxConfigInput
-    endpoint?: EndpointConfigInput
-    engine?: EngineConfigInput<ResourceName>
-    state?: SyncStateConfigInput
-}
-
 export type CreateClientOptions<
     Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
@@ -192,9 +135,4 @@ export type CreateClientOptions<
     store: StoreConfig
     /** Default batching config for the generated data sources. */
     storeBatch?: StoreBatchOptions
-    /**
-     * Sync/Replication config (optional).
-     * 本模型已明确只支持 HTTP endpoint（无 custom/backend），并在内部归一化为 AtomaClientSyncConfig（Normalized）。
-     */
-    sync?: SyncConfigInput<keyof Entities & string>
 }

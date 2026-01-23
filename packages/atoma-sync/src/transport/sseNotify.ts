@@ -8,6 +8,7 @@ export function subscribeNotifySse(args: {
     eventName?: string
     onMessage: (msg: NotifyMessage) => void
     onError: (error: unknown) => void
+    signal?: AbortSignal
 }): { close: () => void } {
     const url = args.buildUrl({ resources: args.resources })
     const connect = args.connect
@@ -34,6 +35,22 @@ export function subscribeNotifySse(args: {
 
     eventSource.onerror = (error) => {
         args.onError(error)
+    }
+
+    if (args.signal) {
+        const signal = args.signal
+        if (signal.aborted) {
+            eventSource.close()
+        } else {
+            const onAbort = () => {
+                try {
+                    eventSource.close()
+                } catch {
+                    // ignore
+                }
+            }
+            signal.addEventListener('abort', onAbort, { once: true })
+        }
     }
 
     return {

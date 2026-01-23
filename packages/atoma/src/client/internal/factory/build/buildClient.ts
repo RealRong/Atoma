@@ -1,14 +1,11 @@
 import type { CoreStore, Entity, StoreDataProcessor } from '#core'
+import { createStoreView } from '#core/store/createStoreView'
+import { storeHandleManager } from '#core/store/internals/storeHandleManager'
 import { HistoryController } from '#client/internal/controllers/HistoryController'
-import { SyncController } from '#client/internal/controllers/SyncController'
 import { ClientRuntime } from '#client/internal/factory/runtime/createClientRuntime'
-import { resolveSyncWiring } from '#client/internal/factory/sync/resolveSyncWiring'
-import { Shared } from '#shared'
 import type {
     AtomaClient,
     AtomaSchema,
-    BackendConfig,
-    AtomaClientSyncConfig,
     StoreBackendState,
     StoreBatchArgs,
 } from '#client/types'
@@ -23,103 +20,26 @@ export function buildAtomaClient<
     dataProcessor?: StoreDataProcessor<any>
     storeBackendState: StoreBackendState
     storeBatch?: StoreBatchArgs
-    sync?: AtomaClientSyncConfig
 }): AtomaClient<Entities, Schema> {
     const storeBackendState = args.storeBackendState
-    const syncConfig: AtomaClientSyncConfig | undefined = args.sync
-    const wantsSync = Boolean(syncConfig)
-
-    const syncEndpoint: BackendConfig | undefined = syncConfig
-        ? {
-            http: {
-                baseURL: String(syncConfig.endpoint.url),
-                ...(syncConfig.endpoint.http ?? {}),
-                ...(syncConfig.endpoint.sse
-                    ? {
-                        subscribe: {
-                            buildUrl: (args2?: { resources?: string[] }) => Shared.url.withResourcesParam(
-                                Shared.url.resolveUrl(String(syncConfig.endpoint.url), String(syncConfig.endpoint.sse)),
-                                args2?.resources
-                            )
-                        }
-                    }
-                    : {})
-            } as any
-        }
-        : undefined
-
-    const resolved = (() => {
-        if (storeBackendState.role === 'local') {
-            const remote = syncEndpoint
-            const config: BackendConfig = remote
-                ? { local: storeBackendState.backend, remote }
-                : storeBackendState.backend
-            const backends = resolveBackend(config)
-            return {
-                store: backends,
-                sync: backends
-            }
-        }
-
-        const store = resolveBackend(storeBackendState.backend)
-        const sync = syncEndpoint ? resolveBackend(syncEndpoint) : undefined
-        return { store, sync }
-    })()
-
-    const wiring = resolveSyncWiring({
-        syncConfig
-    })
-    const outboxStore = wiring.outboxStore
-    const cursorStore = wiring.cursorStore
-    const lockKey = wiring.lockKey
-
-    const storeBackend = resolved.store.store
+    const resolved = resolveBackend(storeBackendState.backend)
+    const storeBackend = resolved.store
 
     const clientRuntime = new ClientRuntime({
         schema: args.schema,
         dataProcessor: args.dataProcessor,
-        opsClient: storeBackend.opsClient,
-        syncStore: {
-            queue: wiring.queue
-        },
-        sync: {
-            outboxWriter: outboxStore
-        }
+        opsClient: storeBackend.opsClient
     })
 
     const historyController = new HistoryController({ runtime: clientRuntime })
 
-    const syncController = new SyncController({
-        runtime: clientRuntime,
-        backend: resolved.sync?.sync,
-        localBackend: resolved.store.local,
-        syncConfig,
-        outboxStore,
-        cursorStore,
-        lockKey
-    })
-
     const Store = (<Name extends keyof Entities & string>(name: Name) => {
         const store: any = clientRuntime.stores.Store(name) as any
-        if (!('Outbox' in store)) {
-            try {
-                Object.defineProperty(store, 'Outbox', {
-                    enumerable: false,
-                    configurable: true,
-                    get: () => clientRuntime.stores.SyncStore(name) as any
-                })
-            } catch {
-                store.Outbox = clientRuntime.stores.SyncStore(name) as any
-            }
-        }
         return store as unknown as CoreStore<Entities[Name], any>
     }) as AtomaClient<Entities, Schema>['Store']
 
-    const Sync = syncController.sync as AtomaClient<Entities, Schema>['Sync']
-
     const client: any = {
         Store,
-        Sync,
         History: historyController.history
     }
 
@@ -135,17 +55,116 @@ export function buildAtomaClient<
         return 'custom' as const
     })()
 
+    // Plugin system (core is intentionally sync-agnostic).
+    const installed = new Set<string>()
+    const pluginDisposers: Array<() => void> = []
+    const disposeListeners = new Set<() => void>()
+
+    const onDispose = (fn: () => void) => {
+        disposeListeners.add(fn)
+        return () => {
+            disposeListeners.delete(fn)
+        }
+    }
+
+    const ctx: import('#client/types').ClientPluginContext = {
+        client,
+        meta: {
+            storeBackend: {
+                role: storeBackendState.role,
+                kind
+            }
+        },
+        onDispose,
+        persistence: {
+            register: clientRuntime.persistenceRouter.register
+        },
+        acks: clientRuntime.mutation.acks,
+        writeback: {
+            apply: (storeName, writeback) => clientRuntime.internal.applyWriteback(String(storeName), writeback as any)
+        },
+        stores: {
+            view: (store, args2) => {
+                const name = storeHandleManager.getStoreName(store as any, 'plugin.view')
+                const handle = storeHandleManager.requireStoreHandle(store as any, `plugin.view:${name}`)
+                const allowImplicitFetchForWrite = (typeof args2.allowImplicitFetchForWrite === 'boolean')
+                    ? args2.allowImplicitFetchForWrite
+                    : handle.writePolicies?.allowImplicitFetchForWrite !== false
+
+                return createStoreView(clientRuntime as any, handle as any, {
+                    writeConfig: {
+                        persistKey: args2.persistKey,
+                        allowImplicitFetchForWrite
+                    },
+                    includeServerAssignedCreate: args2.includeServerAssignedCreate !== false
+                }) as any
+            }
+        },
+        runtime: {
+            opsClient: clientRuntime.opsClient,
+            observability: clientRuntime.observability
+        }
+    }
+
+    client.use = (plugin: any) => {
+        const name = String(plugin?.name ?? '')
+        if (!name) throw new Error('[Atoma] client.use(plugin): plugin.name 必填')
+        if (installed.has(name)) return client
+        installed.add(name)
+
+        const res = plugin.setup(ctx) ?? {}
+        const extension = res.extension
+        if (extension && typeof extension === 'object') {
+            for (const [k, v] of Object.entries(extension)) {
+                if (k in client) throw new Error(`[Atoma] client.use(${name}): extension 冲突字段 "${k}"`)
+                ;(client as any)[k] = v
+            }
+        }
+
+        if (typeof res.dispose === 'function') {
+            pluginDisposers.push(res.dispose)
+        }
+
+        return client
+    }
+
+    let disposed = false
+    client.dispose = () => {
+        if (disposed) return
+        disposed = true
+
+        for (let i = pluginDisposers.length - 1; i >= 0; i--) {
+            try {
+                pluginDisposers[i]!()
+            } catch {
+                // ignore
+            }
+        }
+
+        for (const fn of Array.from(disposeListeners)) {
+            try {
+                fn()
+            } catch {
+                // ignore
+            }
+        }
+
+        try {
+            client.Devtools?.dispose?.()
+        } catch {
+            // ignore
+        }
+    }
+
     const clientDevtools = Devtools.createClientInspector({
         client,
         runtime: clientRuntime,
-        syncDevtools: syncController.devtools,
         historyDevtools: historyController.devtools,
         meta: {
             storeBackend: {
                 role: storeBackendState.role,
                 kind
             },
-            syncConfigured: wantsSync
         }
     })
 

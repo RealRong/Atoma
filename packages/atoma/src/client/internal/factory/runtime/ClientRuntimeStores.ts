@@ -6,15 +6,12 @@ import { storeHandleManager } from '#core/store/internals/storeHandleManager'
 import type { ClientRuntimeInternal } from '#client/internal/types'
 import type { ClientRuntimeStoresApi } from '#client/types/runtime'
 import { resolveStoreCreateOptions } from '#client/internal/factory/runtime/storeConfig'
-import { createSyncStoreView } from '#client/internal/factory/runtime/createSyncStoreView'
-import type { SyncStore } from '#client/types/syncStore'
 
 type StoreListener = (store: CoreStore<any, any>) => void
 const toStoreKey = (name: unknown) => String(name)
 
 export class ClientRuntimeStores implements ClientRuntimeStoresApi {
     private storeCache = new Map<string, CoreStore<any, any>>()
-    private syncStoreCache = new Map<string, SyncStore<any, any>>()
     private createdStores: CoreStore<any, any>[] = []
     private storeListeners = new Set<StoreListener>()
 
@@ -25,9 +22,6 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
             dataProcessor?: StoreDataProcessor<any>
             defaults?: {
                 idGenerator?: () => EntityId
-            }
-            syncStore?: {
-                queue?: 'queue' | 'local-first'
             }
         }
     ) {}
@@ -62,19 +56,6 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
     }
 
     resolveStore = (name: StoreToken): IStore<any> | undefined => this.Store(toStoreKey(name))
-
-    SyncStore = (name: string) => {
-        const key = toStoreKey(name)
-        const existing = this.syncStoreCache.get(key)
-        if (existing) return existing as any
-
-        const base = this.Store(key)
-        const handle = storeHandleManager.requireStoreHandle(base, `Store.SyncStore:${key}`)
-        const view = createSyncStoreView(this.runtime, handle, this.args.syncStore)
-
-        this.syncStoreCache.set(key, view as any)
-        return view as any
-    }
 
     listStores = () => this.storeCache.values()
 

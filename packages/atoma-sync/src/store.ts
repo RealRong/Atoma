@@ -1,6 +1,8 @@
 import { createKVStore } from '#sync/internal/kvStore'
 import { defaultCompareCursor } from '#sync/policies/cursorGuard'
-import type { CursorStore, OutboxStore, SyncOutboxItem, SyncOutboxEvents, OutboxWrite, OutboxQueueMode } from '#sync/types'
+import { openDB } from 'idb'
+import type { IDBPDatabase } from 'idb'
+import type { CursorStore, OutboxStore, SyncOutboxItem, SyncOutboxEvents, SyncOutboxStats, OutboxWrite, OutboxQueueMode } from '#sync/types'
 
 export type SyncStoresConfig = {
     outboxKey: string
@@ -35,140 +37,98 @@ export function createStores(config: SyncStoresConfig): SyncStores {
     }
 }
 
+type OutboxStatus = 'pending' | 'in_flight'
+
+type PersistedOutboxEntry = {
+    pk: string
+    outboxKey: string
+    idempotencyKey: string
+    resource: string
+    action: string
+    item: any
+    options?: any
+    enqueuedAtMs: number
+    status: OutboxStatus
+    inFlightAtMs?: number
+    entityId?: string
+}
+
+const DEFAULT_DB_NAME = 'atoma-sync-db'
+const KV_STORE_NAME = 'sync'
+const OUTBOX_STORE_NAME = 'outbox_entries'
+const OUTBOX_INDEX_BY_OUTBOX = 'by_outbox'
+const OUTBOX_INDEX_BY_OUTBOX_STATUS_ENQUEUED = 'by_outbox_status_enqueued'
+const OUTBOX_INDEX_BY_OUTBOX_STATUS_INFLIGHT_AT = 'by_outbox_status_inFlightAt'
+const OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ENTITY_ENQUEUED = 'by_outbox_status_resource_entity_enqueued'
+const DB_VERSION = 2
+const MIN_TIME_MS = 0
+const MAX_TIME_MS = Number.MAX_SAFE_INTEGER
+
+function ensureOutboxSchema(db: IDBPDatabase<any>) {
+    if (!db.objectStoreNames.contains(KV_STORE_NAME)) {
+        db.createObjectStore(KV_STORE_NAME)
+    }
+
+    if (db.objectStoreNames.contains(OUTBOX_STORE_NAME)) return
+
+    const store = db.createObjectStore(OUTBOX_STORE_NAME, { keyPath: 'pk' })
+    store.createIndex(OUTBOX_INDEX_BY_OUTBOX, 'outboxKey')
+    store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_ENQUEUED, ['outboxKey', 'status', 'enqueuedAtMs'])
+    store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_INFLIGHT_AT, ['outboxKey', 'status', 'inFlightAtMs'])
+    store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ENTITY_ENQUEUED, ['outboxKey', 'status', 'resource', 'entityId', 'enqueuedAtMs'])
+}
+
+async function openSyncDb(): Promise<IDBPDatabase<any>> {
+    return openDB(DEFAULT_DB_NAME, DB_VERSION, {
+        upgrade(db) {
+            // Note: we intentionally do not migrate old KV-based outbox state.
+            // This package is currently internal-only; breaking persistence is acceptable.
+            ensureOutboxSchema(db)
+        }
+    })
+}
+
 export class DefaultOutboxStore implements OutboxStore {
-    private readonly kv = createKVStore()
-    private queue: Array<SyncOutboxItem & { inFlightAtMs?: number }> = []
-    private byKey = new Map<string, SyncOutboxItem & { inFlightAtMs?: number }>()
+    private events?: SyncOutboxEvents
     private initialized: Promise<void>
+    private cachedStats: SyncOutboxStats | null = null
     readonly queueMode: OutboxQueueMode
+    private readonly memory?: MemoryOutboxStore
 
     constructor(
         private readonly storageKey: string,
-        private events?: SyncOutboxEvents,
+        initialEvents?: SyncOutboxEvents,
         private readonly maxQueueSize: number = 1000,
         private readonly now: () => number = () => Date.now(),
         private readonly inFlightTimeoutMs: number = 30_000,
         queueMode: OutboxQueueMode = 'queue'
     ) {
         this.queueMode = queueMode === 'local-first' ? 'local-first' : 'queue'
-        this.initialized = this.restore()
+        this.events = initialEvents
+        if (typeof indexedDB === 'undefined') {
+            this.memory = new MemoryOutboxStore(this.storageKey, this.maxQueueSize, this.now)
+            this.memory.setEvents(this.events)
+            this.initialized = Promise.resolve()
+        } else {
+            this.initialized = this.init()
+        }
     }
 
     setEvents(events?: SyncOutboxEvents) {
         this.events = events
+        this.memory?.setEvents(events)
     }
 
-    async enqueue(items: SyncOutboxItem[]) {
-        await this.initialized
-        let changed = false
-        for (const item of items) {
-            if (this.byKey.has(item.idempotencyKey)) continue
-            if (this.queue.length >= this.maxQueueSize) {
-                const dropped = this.queue.shift()
-                if (dropped) {
-                    this.byKey.delete(dropped.idempotencyKey)
-                    this.events?.onQueueFull?.(dropped, this.maxQueueSize)
-                }
-            }
-            const stored = { ...item, inFlightAtMs: undefined }
-            this.queue.push(stored)
-            this.byKey.set(item.idempotencyKey, stored)
-            changed = true
-        }
-        if (changed) await this.persist()
-    }
-
-    async peek(limit: number) {
-        await this.initialized
-        if (!Number.isFinite(limit) || limit <= 0) return []
-        const out: SyncOutboxItem[] = []
-        const cap = Math.floor(limit)
-        for (const item of this.queue) {
-            if (out.length >= cap) break
-            if (typeof item.inFlightAtMs === 'number') continue
-            out.push(item)
-        }
-        return out
-    }
-
-    async ack(idempotencyKeys: string[]) {
-        await this.removeByKeys(idempotencyKeys)
-    }
-
-    async reject(idempotencyKeys: string[]) {
-        await this.removeByKeys(idempotencyKeys)
-    }
-
-    async rebase(args: { resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs?: number }) {
-        await this.initialized
-        const nextBaseVersion = args.baseVersion
-        if (!(typeof nextBaseVersion === 'number' && Number.isFinite(nextBaseVersion) && nextBaseVersion > 0)) return
-
-        const resource = String(args.resource || '')
-        const entityId = String(args.entityId || '')
-        const afterEnqueuedAtMs = typeof args.afterEnqueuedAtMs === 'number' && Number.isFinite(args.afterEnqueuedAtMs)
-            ? args.afterEnqueuedAtMs
-            : undefined
-
-        if (!resource || !entityId) return
-
-        let changed = false
-
-        for (const item of this.queue) {
-            if (typeof item.inFlightAtMs === 'number') continue
-            if (afterEnqueuedAtMs !== undefined && item.enqueuedAtMs <= afterEnqueuedAtMs) continue
-            if (item.resource !== resource) continue
-
-            const opItem: any = item.item
-            const curEntityId = opItem?.entityId
-            if (typeof curEntityId !== 'string' || curEntityId !== entityId) continue
-
-            if (typeof opItem.baseVersion === 'number' && Number.isFinite(opItem.baseVersion) && opItem.baseVersion > 0) {
-                if (opItem.baseVersion === nextBaseVersion) continue
-                if (opItem.baseVersion < nextBaseVersion) {
-                    opItem.baseVersion = nextBaseVersion
-                    changed = true
-                }
-            }
-        }
-
-        if (changed) await this.persist()
-    }
-
-    async markInFlight(idempotencyKeys: string[], atMs: number) {
-        await this.initialized
-        if (!idempotencyKeys.length) return
-        const set = new Set(idempotencyKeys)
-        let changed = false
-        for (const item of this.queue) {
-            if (!set.has(item.idempotencyKey)) continue
-            if (typeof item.inFlightAtMs === 'number') continue
-            item.inFlightAtMs = atMs
-            changed = true
-        }
-        if (changed) await this.persist()
-    }
-
-    async releaseInFlight(idempotencyKeys: string[]) {
-        await this.initialized
-        if (!idempotencyKeys.length) return
-        const set = new Set(idempotencyKeys)
-        let changed = false
-        for (const item of this.queue) {
-            if (!set.has(item.idempotencyKey)) continue
-            if (item.inFlightAtMs === undefined) continue
-            item.inFlightAtMs = undefined
-            changed = true
-        }
-        if (changed) await this.persist()
-    }
-
-    async size() {
-        await this.initialized
-        return this.queue.length
+    private async init() {
+        await openSyncDb()
+        await this.recover({ nowMs: this.now(), inFlightTimeoutMs: this.inFlightTimeoutMs })
+        await this.refreshStats()
     }
 
     async enqueueWrites(args: { writes: OutboxWrite[] }) {
+        await this.initialized
+        if (this.memory) return this.memory.enqueueWrites(args)
+
         const now = this.now()
         const items: SyncOutboxItem[] = []
 
@@ -198,60 +158,272 @@ export class DefaultOutboxStore implements OutboxStore {
             items.push(entry)
         }
 
-        await this.enqueue(items)
-        return items.map(i => i.idempotencyKey)
+        if (!items.length) return []
+
+        const db = await openSyncDb()
+        const tx = db.transaction(OUTBOX_STORE_NAME, 'readwrite')
+        const store = tx.store
+
+        const maxQueueSize = Math.max(1, Math.floor(this.maxQueueSize))
+        const currentTotal = await store.index(OUTBOX_INDEX_BY_OUTBOX).count(this.storageKey)
+        if (currentTotal + items.length > maxQueueSize) {
+            const stats = await this.stats()
+            this.events?.onQueueFull?.(stats, maxQueueSize)
+            throw new Error(`[Sync] outbox is full (maxQueueSize=${maxQueueSize})`)
+        }
+
+        const insertedKeys: string[] = []
+
+        for (const item of items) {
+            const pk = this.pk(item.idempotencyKey)
+            const existing = await store.get(pk)
+            if (existing) continue
+
+            const entityId = this.extractEntityId(item.item)
+            const persisted: PersistedOutboxEntry = {
+                pk,
+                outboxKey: this.storageKey,
+                idempotencyKey: item.idempotencyKey,
+                resource: item.resource,
+                action: item.action,
+                item: item.item,
+                ...(item.options ? { options: item.options } : {}),
+                enqueuedAtMs: item.enqueuedAtMs,
+                status: 'pending',
+                ...(entityId ? { entityId } : {})
+            }
+            await store.put(persisted)
+            insertedKeys.push(item.idempotencyKey)
+        }
+
+        await tx.done
+        await this.bumpStats({ pendingDelta: insertedKeys.length, inFlightDelta: 0, totalDelta: insertedKeys.length })
+        return insertedKeys
     }
 
-    private async removeByKeys(keys: string[]) {
+    async reserve(args: { limit: number; nowMs: number }): Promise<SyncOutboxItem[]> {
         await this.initialized
-        if (!keys.length) return
-        const set = new Set(keys)
-        const next = this.queue.filter(item => !set.has(item.idempotencyKey))
-        if (next.length === this.queue.length) return
-        this.queue = next
-        this.byKey = new Map(next.map(item => [item.idempotencyKey, item]))
-        await this.persist()
-    }
+        if (this.memory) return this.memory.reserve(args)
 
-    private async persist() {
-        await this.kv.set(this.storageKey, this.queue)
-        this.events?.onQueueChange?.(this.queue.length)
-    }
+        const limit = Math.max(1, Math.floor(args.limit))
+        const nowMs = Math.max(0, Math.floor(args.nowMs))
 
-    private async restore() {
-        const stored = await this.kv.get<any>(this.storageKey)
-        if (Array.isArray(stored)) {
-            // Defensive decode: persisted IndexedDB data can be stale/corrupted across breaking changes.
-            const decoded: Array<SyncOutboxItem & { inFlightAtMs?: number }> = []
-            const seen = new Set<string>()
+        const db = await openSyncDb()
+        const tx = db.transaction(OUTBOX_STORE_NAME, 'readwrite')
+        const store = tx.store
+        const index = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_ENQUEUED)
 
-            for (const raw of stored) {
-                const item = decodePersistedOutboxItem(raw)
-                if (!item) continue
-                if (seen.has(item.idempotencyKey)) continue
-                seen.add(item.idempotencyKey)
-                decoded.push(item)
+        const range = IDBKeyRange.bound(
+            [this.storageKey, 'pending', MIN_TIME_MS],
+            [this.storageKey, 'pending', MAX_TIME_MS]
+        )
+
+        const out: SyncOutboxItem[] = []
+        for (let cursor = await index.openCursor(range); cursor && out.length < limit; cursor = await cursor.continue()) {
+            const raw = cursor.value as PersistedOutboxEntry
+            const next: PersistedOutboxEntry = {
+                ...raw,
+                status: 'in_flight',
+                inFlightAtMs: nowMs
             }
+            await cursor.update(next)
+            out.push(this.toSyncOutboxItem(raw))
+        }
 
-            this.queue = decoded
-            this.byKey = new Map(decoded.map(item => [item.idempotencyKey, item]))
-            await this.recoverStaleInFlight()
+        await tx.done
+        await this.bumpStats({ pendingDelta: -out.length, inFlightDelta: out.length, totalDelta: 0 })
+        return out
+    }
+
+    async commit(args: {
+        ack: string[]
+        reject: string[]
+        retryable: string[]
+        rebase?: Array<{ resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs?: number }>
+    }): Promise<void> {
+        await this.initialized
+        if (this.memory) return this.memory.commit(args)
+
+        const ack = Array.isArray(args.ack) ? args.ack : []
+        const reject = Array.isArray(args.reject) ? args.reject : []
+        const retryable = Array.isArray(args.retryable) ? args.retryable : []
+
+        const ackSet = new Set<string>([...ack, ...reject])
+        const retrySet = new Set<string>(retryable)
+
+        if (!ackSet.size && !retrySet.size && !(args.rebase?.length)) return
+
+        const db = await openSyncDb()
+        const tx = db.transaction(OUTBOX_STORE_NAME, 'readwrite')
+        const store = tx.store
+
+        let removedPending = 0
+        let removedInFlight = 0
+        let movedInFlightToPending = 0
+
+        for (const key of ackSet) {
+            const pk = this.pk(key)
+            const existing = await store.get(pk) as PersistedOutboxEntry | undefined
+            if (!existing) continue
+            if (existing.status === 'pending') removedPending++
+            if (existing.status === 'in_flight') removedInFlight++
+            await store.delete(pk)
+        }
+
+        for (const key of retrySet) {
+            const pk = this.pk(key)
+            const existing = await store.get(pk) as PersistedOutboxEntry | undefined
+            if (!existing) continue
+            if (existing.status === 'in_flight') movedInFlightToPending++
+            const next: PersistedOutboxEntry = {
+                ...existing,
+                status: 'pending',
+                inFlightAtMs: undefined
+            }
+            await store.put(next)
+        }
+
+        if (Array.isArray(args.rebase)) {
+            const rebaseIndex = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ENTITY_ENQUEUED)
+
+            for (const r of args.rebase) {
+                const resource = String((r as any)?.resource ?? '')
+                const entityId = String((r as any)?.entityId ?? '')
+                const baseVersion = (r as any)?.baseVersion
+                const afterEnqueuedAtMs = (r as any)?.afterEnqueuedAtMs
+
+                if (!resource || !entityId) continue
+                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) continue
+
+                const after = (typeof afterEnqueuedAtMs === 'number' && Number.isFinite(afterEnqueuedAtMs))
+                    ? Math.floor(afterEnqueuedAtMs) + 1
+                    : MIN_TIME_MS
+
+                const range = IDBKeyRange.bound(
+                    [this.storageKey, 'pending', resource, entityId, after],
+                    [this.storageKey, 'pending', resource, entityId, MAX_TIME_MS]
+                )
+
+                for (let cursor = await rebaseIndex.openCursor(range); cursor; cursor = await cursor.continue()) {
+                    const existing = cursor.value as PersistedOutboxEntry
+                    const item: any = existing.item
+                    if (!item || typeof item !== 'object') continue
+                    const cur = item.baseVersion
+                    if (!(typeof cur === 'number' && Number.isFinite(cur) && cur > 0)) continue
+                    if (cur >= baseVersion) continue
+                    const nextItem = { ...(item as any), baseVersion }
+                    await cursor.update({ ...existing, item: nextItem })
+                }
+            }
+        }
+
+        await tx.done
+
+        const removed = removedPending + removedInFlight
+        if (removed || movedInFlightToPending) {
+            await this.bumpStats({
+                pendingDelta: -removedPending + movedInFlightToPending,
+                inFlightDelta: -removedInFlight - movedInFlightToPending,
+                totalDelta: -removed
+            })
         }
     }
 
-    private async recoverStaleInFlight() {
-        const now = this.now()
-        const timeout = Math.max(0, Math.floor(this.inFlightTimeoutMs))
+    async recover(args: { nowMs: number; inFlightTimeoutMs: number }): Promise<void> {
+        await this.initialized
+        if (this.memory) return this.memory.recover(args)
+
+        const nowMs = Math.max(0, Math.floor(args.nowMs))
+        const timeout = Math.max(0, Math.floor(args.inFlightTimeoutMs))
         if (!timeout) return
-        let changed = false
-        for (const item of this.queue) {
-            if (typeof item.inFlightAtMs !== 'number') continue
-            if (item.inFlightAtMs + timeout <= now) {
-                item.inFlightAtMs = undefined
-                changed = true
-            }
+
+        const db = await openSyncDb()
+        const tx = db.transaction(OUTBOX_STORE_NAME, 'readwrite')
+        const store = tx.store
+        const index = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_INFLIGHT_AT)
+
+        const threshold = nowMs - timeout
+        const range = IDBKeyRange.bound(
+            [this.storageKey, 'in_flight', MIN_TIME_MS],
+            [this.storageKey, 'in_flight', threshold]
+        )
+
+        let moved = 0
+        for (let cursor = await index.openCursor(range); cursor; cursor = await cursor.continue()) {
+            const existing = cursor.value as PersistedOutboxEntry
+            await cursor.update({ ...existing, status: 'pending', inFlightAtMs: undefined })
+            moved++
         }
-        if (changed) await this.persist()
+        await tx.done
+
+        if (moved) {
+            await this.bumpStats({ pendingDelta: moved, inFlightDelta: -moved, totalDelta: 0 })
+        }
+    }
+
+    async stats(): Promise<SyncOutboxStats> {
+        await this.initialized
+        if (this.memory) return this.memory.stats()
+        if (this.cachedStats) return this.cachedStats
+        return this.refreshStats()
+    }
+
+    private async refreshStats(): Promise<SyncOutboxStats> {
+        if (this.memory) return this.memory.stats()
+
+        const db = await openSyncDb()
+        const tx = db.transaction(OUTBOX_STORE_NAME, 'readonly')
+        const store = tx.store
+
+        const byOutbox = store.index(OUTBOX_INDEX_BY_OUTBOX)
+        const total = await byOutbox.count(this.storageKey)
+
+        const byStatus = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_ENQUEUED)
+        const pending = await byStatus.count(IDBKeyRange.bound(
+            [this.storageKey, 'pending', MIN_TIME_MS],
+            [this.storageKey, 'pending', MAX_TIME_MS]
+        ))
+        const inFlight = await byStatus.count(IDBKeyRange.bound(
+            [this.storageKey, 'in_flight', MIN_TIME_MS],
+            [this.storageKey, 'in_flight', MAX_TIME_MS]
+        ))
+
+        await tx.done
+
+        const next = { pending, inFlight, total } as const
+        this.cachedStats = next
+        return next
+    }
+
+    private async bumpStats(args: { pendingDelta: number; inFlightDelta: number; totalDelta: number }) {
+        const cur = this.cachedStats ?? await this.refreshStats()
+        const next: SyncOutboxStats = {
+            pending: Math.max(0, cur.pending + Math.floor(args.pendingDelta)),
+            inFlight: Math.max(0, cur.inFlight + Math.floor(args.inFlightDelta)),
+            total: Math.max(0, cur.total + Math.floor(args.totalDelta))
+        }
+        this.cachedStats = next
+        this.events?.onQueueChange?.(next)
+    }
+
+    private pk(idempotencyKey: string): string {
+        return `${this.storageKey}::${idempotencyKey}`
+    }
+
+    private toSyncOutboxItem(raw: PersistedOutboxEntry): SyncOutboxItem {
+        return {
+            idempotencyKey: raw.idempotencyKey,
+            resource: raw.resource,
+            action: raw.action as any,
+            item: raw.item as any,
+            ...(raw.options ? { options: raw.options } : {}),
+            enqueuedAtMs: raw.enqueuedAtMs
+        }
+    }
+
+    private extractEntityId(item: any): string | undefined {
+        const id = item?.entityId
+        return (typeof id === 'string' && id) ? id : undefined
     }
 
     private requireItemMeta(item: any) {
@@ -286,20 +458,22 @@ export class DefaultCursorStore implements CursorStore {
         return this.cursor ?? this.initial
     }
 
-    async set(next: string) {
+    async advance(next: string): Promise<{ advanced: boolean; previous?: string }> {
         await this.initialized
         if (this.cursor === undefined) {
+            const previous = this.cursor ?? this.initial
             this.cursor = next
             await this.persist()
-            return true
+            return { advanced: true, ...(previous !== undefined ? { previous } : {}) }
         }
         const cmp = defaultCompareCursor(this.cursor, next)
         if (cmp < 0) {
+            const previous = this.cursor
             this.cursor = next
             await this.persist()
-            return true
+            return { advanced: true, ...(previous !== undefined ? { previous } : {}) }
         }
-        return false
+        return { advanced: false, previous: this.cursor }
     }
 
     private async persist() {
@@ -314,33 +488,172 @@ export class DefaultCursorStore implements CursorStore {
     }
 }
 
-function decodePersistedOutboxItem(raw: any): (SyncOutboxItem & { inFlightAtMs?: number }) | undefined {
-    if (!raw || typeof raw !== 'object') return
-    const idempotencyKey = typeof raw.idempotencyKey === 'string' ? raw.idempotencyKey : ''
-    const resource = typeof raw.resource === 'string' ? raw.resource : ''
-    const action = typeof raw.action === 'string' ? raw.action : ''
-    const item = raw.item
-    const enqueuedAtMs = typeof raw.enqueuedAtMs === 'number' && Number.isFinite(raw.enqueuedAtMs) ? raw.enqueuedAtMs : undefined
-    if (!idempotencyKey || !resource || !action || !item || enqueuedAtMs === undefined) return
+class MemoryOutboxStore {
+    private events?: SyncOutboxEvents
+    private readonly byKey = new Map<string, SyncOutboxItem & { status: OutboxStatus; inFlightAtMs?: number }>()
+    private readonly order: Array<string> = []
 
-    const meta = (item as any)?.meta
-    const metaKey = (meta && typeof meta === 'object') ? (meta as any).idempotencyKey : undefined
-    if (typeof metaKey !== 'string' || !metaKey) return
-    if (metaKey !== idempotencyKey) return
+    constructor(
+        private readonly outboxKey: string,
+        private readonly maxQueueSize: number,
+        private readonly now: () => number
+    ) {}
 
-    const inFlightAtMs = (typeof raw.inFlightAtMs === 'number' && Number.isFinite(raw.inFlightAtMs))
-        ? raw.inFlightAtMs
-        : undefined
+    setEvents(events?: SyncOutboxEvents) {
+        this.events = events
+    }
 
-    const options = (raw.options && typeof raw.options === 'object') ? raw.options : undefined
+    async enqueueWrites(args: { writes: OutboxWrite[] }): Promise<string[]> {
+        const now = this.now()
+        const maxQueueSize = Math.max(1, Math.floor(this.maxQueueSize))
 
-    return {
-        idempotencyKey,
-        resource,
-        action: action as any,
-        item,
-        ...(options ? { options } : {}),
-        enqueuedAtMs,
-        ...(inFlightAtMs !== undefined ? { inFlightAtMs } : {})
-    } as any
+        const inserted: string[] = []
+        for (const write of args.writes) {
+            const resource = String((write as any)?.resource ?? '')
+            const action = (write as any)?.action as any
+            const baseItem = (write as any)?.item as any
+            const options = ((write as any)?.options && typeof (write as any).options === 'object')
+                ? ((write as any).options as any)
+                : undefined
+
+            if (!resource || !action || !baseItem) {
+                throw new Error('[Sync] enqueueWrites requires { resource, action, item }')
+            }
+
+            const meta = (baseItem as any)?.meta
+            const key = meta?.idempotencyKey
+            if (typeof key !== 'string' || !key) throw new Error('[Sync] write item meta.idempotencyKey is required for enqueueWrites')
+
+            if (this.byKey.has(key)) continue
+            if (this.byKey.size >= maxQueueSize) {
+                const stats = await this.stats()
+                this.events?.onQueueFull?.(stats, maxQueueSize)
+                throw new Error(`[Sync] outbox is full (maxQueueSize=${maxQueueSize})`)
+            }
+
+            const entry: SyncOutboxItem & { status: OutboxStatus; inFlightAtMs?: number } = {
+                idempotencyKey: key,
+                resource,
+                action,
+                item: baseItem,
+                ...(options ? { options } : {}),
+                enqueuedAtMs: now,
+                status: 'pending',
+                inFlightAtMs: undefined
+            }
+            this.byKey.set(key, entry)
+            this.order.push(key)
+            inserted.push(key)
+        }
+
+        if (inserted.length) {
+            this.events?.onQueueChange?.(await this.stats())
+        }
+
+        return inserted
+    }
+
+    async reserve(args: { limit: number; nowMs: number }): Promise<SyncOutboxItem[]> {
+        const limit = Math.max(1, Math.floor(args.limit))
+        const nowMs = Math.max(0, Math.floor(args.nowMs))
+
+        const out: SyncOutboxItem[] = []
+        for (const key of this.order) {
+            if (out.length >= limit) break
+            const entry = this.byKey.get(key)
+            if (!entry) continue
+            if (entry.status !== 'pending') continue
+            entry.status = 'in_flight'
+            entry.inFlightAtMs = nowMs
+            out.push({
+                idempotencyKey: entry.idempotencyKey,
+                resource: entry.resource,
+                action: entry.action,
+                item: entry.item,
+                ...(entry.options ? { options: entry.options } : {}),
+                enqueuedAtMs: entry.enqueuedAtMs
+            })
+        }
+
+        if (out.length) {
+            this.events?.onQueueChange?.(await this.stats())
+        }
+        return out
+    }
+
+    async commit(args: { ack: string[]; reject: string[]; retryable: string[]; rebase?: Array<{ resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs?: number }> }): Promise<void> {
+        const ackSet = new Set([...(args.ack ?? []), ...(args.reject ?? [])])
+        const retrySet = new Set(args.retryable ?? [])
+
+        for (const key of ackSet) {
+            this.byKey.delete(key)
+        }
+        for (const key of retrySet) {
+            const e = this.byKey.get(key)
+            if (!e) continue
+            e.status = 'pending'
+            e.inFlightAtMs = undefined
+        }
+
+        if (Array.isArray(args.rebase)) {
+            for (const r of args.rebase) {
+                const resource = String((r as any)?.resource ?? '')
+                const entityId = String((r as any)?.entityId ?? '')
+                const baseVersion = (r as any)?.baseVersion
+                const after = (typeof (r as any)?.afterEnqueuedAtMs === 'number' && Number.isFinite((r as any)?.afterEnqueuedAtMs))
+                    ? Math.floor((r as any).afterEnqueuedAtMs)
+                    : undefined
+
+                if (!resource || !entityId) continue
+                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) continue
+
+                for (const key of this.order) {
+                    const e = this.byKey.get(key)
+                    if (!e || e.status !== 'pending') continue
+                    if (after !== undefined && e.enqueuedAtMs <= after) continue
+                    if (e.resource !== resource) continue
+                    const item: any = e.item
+                    if (item?.entityId !== entityId) continue
+                    if (typeof item.baseVersion !== 'number' || !Number.isFinite(item.baseVersion) || item.baseVersion <= 0) continue
+                    if (item.baseVersion < baseVersion) {
+                        item.baseVersion = baseVersion
+                    }
+                }
+            }
+        }
+
+        this.events?.onQueueChange?.(await this.stats())
+    }
+
+    async recover(args: { nowMs: number; inFlightTimeoutMs: number }): Promise<void> {
+        const nowMs = Math.max(0, Math.floor(args.nowMs))
+        const timeout = Math.max(0, Math.floor(args.inFlightTimeoutMs))
+        if (!timeout) return
+
+        let changed = false
+        for (const key of this.order) {
+            const e = this.byKey.get(key)
+            if (!e) continue
+            if (e.status !== 'in_flight') continue
+            if (typeof e.inFlightAtMs !== 'number') continue
+            if (e.inFlightAtMs + timeout <= nowMs) {
+                e.status = 'pending'
+                e.inFlightAtMs = undefined
+                changed = true
+            }
+        }
+        if (changed) {
+            this.events?.onQueueChange?.(await this.stats())
+        }
+    }
+
+    async stats(): Promise<SyncOutboxStats> {
+        let pending = 0
+        let inFlight = 0
+        for (const e of this.byKey.values()) {
+            if (e.status === 'pending') pending++
+            if (e.status === 'in_flight') inFlight++
+        }
+        return { pending, inFlight, total: this.byKey.size }
+    }
 }

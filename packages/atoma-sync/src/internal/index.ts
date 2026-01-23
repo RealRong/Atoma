@@ -1,6 +1,11 @@
 import type { CursorStore } from '#sync/types'
 import type { Cursor } from 'atoma/protocol'
 
+export { AbortError, isAbortError } from './abort'
+export { sleepMs } from './sleep'
+export { RetryableSyncError, isRetryableSyncError } from './retryable'
+export { resolveRetryBackoff, computeBackoffDelayMs } from './backoff'
+
 export function toError(error: unknown): Error {
     return error instanceof Error ? error : new Error(String(error))
 }

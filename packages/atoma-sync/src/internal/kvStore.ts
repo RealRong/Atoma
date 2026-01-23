@@ -23,10 +23,27 @@ export type KVStore = {
 }
 
 const KV_STORE_CACHE = new Map<string, KVStore>()
+const DB_VERSION = 2
+const DEFAULT_STORE_NAME = 'sync'
+const OUTBOX_STORE_NAME = 'outbox_entries'
+
+function ensureSchema(db: any, storeName: string) {
+    if (!db.objectStoreNames.contains(storeName)) {
+        db.createObjectStore(storeName)
+    }
+    // Ensure the outbox objectStore exists as well; see `store.ts`.
+    if (!db.objectStoreNames.contains(OUTBOX_STORE_NAME)) {
+        const store = db.createObjectStore(OUTBOX_STORE_NAME, { keyPath: 'pk' })
+        store.createIndex('by_outbox', 'outboxKey')
+        store.createIndex('by_outbox_status_enqueued', ['outboxKey', 'status', 'enqueuedAtMs'])
+        store.createIndex('by_outbox_status_inFlightAt', ['outboxKey', 'status', 'inFlightAtMs'])
+        store.createIndex('by_outbox_status_resource_entity_enqueued', ['outboxKey', 'status', 'resource', 'entityId', 'enqueuedAtMs'])
+    }
+}
 
 export function createKVStore(options?: { dbName?: string; storeName?: string }): KVStore {
     const dbName = options?.dbName ?? 'atoma-sync-db'
-    const storeName = options?.storeName ?? 'sync'
+    const storeName = options?.storeName ?? DEFAULT_STORE_NAME
 
     const cacheKey = `${dbName}::${storeName}`
     const cached = KV_STORE_CACHE.get(cacheKey)
@@ -57,11 +74,9 @@ export function createKVStore(options?: { dbName?: string; storeName?: string })
         return store
     }
 
-    const dbPromise = openDB(dbName, 1, {
+    const dbPromise = openDB(dbName, DB_VERSION, {
         upgrade(db) {
-            if (!db.objectStoreNames.contains(storeName)) {
-                db.createObjectStore(storeName)
-            }
+            ensureSchema(db as any, storeName)
         }
     })
 

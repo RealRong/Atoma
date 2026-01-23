@@ -19,6 +19,9 @@ export const Sync: {
 export { createOpsTransport } from './transport/opsTransport'
 export { subscribeNotifySse } from './transport/sseNotify'
 
+export { withSync, syncPlugin } from './withSync'
+export type { WithSyncOptions, WithSyncExtension } from './withSync'
+
 export type {
     SyncClient,
     SyncMode,
@@ -30,10 +33,9 @@ export type {
     SyncApplier,
     SyncSubscribe,
     SyncOutboxItem,
+    SyncOutboxStats,
     OutboxWrite,
-    OutboxReader,
-    OutboxWriter,
-    OutboxEvents,
+    OutboxStore,
     CursorStore,
     SyncWriteAck,
     SyncWriteReject,

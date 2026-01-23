@@ -52,11 +52,10 @@ export type DevtoolsClientSnapshot = {
     updatedAt: number
     config: {
         storeBackend: { role: 'local' | 'remote'; kind: 'http' | 'indexeddb' | 'memory' | 'localServer' | 'custom' }
-        syncConfigured: boolean
     }
     stores: DevtoolsStoreSnapshot[]
     indexes: DevtoolsIndexManagerSnapshot[]
-    sync: DevtoolsSyncSnapshot
+    sync?: DevtoolsSyncSnapshot
     history: DevtoolsHistorySnapshot
 }
 
@@ -78,8 +77,8 @@ export type DevtoolsClientInspector = {
         list: () => Array<{ name: string }>
         snapshot: (name?: string) => DevtoolsIndexManagerSnapshot[]
     }
-    sync: {
-        snapshot: () => DevtoolsSyncSnapshot
+    sync?: {
+        snapshot: () => DevtoolsSyncSnapshot | undefined
     }
     history: {
         snapshot: () => DevtoolsHistorySnapshot
@@ -96,11 +95,10 @@ export type DevtoolsGlobalInspector = {
 
 export type ClientMeta = {
     storeBackend: { role: 'local' | 'remote'; kind: 'http' | 'indexeddb' | 'memory' | 'localServer' | 'custom' }
-    syncConfigured: boolean
 }
 
 export type SyncProvider = {
-    snapshot: () => { queue?: { pending: number; failed: number }; lastEventAt?: number; lastError?: string }
+    snapshot: () => DevtoolsSyncSnapshot
     subscribe: (fn: (e: DevtoolsEvent) => void) => () => void
 }
 

@@ -24,6 +24,13 @@ export type { ClientRuntime } from './runtime'
 export type { StoreBackendState, StoreBatchArgs } from './internal'
 
 export type {
+    ClientPlugin,
+    ClientPluginContext,
+    PersistHandler,
+    PluginCapableClient
+} from './plugin'
+
+export type {
     BelongsToSchema,
     HasManySchema,
     HasOneSchema,
@@ -39,20 +46,9 @@ export type {
 
 export type { AtomaSchema, AtomaStoreSchema } from './schema'
 
-export type { SyncStore } from './syncStore'
-
 export type {
     AtomaClient,
     AtomaClientDevtools,
     AtomaStore,
-    AtomaHistory,
-    AtomaSync,
-    AtomaSyncStartMode,
-    AtomaSyncStatus
+    AtomaHistory
 } from './client'
-
-export type {
-    AtomaClientSyncConfig,
-    SyncMode,
-    OutboxMode,
-} from './sync'

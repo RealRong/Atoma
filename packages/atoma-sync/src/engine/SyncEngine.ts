@@ -1,17 +1,13 @@
-import pRetry, { AbortError } from 'p-retry'
-import { createActor, createMachine, fromPromise, waitFor } from 'xstate'
 import type { Meta } from 'atoma/protocol'
-import { toError } from '#sync/internal'
+import { AbortError, toError } from '#sync/internal'
 import { runPeriodic } from '#sync/internal/periodic'
 import { NotifyLane } from '#sync/lanes/NotifyLane'
 import { PullLane } from '#sync/lanes/PullLane'
 import { PushLane } from '#sync/lanes/PushLane'
-import { estimateDelayFromRetryContext, resolveRetryOptions } from '#sync/policies/retryPolicy'
 import { SingleInstanceLock } from '#sync/policies/singleInstanceLock'
 import type {
     CursorStore,
-    OutboxEvents,
-    OutboxReader,
+    OutboxStore,
     SyncApplier,
     SyncClient,
     SyncEvent,
@@ -21,161 +17,28 @@ import type {
     SyncTransport
 } from '#sync/types'
 
-type SyncMachineState = { value: 'idle' | 'starting' | 'running' | 'disposed' }
+type EngineState = 'idle' | 'starting' | 'running' | 'disposed'
 
 export class SyncEngine implements SyncClient {
     private disposed = false
-    private readonly config: SyncRuntimeConfig
+    private state: EngineState = 'idle'
+    private startPromise: Promise<void> | null = null
 
+    private readonly config: SyncRuntimeConfig
     private readonly transport: SyncTransport
-    private readonly outbox?: OutboxReader & OutboxEvents
+    private readonly outbox?: OutboxStore
     private readonly cursor: CursorStore
     private readonly applier: SyncApplier
 
     private lock?: SingleInstanceLock
+    private runController: AbortController | null = null
 
     private readonly pushLane: PushLane | null
     private readonly pullLane: PullLane
     private readonly notifyLane: NotifyLane
 
-    private periodicPullController?: AbortController
-    private periodicPullPromise?: Promise<void>
-
-    private readonly actor = createActor(
-        createMachine(
-            {
-                id: 'sync',
-                initial: 'idle',
-                states: {
-                    idle: {
-                        on: {
-                            START: { target: 'starting', actions: 'emitStarting' },
-                            DISPOSE: { target: 'disposed', actions: 'disposeAll' }
-                        }
-                    },
-                    starting: {
-                        invoke: {
-                            src: 'acquireLock',
-                            input: () => ({
-                                sendLockLost: (error: Error) => {
-                                    this.actor.send({ type: 'LOCK_LOST', error })
-                                }
-                            }),
-                            onDone: { target: 'running', actions: 'onLockAcquired' },
-                            onError: { target: 'idle', actions: 'onLockFailed' }
-                        },
-                        on: {
-                            STOP: { target: 'idle', actions: 'stopAll' },
-                            DISPOSE: { target: 'disposed', actions: 'disposeAll' }
-                        }
-                    },
-                    running: {
-                        entry: 'startLanes',
-                        exit: 'stopAll',
-                        on: {
-                            STOP: { target: 'idle' },
-                            LOCK_LOST: { target: 'idle', actions: 'onLockLost' },
-                            DISPOSE: { target: 'disposed', actions: 'disposeAll' }
-                        }
-                    },
-                    disposed: {
-                        type: 'final'
-                    }
-                }
-            },
-            {
-                actors: {
-                    acquireLock: fromPromise(async ({ input, signal }) => {
-                        const lock = new SingleInstanceLock({
-                            key: this.config.lock.key,
-                            ttlMs: Math.max(1000, Math.floor(this.config.lock.ttlMs ?? 10_000)),
-                            renewIntervalMs: Math.max(200, Math.floor(this.config.lock.renewIntervalMs ?? 3_000)),
-                            now: () => this.now(),
-                            maxAcquireAttempts: 5,
-                            backoff: this.config.lock.backoff,
-                            onLost: (error) => {
-                                ;(input as any)?.sendLockLost?.(error)
-                            }
-                        })
-
-                        await lock.acquire()
-
-                        if (signal.aborted) {
-                            await lock.release().catch(() => {
-                                // ignore
-                            })
-                            throw new AbortError('aborted')
-                        }
-
-                        return lock
-                    })
-                },
-                actions: {
-                    emitStarting: () => {
-                        this.emitEvent({ type: 'lifecycle:starting' })
-                    },
-                    onLockAcquired: ({ event }: any) => {
-                        const lock = event.output as SingleInstanceLock
-                        this.lock = lock
-                        this.emitEvent({ type: 'lifecycle:started' })
-                    },
-                    onLockFailed: ({ event }: any) => {
-                        const err = toError(event.error)
-                        this.emitEvent({ type: 'lifecycle:lock_failed', error: err })
-                        this.emitError(err, { phase: 'lifecycle' })
-                        this.lock = undefined
-                    },
-                    onLockLost: ({ event }: any) => {
-                        const err = toError(event.error)
-                        this.emitEvent({ type: 'lifecycle:lock_lost', error: err })
-                        this.emitError(err, { phase: 'lifecycle' })
-                    },
-                    startLanes: () => {
-                        this.notifyLane.start()
-                        this.notifyLane.setEnabled(this.config.subscribe.enabled)
-
-                        this.pushLane?.setEnabled(Boolean(this.config.push.enabled))
-                        if (this.config.push.enabled) {
-                            this.pushLane?.requestFlush()
-                        }
-
-                        if (this.config.pull.enabled) {
-                            this.startPeriodicPull({ initialDelayMs: 0 })
-                        }
-                    },
-                    stopAll: () => {
-                        this.notifyLane.stop()
-                        this.pushLane?.setEnabled(false)
-                        this.stopPeriodicPull()
-                        this.pullLane.stop('[Sync] stopped')
-
-                        const lock = this.lock
-                        this.lock = undefined
-                        void lock?.release().catch(() => {
-                            // ignore
-                        })
-
-                        this.emitEvent({ type: 'lifecycle:stopped' })
-                    },
-                    disposeAll: () => {
-                        if (this.disposed) return
-                        this.disposed = true
-                        this.notifyLane.stop()
-                        this.pushLane?.dispose()
-                        this.pullLane.dispose()
-                        this.notifyLane.dispose()
-                        this.stopPeriodicPull()
-
-                        const lock = this.lock
-                        this.lock = undefined
-                        void lock?.release().catch(() => {
-                            // ignore
-                        })
-                    }
-                }
-            }
-        )
-    ) as any
+    private periodicPullController: AbortController | null = null
+    private periodicPullPromise: Promise<void> | null = null
 
     constructor(config: SyncRuntimeConfig) {
         this.config = config
@@ -213,7 +76,9 @@ export class SyncEngine implements SyncClient {
             initialCursor: this.config.pull.initialCursor,
             buildMeta: () => this.buildMeta(),
             onError: (error, context) => this.emitError(error, context),
-            onEvent: (event) => this.emitEvent(event)
+            onEvent: (event) => this.emitEvent(event),
+            retry: this.config.pull.periodic.retry,
+            backoff: this.config.pull.periodic.backoff
         })
 
         this.notifyLane = new NotifyLane({
@@ -232,23 +97,30 @@ export class SyncEngine implements SyncClient {
         })
 
         this.attachOutboxEvents()
-        this.actor.start()
     }
 
     start() {
         if (this.disposed) return
-        this.actor.send({ type: 'START' })
+        void this.ensureStarted().catch(() => {
+            // errors are already routed via onError/onEvent
+        })
     }
 
     stop() {
         if (this.disposed) return
-        this.actor.send({ type: 'STOP' })
+        void this.stopInternal('[Sync] stopped')
     }
 
     dispose() {
         if (this.disposed) return
-        this.actor.send({ type: 'DISPOSE' })
-        this.actor.stop?.()
+        this.disposed = true
+        this.state = 'disposed'
+
+        void this.stopInternal('[Sync] disposed').finally(() => {
+            this.pushLane?.dispose()
+            this.pullLane.dispose()
+            this.notifyLane.dispose()
+        })
     }
 
     async flush() {
@@ -269,18 +141,190 @@ export class SyncEngine implements SyncClient {
         return this.pullLane.requestPull({ cause: 'manual' })
     }
 
-    private isRunning(): boolean {
-        const snap = this.actor.getSnapshot?.() as SyncMachineState | undefined
-        return snap?.value === 'running'
-    }
-
     private async ensureRunning(): Promise<void> {
         if (this.disposed) throw new Error('SyncEngine disposed')
-        if (this.isRunning() && this.lock) return
-        this.start()
-        await waitFor(this.actor, (state: SyncMachineState) => state.value === 'running' || state.value === 'idle' || state.value === 'disposed')
-        if (!this.isRunning() || !this.lock) {
+        await this.ensureStarted()
+        if (this.state !== 'running' || !this.lock) {
             throw new Error('[Sync] not started')
+        }
+    }
+
+    private async ensureStarted(): Promise<void> {
+        if (this.disposed) throw new Error('SyncEngine disposed')
+        if (this.state === 'running') return
+        if (this.startPromise) return this.startPromise
+
+        this.state = 'starting'
+        this.emitEvent({ type: 'lifecycle:starting' })
+
+        const start = this.startWithLock()
+            .catch((error) => {
+                const err = toError(error)
+                if (err instanceof AbortError) return
+                // lock acquire failures are already emitted; treat others as lifecycle errors
+                this.emitError(err, { phase: 'lifecycle' })
+            })
+            .finally(() => {
+                this.startPromise = null
+            })
+
+        this.startPromise = start
+        return start
+    }
+
+    private async startWithLock(): Promise<void> {
+        if (this.disposed) return
+        if (this.state === 'running') return
+
+        // Cancel any previous run.
+        await this.stopInternal('[Sync] restart')
+
+        const controller = new AbortController()
+        this.runController = controller
+
+        const lock = new SingleInstanceLock({
+            key: this.config.lock.key,
+            ttlMs: Math.max(1000, Math.floor(this.config.lock.ttlMs ?? 10_000)),
+            renewIntervalMs: Math.max(200, Math.floor(this.config.lock.renewIntervalMs ?? 3_000)),
+            now: () => this.now(),
+            maxAcquireAttempts: 5,
+            backoff: this.config.lock.backoff,
+            onLost: (error) => {
+                this.onLockLost(error)
+            }
+        })
+
+        try {
+            await lock.acquire({ signal: controller.signal })
+        } catch (error) {
+            if (controller.signal.aborted || error instanceof AbortError) {
+                this.state = 'idle'
+                return
+            }
+            const err = toError(error)
+            this.emitEvent({ type: 'lifecycle:lock_failed', error: err })
+            this.emitError(err, { phase: 'lifecycle' })
+            this.state = 'idle'
+            return
+        }
+
+        if (controller.signal.aborted) {
+            await lock.release().catch(() => {
+                // ignore
+            })
+            this.state = 'idle'
+            return
+        }
+
+        this.lock = lock
+        this.state = 'running'
+        this.emitEvent({ type: 'lifecycle:started' })
+
+        // Link run cancellation to lanes.
+        this.notifyLane.setRunSignal(controller.signal)
+        this.pullLane.setRunSignal(controller.signal)
+        this.pushLane?.setRunSignal(controller.signal)
+
+        this.notifyLane.start()
+        this.notifyLane.setEnabled(this.config.subscribe.enabled)
+
+        this.pushLane?.setEnabled(Boolean(this.config.push.enabled))
+        if (this.config.push.enabled) {
+            this.pushLane?.requestFlush()
+        }
+
+        if (this.config.pull.enabled) {
+            this.startPeriodicPull({ initialDelayMs: 0, runSignal: controller.signal })
+        }
+    }
+
+    private onLockLost(error: Error) {
+        const err = toError(error)
+        this.emitEvent({ type: 'lifecycle:lock_lost', error: err })
+        this.emitError(err, { phase: 'lifecycle' })
+        void this.stopInternal('[Sync] lock lost')
+    }
+
+    private async stopInternal(reason: string): Promise<void> {
+        const controller = this.runController
+        this.runController = null
+        if (controller && !controller.signal.aborted) {
+            try {
+                controller.abort(new AbortError(reason))
+            } catch {
+                // ignore
+            }
+        }
+
+        this.stopPeriodicPull()
+
+        this.notifyLane.stop()
+        this.pushLane?.setEnabled(false)
+        this.pullLane.stop(reason)
+
+        const lock = this.lock
+        this.lock = undefined
+        await lock?.release().catch(() => {
+            // ignore
+        })
+
+        if (!this.disposed) {
+            this.state = 'idle'
+            this.emitEvent({ type: 'lifecycle:stopped' })
+        }
+    }
+
+    private startPeriodicPull(args: { initialDelayMs: number; runSignal: AbortSignal }) {
+        if (this.disposed || this.state !== 'running') return
+        if (!this.config.pull.enabled) return
+        if (this.periodicPullPromise) return
+
+        const intervalMs = Math.max(0, Math.floor(this.config.pull.periodic.intervalMs))
+        if (intervalMs <= 0) return
+
+        const controller = new AbortController()
+        this.periodicPullController = controller
+
+        const onRunAbort = () => {
+            try {
+                controller.abort(new AbortError('[Sync] periodic pull stopped'))
+            } catch {
+                // ignore
+            }
+        }
+        if (args.runSignal.aborted) onRunAbort()
+        else args.runSignal.addEventListener('abort', onRunAbort, { once: true })
+
+        this.periodicPullPromise = (async () => {
+            try {
+                await runPeriodic({
+                    intervalMs,
+                    initialDelayMs: args.initialDelayMs,
+                    signal: controller.signal,
+                    shouldContinue: () => !this.disposed && this.state === 'running' && this.config.pull.enabled,
+                    runOnce: async () => {
+                        await this.pullLane.requestPull({ cause: 'periodic' })
+                    }
+                })
+            } catch (error) {
+                if (error instanceof AbortError) return
+                const err = toError(error)
+                this.emitError(err, { phase: 'pull' })
+            }
+        })().finally(() => {
+            this.periodicPullPromise = null
+            this.periodicPullController = null
+        })
+    }
+
+    private stopPeriodicPull() {
+        const controller = this.periodicPullController
+        this.periodicPullController = null
+        if (!controller) return
+        try {
+            controller.abort(new AbortError('[Sync] periodic pull stopped'))
+        } catch {
+            // ignore
         }
     }
 
@@ -315,23 +359,30 @@ export class SyncEngine implements SyncClient {
         const outbox = this.outbox
         if (!outbox?.setEvents) return
 
-        const onQueueChange = (size: number) => {
-            const next = Math.max(0, Math.floor(size))
-            this.emitEvent({ type: 'outbox:queue', size: next })
+        const onQueueChange = (stats: any) => {
+            const pending = Math.max(0, Math.floor((stats as any)?.pending ?? 0))
+            const inFlight = Math.max(0, Math.floor((stats as any)?.inFlight ?? 0))
+            const total = Math.max(0, Math.floor((stats as any)?.total ?? pending + inFlight))
+            const next = { pending, inFlight, total } as const
+            this.emitEvent({ type: 'outbox:queue', stats: next })
             try {
                 this.config.outboxEvents?.onQueueChange?.(next)
             } catch {
                 // ignore
             }
-            if (next > 0) {
+            if (next.pending > 0) {
                 this.requestPushFlush()
             }
         }
 
-        const onQueueFull = (droppedOp: SyncOutboxItem, maxQueueSize: number) => {
-            this.emitEvent({ type: 'outbox:queue_full', droppedOp, maxQueueSize })
+        const onQueueFull = (stats: any, maxQueueSize: number) => {
+            const pending = Math.max(0, Math.floor((stats as any)?.pending ?? 0))
+            const inFlight = Math.max(0, Math.floor((stats as any)?.inFlight ?? 0))
+            const total = Math.max(0, Math.floor((stats as any)?.total ?? pending + inFlight))
+            const next = { pending, inFlight, total } as const
+            this.emitEvent({ type: 'outbox:queue_full', stats: next, maxQueueSize })
             try {
-                this.config.outboxEvents?.onQueueFull?.(droppedOp, maxQueueSize)
+                this.config.outboxEvents?.onQueueFull?.(next, maxQueueSize)
             } catch {
                 // ignore
             }
@@ -340,80 +391,18 @@ export class SyncEngine implements SyncClient {
         outbox.setEvents({ onQueueChange, onQueueFull })
 
         try {
-            const snapshot = outbox.size()
-            if (typeof snapshot === 'number') {
-                onQueueChange(snapshot)
-            } else {
-                snapshot.then(onQueueChange).catch(() => {
-                    // ignore
-                })
-            }
+            void outbox.stats().then(onQueueChange).catch(() => {
+                // ignore
+            })
         } catch {
             // ignore
         }
     }
 
     private requestPushFlush() {
-        if (this.disposed || !this.isRunning()) return
+        if (this.disposed || this.state !== 'running') return
         if (!this.config.push.enabled || !this.pushLane) return
         this.pushLane.requestFlush()
     }
-
-    private startPeriodicPull(args: { initialDelayMs: number }) {
-        if (this.disposed || !this.isRunning()) return
-        if (!this.config.pull.enabled) return
-        if (this.periodicPullPromise) return
-
-        const intervalMs = Math.max(0, Math.floor(this.config.pull.periodic.intervalMs))
-        if (intervalMs <= 0) return
-
-        const controller = new AbortController()
-        this.periodicPullController = controller
-
-        const retryOptions = resolveRetryOptions({
-            retry: this.config.pull.periodic.retry,
-            backoff: this.config.pull.periodic.backoff,
-            unref: true,
-            signal: controller.signal
-        })
-
-        this.periodicPullPromise = (async () => {
-            try {
-                await runPeriodic({
-                    intervalMs,
-                    initialDelayMs: args.initialDelayMs,
-                    signal: controller.signal,
-                    shouldContinue: () => !this.disposed && this.isRunning() && this.config.pull.enabled,
-                    runOnce: async () => {
-                        await pRetry(
-                            () => this.pullLane.requestPull({ cause: 'periodic' }),
-                            {
-                                ...retryOptions,
-                                onFailedAttempt: (ctx) => {
-                                    const delayMs = estimateDelayFromRetryContext(ctx, retryOptions)
-                                    this.emitEvent({ type: 'pull:backoff', attempt: ctx.attemptNumber, delayMs })
-                                },
-                                shouldRetry: (ctx) => !(ctx.error instanceof AbortError)
-                            }
-                        )
-                    }
-                })
-            } catch (error) {
-                if (error instanceof AbortError) return
-                throw error
-            }
-        })().finally(() => {
-            this.periodicPullPromise = undefined
-            this.periodicPullController = undefined
-        })
-    }
-
-    private stopPeriodicPull() {
-        try {
-            this.periodicPullController?.abort(new AbortError('[Sync] periodic pull stopped'))
-        } catch {
-            // ignore
-        }
-    }
-
 }
+

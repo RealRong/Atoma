@@ -74,7 +74,6 @@ export default defineConfig({
         'immer',
         'dexie',
         'lodash',
-        'atoma-sync',
         'typeorm',
         '@prisma/client'
     ]

@@ -53,10 +53,8 @@ function createClientId(): string {
 }
 
 function getDefaultMeta(client: AtomaClient<any, any>): ClientMeta {
-    const status = client.Sync.status()
     return {
-        storeBackend: { role: 'local', kind: 'custom' },
-        syncConfigured: Boolean(status.configured)
+        storeBackend: { role: 'local', kind: 'custom' }
     }
 }
 

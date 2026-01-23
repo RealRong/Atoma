@@ -1,4 +1,4 @@
-import type { Entity, JotaiStore, OpsClientLike, Persistence, PersistRequest, PersistResult, StoreDataProcessor } from '#core'
+import type { Entity, JotaiStore, OpsClientLike, Persistence, PersistKey, PersistRequest, PersistResult, StoreDataProcessor } from '#core'
 import { MutationPipeline } from '#core'
 import { executeWriteOps } from '#core/mutation/pipeline/WriteOps'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
@@ -10,9 +10,7 @@ import type { ClientRuntimeInternal } from '#client/internal/types'
 import { DataProcessor } from '#core/store/internals/dataProcessor'
 import { ClientRuntimeObservability } from '#client/internal/factory/runtime/ClientRuntimeObservability'
 import { ClientRuntimeStores } from '#client/internal/factory/runtime/ClientRuntimeStores'
-import type { OutboxWriter as SyncOutboxWriter } from 'atoma-sync'
-import type { OutboxWrite } from 'atoma-sync'
-import type { WriteAction, WriteItem, WriteOptions } from '#protocol'
+import type { PersistHandler } from '#client/types/plugin'
 
 export class ClientRuntime implements ClientRuntimeInternal {
     readonly opsClient: OpsClientLike
@@ -22,6 +20,7 @@ export class ClientRuntime implements ClientRuntimeInternal {
     readonly stores: ClientRuntimeInternal['stores']
     readonly observability: ClientRuntimeInternal['observability']
     readonly persistence: Persistence
+    readonly persistenceRouter: PersistenceRouter
     readonly internal: ClientRuntimeInternal['internal']
 
     constructor(args: {
@@ -31,24 +30,18 @@ export class ClientRuntime implements ClientRuntimeInternal {
         defaults?: {
             idGenerator?: () => EntityId
         }
-        syncStore?: {
-            queue?: 'queue' | 'local-first'
-        }
-        sync?: {
-            outboxWriter?: SyncOutboxWriter
-        }
     }) {
         this.opsClient = args.opsClient
         this.jotaiStore = createJotaiStore()
         this.dataProcessor = new DataProcessor(() => this)
         this.observability = new ClientRuntimeObservability()
-        this.persistence = createClientRuntimePersistence(() => this, args.sync?.outboxWriter)
+        this.persistenceRouter = createClientRuntimePersistenceRouter(() => this)
+        this.persistence = this.persistenceRouter
         this.mutation = new MutationPipeline(this)
         this.stores = new ClientRuntimeStores(this, {
             schema: args.schema,
             dataProcessor: args.dataProcessor,
-            defaults: args.defaults,
-            syncStore: args.syncStore
+            defaults: args.defaults
         })
 
         const storeWriteEngine = new RuntimeStoreWriteEngine(this, this.stores.Store, storeHandleManager)
@@ -57,17 +50,39 @@ export class ClientRuntime implements ClientRuntimeInternal {
     }
 }
 
-function createClientRuntimePersistence(
-    runtime: () => ClientRuntimeInternal,
-    outboxWriter?: SyncOutboxWriter
-): Persistence {
-    const requireOutbox = () => {
-        if (!outboxWriter) {
-            throw new Error('[Atoma] persistence: sync outbox 未配置（sync 未安装或未启用 outbox）')
+class PersistenceRouter implements Persistence {
+    private handlers = new Map<PersistKey, PersistHandler>()
+
+    constructor(
+        private readonly direct: <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
+    ) {}
+
+    register = (key: PersistKey, handler: PersistHandler) => {
+        const k = String(key)
+        if (!k) throw new Error('[Atoma] persistence.register: key 必填')
+        if (this.handlers.has(k)) throw new Error(`[Atoma] persistence.register: key 已存在: ${k}`)
+        this.handlers.set(k, handler)
+        return () => {
+            this.handlers.delete(k)
         }
-        return outboxWriter
     }
 
+    persist = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
+        const key = req.persistKey
+        if (!key || key === 'direct') {
+            return await this.direct(req)
+        }
+        const handler = this.handlers.get(key)
+        if (!handler) {
+            throw new Error(`[Atoma] persistence: 未注册 persistKey="${String(key)}"`)
+        }
+        return await handler({ req, next: this.direct })
+    }
+}
+
+function createClientRuntimePersistenceRouter(
+    runtime: () => ClientRuntimeInternal
+): PersistenceRouter {
     const persistDirect = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
         const normalized = await executeWriteOps<T>({
             clientRuntime: runtime() as any,
@@ -82,73 +97,5 @@ function createClientRuntimePersistence(
         }
     }
 
-    const persistEnqueueOnly = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-        const outbox = requireOutbox()
-        const writes = mapTranslatedWriteOpsToOutboxWrites(req.writeOps)
-        if (writes.length) await outbox.enqueueWrites({ writes })
-        return { status: 'enqueued' }
-    }
-
-    const persistLocalFirst = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-        const outbox = requireOutbox()
-        const direct = await persistDirect(req)
-        const writes = mapTranslatedWriteOpsToOutboxWrites(req.writeOps)
-        if (writes.length) await outbox.enqueueWrites({ writes })
-        return { status: 'enqueued', ...(direct.created ? { created: direct.created } : {}), ...(direct.writeback ? { writeback: direct.writeback } : {}) }
-    }
-
-    return {
-        persist: async <T extends Entity>(req: PersistRequest<T>) => {
-            const key = req.persistKey
-            if (!key || key === 'direct') {
-                return persistDirect(req)
-            }
-            if (key === 'sync:queue') {
-                return persistEnqueueOnly(req)
-            }
-            if (key === 'sync:local-first') {
-                return persistLocalFirst(req)
-            }
-            throw new Error(`[Atoma] persistence: 未知 persistKey="${String(key)}"`)
-        }
-    }
-}
-
-function mapTranslatedWriteOpsToOutboxWrites(writeOps: PersistRequest<any>['writeOps']): OutboxWrite[] {
-    const out: OutboxWrite[] = []
-    for (const w of writeOps) {
-        const op: any = w.op
-        if (!op || op.kind !== 'write') {
-            throw new Error('[Atoma] sync outbox: 仅支持 write op（TranslatedWriteOp.op.kind 必须为 "write"）')
-        }
-
-        const write: any = op.write
-        const resource = String(write?.resource ?? '')
-        const action = write?.action as WriteAction
-        const options = (write?.options && typeof write.options === 'object') ? (write.options as WriteOptions) : undefined
-        const items: WriteItem[] = Array.isArray(write?.items) ? (write.items as WriteItem[]) : []
-        if (!resource || !action || items.length !== 1) {
-            throw new Error('[Atoma] sync outbox: write op 必须包含 resource/action 且只能有 1 个 item')
-        }
-
-        const item = items[0] as any
-        const meta = item?.meta
-        if (!meta || typeof meta !== 'object') {
-            throw new Error('[Atoma] sync outbox: write item meta 必填（需要 idempotencyKey/clientTimeMs）')
-        }
-        if (typeof meta.idempotencyKey !== 'string' || !meta.idempotencyKey) {
-            throw new Error('[Atoma] sync outbox: write item meta.idempotencyKey 必填')
-        }
-        if (typeof meta.clientTimeMs !== 'number' || !Number.isFinite(meta.clientTimeMs)) {
-            throw new Error('[Atoma] sync outbox: write item meta.clientTimeMs 必填')
-        }
-
-        out.push({
-            resource,
-            action,
-            item: item as WriteItem,
-            ...(options ? { options } : {})
-        })
-    }
-    return out
+    return new PersistenceRouter(persistDirect)
 }

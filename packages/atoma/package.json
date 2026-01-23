@@ -1,0 +1,114 @@
+{
+    "name": "atoma",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "Atomic state management with universal persistence - built on Jotai and Immer",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "import": "./dist/index.js"
+        },
+        "./client": {
+            "types": "./src/client/index.ts",
+            "import": "./dist/client/index.js"
+        },
+        "./devtools": {
+            "types": "./src/devtools/index.ts",
+            "import": "./dist/devtools/index.js"
+        },
+        "./core": {
+            "types": "./src/core/index.ts",
+            "import": "./dist/core/index.js"
+        },
+        "./shared": {
+            "types": "./src/shared/index.ts",
+            "import": "./dist/shared/index.js"
+        },
+        "./observability": {
+            "types": "./src/observability/index.ts",
+            "import": "./dist/observability/index.js"
+        },
+        "./protocol": {
+            "types": "./src/protocol/index.ts",
+            "import": "./dist/protocol/index.js"
+        },
+        "./backend": {
+            "types": "./src/backend/index.ts",
+            "import": "./dist/backend/index.js"
+        },
+        "./server": {
+            "types": "./src/server/index.ts",
+            "import": "./dist/server/index.js"
+        },
+        "./server/adapters": {
+            "types": "./src/server/adapters/index.ts",
+            "import": "./dist/server/adapters.js"
+        },
+        "./server/adapters/typeorm": {
+            "types": "./src/server/adapters/typeorm/index.ts",
+            "import": "./dist/server/adapters/typeorm.js"
+        },
+        "./server/adapters/prisma": {
+            "types": "./src/server/adapters/prisma/index.ts",
+            "import": "./dist/server/adapters/prisma.js"
+        }
+    },
+    "imports": {
+        "#core": {
+            "source": "./src/core/index.ts",
+            "default": "./dist/core/index.js"
+        },
+        "#shared": {
+            "source": "./src/shared/index.ts",
+            "default": "./dist/shared/index.js"
+        },
+        "#observability": {
+            "source": "./src/observability/index.ts",
+            "default": "./dist/observability/index.js"
+        },
+        "#protocol": {
+            "source": "./src/protocol/index.ts",
+            "default": "./dist/protocol/index.js"
+        },
+        "#backend": {
+            "source": "./src/backend/index.ts",
+            "default": "./dist/backend/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "src"
+    ],
+    "scripts": {
+        "build": "tsup",
+        "dev:lib": "tsup --watch",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "lodash": "^4.17.21",
+        "mitt": "^3.0.1",
+        "p-limit": "^7.2.0",
+        "zod": "^4.2.1"
+    },
+    "optionalDependencies": {
+        "dexie": "^3.2.0 || ^4.0.0"
+    },
+    "peerDependencies": {
+        "@prisma/client": "^5.0.0",
+        "immer": "^9.0.0 || ^10.0.0",
+        "jotai": "^2.0.0",
+        "react": "^18.0.0 || ^19.0.0",
+        "typeorm": "^0.3.20"
+    },
+    "peerDependenciesMeta": {
+        "typeorm": {
+            "optional": true
+        },
+        "@prisma/client": {
+            "optional": true
+        }
+    }
+}

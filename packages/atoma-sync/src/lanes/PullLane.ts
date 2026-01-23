@@ -1,18 +1,24 @@
 import type { CursorStore, SyncApplier, SyncEvent, SyncPhase, SyncTransport } from '#sync/types'
 import type { ChangeBatch, Cursor, Meta } from 'atoma/protocol'
-import { readCursorOrInitial, toError } from '#sync/internal'
+import { AbortError, computeBackoffDelayMs, readCursorOrInitial, resolveRetryBackoff, RetryableSyncError, sleepMs, toError } from '#sync/internal'
 import { createSingleflight } from '#sync/internal/singleflight'
-import PQueue from 'p-queue'
-import debounce from 'p-debounce'
+import type { RetryBackoff } from '#sync/internal/backoff'
 
 export class PullLane {
     private disposed = false
     private pullPending = false
-    private drainQueued = false
-    private readonly queue = new PQueue({ concurrency: 1 })
+    private runId = 0
+
+    private controller = new AbortController()
+    private runSignal?: AbortSignal
+    private runSignalAbortHandler?: () => void
+
+    private notifyTimer?: ReturnType<typeof setTimeout>
+    private drainPromise: Promise<ChangeBatch | undefined> | null = null
+
     private readonly singleflight = createSingleflight<ChangeBatch | undefined>()
-    private debounceController?: AbortController
-    private debouncedDrain?: () => Promise<void>
+    private readonly retry: RetryBackoff
+    private readonly allowSet: Set<string> | null
 
     constructor(private readonly deps: {
         cursor: CursorStore
@@ -25,14 +31,62 @@ export class PullLane {
         buildMeta: () => Meta
         onError?: (error: Error, context: { phase: SyncPhase }) => void
         onEvent?: (event: SyncEvent) => void
+        retry?: { maxAttempts?: number }
+        backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
     }) {
-        this.resetDebouncer()
+        this.retry = resolveRetryBackoff({
+            retry: deps.retry,
+            backoff: deps.backoff,
+            baseDelayMs: 300
+        })
+        this.allowSet = deps.resources?.length ? new Set(deps.resources) : null
+    }
+
+    setRunSignal(signal?: AbortSignal) {
+        if (this.runSignal && this.runSignalAbortHandler) {
+            try {
+                this.runSignal.removeEventListener('abort', this.runSignalAbortHandler)
+            } catch {
+                // ignore
+            }
+        }
+
+        this.runSignal = signal
+        this.runSignalAbortHandler = undefined
+
+        if (!signal) return
+        if (signal.aborted) {
+            try {
+                this.controller.abort(new AbortError('[Sync] pull stopped'))
+            } catch {
+                // ignore
+            }
+            return
+        }
+
+        const onAbort = () => {
+            try {
+                this.controller.abort(new AbortError('[Sync] pull stopped'))
+            } catch {
+                // ignore
+            }
+        }
+        this.runSignalAbortHandler = onAbort
+        signal.addEventListener('abort', onAbort, { once: true })
     }
 
     stop(reason: string) {
-        this.resetDebouncer()
-        this.singleflight.cancel(new Error(reason))
+        this.runId++
+        this.clearNotifyTimer()
         this.pullPending = false
+        this.singleflight.cancel(new Error(reason))
+        try {
+            this.controller.abort(new AbortError(reason))
+        } catch {
+            // ignore
+        }
+        this.controller = new AbortController()
+        this.setRunSignal(this.runSignal)
     }
 
     dispose() {
@@ -53,119 +107,161 @@ export class PullLane {
 
         const flight = this.singleflight.start()
 
-        // Only notify is debounced; periodic/manual are already explicitly scheduled.
         if (args.cause !== 'notify') {
-            this.enqueueDrain()
+            this.scheduleDrain()
             return flight.promise
         }
 
-        if (this.debouncedDrain) {
-            void this.debouncedDrain().catch(() => {
-                // errors are routed via drain + onError
-            })
-        } else {
-            this.enqueueDrain()
+        const delay = Math.max(0, Math.floor(this.deps.debounceMs))
+        if (!delay) {
+            this.scheduleDrain()
+            return flight.promise
         }
+
+        this.clearNotifyTimer()
+        this.notifyTimer = setTimeout(() => {
+            this.notifyTimer = undefined
+            this.scheduleDrain()
+        }, delay)
+
         return flight.promise
     }
 
     private shouldPullForResources(resources: unknown): boolean {
-        const allow = this.deps.resources
-        if (!allow?.length) return true
+        const allowSet = this.allowSet
+        if (!allowSet) return true
         if (!Array.isArray(resources) || !resources.length) return true
-        const allowSet = new Set(allow)
         for (const r of resources) {
             if (typeof r === 'string' && allowSet.has(r)) return true
         }
         return false
     }
 
-    private resetDebouncer() {
-        try {
-            this.debounceController?.abort()
-        } catch {
-            // ignore
-        }
-
-        const delay = Math.max(0, Math.floor(this.deps.debounceMs))
-        if (delay <= 0) {
-            this.debounceController = undefined
-            this.debouncedDrain = undefined
-            return
-        }
-
-        this.debounceController = new AbortController()
-        this.debouncedDrain = debounce(async () => {
-            this.enqueueDrain()
-        }, delay, { signal: this.debounceController.signal })
+    private clearNotifyTimer() {
+        if (!this.notifyTimer) return
+        clearTimeout(this.notifyTimer)
+        this.notifyTimer = undefined
     }
 
-    private enqueueDrain() {
+    private scheduleDrain() {
         if (this.disposed) return
-        if (this.drainQueued) return
-        this.drainQueued = true
+        if (this.drainPromise) return
 
-        void this.queue.add(async () => {
-            if (this.disposed) return
-            if (!this.pullPending) return
-
-            const flight = this.singleflight.peek()
-            const flightId = flight?.id
-            this.deps.onEvent?.({ type: 'pull:start' })
-            let lastBatch: ChangeBatch | undefined
-
-            try {
-                while (this.pullPending && !this.disposed) {
-                    this.pullPending = false
-                    const batch = await this.pullOnce()
-                    if (batch) lastBatch = batch
-                }
-                if (flightId !== undefined) {
-                    this.singleflight.resolve(flightId, lastBatch)
-                }
-                return lastBatch
-            } catch (error) {
-                if (flightId !== undefined) {
-                    this.singleflight.reject(flightId, error)
+        this.drainPromise = this.runDrain()
+            .catch((error) => {
+                if (!(error instanceof AbortError)) {
+                    this.deps.onError?.(toError(error), { phase: 'pull' })
                 }
                 throw error
-            } finally {
-                this.deps.onEvent?.({ type: 'pull:idle' })
-            }
-        }).finally(() => {
-            this.drainQueued = false
-            if (this.pullPending && !this.disposed) {
-                this.enqueueDrain()
-            }
+            })
+            .finally(() => {
+                this.drainPromise = null
+                if (this.pullPending && !this.disposed) {
+                    this.scheduleDrain()
+                }
+            })
+
+        void this.drainPromise.catch(() => {
+            // error already routed via onError
         })
+    }
+
+    private async runDrain(): Promise<ChangeBatch | undefined> {
+        if (this.disposed) return undefined
+        if (!this.pullPending) return undefined
+
+        const flight = this.singleflight.peek()
+        const flightId = flight?.id
+
+        this.deps.onEvent?.({ type: 'pull:start' })
+
+        let lastBatch: ChangeBatch | undefined
+        try {
+            while (this.pullPending && !this.disposed) {
+                this.pullPending = false
+                const batch = await this.pullOnceWithRetry()
+                if (batch) lastBatch = batch
+            }
+
+            if (flightId !== undefined) {
+                this.singleflight.resolve(flightId, lastBatch)
+            }
+            return lastBatch
+        } catch (error) {
+            if (flightId !== undefined) {
+                this.singleflight.reject(flightId, error)
+            }
+            throw error
+        } finally {
+            this.deps.onEvent?.({ type: 'pull:idle' })
+        }
+    }
+
+    private async pullOnceWithRetry(): Promise<ChangeBatch | undefined> {
+        const maxAttempts = Math.max(1, Math.floor(this.retry.maxAttempts))
+        let attempt = 1
+
+        while (true) {
+            try {
+                return await this.pullOnce()
+            } catch (error) {
+                if (error instanceof AbortError) throw error
+                if (!(error instanceof RetryableSyncError)) throw error
+                if (this.controller.signal.aborted) throw new AbortError('[Sync] pull stopped')
+                if (attempt >= maxAttempts) throw error
+
+                const delayMs = computeBackoffDelayMs(this.retry, attempt)
+                this.deps.onEvent?.({ type: 'pull:backoff', attempt, delayMs })
+                await sleepMs(delayMs, this.controller.signal)
+                attempt++
+            }
+        }
     }
 
     private async pullOnce(): Promise<ChangeBatch | undefined> {
         if (this.disposed) throw new Error('PullLane disposed')
 
-        try {
-            const cursor = await readCursorOrInitial({
-                cursor: this.deps.cursor,
-                initialCursor: this.deps.initialCursor
-            })
-            const limit = Math.max(1, Math.floor(this.deps.pullLimit))
-            const meta = this.deps.buildMeta()
-            const resources = this.deps.resources
+        const runId = this.runId
+        const signal = this.controller.signal
 
-            const batch = await this.deps.transport.pullChanges({
+        const cursor = await readCursorOrInitial({
+            cursor: this.deps.cursor,
+            initialCursor: this.deps.initialCursor
+        })
+        const limit = Math.max(1, Math.floor(this.deps.pullLimit))
+        const meta = this.deps.buildMeta()
+        const resources = this.deps.resources
+
+        let batch: ChangeBatch
+        try {
+            batch = await this.deps.transport.pullChanges({
                 cursor,
                 limit,
                 ...(resources?.length ? { resources } : {}),
-                meta
+                meta,
+                signal
             })
+        } catch (error) {
+            const err = toError(error)
+            this.deps.onError?.(err, { phase: 'pull' })
+            if (signal.aborted) throw new AbortError('[Sync] pull stopped')
+            throw new RetryableSyncError(err)
+        }
+
+        if (this.disposed || this.runId !== runId || signal.aborted) {
+            throw new AbortError('[Sync] pull stopped')
+        }
+
+        try {
             if (batch.changes.length) {
                 await Promise.resolve(this.deps.applier.applyPullChanges(batch.changes))
             }
-            await this.deps.cursor.set(batch.nextCursor)
+            await Promise.resolve(this.deps.cursor.advance(batch.nextCursor))
             return batch
         } catch (error) {
-            this.deps.onError?.(toError(error), { phase: 'pull' })
-            throw error
+            const err = toError(error)
+            this.deps.onError?.(err, { phase: 'pull' })
+            throw err
         }
     }
 }

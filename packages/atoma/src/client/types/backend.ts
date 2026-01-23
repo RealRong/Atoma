@@ -1,7 +1,17 @@
 import type { OpsClient, RetryOptions } from '#backend'
 import type { Envelope, OpsResponseData } from '#protocol'
-import type { SyncSubscribe } from 'atoma-sync'
 import type { Table } from 'dexie'
+
+/**
+ * Generic subscription hook used by backends (e.g. SSE notify).
+ * - Kept protocol-agnostic on purpose; higher-level packages decide message shape.
+ */
+export type BackendSubscribe = (args: {
+    resources?: string[]
+    onMessage: (msg: unknown) => void
+    onError: (error: unknown) => void
+    signal?: AbortSignal
+}) => { close: () => void }
 
 export type HttpBackendConfig = {
     baseURL: string
@@ -43,7 +53,7 @@ export type StoreCustomOpsBackendConfig = {
 }
 
 export type CustomOpsBackendConfig = StoreCustomOpsBackendConfig & {
-    subscribe?: SyncSubscribe
+    subscribe?: BackendSubscribe
     sse?: {
         buildUrl: (args?: { resources?: string[] }) => string
         connect?: (url: string) => EventSource
@@ -71,7 +81,7 @@ export type BackendConfig =
         /**
          * Local-first:
          * - local：处理 Store 的读写（ops 协议）
-         * - remote：处理 sync transport（push/pull/subscribe）
+         * - remote：可选的远端 endpoint（供扩展包使用）
          */
         local?: StoreBackendEndpointConfig
         remote?: BackendEndpointConfig
@@ -80,7 +90,7 @@ export type BackendConfig =
 export type ResolvedBackend = {
     key: string
     opsClient: OpsClient
-    subscribe?: SyncSubscribe
+    subscribe?: BackendSubscribe
     sse?: {
         buildUrl: (args?: { resources?: string[] }) => string
         connect?: (url: string) => EventSource
@@ -90,16 +100,14 @@ export type ResolvedBackend = {
 export type ResolvedBackends = {
     /**
      * A stable identifier for this client instance.
-     * - When remote exists, uses remote.key (sync identity).
+     * - When remote exists, uses remote.key.
      * - Otherwise falls back to store.key.
      */
     key: string
     /** Optional local backend (for local-first). */
     local?: ResolvedBackend
-    /** Optional remote backend (for sync/transport). */
+    /** Optional remote backend (for extension packages). */
     remote?: ResolvedBackend
     /** Backend used by Store (读写). */
     store: ResolvedBackend
-    /** Backend used by SyncController (usually remote). */
-    sync?: ResolvedBackend
 }

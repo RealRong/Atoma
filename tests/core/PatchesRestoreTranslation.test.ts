@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { EntityId } from '#protocol'
-import { buildRestoreWriteItemsFromPatches, buildWriteIntentsFromPatches } from '../../src/core/mutation/pipeline/WriteIntents'
-import { translateWriteIntentsToOps } from '../../src/core/mutation/pipeline/WriteOps'
+import { buildRestoreWriteItemsFromPatches, buildWriteIntentsFromPatches } from '../../packages/atoma/src/core/mutation/pipeline/WriteIntents'
+import { translateWriteIntentsToOps } from '../../packages/atoma/src/core/mutation/pipeline/WriteOps'
 
 describe('patches restore/replace translation', () => {
     it('统一翻译为 upsert + delete（包含 baseVersion）', () => {

@@ -14,31 +14,31 @@
         "baseUrl": ".",
         "paths": {
             "atoma": [
-                "../src/index.ts"
+                "../packages/atoma/src/index.ts"
             ],
             "atoma/client": [
-                "../src/client/index.ts"
+                "../packages/atoma/src/client/index.ts"
             ],
             "atoma/devtools": [
-                "../src/devtools/index.ts"
+                "../packages/atoma/src/devtools/index.ts"
             ],
             "#core": [
-                "../src/core/index.ts"
+                "../packages/atoma/src/core/index.ts"
             ],
             "#observability": [
-                "../src/observability/index.ts"
+                "../packages/atoma/src/observability/index.ts"
             ],
             "#protocol": [
-                "../src/protocol/index.ts"
+                "../packages/atoma/src/protocol/index.ts"
             ],
             "atoma-sync": [
                 "../packages/atoma-sync/src/index.ts"
             ],
             "#backend": [
-                "../src/backend/index.ts"
+                "../packages/atoma/src/backend/index.ts"
             ],
             "#batch": [
-                "../src/batch/index.ts"
+                "../packages/atoma/src/batch/index.ts"
             ]
         },
         "declaration": true,

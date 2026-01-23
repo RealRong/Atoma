@@ -126,7 +126,7 @@ const resolveBackendSchema = BackendSchemas.backendResolutionConfigSchema.transf
             const local = parsed.local ? resolveEndpoint(parsed.local as ResolvedEndpoint) : undefined
             const remote = parsed.remote ? resolveEndpoint(parsed.remote as ResolvedEndpoint) : undefined
             const store = local ?? remote!
-            return { key: remote?.key ?? store.key, local, remote, store, sync: remote }
+            return { key: remote?.key ?? store.key, local, remote, store }
         }
 
         case 'single': {
@@ -134,8 +134,8 @@ const resolveBackendSchema = BackendSchemas.backendResolutionConfigSchema.transf
             const resolved = resolveEndpoint(endpoint)
 
             const isLocalOnly = endpoint.type === 'memory' || endpoint.type === 'indexeddb'
-            if (isLocalOnly) return { key: resolved.key, store: resolved, local: resolved, sync: undefined }
-            return { key: resolved.key, store: resolved, remote: resolved, sync: resolved }
+            if (isLocalOnly) return { key: resolved.key, store: resolved, local: resolved }
+            return { key: resolved.key, store: resolved, remote: resolved }
         }
 
         default: {

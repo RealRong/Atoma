@@ -1,10 +1,7 @@
 import type { Table } from 'dexie'
 import type { HttpBackendConfig, StoreBackendState } from '#client/types'
 import { createClientArgSchema } from '#client/schemas/createClient/args'
-import { syncResolvedConfigSchema } from '#client/schemas/createClient/sync'
 import { Shared } from '#shared'
-
-const { z } = Shared.zod
 
 function makeIndexedDbTableForResource<T extends Record<string, Table<any, string>>>(
     tables: T
@@ -51,38 +48,18 @@ function computeStoreBackendState(options: any): StoreBackendState {
 export const createClientBuildArgsSchema = createClientArgSchema
     .transform((options: any) => {
         const storeBackendState = computeStoreBackendState(options)
-        const storeConfig = options.store
-        const storeDurableLocal = storeConfig.type === 'indexeddb'
-            || storeConfig.type === 'localServer'
-            || (storeConfig.type === 'custom' && storeConfig.role === 'local')
 
         return {
             ...options,
-            storeBackendState,
-            storeDurableLocal
+            storeBackendState
         }
     })
-    .transform((options: any, ctx) => {
+    .transform((options: any, _ctx) => {
         const storeBackendState = options.storeBackendState
-
-        const syncParsed = syncResolvedConfigSchema.safeParse({
-            sync: options.sync,
-            httpDefaults: options.http,
-            storeDurableLocal: options.storeDurableLocal
-        })
-        if (!syncParsed.success) {
-            for (const issue of syncParsed.error.issues) {
-                ctx.addIssue(issue as any)
-            }
-            return z.NEVER as any
-        }
-        const sync = syncParsed.data
-
         return {
             schema: (options.schema ?? ({} as any)) as any,
             ...(options.dataProcessor ? { dataProcessor: options.dataProcessor as any } : {}),
             storeBackendState,
-            ...(typeof options.storeBatch !== 'undefined' ? { storeBatch: options.storeBatch } : {}),
-            ...(sync ? { sync } : {})
+            ...(typeof options.storeBatch !== 'undefined' ? { storeBatch: options.storeBatch } : {})
         } as any
     })

@@ -19,16 +19,7 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "idb": "^8.0.3",
-        "p-debounce": "^5.1.0",
-        "p-queue": "^8.1.1",
-        "p-retry": "^7.1.0",
-        "xstate": "^5.25.1"
-    },
-    "peerDependencies": {
-        "atoma": "^1.0.0"
-    },
-    "devDependencies": {
-        "atoma": "file:../.."
+        "atoma": "workspace:*",
+        "idb": "^8.0.3"
     }
 }

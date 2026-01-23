@@ -1,7 +1,7 @@
 import { atom, createStore } from 'jotai/vanilla'
 import { describe, expect, it, vi } from 'vitest'
-import '../../src/core/mutation'
-import { executeMutationFlow } from '../../src/core/mutation/pipeline/MutationFlow'
+import '../../packages/atoma/src/core/mutation'
+import { executeMutationFlow } from '../../packages/atoma/src/core/mutation/pipeline/MutationFlow'
 
 describe('hydrate (A 语义)', () => {
     it('persist 失败 rollback 后仍保留补读 base 缓存', async () => {

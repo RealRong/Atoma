@@ -4,8 +4,7 @@ import type { ClientEntry } from './registry'
 export function inspectorForEntry(entry: ClientEntry): DevtoolsClientInspector {
     const snapshot = (): DevtoolsClientSnapshot => {
         const now = Date.now()
-        const syncStatus = entry.client.Sync.status()
-        const syncExtra = entry.syncProvider?.snapshot()
+        const sync = entry.syncProvider?.snapshot()
         const history = entry.historyProvider?.snapshot() ?? { scopes: [] }
 
         return {
@@ -14,15 +13,11 @@ export function inspectorForEntry(entry: ClientEntry): DevtoolsClientInspector {
             createdAt: entry.createdAt,
             updatedAt: now,
             config: {
-                storeBackend: entry.meta.storeBackend,
-                syncConfigured: entry.meta.syncConfigured
+                storeBackend: entry.meta.storeBackend
             },
             stores: Array.from(entry.storeProviders.values()).map(p => p.snapshot()),
             indexes: Array.from(entry.indexProviders.values()).map(p => p.snapshot()),
-            sync: {
-                status: syncStatus,
-                ...(syncExtra ? syncExtra : {})
-            },
+            ...(sync ? { sync } : {}),
             history
         }
     }
@@ -58,12 +53,15 @@ export function inspectorForEntry(entry: ClientEntry): DevtoolsClientInspector {
                 return p ? [p.snapshot()] : []
             }
         },
-        sync: {
-            snapshot: () => snapshot().sync
-        },
+        ...(entry.syncProvider
+            ? {
+                sync: {
+                    snapshot: () => snapshot().sync
+                }
+            }
+            : {}),
         history: {
             snapshot: () => snapshot().history
         }
     }
 }
-

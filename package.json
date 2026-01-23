@@ -1,7 +1,9 @@
 {
-    "name": "atoma",
+    "name": "atoma-workspace",
     "version": "1.0.0",
+    "private": true,
     "type": "module",
+    "packageManager": "pnpm@9.15.5",
     "description": "Atomic state management with universal persistence - built on Jotai and Immer",
     "workspaces": [
         "docs",
@@ -9,94 +11,13 @@
         "demo/server",
         "packages/*"
     ],
-    "main": "dist/index.js",
-    "module": "dist/index.js",
-    "types": "dist/index.d.ts",
-    "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js"
-        },
-        "./client": {
-            "types": "./dist/client/index.d.ts",
-            "import": "./dist/client/index.js"
-        },
-        "./devtools": {
-            "types": "./dist/devtools/index.d.ts",
-            "import": "./dist/devtools/index.js"
-        },
-        "./core": {
-            "types": "./dist/core/index.d.ts",
-            "import": "./dist/core/index.js"
-        },
-        "./shared": {
-            "types": "./dist/shared/index.d.ts",
-            "import": "./dist/shared/index.js"
-        },
-        "./observability": {
-            "types": "./dist/observability/index.d.ts",
-            "import": "./dist/observability/index.js"
-        },
-        "./protocol": {
-            "types": "./dist/protocol/index.d.ts",
-            "import": "./dist/protocol/index.js"
-        },
-        "./backend": {
-            "types": "./dist/backend/index.d.ts",
-            "import": "./dist/backend/index.js"
-        },
-        "./server": {
-            "types": "./dist/server/index.d.ts",
-            "import": "./dist/server/index.js"
-        },
-        "./server/adapters": {
-            "types": "./dist/server/adapters.d.ts",
-            "import": "./dist/server/adapters.js"
-        },
-        "./server/adapters/typeorm": {
-            "types": "./dist/server/adapters/typeorm.d.ts",
-            "import": "./dist/server/adapters/typeorm.js"
-        },
-        "./server/adapters/prisma": {
-            "types": "./dist/server/adapters/prisma.d.ts",
-            "import": "./dist/server/adapters/prisma.js"
-        }
-    },
-    "imports": {
-        "#core": {
-            "types": "./dist/core/index.d.ts",
-            "import": "./dist/core/index.js"
-        },
-        "#shared": {
-            "types": "./dist/shared/index.d.ts",
-            "import": "./dist/shared/index.js"
-        },
-        "#observability": {
-            "types": "./dist/observability/index.d.ts",
-            "import": "./dist/observability/index.js"
-        },
-        "#protocol": {
-            "types": "./dist/protocol/index.d.ts",
-            "import": "./dist/protocol/index.js"
-        },
-        "#backend": {
-            "types": "./dist/backend/index.d.ts",
-            "import": "./dist/backend/index.js"
-        }
-    },
-    "files": [
-        "dist",
-        "src",
-        "README.md",
-        "LICENSE"
-    ],
     "scripts": {
-        "build": "tsup",
-        "dev:lib": "tsup --watch",
+        "build": "pnpm --filter atoma run build",
+        "dev:lib": "pnpm --filter atoma run dev:lib",
         "demo:web": "vite --config demo/web/vite.config.ts",
-        "demo:server": "npm -w atoma-demo-server run dev",
-        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/atoma-react/tsconfig.json --noEmit && tsc -p packages/atoma-sync/tsconfig.json --noEmit",
-        "check:sync-alias": "bash -lc \"if rg -n \\\"from '#sync/\\\" src packages -g'!packages/atoma-sync/**'; then echo 'ERROR: #sync alias must only be used inside packages/atoma-sync.'; exit 1; fi\"",
+        "demo:server": "pnpm --filter atoma-demo-server run dev",
+        "typecheck": "pnpm --filter atoma run typecheck && pnpm --filter atoma-react run typecheck && pnpm --filter atoma-sync run typecheck",
+        "check:sync-alias": "bash -lc \"if rg -n \\\"from '#sync/\\\" packages devtools demo docs tests -g'!packages/atoma-sync/**'; then echo 'ERROR: #sync alias must only be used inside packages/atoma-sync.'; exit 1; fi\"",
         "test": "vitest run",
         "test:ui": "vitest --ui",
         "start:docs": "npm run dev --prefix docs"
