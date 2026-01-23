@@ -26,6 +26,12 @@ export type { StoreBackendState, StoreBatchArgs } from './internal'
 export type {
     ClientPlugin,
     ClientPluginContext,
+    ClientIo,
+    IoChannel,
+    IoExecuteOpsRequest,
+    IoExecuteOpsResponse,
+    IoHandler,
+    IoMiddleware,
     PersistHandler,
     PluginCapableClient
 } from './plugin'

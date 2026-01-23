@@ -133,6 +133,18 @@ export type CreateClientOptions<
     http?: HttpEndpointOptions
     /** Store backend used for direct CRUD (`client.Store(name)`). */
     store: StoreConfig
+
+    /**
+     * Optional remote backend (neutral I/O channel).
+     * - Used by extension packages (e.g. sync) via `ctx.io` with `channel: 'remote'`.
+     * - When omitted and `store` is remote HTTP, `remote` is implicitly available via the same endpoint.
+     */
+    remote?: string | {
+        url: string
+        http?: HttpEndpointOptions
+        sse?: string
+        subscribe?: { connect?: (url: string) => EventSource; eventName?: string }
+    }
     /** Default batching config for the generated data sources. */
     storeBatch?: StoreBatchOptions
 }

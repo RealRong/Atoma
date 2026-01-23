@@ -83,23 +83,23 @@
 
 ### 3.2 `queue` vs `local-first`
 
-通过 `createClient(..., sync.queue)` 的派生：
+通过 `withSync(createClient(...), { outbox: { mode } })` 派生（破坏式，一步到位）：
 
 - `queue`：只入队；写入阶段禁止“缓存缺失时隐式补读”（避免 enqueue 阶段触网）
 - `local-first`：先写本地 durable（IndexedDB/localServer/custom local）再入队；允许本地补读
 
-结论：**Outbox 能力对“离线优先”的核心闭环是齐的：本地写 + 队列 + 稍后 flush。**
+结论：**Outbox 能力对“离线优先”的核心闭环是齐的：本地写 + 队列 + 稍后 push。**
 
 ---
 
-## 4. Sync：复制/同步引擎（`client.Sync`）
+## 4. Sync：复制/同步引擎（`client.sync`）
 
 ### 4.1 控制面能力
 
 - `start(mode?)` / `stop()` / `dispose()`
 - `status(): { started; configured }`
 - `pull()`：确保启动后执行一次拉取
-- `flush()`：确保启动后执行一次推送（outbox -> remote）
+- `push()`：确保启动后执行一次推送（outbox -> remote）
 
 `start` 支持模式：
 
@@ -107,7 +107,7 @@
 
 默认模式会根据配置推导：
 
-- 若启用队列写（`sync.queue`）倾向 `full`
+- 若启用队列写（`Store(name).Outbox`）倾向 `full`
 - 若启用 subscribe 但后端不具备 subscribe 能力，会降级到 `pull-only`
 
 ### 4.2 引擎构成（功能点）
@@ -226,4 +226,3 @@ SyncEngine 由三条 lane 组成：
 - Sync 的 KV 持久化在非浏览器环境会退化为内存：Node 场景可能与用户预期不一致
 
 如果把 0.1 明确定位为“React-first、offline-first 的数据层技术预览”，当前功能集合是成立的。
-

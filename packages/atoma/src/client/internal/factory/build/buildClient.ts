@@ -3,9 +3,11 @@ import { createStoreView } from '#core/store/createStoreView'
 import { storeHandleManager } from '#core/store/internals/storeHandleManager'
 import { HistoryController } from '#client/internal/controllers/HistoryController'
 import { ClientRuntime } from '#client/internal/factory/runtime/createClientRuntime'
+import { Protocol } from '#protocol'
 import type {
     AtomaClient,
     AtomaSchema,
+    BackendEndpointConfig,
     StoreBackendState,
     StoreBatchArgs,
 } from '#client/types'
@@ -19,16 +21,73 @@ export function buildAtomaClient<
     schema: Schema
     dataProcessor?: StoreDataProcessor<any>
     storeBackendState: StoreBackendState
+    remoteBackend?: BackendEndpointConfig
     storeBatch?: StoreBatchArgs
 }): AtomaClient<Entities, Schema> {
     const storeBackendState = args.storeBackendState
-    const resolved = resolveBackend(storeBackendState.backend)
-    const storeBackend = resolved.store
+    // NOTE: resolveBackend cannot infer local/remote roles; we wire it based on storeBackendState.role.
+    const resolvedStore = (storeBackendState.role === 'local')
+        ? resolveBackend({
+            local: storeBackendState.backend,
+            ...(args.remoteBackend ? { remote: args.remoteBackend } : {})
+        } as any)
+        : resolveBackend(storeBackendState.backend as any)
+
+    const storeBackend = resolvedStore.store
+    // When Store backend is remote, still allow an explicit `remote` channel override.
+    const remoteBackend = (storeBackendState.role === 'remote' && args.remoteBackend)
+        ? (() => {
+            const resolvedRemote = resolveBackend(args.remoteBackend as any)
+            return resolvedRemote.remote ?? resolvedRemote.store
+        })()
+        : resolvedStore.remote
+
+    // Build an I/O pipeline (middleware chain) shared by Store and extension packages.
+    const baseExecuteOps = async (req: import('#client/types').IoExecuteOpsRequest): Promise<import('#client/types').IoExecuteOpsResponse> => {
+        if (req.channel === 'store') {
+            return await storeBackend.opsClient.executeOps({
+                ops: req.ops as any,
+                meta: req.meta as any,
+                ...(req.signal ? { signal: req.signal } : {}),
+                ...(req.context ? { context: req.context } : {})
+            }) as any
+        }
+        if (!remoteBackend) {
+            throw new Error('[Atoma] io: remote backend 未配置（createClient({ remote })）')
+        }
+        return await remoteBackend.opsClient.executeOps({
+            ops: req.ops as any,
+            meta: req.meta as any,
+            ...(req.signal ? { signal: req.signal } : {}),
+            ...(req.context ? { context: req.context } : {})
+        }) as any
+    }
+
+    const ioMiddlewares: Array<import('#client/types').IoMiddleware> = []
+
+    const composeIo = () => {
+        let handler: import('#client/types').IoHandler = baseExecuteOps
+        for (let i = ioMiddlewares.length - 1; i >= 0; i--) {
+            handler = ioMiddlewares[i]!(handler)
+        }
+        return handler
+    }
+
+    let ioExecute: import('#client/types').IoHandler = composeIo()
 
     const clientRuntime = new ClientRuntime({
         schema: args.schema,
         dataProcessor: args.dataProcessor,
-        opsClient: storeBackend.opsClient
+        // Important: all store ops go through the I/O pipeline (`channel: 'store'`).
+        opsClient: {
+            executeOps: (input: any) => ioExecute({
+                channel: 'store',
+                ops: input.ops,
+                meta: input.meta,
+                ...(input.signal ? { signal: input.signal } : {}),
+                ...(input.context ? { context: input.context } : {})
+            }) as any
+        }
     })
 
     const historyController = new HistoryController({ runtime: clientRuntime })
@@ -76,6 +135,62 @@ export function buildAtomaClient<
             }
         },
         onDispose,
+        io: {
+            executeOps: (req) => ioExecute(req),
+            use: (mw) => {
+                ioMiddlewares.push(mw)
+                ioExecute = composeIo()
+                return () => {
+                    const idx = ioMiddlewares.indexOf(mw)
+                    if (idx >= 0) ioMiddlewares.splice(idx, 1)
+                    ioExecute = composeIo()
+                }
+            },
+            ...(remoteBackend?.sse
+                ? {
+                    subscribe: (req) => {
+                        if (req.channel !== 'remote') {
+                            throw new Error('[Atoma] io.subscribe: only channel=\"remote\" is supported')
+                        }
+                        const buildUrl = remoteBackend.sse!.buildUrl
+                        const connect = remoteBackend.sse!.connect
+                        const url = buildUrl({ resources: req.resources })
+
+                        let es: EventSource
+                        if (connect) es = connect(url)
+                        else if (typeof EventSource !== 'undefined') es = new EventSource(url)
+                        else throw new Error('[Atoma] io.subscribe: EventSource not available and no connect provided')
+
+                        const eventName = Protocol.sse.events.NOTIFY
+
+                        es.addEventListener(eventName, (event: any) => {
+                            try {
+                                req.onMessage(String(event.data))
+                            } catch (err) {
+                                req.onError(err)
+                            }
+                        })
+                        es.onerror = (err) => {
+                            req.onError(err)
+                        }
+
+                        if (req.signal) {
+                            const signal = req.signal
+                            if (signal.aborted) {
+                                try { es.close() } catch {}
+                            } else {
+                                const onAbort = () => {
+                                    try { es.close() } catch {}
+                                }
+                                signal.addEventListener('abort', onAbort, { once: true })
+                            }
+                        }
+
+                        return { close: () => es.close() }
+                    }
+                }
+                : {})
+        },
         persistence: {
             register: clientRuntime.persistenceRouter.register
         },

@@ -12,7 +12,7 @@
 当前对外导出（简化）：
 
 - `client.Store(name)`：direct CRUD（走 store backend）。
-- `client.Sync.*`：同步引擎控制（start/stop/pull/flush/status）。
+- `client.sync.*`：同步引擎控制（start/stop/pull/push/status）。
 - `client.Store(name).Outbox`：queued writes / outbox 写入入口（写入策略面）。
 - `client.History.*`：undo/redo/clear/canUndo/canRedo（按 scope 分区）。
 
@@ -91,7 +91,7 @@ overlay（`atoma-devtools`）的设计偏好：
 
 现状：
 
-- `client.Sync.start/stop/pull/flush/status` 是引擎控制面。
+- `client.sync.start/stop/pull/push/status` 是引擎控制面。
 - `client.Store(name).Outbox` 是写入策略面（queue/local-first/intent-only），并且某些能力被刻意移除（如 server-assigned create）。
 
 结果：
@@ -208,8 +208,8 @@ overlay（`atoma-devtools`）的设计偏好：
 
 做法（一次性改名，不保留旧入口）：
 
-- 删除 `client.Sync.Store(name)`（不做 alias，不做双入口）。
-- queued writes 统一迁移为：`client.Store(name).Outbox`（`Sync` 只保留引擎控制：start/stop/pull/flush/status）。
+- 删除 `client.sync.Store(name)`（不做 alias，不做双入口）。
+- queued writes 统一迁移为：`client.Store(name).Outbox`（`sync` 只保留引擎控制：start/stop/pull/push/status）。
 
 推荐命名：
 

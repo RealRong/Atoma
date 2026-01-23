@@ -108,7 +108,7 @@ TypeORM 适配器对 CONFLICT 能返回 currentValue/currentVersion；Prisma 侧
 - **目标**：把 `conflictStrategy` 从“配置项”变成“可用工作流”。
 - **建议改动（Client）**：
   - 增加结构化事件：`sync:conflict`（resource/entityId/baseVersion/currentValue/currentVersion/localIntent/idempotencyKey）。
-  - 增加冲突队列 API（最小）：`client.Sync.conflicts()`（list/subscribe/resolve）。
+  - 增加冲突队列 API（最小）：`client.sync.conflicts()`（list/subscribe/resolve）。
   - 提供内置策略：
     - `server-wins`：自动应用 `currentValue` 并丢弃该 intent（你们现在接近这个，但需要保证一致与可观测）。
     - `client-wins`：自动把该 intent 重新入队（使用 `currentVersion` 作为新 baseVersion；必须生成新 idempotencyKey，避免命中旧 replay）。

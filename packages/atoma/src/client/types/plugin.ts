@@ -10,6 +10,41 @@ import type {
 import type { ObservabilityContext } from '#observability'
 import type { CoreStore } from '#core'
 
+export type IoChannel = 'store' | 'remote'
+
+export type IoExecuteOpsRequest = Readonly<{
+    channel: IoChannel
+    ops: import('#protocol').Operation[]
+    meta: import('#protocol').Meta
+    signal?: AbortSignal
+    context?: ObservabilityContext
+}>
+
+export type IoExecuteOpsResponse = Readonly<{
+    results: import('#protocol').OperationResult[]
+    status?: number
+}>
+
+export type IoHandler = (req: IoExecuteOpsRequest) => Promise<IoExecuteOpsResponse>
+
+export type IoMiddleware = (next: IoHandler) => IoHandler
+
+export type ClientIo = Readonly<{
+    executeOps: IoHandler
+    use: (mw: IoMiddleware) => () => void
+    /**
+     * Optional subscription for channels that support it (e.g. remote SSE notify).
+     * Message payload is intentionally `unknown` to keep the I/O layer neutral.
+     */
+    subscribe?: (req: Readonly<{
+        channel: IoChannel
+        resources?: string[]
+        onMessage: (msg: unknown) => void
+        onError: (err: unknown) => void
+        signal?: AbortSignal
+    }>) => { close: () => void }
+}>
+
 export type PersistHandler = <T extends Entity>(args: {
     req: PersistRequest<T>
     /**
@@ -27,6 +62,7 @@ export type ClientPluginContext = Readonly<{
         storeBackend?: Readonly<{ role: 'local' | 'remote'; kind?: string }>
     }>
     onDispose: (fn: () => void) => () => void
+    io: ClientIo
 
     /**
      * Persistence strategy routing.
