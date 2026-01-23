@@ -36,13 +36,13 @@ export function createCreateServerAssignedMany<T extends Entity>(
                     handle,
                     opContext,
                     ticket,
-                    persist: 'direct',
+                    writeStrategy: 'direct',
                     onSuccess: (o: T) => {
                         results[idx] = o
                         resolve()
                     },
                     onFail: (error?: Error) => reject(error || new Error('[Atoma] createServerAssignedMany failed'))
-                } as any)
+                })
             })
 
             return Promise.all([

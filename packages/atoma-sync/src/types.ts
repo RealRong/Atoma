@@ -10,7 +10,6 @@ export type OutboxWrite = {
     resource: string
     action: OutboxWriteAction
     item: OutboxWriteItem
-    options?: any
 }
 
 // Keep Outbox modeling protocol-shaped but protocol-independent.
@@ -60,11 +59,8 @@ export type SyncOutboxItem = {
     resource: string
     action: OutboxWriteAction
     item: OutboxWriteItem
-    options?: any
     enqueuedAtMs: number
 }
-
-export type OutboxQueueMode = 'queue' | 'local-first'
 
 export type SyncOutboxStats = Readonly<{
     pending: number
@@ -219,8 +215,7 @@ export type SyncResolvedLaneConfig = {
 export type SyncRuntimeConfig = {
     transport: SyncTransport
     applier: SyncApplier
-    outbox?: OutboxStore
-    outboxEvents?: SyncOutboxEvents
+    outbox: OutboxStore
     cursor: CursorStore
 
     push: {
@@ -267,6 +262,6 @@ export interface SyncClient {
     start: () => void
     stop: () => void
     dispose: () => void
-    flush: () => Promise<void>
+    push: () => Promise<void>
     pull: () => Promise<ChangeBatch | undefined>
 }

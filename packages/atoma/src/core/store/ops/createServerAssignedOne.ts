@@ -27,10 +27,10 @@ export function createCreateServerAssignedOne<T extends Entity>(
                 handle,
                 opContext: strictOptions.opContext,
                 ticket,
-                persist: 'direct',
+                writeStrategy: 'direct',
                 onSuccess: (o: T) => resolve(o),
                 onFail: (error?: Error) => reject(error || new Error('[Atoma] createServerAssignedOne failed'))
-            } as any)
+            })
         })
 
         await Promise.all([

@@ -162,11 +162,11 @@ export type StoreDispatchEvent<T extends Entity> = {
     onFail?: (error?: Error) => void  // Accept error object for rejection
     ticket?: WriteTicket
     /**
-     * 内部：显式持久化策略 key（默认 undefined）。
-     * - core 不关心 key 的语义，只负责把它透传给 `CoreRuntime.persistence.persist`
+     * 内部：显式写入策略（默认 undefined）。
+     * - core 不关心策略的语义，只负责把它透传给 `CoreRuntime.persistence.persist`
      * - 例如 client 层可用 'direct' / 'queue' / 'local-first' 等实现策略选择
      */
-    persistKey?: PersistKey
+    writeStrategy?: WriteStrategy
 } & (
         | {
             type: 'add'
@@ -394,6 +394,16 @@ export interface StoreConfig<T> {
     /** Store name（用于 devtools 标识） */
     storeName?: string
 
+    /**
+     * Default write behavior for this store.
+     * - `strategy` is opaque to core (plugins interpret it).
+     * - `allowImplicitFetchForWrite` controls whether update/delete can auto-fetch missing base data.
+     */
+    write?: Readonly<{
+        strategy?: WriteStrategy
+        allowImplicitFetchForWrite?: boolean
+    }>
+
     /** 可观测性/诊断（默认关闭） */
     debug?: import('#observability').DebugConfig
 
@@ -423,10 +433,10 @@ export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
 export type StoreToken = string
 
 /**
- * Persistence key (opaque to core).
- * - 用于 store view / 上层 wiring 选择不同的持久化策略实现（例如 direct / enqueue / local-first）
+ * Write strategy (opaque to core).
+ * - 用于 store view / 上层 wiring 选择不同的写入策略实现（例如 direct / queue / local-first）
  */
-export type PersistKey = string
+export type WriteStrategy = string
 
 export type PersistStatus = 'confirmed' | 'enqueued'
 
@@ -440,7 +450,7 @@ export type TranslatedWriteOp = Readonly<{
 
 export type PersistRequest<T extends Entity> = Readonly<{
     storeName: StoreToken
-    persistKey?: PersistKey
+    writeStrategy?: WriteStrategy
     handle: StoreHandle<T>
     writeOps: Array<TranslatedWriteOp>
     signal?: AbortSignal

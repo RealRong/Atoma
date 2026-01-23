@@ -9,7 +9,7 @@ export function registerSyncPersistHandlers(args: {
 }): Array<() => void> {
     const unregister: Array<() => void> = []
 
-    unregister.push(args.ctx.persistence.register('sync:queue', async <T extends Entity>(x: {
+    unregister.push(args.ctx.persistence.register('queue', async <T extends Entity>(x: {
         req: PersistRequest<T>
         next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
     }) => {
@@ -18,7 +18,7 @@ export function registerSyncPersistHandlers(args: {
         return { status: 'enqueued' } as PersistResult<T>
     }))
 
-    unregister.push(args.ctx.persistence.register('sync:local-first', async <T extends Entity>(x: {
+    unregister.push(args.ctx.persistence.register('local-first', async <T extends Entity>(x: {
         req: PersistRequest<T>
         next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
     }) => {
@@ -34,4 +34,3 @@ export function registerSyncPersistHandlers(args: {
 
     return unregister
 }
-

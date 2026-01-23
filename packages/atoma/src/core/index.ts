@@ -61,7 +61,7 @@ export type {
     RuntimeObservability,
     RuntimeStores,
     Persistence,
-    PersistKey,
+    WriteStrategy,
     PersistRequest,
     PersistResult,
     PersistStatus,

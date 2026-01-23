@@ -1,16 +1,43 @@
-import type { OpsClientLike } from 'atoma/core'
-import { Protocol, type ChangeBatch, type Meta, type Operation, type OperationResult, type WriteItemResult, type WriteResultData } from 'atoma/protocol'
-import type { SyncSubscribe, SyncTransport, SyncPushOutcome } from '#sync/types'
+import type { ClientPluginContext } from 'atoma/client'
+import {
+    Protocol,
+    type ChangeBatch,
+    type Operation,
+    type OperationResult,
+    type WriteItemResult,
+    type WriteResultData
+} from 'atoma/protocol'
+import type { NotifyMessage, SyncPushOutcome, SyncSubscribe, SyncTransport } from '#sync/types'
 
-export function createOpsTransport(args: {
-    opsClient: OpsClientLike
-    subscribe?: SyncSubscribe
-    now?: () => number
-}): SyncTransport {
-    const now = args.now ?? (() => Date.now())
+export class RemoteTransport implements SyncTransport {
+    private readonly now: () => number
+    readonly subscribe?: SyncSubscribe
 
-    const pullChanges: SyncTransport['pullChanges'] = async (input) => {
-        const opId = Protocol.ids.createOpId('c', { now })
+    constructor(
+        private readonly ctx: ClientPluginContext,
+        opts?: Readonly<{ now?: () => number }>
+    ) {
+        this.now = opts?.now ?? (() => Date.now())
+
+        if (this.ctx.io.subscribe) {
+            this.subscribe = (args) => this.ctx.io.subscribe!({
+                channel: 'remote',
+                resources: args.resources,
+                signal: args.signal,
+                onError: args.onError,
+                onMessage: (raw) => {
+                    try {
+                        args.onMessage(decodeNotifyMessage(raw))
+                    } catch (error) {
+                        args.onError(error)
+                    }
+                }
+            })
+        }
+    }
+
+    pullChanges: SyncTransport['pullChanges'] = async (input) => {
+        const opId = Protocol.ids.createOpId('c', { now: this.now })
         const op = Protocol.ops.build.buildChangesPullOp({
             opId,
             cursor: input.cursor,
@@ -18,8 +45,13 @@ export function createOpsTransport(args: {
             ...(input.resources?.length ? { resources: input.resources } : {})
         })
 
-        const res = await args.opsClient.executeOps({ ops: [op], meta: input.meta, signal: input.signal })
-        const result = (res.results.find(r => r.opId === opId) as OperationResult | undefined) ?? {
+        const res = await this.ctx.io.executeOps({
+            channel: 'remote',
+            ops: [op],
+            meta: input.meta,
+            signal: input.signal
+        })
+        const result = ((res as any)?.results?.find((r: any) => r?.opId === opId) as OperationResult | undefined) ?? {
             opId,
             ok: false as const,
             error: { code: 'INTERNAL', message: 'Missing result', kind: 'internal' as const }
@@ -37,14 +69,13 @@ export function createOpsTransport(args: {
         return result.data as ChangeBatch
     }
 
-    const pushWrites: SyncTransport['pushWrites'] = async (input) => {
+    pushWrites: SyncTransport['pushWrites'] = async (input) => {
         const outcomes: SyncPushOutcome[] = new Array(input.entries.length)
 
         type Group = {
             opId: string
             resource: string
             action: any
-            options: any
             entries: Array<{ index: number; entry: any }>
         }
 
@@ -55,10 +86,6 @@ export function createOpsTransport(args: {
             const entry: any = input.entries[i]
             const resource = String(entry?.resource ?? '')
             const action = entry?.action
-            const options = {
-                ...(entry?.options ? entry.options : {}),
-                returning: input.returning
-            }
 
             if (!resource || !action || !entry?.item) {
                 outcomes[i] = {
@@ -72,19 +99,11 @@ export function createOpsTransport(args: {
                 continue
             }
 
-            let optionsKey: string
-            try {
-                optionsKey = stableStringify(options)
-            } catch {
-                // If options are not serializable (e.g. contain circular refs), fall back to per-entry grouping.
-                optionsKey = `__unstringifiable__:${String(entry?.idempotencyKey ?? i)}`
-            }
-
-            const groupKey = `${resource}::${String(action)}::${optionsKey}`
+            const groupKey = `${resource}::${String(action)}`
             let group = groupsByKey.get(groupKey)
             if (!group) {
-                const opId = Protocol.ids.createOpId('w', { now })
-                group = { opId, resource, action, options, entries: [] }
+                const opId = Protocol.ids.createOpId('w', { now: this.now })
+                group = { opId, resource, action, entries: [] }
                 groupsByKey.set(groupKey, group)
                 groups.push(group)
             }
@@ -92,60 +111,41 @@ export function createOpsTransport(args: {
         }
 
         const ops: Operation[] = []
-        const builtByOpId = new Map<string, { group: Group; op?: Operation; error?: unknown }>()
-
         for (const group of groups) {
-            try {
-                const op = Protocol.ops.build.buildWriteOp({
-                    opId: group.opId,
-                    write: {
-                        resource: group.resource,
-                        action: group.action,
-                        items: group.entries.map(e => e.entry.item),
-                        options: group.options
-                    }
-                })
-                ops.push(op)
-                builtByOpId.set(group.opId, { group, op })
-            } catch (error) {
-                builtByOpId.set(group.opId, { group, error })
-            }
+            ops.push(Protocol.ops.build.buildWriteOp({
+                opId: group.opId,
+                write: {
+                    resource: group.resource,
+                    action: group.action,
+                    items: group.entries.map(e => e.entry.item),
+                    options: { returning: input.returning }
+                }
+            }))
         }
 
         const byId = new Map<string, OperationResult>()
         if (ops.length) {
-            const res = await args.opsClient.executeOps({ ops, meta: input.meta, signal: input.signal })
-            for (const r of res.results as any[]) byId.set(r.opId, r as any)
+            const res = await this.ctx.io.executeOps({
+                channel: 'remote',
+                ops,
+                meta: input.meta,
+                signal: input.signal
+            })
+            for (const r of (res as any)?.results ?? []) {
+                if (r && typeof r === 'object' && typeof (r as any).opId === 'string') {
+                    byId.set((r as any).opId, r as any)
+                }
+            }
         }
 
         for (const group of groups) {
-            const built = builtByOpId.get(group.opId)
-            if (!built || built.error) {
-                for (const e of group.entries) {
-                    outcomes[e.index] = {
-                        kind: 'reject',
-                        result: {
-                            index: 0,
-                            ok: false,
-                            error: { code: 'WRITE_FAILED', message: 'Invalid outbox entry', kind: 'internal' as const }
-                        } as any
-                    }
-                }
-                continue
-            }
-
             const result = byId.get(group.opId)
             if (!result) {
-                for (const e of group.entries) {
-                    outcomes[e.index] = {
-                        kind: 'reject',
-                        result: {
-                            index: 0,
-                            ok: false,
-                            error: { code: 'WRITE_FAILED', message: 'Missing write result', kind: 'internal' as const }
-                        } as any
-                    }
-                }
+                rejectGroup(outcomes, group, {
+                    code: 'WRITE_FAILED',
+                    message: 'Missing write result',
+                    kind: 'internal' as const
+                })
                 continue
             }
 
@@ -183,11 +183,9 @@ export function createOpsTransport(args: {
                     continue
                 }
 
-                if (itemResult.ok === true) {
-                    outcomes[mapped.index] = { kind: 'ack', result: itemResult as any }
-                } else {
-                    outcomes[mapped.index] = { kind: 'reject', result: itemResult as any }
-                }
+                outcomes[mapped.index] = itemResult.ok === true
+                    ? { kind: 'ack', result: itemResult as any }
+                    : { kind: 'reject', result: itemResult as any }
             }
         }
 
@@ -207,31 +205,36 @@ export function createOpsTransport(args: {
 
         return outcomes
     }
+}
 
-    return {
-        pullChanges,
-        pushWrites,
-        ...(args.subscribe ? { subscribe: args.subscribe } : {})
+function rejectGroup(outcomes: SyncPushOutcome[], group: { entries: Array<{ index: number }> }, error: any) {
+    for (const e of group.entries) {
+        outcomes[e.index] = {
+            kind: 'reject',
+            result: { index: 0, ok: false, error } as any
+        }
     }
 }
 
 function isRetryableOpError(error: any): boolean {
     if (!error || typeof error !== 'object') return false
     if (error.retryable === true) return true
-    const kind = error.kind
+    const kind = (error as any).kind
     return kind === 'internal' || kind === 'adapter'
 }
 
-function stableStringify(value: any): string {
-    return JSON.stringify(sortKeysDeep(value))
+function decodeNotifyMessage(raw: unknown): NotifyMessage {
+    if (typeof raw === 'string') {
+        return Protocol.sse.parse.notifyMessage(raw)
+    }
+    if (raw && typeof raw === 'object') {
+        const resources2 = (raw as any).resources
+        const traceId = (raw as any).traceId
+        return {
+            ...(Array.isArray(resources2) ? { resources: resources2.map((r: any) => String(r)) } : {}),
+            ...(typeof traceId === 'string' ? { traceId } : {})
+        }
+    }
+    throw new Error('[atoma-sync] notify message: unsupported payload')
 }
 
-function sortKeysDeep(value: any): any {
-    if (!value || typeof value !== 'object') return value
-    if (Array.isArray(value)) return value.map(sortKeysDeep)
-    const out: any = {}
-    for (const k of Object.keys(value).sort()) {
-        out[k] = sortKeysDeep(value[k])
-    }
-    return out
-}

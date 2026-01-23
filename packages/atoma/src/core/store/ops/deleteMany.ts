@@ -74,7 +74,7 @@ export function createDeleteMany<T extends Entity>(
                         handle,
                         items: toHydrate,
                         opContext,
-                        persistKey: writeConfig.persistKey
+                        writeStrategy: writeConfig.writeStrategy
                     })
                 }
 
@@ -114,7 +114,7 @@ export function createDeleteMany<T extends Entity>(
                     handle,
                     opContext,
                     ticket,
-                    persistKey: writeConfig.persistKey,
+                    writeStrategy: writeConfig.writeStrategy,
                     onSuccess: () => resolve(true),
                     onFail: (error) => reject(error || new Error(`Failed to delete item with id ${String(id)}`))
                 })

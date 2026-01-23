@@ -26,14 +26,14 @@ export class SyncEngine implements SyncClient {
 
     private readonly config: SyncRuntimeConfig
     private readonly transport: SyncTransport
-    private readonly outbox?: OutboxStore
+    private readonly outbox: OutboxStore
     private readonly cursor: CursorStore
     private readonly applier: SyncApplier
 
     private lock?: SingleInstanceLock
     private runController: AbortController | null = null
 
-    private readonly pushLane: PushLane | null
+    private readonly pushLane: PushLane
     private readonly pullLane: PullLane
     private readonly notifyLane: NotifyLane
 
@@ -48,23 +48,21 @@ export class SyncEngine implements SyncClient {
         this.cursor = this.config.cursor
         this.applier = this.config.applier
 
-        this.pushLane = this.outbox
-            ? new PushLane({
-                outbox: this.outbox,
-                transport: this.transport,
-                applier: this.applier,
-                maxPushItems: this.config.push.maxItems,
-                returning: this.config.push.returning,
-                conflictStrategy: this.config.push.conflictStrategy,
-                retry: this.config.push.retry,
-                backoff: this.config.push.backoff,
-                now: () => this.now(),
-                buildMeta: () => this.buildMeta(),
-                onError: (error, context) => this.emitError(error, context),
-                onEvent: (event) => this.emitEvent(event)
-            })
-            : null
-        this.pushLane?.setEnabled(false)
+        this.pushLane = new PushLane({
+            outbox: this.outbox,
+            transport: this.transport,
+            applier: this.applier,
+            maxPushItems: this.config.push.maxItems,
+            returning: this.config.push.returning,
+            conflictStrategy: this.config.push.conflictStrategy,
+            retry: this.config.push.retry,
+            backoff: this.config.push.backoff,
+            now: () => this.now(),
+            buildMeta: () => this.buildMeta(),
+            onError: (error, context) => this.emitError(error, context),
+            onEvent: (event) => this.emitEvent(event)
+        })
+        this.pushLane.setEnabled(false)
 
         this.pullLane = new PullLane({
             cursor: this.cursor,
@@ -117,15 +115,15 @@ export class SyncEngine implements SyncClient {
         this.state = 'disposed'
 
         void this.stopInternal('[Sync] disposed').finally(() => {
-            this.pushLane?.dispose()
+            this.pushLane.dispose()
             this.pullLane.dispose()
             this.notifyLane.dispose()
         })
     }
 
-    async flush() {
+    async push() {
         if (this.disposed) throw new Error('SyncEngine disposed')
-        if (!this.config.push.enabled || !this.pushLane) {
+        if (!this.config.push.enabled) {
             throw new Error('[Sync] push is disabled')
         }
         await this.ensureRunning()
@@ -223,14 +221,14 @@ export class SyncEngine implements SyncClient {
         // Link run cancellation to lanes.
         this.notifyLane.setRunSignal(controller.signal)
         this.pullLane.setRunSignal(controller.signal)
-        this.pushLane?.setRunSignal(controller.signal)
+        this.pushLane.setRunSignal(controller.signal)
 
         this.notifyLane.start()
         this.notifyLane.setEnabled(this.config.subscribe.enabled)
 
-        this.pushLane?.setEnabled(Boolean(this.config.push.enabled))
+        this.pushLane.setEnabled(Boolean(this.config.push.enabled))
         if (this.config.push.enabled) {
-            this.pushLane?.requestFlush()
+            this.pushLane.requestFlush()
         }
 
         if (this.config.pull.enabled) {
@@ -259,7 +257,7 @@ export class SyncEngine implements SyncClient {
         this.stopPeriodicPull()
 
         this.notifyLane.stop()
-        this.pushLane?.setEnabled(false)
+        this.pushLane.setEnabled(false)
         this.pullLane.stop(reason)
 
         const lock = this.lock
@@ -357,7 +355,7 @@ export class SyncEngine implements SyncClient {
 
     private attachOutboxEvents() {
         const outbox = this.outbox
-        if (!outbox?.setEvents) return
+        if (!outbox.setEvents) return
 
         const onQueueChange = (stats: any) => {
             const pending = Math.max(0, Math.floor((stats as any)?.pending ?? 0))
@@ -365,11 +363,6 @@ export class SyncEngine implements SyncClient {
             const total = Math.max(0, Math.floor((stats as any)?.total ?? pending + inFlight))
             const next = { pending, inFlight, total } as const
             this.emitEvent({ type: 'outbox:queue', stats: next })
-            try {
-                this.config.outboxEvents?.onQueueChange?.(next)
-            } catch {
-                // ignore
-            }
             if (next.pending > 0) {
                 this.requestPushFlush()
             }
@@ -381,11 +374,6 @@ export class SyncEngine implements SyncClient {
             const total = Math.max(0, Math.floor((stats as any)?.total ?? pending + inFlight))
             const next = { pending, inFlight, total } as const
             this.emitEvent({ type: 'outbox:queue_full', stats: next, maxQueueSize })
-            try {
-                this.config.outboxEvents?.onQueueFull?.(next, maxQueueSize)
-            } catch {
-                // ignore
-            }
         }
 
         outbox.setEvents({ onQueueChange, onQueueFull })
@@ -401,8 +389,7 @@ export class SyncEngine implements SyncClient {
 
     private requestPushFlush() {
         if (this.disposed || this.state !== 'running') return
-        if (!this.config.push.enabled || !this.pushLane) return
+        if (!this.config.push.enabled) return
         this.pushLane.requestFlush()
     }
 }
-

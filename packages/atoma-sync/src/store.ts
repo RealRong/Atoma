@@ -2,37 +2,29 @@ import { createKVStore } from '#sync/internal/kvStore'
 import { defaultCompareCursor } from '#sync/policies/cursorGuard'
 import { openDB } from 'idb'
 import type { IDBPDatabase } from 'idb'
-import type { CursorStore, OutboxStore, SyncOutboxItem, SyncOutboxEvents, SyncOutboxStats, OutboxWrite, OutboxQueueMode } from '#sync/types'
+import type { CursorStore, OutboxStore, SyncOutboxItem, SyncOutboxEvents, SyncOutboxStats, OutboxWrite } from '#sync/types'
 
 export type SyncStoresConfig = {
     outboxKey: string
     cursorKey: string
-    queueEnabled?: boolean
-    queueMode?: OutboxQueueMode
     maxQueueSize?: number
-    outboxEvents?: SyncOutboxEvents
     now?: () => number
     inFlightTimeoutMs?: number
 }
 
 export type SyncStores = {
-    outbox?: OutboxStore
+    outbox: OutboxStore
     cursor: CursorStore
 }
 
 export function createStores(config: SyncStoresConfig): SyncStores {
-    const queueEnabled = config.queueEnabled !== false
     return {
-        outbox: queueEnabled
-            ? new DefaultOutboxStore(
-                config.outboxKey,
-                config.outboxEvents,
-                config.maxQueueSize ?? 1000,
-                config.now ?? (() => Date.now()),
-                config.inFlightTimeoutMs ?? 30_000,
-                config.queueMode
-            )
-            : undefined,
+        outbox: new DefaultOutboxStore(
+            config.outboxKey,
+            config.maxQueueSize ?? 1000,
+            config.now ?? (() => Date.now()),
+            config.inFlightTimeoutMs ?? 30_000
+        ),
         cursor: new DefaultCursorStore(config.cursorKey)
     }
 }
@@ -46,7 +38,6 @@ type PersistedOutboxEntry = {
     resource: string
     action: string
     item: any
-    options?: any
     enqueuedAtMs: number
     status: OutboxStatus
     inFlightAtMs?: number
@@ -92,19 +83,14 @@ export class DefaultOutboxStore implements OutboxStore {
     private events?: SyncOutboxEvents
     private initialized: Promise<void>
     private cachedStats: SyncOutboxStats | null = null
-    readonly queueMode: OutboxQueueMode
     private readonly memory?: MemoryOutboxStore
 
     constructor(
         private readonly storageKey: string,
-        initialEvents?: SyncOutboxEvents,
         private readonly maxQueueSize: number = 1000,
         private readonly now: () => number = () => Date.now(),
-        private readonly inFlightTimeoutMs: number = 30_000,
-        queueMode: OutboxQueueMode = 'queue'
+        private readonly inFlightTimeoutMs: number = 30_000
     ) {
-        this.queueMode = queueMode === 'local-first' ? 'local-first' : 'queue'
-        this.events = initialEvents
         if (typeof indexedDB === 'undefined') {
             this.memory = new MemoryOutboxStore(this.storageKey, this.maxQueueSize, this.now)
             this.memory.setEvents(this.events)
@@ -136,9 +122,6 @@ export class DefaultOutboxStore implements OutboxStore {
             const resource = String((write as any)?.resource ?? '')
             const action = (write as any)?.action as any
             const baseItem = (write as any)?.item as any
-            const options = ((write as any)?.options && typeof (write as any).options === 'object')
-                ? ((write as any).options as any)
-                : undefined
 
             if (!resource || !action || !baseItem) {
                 throw new Error('[Sync] enqueueWrites requires { resource, action, item }')
@@ -152,7 +135,6 @@ export class DefaultOutboxStore implements OutboxStore {
                 resource,
                 action,
                 item: ensuredItem,
-                ...(options ? { options } : {}),
                 enqueuedAtMs: now
             } as SyncOutboxItem
             items.push(entry)
@@ -187,7 +169,6 @@ export class DefaultOutboxStore implements OutboxStore {
                 resource: item.resource,
                 action: item.action,
                 item: item.item,
-                ...(item.options ? { options: item.options } : {}),
                 enqueuedAtMs: item.enqueuedAtMs,
                 status: 'pending',
                 ...(entityId ? { entityId } : {})
@@ -416,7 +397,6 @@ export class DefaultOutboxStore implements OutboxStore {
             resource: raw.resource,
             action: raw.action as any,
             item: raw.item as any,
-            ...(raw.options ? { options: raw.options } : {}),
             enqueuedAtMs: raw.enqueuedAtMs
         }
     }
@@ -512,9 +492,6 @@ class MemoryOutboxStore {
             const resource = String((write as any)?.resource ?? '')
             const action = (write as any)?.action as any
             const baseItem = (write as any)?.item as any
-            const options = ((write as any)?.options && typeof (write as any).options === 'object')
-                ? ((write as any).options as any)
-                : undefined
 
             if (!resource || !action || !baseItem) {
                 throw new Error('[Sync] enqueueWrites requires { resource, action, item }')
@@ -536,7 +513,6 @@ class MemoryOutboxStore {
                 resource,
                 action,
                 item: baseItem,
-                ...(options ? { options } : {}),
                 enqueuedAtMs: now,
                 status: 'pending',
                 inFlightAtMs: undefined
@@ -570,7 +546,6 @@ class MemoryOutboxStore {
                 resource: entry.resource,
                 action: entry.action,
                 item: entry.item,
-                ...(entry.options ? { options: entry.options } : {}),
                 enqueuedAtMs: entry.enqueuedAtMs
             })
         }

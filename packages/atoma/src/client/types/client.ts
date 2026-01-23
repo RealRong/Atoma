@@ -1,4 +1,4 @@
-import type { CoreStore, Entity } from '#core'
+import type { CoreStore, Entity, WriteStrategy } from '#core'
 import type { InferRelationsFromSchema } from './relations'
 import type { AtomaSchema } from './schema'
 import type { PluginCapableClient } from './plugin'
@@ -40,7 +40,10 @@ export type AtomaClient<
     Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
 > = PluginCapableClient & {
-    Store: <Name extends keyof Entities & string>(name: Name) => AtomaStore<Entities, Schema, Name>
+    Store: <Name extends keyof Entities & string>(
+        name: Name,
+        options?: { writeStrategy?: WriteStrategy }
+    ) => AtomaStore<Entities, Schema, Name>
     History: AtomaHistory
     Devtools: AtomaClientDevtools
 }

@@ -41,6 +41,7 @@ export function buildAtomaClient<
             return resolvedRemote.remote ?? resolvedRemote.store
         })()
         : resolvedStore.remote
+    const clientKey = String(remoteBackend?.key ?? storeBackend.key)
 
     // Build an I/O pipeline (middleware chain) shared by Store and extension packages.
     const baseExecuteOps = async (req: import('#client/types').IoExecuteOpsRequest): Promise<import('#client/types').IoExecuteOpsResponse> => {
@@ -92,9 +93,26 @@ export function buildAtomaClient<
 
     const historyController = new HistoryController({ runtime: clientRuntime })
 
-    const Store = (<Name extends keyof Entities & string>(name: Name) => {
+    const Store = (<Name extends keyof Entities & string>(
+        name: Name,
+        options?: { writeStrategy?: import('#core').WriteStrategy }
+    ) => {
         const store: any = clientRuntime.stores.Store(name) as any
-        return store as unknown as CoreStore<Entities[Name], any>
+        const writeStrategy = options?.writeStrategy
+        if (!writeStrategy) {
+            return store as unknown as CoreStore<Entities[Name], any>
+        }
+
+        const handle = storeHandleManager.requireStoreHandle(store as any, `client.Store:${String(name)}`)
+        const allowImplicitFetchForWrite = (writeStrategy === 'queue') ? false : true
+
+        return createStoreView(clientRuntime as any, handle as any, {
+            writeConfig: {
+                writeStrategy,
+                allowImplicitFetchForWrite
+            },
+            includeServerAssignedCreate: writeStrategy === 'direct'
+        }) as unknown as CoreStore<Entities[Name], any>
     }) as AtomaClient<Entities, Schema>['Store']
 
     const client: any = {
@@ -129,6 +147,7 @@ export function buildAtomaClient<
     const ctx: import('#client/types').ClientPluginContext = {
         client,
         meta: {
+            clientKey,
             storeBackend: {
                 role: storeBackendState.role,
                 kind
@@ -204,11 +223,11 @@ export function buildAtomaClient<
                 const handle = storeHandleManager.requireStoreHandle(store as any, `plugin.view:${name}`)
                 const allowImplicitFetchForWrite = (typeof args2.allowImplicitFetchForWrite === 'boolean')
                     ? args2.allowImplicitFetchForWrite
-                    : handle.writePolicies?.allowImplicitFetchForWrite !== false
+                    : (args2.writeStrategy === 'queue' ? false : true)
 
                 return createStoreView(clientRuntime as any, handle as any, {
                     writeConfig: {
-                        persistKey: args2.persistKey,
+                        writeStrategy: args2.writeStrategy,
                         allowImplicitFetchForWrite
                     },
                     includeServerAssignedCreate: args2.includeServerAssignedCreate !== false

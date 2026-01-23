@@ -6,7 +6,7 @@
 import type { Patch } from 'immer'
 import type { PrimitiveAtom } from 'jotai/vanilla'
 import type { EntityId, WriteAction, WriteItem, WriteOptions } from '#protocol'
-import type { Entity, OperationContext, PersistKey, StoreDispatchEvent, TranslatedWriteOp } from '../../types'
+import type { Entity, OperationContext, StoreDispatchEvent, TranslatedWriteOp, WriteStrategy } from '../../types'
 import type { StoreHandle } from '../../store/internals/handleTypes'
 
 export type { PersistStatus, PersistResult } from '../../types'
@@ -50,7 +50,7 @@ export type MutationSegment<T extends Entity> = Readonly<{
 
 type MutationProgramBase<T extends Entity> = Readonly<{
     kind: MutationProgramKind
-    persistKey?: PersistKey
+    writeStrategy?: WriteStrategy
     atom: PrimitiveAtom<Map<EntityId, T>>
     baseState: Map<EntityId, T>
     optimisticState: Map<EntityId, T>

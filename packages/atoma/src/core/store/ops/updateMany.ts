@@ -83,7 +83,7 @@ export function createUpdateMany<T extends Entity>(
                         handle,
                         items: toHydrate,
                         opContext,
-                        persistKey: writeConfig.persistKey
+                        writeStrategy: writeConfig.writeStrategy
                     })
                 }
             }
@@ -135,7 +135,7 @@ export function createUpdateMany<T extends Entity>(
                     data: validObj,
                     opContext,
                     ticket,
-                    persistKey: writeConfig.persistKey,
+                    writeStrategy: writeConfig.writeStrategy,
                     onSuccess: async (updated) => {
                         await storeWriteEngine.runAfterSave(hooks, validObj, 'update')
                         resolve(updated)

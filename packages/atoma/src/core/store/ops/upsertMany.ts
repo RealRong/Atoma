@@ -108,7 +108,7 @@ export function createUpsertMany<T extends Entity>(
                     handle,
                     opContext,
                     ticket,
-                    persistKey: writeConfig.persistKey,
+                    writeStrategy: writeConfig.writeStrategy,
                     onSuccess: async (o) => {
                         await storeWriteEngine.runAfterSave(hooks, validObj, action)
                         resolve(o)

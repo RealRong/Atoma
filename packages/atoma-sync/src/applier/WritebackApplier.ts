@@ -2,10 +2,7 @@ import type { ClientPluginContext } from 'atoma/client'
 import type { DeleteItem } from 'atoma/core'
 import { Protocol, type Change, type EntityId, type Operation, type OperationResult, type QueryParams, type QueryResultData, type WriteAction, type WriteItem, type WriteItemMeta, type WriteOptions, type WriteResultData } from 'atoma/protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync/types'
-
-type OpsClientLike = {
-    executeOps: (input: any) => Promise<any>
-}
+import type { ObservabilityContext } from 'atoma/observability'
 
 function errorMessageFromStandardError(err: any, fallback: string): string {
     if (err && typeof err === 'object') {
@@ -20,13 +17,6 @@ export class WritebackApplier implements SyncApplier {
 
     constructor(private readonly deps: {
         ctx: ClientPluginContext
-        remoteOpsClient: OpsClientLike
-        /**
-         * Optional durable mirror ops client:
-         * - When provided, pull/ack/reject results are also persisted into this local backend.
-         * - Keep it explicit to avoid guessing based on client runtime.
-         */
-        mirrorOpsClient?: OpsClientLike
         conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
         now: () => number
     }) {}
@@ -60,7 +50,7 @@ export class WritebackApplier implements SyncApplier {
             const obs = this.deps.ctx.runtime.observability.createContext(resource)
 
             const upserts = uniqueUpsertKeys.length
-                ? (await this.queryResource(this.deps.remoteOpsClient, { resource, params: { where: { id: { in: uniqueUpsertKeys } } } as any, context: obs })).items
+                ? (await this.queryResource('remote', { resource, params: { where: { id: { in: uniqueUpsertKeys } } } as any, context: obs })).items
                     .filter((i: any): i is any => i !== undefined)
                 : []
 
@@ -170,9 +160,9 @@ export class WritebackApplier implements SyncApplier {
     }
 
     private executeOps = async (
-        opsClient: OpsClientLike,
+        channel: 'remote' | 'store',
         ops: Operation[],
-        context?: import('atoma/observability').ObservabilityContext
+        context?: ObservabilityContext
     ): Promise<OperationResult[]> => {
         const traceId = (typeof (context as any)?.traceId === 'string' && (context as any).traceId) ? (context as any).traceId : undefined
         const opsWithTrace = Protocol.ops.build.withTraceMeta({
@@ -186,7 +176,7 @@ export class WritebackApplier implements SyncApplier {
             requestId: context ? (context as any).requestId() : undefined
         })
         Protocol.ops.validate.assertOutgoingOps({ ops: opsWithTrace, meta })
-        const res = await opsClient.executeOps({ ops: opsWithTrace, meta, context })
+        const res = await this.deps.ctx.io.executeOps({ channel, ops: opsWithTrace, meta, context })
         try {
             return Protocol.ops.validate.assertOperationResults((res as any).results)
         } catch (error) {
@@ -195,7 +185,7 @@ export class WritebackApplier implements SyncApplier {
     }
 
     private queryResource = async (
-        opsClient: OpsClientLike,
+        channel: 'remote' | 'store',
         args2: { resource: string; params: QueryParams; context?: any }
     ): Promise<{ items: any[]; pageInfo?: any }> => {
         const op: Operation = Protocol.ops.build.buildQueryOp({
@@ -203,7 +193,7 @@ export class WritebackApplier implements SyncApplier {
             resource: args2.resource,
             params: args2.params
         })
-        const results = await this.executeOps(opsClient, [op], args2.context)
+        const results = await this.executeOps(channel, [op], args2.context)
         const result = results[0]
         if (!result) throw new Error('[atoma-sync] Missing query result')
         let parsedResult: OperationResult
@@ -232,7 +222,7 @@ export class WritebackApplier implements SyncApplier {
     }
 
     private writeResource = async (
-        opsClient: OpsClientLike,
+        channel: 'remote' | 'store',
         args2: { resource: string; action: WriteAction; items: WriteItem[]; options?: WriteOptions; context?: any }
     ): Promise<WriteResultData> => {
         const op: Operation = Protocol.ops.build.buildWriteOp({
@@ -244,7 +234,7 @@ export class WritebackApplier implements SyncApplier {
                 ...(args2.options ? { options: args2.options } : {})
             }
         })
-        const results = await this.executeOps(opsClient, [op], args2.context)
+        const results = await this.executeOps(channel, [op], args2.context)
         const result = results[0]
         if (!result) throw new Error('[atoma-sync] Missing write result')
         let parsedResult: OperationResult
@@ -293,8 +283,8 @@ export class WritebackApplier implements SyncApplier {
         resource: string,
         args2: { upserts?: any[]; deletes?: EntityId[]; versionUpdates?: Array<{ key: EntityId; version: number }> }
     ) => {
-        const mirrorOpsClient = this.deps.mirrorOpsClient
-        if (!mirrorOpsClient) return
+        // Only mirror into the durable store backend when Store is configured as local.
+        if (this.deps.ctx.meta?.storeBackend?.role !== 'local') return
 
         const upserts = Array.isArray(args2.upserts) ? args2.upserts : []
         const deletes = Array.isArray(args2.deletes) ? args2.deletes : []
@@ -314,7 +304,7 @@ export class WritebackApplier implements SyncApplier {
                 } as any)
             }
             if (items.length) {
-                await this.writeResource(mirrorOpsClient, {
+                await this.writeResource('store', {
                     resource,
                     action: 'upsert',
                     items,
@@ -323,7 +313,7 @@ export class WritebackApplier implements SyncApplier {
             }
         }
         if (deletes.length) {
-            const { items: currentItems } = await this.queryResource(mirrorOpsClient, {
+            const { items: currentItems } = await this.queryResource('store', {
                 resource,
                 params: { where: { id: { in: deletes } } } as any
             })
@@ -349,7 +339,7 @@ export class WritebackApplier implements SyncApplier {
                     baseVersion: d.baseVersion,
                     meta: this.newWriteItemMeta()
                 } as any))
-                await this.writeResource(mirrorOpsClient, { resource, action: 'delete', items })
+                await this.writeResource('store', { resource, action: 'delete', items })
             }
         }
         if (versionUpdates.length) {
@@ -367,7 +357,7 @@ export class WritebackApplier implements SyncApplier {
                 .map(([key]) => key)
 
             if (toUpdate.length) {
-                const { items: currentItems } = await this.queryResource(mirrorOpsClient, {
+                const { items: currentItems } = await this.queryResource('store', {
                     resource,
                     params: { where: { id: { in: toUpdate } } } as any
                 })
@@ -389,7 +379,7 @@ export class WritebackApplier implements SyncApplier {
                 }
 
                 if (items.length) {
-                    await this.writeResource(mirrorOpsClient, {
+                    await this.writeResource('store', {
                         resource,
                         action: 'upsert',
                         items,
@@ -400,4 +390,3 @@ export class WritebackApplier implements SyncApplier {
         }
     }
 }
-

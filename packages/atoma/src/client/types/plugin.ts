@@ -1,12 +1,12 @@
 import type {
     Entity,
     OpsClientLike,
-    PersistKey,
     PersistRequest,
     PersistResult,
     PersistWriteback,
     StoreToken
 } from '#core'
+import type { WriteStrategy } from '#core'
 import type { ObservabilityContext } from '#observability'
 import type { CoreStore } from '#core'
 
@@ -59,6 +59,11 @@ export type ClientPluginContext = Readonly<{
     /** The client instance being extended (intentionally untyped to avoid circular generics). */
     client: unknown
     meta?: Readonly<{
+        /**
+         * Stable identifier for this client instance (used for namespacing plugin persistence).
+         * - Typically derived from the configured backend(s).
+         */
+        clientKey: string
         storeBackend?: Readonly<{ role: 'local' | 'remote'; kind?: string }>
     }>
     onDispose: (fn: () => void) => () => void
@@ -66,11 +71,11 @@ export type ClientPluginContext = Readonly<{
 
     /**
      * Persistence strategy routing.
-     * - `PersistKey` is opaque to core; plugins interpret it.
-     * - A plugin may also choose to set store views to use a specific persistKey.
+     * - `WriteStrategy` is opaque to core; plugins interpret it.
+     * - A plugin may also choose to set store views to use a specific writeStrategy.
      */
     persistence: Readonly<{
-        register: (key: PersistKey, handler: PersistHandler) => () => void
+        register: (key: WriteStrategy, handler: PersistHandler) => () => void
     }>
 
     /** Write tickets (for deferred confirmations). */
@@ -84,10 +89,10 @@ export type ClientPluginContext = Readonly<{
         apply: <T extends Entity>(storeName: StoreToken, writeback: PersistWriteback<T>) => Promise<void>
     }>
 
-    /** Optional helpers for creating store views (e.g. different persistKey strategies). */
+    /** Optional helpers for creating store views (e.g. different write strategies). */
     stores?: Readonly<{
         view: <T extends Entity, Relations = {}>(store: CoreStore<T, Relations>, args: {
-            persistKey?: PersistKey
+            writeStrategy?: WriteStrategy
             allowImplicitFetchForWrite?: boolean
             includeServerAssignedCreate?: boolean
         }) => CoreStore<T, Relations>

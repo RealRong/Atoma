@@ -1,6 +1,6 @@
 import { atom } from 'jotai/vanilla'
 import { storeHandleManager } from './store/internals/storeHandleManager'
-import { createDirectStoreView } from './store/createDirectStoreView'
+import { createStoreView } from './store/createStoreView'
 import { Shared } from '#shared'
 import type {
     CoreRuntime,
@@ -74,10 +74,22 @@ export function createStore<T extends Entity, Relations = {}>(
             dataProcessor: config.dataProcessor,
             hooks: config.hooks,
             indexes: config.indexes,
-            storeName: name
+            storeName: name,
+            ...(config.write ? { write: config.write } : {})
         }
     })
-    const coreStore = createDirectStoreView<T, Relations>(clientRuntime, handle)
+    const defaultStrategy = config.write?.strategy
+    const allowImplicitFetchForWrite = (typeof config.write?.allowImplicitFetchForWrite === 'boolean')
+        ? config.write!.allowImplicitFetchForWrite
+        : (defaultStrategy === 'queue' ? false : true)
+    const includeServerAssignedCreate = !(typeof defaultStrategy === 'string' && defaultStrategy && defaultStrategy !== 'direct')
+    const coreStore = createStoreView<T, Relations>(clientRuntime, handle, {
+        writeConfig: {
+            writeStrategy: defaultStrategy,
+            allowImplicitFetchForWrite
+        },
+        includeServerAssignedCreate
+    })
 
     const getRelations = (() => {
         const relationsFactory = config.relations

@@ -8,6 +8,7 @@ import type {
     PartialWithId,
     StoreApi,
     StoreDispatchEvent,
+    WriteStrategy,
     WriteTicket
 } from '../../types'
 import type { EntityId } from '#protocol'
@@ -15,7 +16,7 @@ import type { Patch } from 'immer'
 import type { StoreHandle } from './handleTypes'
 
 export type StoreWriteConfig = Readonly<{
-    persistKey?: string
+    writeStrategy?: WriteStrategy
     allowImplicitFetchForWrite: boolean
 }>
 

@@ -19,6 +19,12 @@ export function mapTranslatedWriteOpsToOutboxWrites(writeOps: PersistRequest<any
             throw new Error('[atoma-sync] outbox: write op 必须包含 resource/action 且只能有 1 个 item')
         }
 
+        // We intentionally do not support per-write protocol options in the outbox.
+        // Keep the sync semantics uniform and controlled by the sync runtime config.
+        if (options && Object.keys(options as any).length > 0) {
+            throw new Error('[atoma-sync] outbox: 不支持 write.options（请通过 sync 配置控制行为）')
+        }
+
         const item = items[0] as any
         const meta = item?.meta
         if (!meta || typeof meta !== 'object') {
@@ -33,11 +39,9 @@ export function mapTranslatedWriteOpsToOutboxWrites(writeOps: PersistRequest<any
 
         out.push({
             resource,
-            action: action as any,
-            item: item as any,
-            ...(options ? { options } : {})
+            action,
+            item,
         })
     }
     return out
 }
-

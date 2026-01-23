@@ -19,17 +19,17 @@ This folder contains the mutation execution pipeline for Atoma stores. It turns 
 - `MutationFlow.ts`: Segment execution and orchestration.
 - `WriteIntents.ts`: Dispatch/patch translation into protocol write intents.
 - `WriteOps.ts`: Protocol op construction and execution.
-- `Persist.ts`: Derives `persistKey` and calls `runtime.persistence.persist`.
+- `Persist.ts`: Derives `writeStrategy` and calls `runtime.persistence.persist`.
 - `WritebackCollector.ts`: Aggregation of server writeback (created, upserts, versions).
 - `WriteTicketManager.ts`: Write ticket creation and confirmation lifecycle.
 - `types.ts`: Shared pipeline types.
 
 ## Key concepts
 
-- **Segments**: A segment is a batch of dispatch events with compatible context and `persistKey`.
+- **Segments**: A segment is a batch of dispatch events with compatible context and `writeStrategy`.
 - **Optimistic state**: Local state updates applied before persistence completes.
 - **Patches**: Immer patches/inverse patches for history and rollback.
-- **Persistence**: Core does not choose a strategy; `persistKey` is opaque to core and interpreted by the injected `Persistence`.
+- **Persistence**: Core does not choose a strategy; `writeStrategy` is opaque to core and interpreted by the injected `Persistence`.
 - **Tickets**: `beginWrite` creates a write ticket; `awaitTicket` controls optimistic vs strict confirmation.
 
 ## Error handling

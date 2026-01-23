@@ -14,7 +14,7 @@ type AtomKey = PrimitiveAtom<any>
 
 function opContextSegmentKey(op: StoreDispatchEvent<any>) {
     const c = op.opContext
-    const persist = op.persistKey ?? ''
+    const persist = op.writeStrategy ?? ''
     return `${c?.scope ?? 'default'}|${c?.origin ?? 'user'}|${c?.actionId ?? ''}|${persist}`
 }
 

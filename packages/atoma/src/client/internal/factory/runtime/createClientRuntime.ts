@@ -1,4 +1,4 @@
-import type { Entity, JotaiStore, OpsClientLike, Persistence, PersistKey, PersistRequest, PersistResult, StoreDataProcessor } from '#core'
+import type { Entity, JotaiStore, OpsClientLike, Persistence, PersistRequest, PersistResult, StoreDataProcessor, WriteStrategy } from '#core'
 import { MutationPipeline } from '#core'
 import { executeWriteOps } from '#core/mutation/pipeline/WriteOps'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
@@ -51,13 +51,13 @@ export class ClientRuntime implements ClientRuntimeInternal {
 }
 
 class PersistenceRouter implements Persistence {
-    private handlers = new Map<PersistKey, PersistHandler>()
+    private handlers = new Map<WriteStrategy, PersistHandler>()
 
     constructor(
         private readonly direct: <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
     ) {}
 
-    register = (key: PersistKey, handler: PersistHandler) => {
+    register = (key: WriteStrategy, handler: PersistHandler) => {
         const k = String(key)
         if (!k) throw new Error('[Atoma] persistence.register: key 必填')
         if (this.handlers.has(k)) throw new Error(`[Atoma] persistence.register: key 已存在: ${k}`)
@@ -68,13 +68,13 @@ class PersistenceRouter implements Persistence {
     }
 
     persist = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-        const key = req.persistKey
+        const key = req.writeStrategy
         if (!key || key === 'direct') {
             return await this.direct(req)
         }
         const handler = this.handlers.get(key)
         if (!handler) {
-            throw new Error(`[Atoma] persistence: 未注册 persistKey="${String(key)}"`)
+            throw new Error(`[Atoma] persistence: 未注册 writeStrategy="${String(key)}"`)
         }
         return await handler({ req, next: this.direct })
     }
