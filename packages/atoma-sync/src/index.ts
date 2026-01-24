@@ -1,2 +1,2 @@
-export { withSync, syncPlugin } from './withSync'
-export type { WithSyncOptions, WithSyncExtension } from './withSync'
+export { withSync, syncPlugin } from '#sync/withSync'
+export type { WithSyncOptions, WithSyncExtension } from '#sync/withSync'

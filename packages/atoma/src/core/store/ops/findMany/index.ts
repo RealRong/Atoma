@@ -10,7 +10,6 @@ import { summarizeFindManyParams } from './paramsSummary'
 import { applyQuery } from '../../../query'
 import { storeHandleManager } from '../../internals/storeHandleManager'
 import type { StoreHandle } from '../../internals/handleTypes'
-import { executeQuery } from '../../../ops/opsExecutor'
 import { normalizeAtomaServerQueryParams } from '../../internals/queryParams'
 
 export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
@@ -74,7 +73,7 @@ export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, han
             const whereIsFn = typeof (options as any)?.where === 'function'
             const params = whereIsFn ? {} : normalizeAtomaServerQueryParams(optionsForRemote)
             const startedAt = Date.now()
-            const { data, pageInfo } = await executeQuery(clientRuntime, handle, params, observabilityContext)
+            const { data, pageInfo } = await clientRuntime.io.query(handle, params, observabilityContext)
             const durationMs = Date.now() - startedAt
 
             const fetched = Array.isArray(data) ? data : []

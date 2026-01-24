@@ -11,7 +11,6 @@ import type {
     SyncApplier,
     SyncClient,
     SyncEvent,
-    SyncOutboxItem,
     SyncPhase,
     SyncRuntimeConfig,
     SyncTransport

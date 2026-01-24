@@ -3,7 +3,6 @@ import type { EntityId } from '#protocol'
 import { storeHandleManager } from '../internals/storeHandleManager'
 import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { ObservabilityContext } from '#observability'
-import { executeQuery } from '../../ops/opsExecutor'
 import type { StoreHandle } from '../internals/handleTypes'
 
 type GetOneTask<T> = {
@@ -84,7 +83,7 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
             const ids = dedupeTaskIds(group.tasks)
 
             try {
-                const { data } = await executeQuery(clientRuntime, handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
+                const { data } = await clientRuntime.io.query(handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
 
                 const idToItem = new Map<EntityId, T>()
                 const itemsToCache: T[] = []
@@ -142,7 +141,7 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
         const processGroup = async (group: TaskGroup<T>) => {
             const ids = dedupeTaskIds(group.tasks)
             try {
-                const { data } = await executeQuery(clientRuntime, handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
+                const { data } = await clientRuntime.io.query(handle, { where: { id: { in: ids } } } as any, group.observabilityContext)
 
                 const idToItem = new Map<EntityId, T>()
                 for (const got of data) {

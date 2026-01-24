@@ -3,7 +3,7 @@ import type { Draft, Patch } from 'immer'
 import type { MutationPipeline } from './mutation/MutationPipeline'
 import type { StoreHandle } from './store/internals/handleTypes'
 import type { DebugConfig, DebugEvent, Explain, ObservabilityContext } from '#observability'
-import type { EntityId, Meta, Operation, OperationResult, WriteAction, WriteItem, WriteOptions } from '#protocol'
+import type { EntityId, Meta, Operation, OperationResult, QueryParams, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
 
 /**
  * Minimal entity interface - all stored entities must have an id
@@ -479,8 +479,15 @@ export interface RuntimeObservability {
     registerStore?: (args: { storeName: StoreToken; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => void
 }
 
+export type RuntimeIo = Readonly<{
+    executeOps: (args: { ops: Operation[]; signal?: AbortSignal; context?: ObservabilityContext }) => Promise<OperationResult[]>
+    query: <T extends Entity>(handle: StoreHandle<T>, params: QueryParams, context?: ObservabilityContext, signal?: AbortSignal) => Promise<{ data: unknown[]; pageInfo?: any }>
+    write: <T extends Entity>(handle: StoreHandle<T>, args: { action: WriteAction; items: WriteItem[]; options?: WriteOptions }, context?: ObservabilityContext, signal?: AbortSignal) => Promise<WriteResultData>
+}>
+
 export type CoreRuntime = Readonly<{
     opsClient: OpsClientLike
+    io: RuntimeIo
     mutation: MutationPipeline
     dataProcessor: DataProcessor
     stores: RuntimeStores

@@ -3,7 +3,6 @@ import type { EntityId } from '#protocol'
 import { toErrorWithFallback as toError } from '#shared'
 import { storeHandleManager } from '../internals/storeHandleManager'
 import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
-import { executeQuery } from '../../ops/opsExecutor'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createDeleteMany<T extends Entity>(
@@ -56,7 +55,7 @@ export function createDeleteMany<T extends Entity>(
                     }
                 }
             } else {
-                const { data } = await executeQuery(clientRuntime, handle, { where: { id: { in: missing } } } as any, observabilityContext)
+                const { data } = await clientRuntime.io.query(handle, { where: { id: { in: missing } } } as any, observabilityContext)
                 const toHydrate: Array<PartialWithId<T>> = []
 
                 for (const fetched of data) {

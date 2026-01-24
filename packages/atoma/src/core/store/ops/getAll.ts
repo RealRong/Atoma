@@ -2,7 +2,6 @@ import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../..
 import type { EntityId } from '#protocol'
 import { storeHandleManager } from '../internals/storeHandleManager'
 import { storeWriteEngine } from '../internals/storeWriteEngine'
-import { executeQuery } from '../../ops/opsExecutor'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
@@ -12,7 +11,7 @@ export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handl
         const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
         const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
 
-        const { data } = await executeQuery(clientRuntime, handle, {}, observabilityContext)
+        const { data } = await clientRuntime.io.query(handle, {}, observabilityContext)
         const fetched = Array.isArray(data) ? data : []
         const arr: T[] = []
         const itemsToCache: Array<PartialWithId<T>> = []

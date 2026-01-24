@@ -1,6 +1,7 @@
 import type { Entity, JotaiStore, OpsClientLike, Persistence, PersistRequest, PersistResult, StoreDataProcessor, WriteStrategy } from '#core'
 import { MutationPipeline } from '#core'
 import { executeWriteOps } from '#core/mutation/pipeline/WriteOps'
+import { createRuntimeIo } from '#core/runtime'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import type { EntityId } from '#protocol'
 import type { AtomaSchema } from '#client/types'
@@ -14,6 +15,7 @@ import type { PersistHandler } from '#client/types/plugin'
 
 export class ClientRuntime implements ClientRuntimeInternal {
     readonly opsClient: OpsClientLike
+    readonly io: ClientRuntimeInternal['io']
     readonly mutation: MutationPipeline
     readonly dataProcessor: DataProcessor
     readonly jotaiStore: JotaiStore
@@ -35,6 +37,7 @@ export class ClientRuntime implements ClientRuntimeInternal {
         this.jotaiStore = createJotaiStore()
         this.dataProcessor = new DataProcessor(() => this)
         this.observability = new ClientRuntimeObservability()
+        this.io = createRuntimeIo(() => this as any)
         this.persistenceRouter = createClientRuntimePersistenceRouter(() => this)
         this.persistence = this.persistenceRouter
         this.mutation = new MutationPipeline(this)

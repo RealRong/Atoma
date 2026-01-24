@@ -28,10 +28,14 @@ export type {
     ClientPluginContext,
     ClientIo,
     IoChannel,
-    IoExecuteOpsRequest,
-    IoExecuteOpsResponse,
+    IoRequest,
+    IoResponse,
     IoHandler,
     IoMiddleware,
+    ChannelApi,
+    ChannelQueryResult,
+    RemoteApi,
+    NotifyMessage,
     PersistHandler,
     PluginCapableClient
 } from './plugin'

@@ -1,79 +1,34 @@
 import type { ClientPluginContext } from 'atoma/client'
-import {
-    Protocol,
-    type ChangeBatch,
-    type Operation,
-    type OperationResult,
-    type WriteItemResult,
-    type WriteResultData
-} from 'atoma/protocol'
-import type { NotifyMessage, SyncPushOutcome, SyncSubscribe, SyncTransport } from '#sync/types'
+import type { WriteItemResult, WriteResultData } from 'atoma/protocol'
+import type { SyncPushOutcome, SyncSubscribe, SyncTransport } from '#sync/types'
 
 export class RemoteTransport implements SyncTransport {
-    private readonly now: () => number
     readonly subscribe?: SyncSubscribe
 
-    constructor(
-        private readonly ctx: ClientPluginContext,
-        opts?: Readonly<{ now?: () => number }>
-    ) {
-        this.now = opts?.now ?? (() => Date.now())
-
-        if (this.ctx.io.subscribe) {
-            this.subscribe = (args) => this.ctx.io.subscribe!({
-                channel: 'remote',
+    constructor(private readonly ctx: ClientPluginContext) {
+        if (this.ctx.remote.subscribeNotify) {
+            this.subscribe = (args) => this.ctx.remote.subscribeNotify!({
                 resources: args.resources,
                 signal: args.signal,
                 onError: args.onError,
-                onMessage: (raw) => {
-                    try {
-                        args.onMessage(decodeNotifyMessage(raw))
-                    } catch (error) {
-                        args.onError(error)
-                    }
-                }
+                onMessage: (msg) => args.onMessage(msg as any)
             })
         }
     }
 
     pullChanges: SyncTransport['pullChanges'] = async (input) => {
-        const opId = Protocol.ids.createOpId('c', { now: this.now })
-        const op = Protocol.ops.build.buildChangesPullOp({
-            opId,
+        return await this.ctx.remote.changes.pull({
             cursor: input.cursor,
             limit: input.limit,
-            ...(input.resources?.length ? { resources: input.resources } : {})
+            ...(input.resources?.length ? { resources: input.resources } : {}),
+            ...(input.signal ? { signal: input.signal } : {})
         })
-
-        const res = await this.ctx.io.executeOps({
-            channel: 'remote',
-            ops: [op],
-            meta: input.meta,
-            signal: input.signal
-        })
-        const result = ((res as any)?.results?.find((r: any) => r?.opId === opId) as OperationResult | undefined) ?? {
-            opId,
-            ok: false as const,
-            error: { code: 'INTERNAL', message: 'Missing result', kind: 'internal' as const }
-        }
-
-        if (!result.ok) {
-            const message = typeof (result.error as any)?.message === 'string'
-                ? String((result.error as any).message)
-                : 'Operation failed'
-            const err = new Error(message)
-            ;(err as any).error = result.error
-            throw err
-        }
-
-        return result.data as ChangeBatch
     }
 
     pushWrites: SyncTransport['pushWrites'] = async (input) => {
         const outcomes: SyncPushOutcome[] = new Array(input.entries.length)
 
         type Group = {
-            opId: string
             resource: string
             action: any
             entries: Array<{ index: number; entry: any }>
@@ -102,72 +57,41 @@ export class RemoteTransport implements SyncTransport {
             const groupKey = `${resource}::${String(action)}`
             let group = groupsByKey.get(groupKey)
             if (!group) {
-                const opId = Protocol.ids.createOpId('w', { now: this.now })
-                group = { opId, resource, action, entries: [] }
+                group = { resource, action, entries: [] }
                 groupsByKey.set(groupKey, group)
                 groups.push(group)
             }
             group.entries.push({ index: i, entry })
         }
 
-        const ops: Operation[] = []
         for (const group of groups) {
-            ops.push(Protocol.ops.build.buildWriteOp({
-                opId: group.opId,
-                write: {
-                    resource: group.resource,
+            let data: WriteResultData
+            try {
+                data = await this.ctx.remote.write({
+                    store: group.resource as any,
                     action: group.action,
                     items: group.entries.map(e => e.entry.item),
-                    options: { returning: input.returning }
-                }
-            }))
-        }
-
-        const byId = new Map<string, OperationResult>()
-        if (ops.length) {
-            const res = await this.ctx.io.executeOps({
-                channel: 'remote',
-                ops,
-                meta: input.meta,
-                signal: input.signal
-            })
-            for (const r of (res as any)?.results ?? []) {
-                if (r && typeof r === 'object' && typeof (r as any).opId === 'string') {
-                    byId.set((r as any).opId, r as any)
-                }
-            }
-        }
-
-        for (const group of groups) {
-            const result = byId.get(group.opId)
-            if (!result) {
-                rejectGroup(outcomes, group, {
-                    code: 'WRITE_FAILED',
-                    message: 'Missing write result',
-                    kind: 'internal' as const
-                })
-                continue
-            }
-
-            if (!result.ok) {
-                if (isRetryableOpError((result as any).error)) {
+                    options: { returning: input.returning },
+                    ...(input.signal ? { signal: input.signal } : {})
+                } as any)
+            } catch (error) {
+                const payload = (error as any)?.error ?? error
+                if (isRetryableOpError(payload)) {
                     for (const e of group.entries) {
-                        outcomes[e.index] = { kind: 'retry', error: (result as any).error }
+                        outcomes[e.index] = { kind: 'retry', error: payload }
                     }
                 } else {
                     for (const e of group.entries) {
                         outcomes[e.index] = {
                             kind: 'reject',
-                            result: { index: 0, ok: false, error: (result as any).error } as any
+                            result: { index: 0, ok: false, error: payload } as any
                         }
                     }
                 }
                 continue
             }
 
-            const data = (result as any).data as WriteResultData
             const itemResults = Array.isArray((data as any)?.results) ? (data as any).results : []
-
             for (let j = 0; j < group.entries.length; j++) {
                 const mapped = group.entries[j]!
                 const itemResult = itemResults[j] as (WriteItemResult | undefined)
@@ -207,34 +131,10 @@ export class RemoteTransport implements SyncTransport {
     }
 }
 
-function rejectGroup(outcomes: SyncPushOutcome[], group: { entries: Array<{ index: number }> }, error: any) {
-    for (const e of group.entries) {
-        outcomes[e.index] = {
-            kind: 'reject',
-            result: { index: 0, ok: false, error } as any
-        }
-    }
-}
-
 function isRetryableOpError(error: any): boolean {
     if (!error || typeof error !== 'object') return false
     if (error.retryable === true) return true
-    const kind = (error as any).kind
+    const kind = error.kind
     return kind === 'internal' || kind === 'adapter'
-}
-
-function decodeNotifyMessage(raw: unknown): NotifyMessage {
-    if (typeof raw === 'string') {
-        return Protocol.sse.parse.notifyMessage(raw)
-    }
-    if (raw && typeof raw === 'object') {
-        const resources2 = (raw as any).resources
-        const traceId = (raw as any).traceId
-        return {
-            ...(Array.isArray(resources2) ? { resources: resources2.map((r: any) => String(r)) } : {}),
-            ...(typeof traceId === 'string' ? { traceId } : {})
-        }
-    }
-    throw new Error('[atoma-sync] notify message: unsupported payload')
 }
 

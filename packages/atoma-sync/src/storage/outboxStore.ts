@@ -1,33 +1,6 @@
-import { createKVStore } from '#sync/internal/kvStore'
-import { defaultCompareCursor } from '#sync/policies/cursorGuard'
 import { openDB } from 'idb'
 import type { IDBPDatabase } from 'idb'
-import type { CursorStore, OutboxStore, SyncOutboxItem, SyncOutboxEvents, SyncOutboxStats, OutboxWrite } from '#sync/types'
-
-export type SyncStoresConfig = {
-    outboxKey: string
-    cursorKey: string
-    maxQueueSize?: number
-    now?: () => number
-    inFlightTimeoutMs?: number
-}
-
-export type SyncStores = {
-    outbox: OutboxStore
-    cursor: CursorStore
-}
-
-export function createStores(config: SyncStoresConfig): SyncStores {
-    return {
-        outbox: new DefaultOutboxStore(
-            config.outboxKey,
-            config.maxQueueSize ?? 1000,
-            config.now ?? (() => Date.now()),
-            config.inFlightTimeoutMs ?? 30_000
-        ),
-        cursor: new DefaultCursorStore(config.cursorKey)
-    }
-}
+import type { OutboxStore, OutboxWrite, SyncOutboxEvents, SyncOutboxItem, SyncOutboxStats } from '#sync/types'
 
 type OutboxStatus = 'pending' | 'in_flight'
 
@@ -225,39 +198,26 @@ export class DefaultOutboxStore implements OutboxStore {
         await this.initialized
         if (this.memory) return this.memory.commit(args)
 
-        const ack = Array.isArray(args.ack) ? args.ack : []
-        const reject = Array.isArray(args.reject) ? args.reject : []
-        const retryable = Array.isArray(args.retryable) ? args.retryable : []
+        const ackSet = new Set([...(args.ack ?? []), ...(args.reject ?? [])])
+        const retrySet = new Set(args.retryable ?? [])
 
-        const ackSet = new Set<string>([...ack, ...reject])
-        const retrySet = new Set<string>(retryable)
-
-        if (!ackSet.size && !retrySet.size && !(args.rebase?.length)) return
+        if (!ackSet.size && !retrySet.size && (!args.rebase || !args.rebase.length)) return
 
         const db = await openSyncDb()
         const tx = db.transaction(OUTBOX_STORE_NAME, 'readwrite')
         const store = tx.store
+        const index = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ENTITY_ENQUEUED)
 
-        let removedPending = 0
-        let removedInFlight = 0
-        let movedInFlightToPending = 0
-
-        for (const key of ackSet) {
-            const pk = this.pk(key)
-            const existing = await store.get(pk) as PersistedOutboxEntry | undefined
-            if (!existing) continue
-            if (existing.status === 'pending') removedPending++
-            if (existing.status === 'in_flight') removedInFlight++
-            await store.delete(pk)
+        for (const idempotencyKey of ackSet) {
+            await store.delete(this.pk(idempotencyKey))
         }
 
-        for (const key of retrySet) {
-            const pk = this.pk(key)
-            const existing = await store.get(pk) as PersistedOutboxEntry | undefined
+        for (const idempotencyKey of retrySet) {
+            const pk = this.pk(idempotencyKey)
+            const existing = await store.get(pk)
             if (!existing) continue
-            if (existing.status === 'in_flight') movedInFlightToPending++
             const next: PersistedOutboxEntry = {
-                ...existing,
+                ...(existing as any),
                 status: 'pending',
                 inFlightAtMs: undefined
             }
@@ -265,47 +225,50 @@ export class DefaultOutboxStore implements OutboxStore {
         }
 
         if (Array.isArray(args.rebase)) {
-            const rebaseIndex = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ENTITY_ENQUEUED)
-
             for (const r of args.rebase) {
                 const resource = String((r as any)?.resource ?? '')
                 const entityId = String((r as any)?.entityId ?? '')
                 const baseVersion = (r as any)?.baseVersion
-                const afterEnqueuedAtMs = (r as any)?.afterEnqueuedAtMs
+                const after = (typeof (r as any)?.afterEnqueuedAtMs === 'number' && Number.isFinite((r as any)?.afterEnqueuedAtMs))
+                    ? Math.floor((r as any).afterEnqueuedAtMs)
+                    : undefined
 
                 if (!resource || !entityId) continue
                 if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) continue
 
-                const after = (typeof afterEnqueuedAtMs === 'number' && Number.isFinite(afterEnqueuedAtMs))
-                    ? Math.floor(afterEnqueuedAtMs) + 1
-                    : MIN_TIME_MS
-
                 const range = IDBKeyRange.bound(
-                    [this.storageKey, 'pending', resource, entityId, after],
+                    [this.storageKey, 'pending', resource, entityId, MIN_TIME_MS],
                     [this.storageKey, 'pending', resource, entityId, MAX_TIME_MS]
                 )
 
-                for (let cursor = await rebaseIndex.openCursor(range); cursor; cursor = await cursor.continue()) {
-                    const existing = cursor.value as PersistedOutboxEntry
-                    const item: any = existing.item
-                    if (!item || typeof item !== 'object') continue
-                    const cur = item.baseVersion
-                    if (!(typeof cur === 'number' && Number.isFinite(cur) && cur > 0)) continue
-                    if (cur >= baseVersion) continue
-                    const nextItem = { ...(item as any), baseVersion }
-                    await cursor.update({ ...existing, item: nextItem })
+                for (let cursor = await index.openCursor(range); cursor; cursor = await cursor.continue()) {
+                    const raw = cursor.value as PersistedOutboxEntry
+                    const item: any = raw.item
+                    if (after !== undefined && raw.enqueuedAtMs <= after) continue
+                    if (typeof item?.baseVersion !== 'number' || !Number.isFinite(item.baseVersion) || item.baseVersion <= 0) continue
+                    if (item.baseVersion >= baseVersion) continue
+
+                    const next: PersistedOutboxEntry = {
+                        ...raw,
+                        item: {
+                            ...(item as any),
+                            baseVersion
+                        }
+                    }
+                    await cursor.update(next)
                 }
             }
         }
 
         await tx.done
 
-        const removed = removedPending + removedInFlight
-        if (removed || movedInFlightToPending) {
+        const ackCount = ackSet.size
+        const retryCount = retrySet.size
+        if (ackCount || retryCount) {
             await this.bumpStats({
-                pendingDelta: -removedPending + movedInFlightToPending,
-                inFlightDelta: -removedInFlight - movedInFlightToPending,
-                totalDelta: -removed
+                pendingDelta: retryCount,
+                inFlightDelta: -retryCount,
+                totalDelta: -ackCount
             })
         }
     }
@@ -323,57 +286,66 @@ export class DefaultOutboxStore implements OutboxStore {
         const store = tx.store
         const index = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_INFLIGHT_AT)
 
-        const threshold = nowMs - timeout
         const range = IDBKeyRange.bound(
             [this.storageKey, 'in_flight', MIN_TIME_MS],
-            [this.storageKey, 'in_flight', threshold]
+            [this.storageKey, 'in_flight', MAX_TIME_MS]
         )
 
-        let moved = 0
+        let released = 0
         for (let cursor = await index.openCursor(range); cursor; cursor = await cursor.continue()) {
-            const existing = cursor.value as PersistedOutboxEntry
-            await cursor.update({ ...existing, status: 'pending', inFlightAtMs: undefined })
-            moved++
+            const raw = cursor.value as PersistedOutboxEntry
+            const inFlightAtMs = raw.inFlightAtMs ?? 0
+            if (inFlightAtMs + timeout > nowMs) continue
+
+            const next: PersistedOutboxEntry = {
+                ...raw,
+                status: 'pending',
+                inFlightAtMs: undefined
+            }
+            await cursor.update(next)
+            released++
         }
+
         await tx.done
 
-        if (moved) {
-            await this.bumpStats({ pendingDelta: moved, inFlightDelta: -moved, totalDelta: 0 })
+        if (released) {
+            await this.bumpStats({ pendingDelta: released, inFlightDelta: -released, totalDelta: 0 })
         }
     }
 
     async stats(): Promise<SyncOutboxStats> {
         await this.initialized
         if (this.memory) return this.memory.stats()
-        if (this.cachedStats) return this.cachedStats
+
+        const cached = this.cachedStats
+        if (cached) return cached
         return this.refreshStats()
     }
 
     private async refreshStats(): Promise<SyncOutboxStats> {
-        if (this.memory) return this.memory.stats()
-
         const db = await openSyncDb()
         const tx = db.transaction(OUTBOX_STORE_NAME, 'readonly')
         const store = tx.store
-
         const byOutbox = store.index(OUTBOX_INDEX_BY_OUTBOX)
-        const total = await byOutbox.count(this.storageKey)
-
         const byStatus = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_ENQUEUED)
+        const byInFlight = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_INFLIGHT_AT)
+
+        const total = await byOutbox.count(this.storageKey)
         const pending = await byStatus.count(IDBKeyRange.bound(
             [this.storageKey, 'pending', MIN_TIME_MS],
             [this.storageKey, 'pending', MAX_TIME_MS]
         ))
-        const inFlight = await byStatus.count(IDBKeyRange.bound(
+        const inFlight = await byInFlight.count(IDBKeyRange.bound(
             [this.storageKey, 'in_flight', MIN_TIME_MS],
             [this.storageKey, 'in_flight', MAX_TIME_MS]
         ))
 
         await tx.done
 
-        const next = { pending, inFlight, total } as const
-        this.cachedStats = next
-        return next
+        const stats = { pending, inFlight, total }
+        this.cachedStats = stats
+        this.events?.onQueueChange?.(stats)
+        return stats
     }
 
     private async bumpStats(args: { pendingDelta: number; inFlightDelta: number; totalDelta: number }) {
@@ -418,53 +390,6 @@ export class DefaultOutboxStore implements OutboxStore {
             throw new Error('[Sync] write item meta.clientTimeMs is required for enqueueWrites')
         }
         return meta as any
-    }
-}
-
-export class DefaultCursorStore implements CursorStore {
-    private readonly kv = createKVStore()
-    private cursor: string | undefined
-    private initialized: Promise<void>
-
-    constructor(
-        private readonly storageKey: string,
-        private readonly initial?: string
-    ) {
-        this.initialized = this.restore()
-    }
-
-    async get() {
-        await this.initialized
-        return this.cursor ?? this.initial
-    }
-
-    async advance(next: string): Promise<{ advanced: boolean; previous?: string }> {
-        await this.initialized
-        if (this.cursor === undefined) {
-            const previous = this.cursor ?? this.initial
-            this.cursor = next
-            await this.persist()
-            return { advanced: true, ...(previous !== undefined ? { previous } : {}) }
-        }
-        const cmp = defaultCompareCursor(this.cursor, next)
-        if (cmp < 0) {
-            const previous = this.cursor
-            this.cursor = next
-            await this.persist()
-            return { advanced: true, ...(previous !== undefined ? { previous } : {}) }
-        }
-        return { advanced: false, previous: this.cursor }
-    }
-
-    private async persist() {
-        await this.kv.set(this.storageKey, this.cursor)
-    }
-
-    private async restore() {
-        const stored = await this.kv.get<any>(this.storageKey)
-        if (typeof stored === 'string' && stored) {
-            this.cursor = stored
-        }
     }
 }
 

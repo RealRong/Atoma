@@ -6,7 +6,6 @@
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type OperationResult, type StandardError, type WriteAction, type WriteItemResult, type WriteOp, type WriteResultData } from '#protocol'
 import type { CoreRuntime, Entity, PersistWriteback } from '../../types'
-import { executeOps } from '../../ops/opsExecutor'
 import type { TranslatedWriteOp, WriteIntent } from './types'
 import { createWritebackCollector } from './WritebackCollector'
 import type { StoreHandle } from '../../store/internals/handleTypes'
@@ -93,7 +92,7 @@ export async function executeWriteOps<T extends Entity>(args: {
 
     const ops = processedOps.map(o => o.op)
 
-    const results = await executeOps(args.clientRuntime, ops, args.context)
+    const results = await args.clientRuntime.io.executeOps({ ops, context: args.context })
     const resultByOpId = new Map<string, OperationResult>()
     results.forEach(r => resultByOpId.set(r.opId, r))
 

@@ -1,4 +1,4 @@
-import type { CoreStore, Entity, StoreDataProcessor } from '#core'
+import type { CoreStore, Entity, PersistWriteback, StoreDataProcessor, StoreToken } from '#core'
 import { createStoreView } from '#core/store/createStoreView'
 import { storeHandleManager } from '#core/store/internals/storeHandleManager'
 import { HistoryController } from '#client/internal/controllers/HistoryController'
@@ -13,6 +13,7 @@ import type {
 } from '#client/types'
 import { resolveBackend } from '#client/internal/factory/backend/resolveBackend'
 import { Devtools } from '#devtools'
+import type { ObservabilityContext } from '#observability'
 
 export function buildAtomaClient<
     const Entities extends Record<string, Entity>,
@@ -44,7 +45,7 @@ export function buildAtomaClient<
     const clientKey = String(remoteBackend?.key ?? storeBackend.key)
 
     // Build an I/O pipeline (middleware chain) shared by Store and extension packages.
-    const baseExecuteOps = async (req: import('#client/types').IoExecuteOpsRequest): Promise<import('#client/types').IoExecuteOpsResponse> => {
+    const baseExecuteOps = async (req: import('#client/types').IoRequest): Promise<import('#client/types').IoResponse> => {
         if (req.channel === 'store') {
             return await storeBackend.opsClient.executeOps({
                 ops: req.ops as any,
@@ -144,6 +145,367 @@ export function buildAtomaClient<
         }
     }
 
+    type Operation = import('#protocol').Operation
+    type OperationResult = import('#protocol').OperationResult
+    type QueryParams = import('#protocol').QueryParams
+    type WriteAction = import('#protocol').WriteAction
+    type WriteItem = import('#protocol').WriteItem
+    type WriteOptions = import('#protocol').WriteOptions
+    type WriteResultData = import('#protocol').WriteResultData
+    type ChangeBatch = import('#protocol').ChangeBatch
+    type Cursor = import('#protocol').Cursor
+
+    const now = () => Date.now()
+
+    function requireResultByOpId(results: OperationResult[], opId: string, missingMessage: string): OperationResult {
+        for (const r of results) {
+            if ((r as any)?.opId === opId) return r
+        }
+        throw new Error(missingMessage)
+    }
+
+    function toOpsError(result: OperationResult, tag: string): Error {
+        if ((result as any).ok) return new Error(`[${tag}] Operation failed`)
+        const message = ((result as any).error && typeof ((result as any).error as any).message === 'string')
+            ? ((result as any).error as any).message
+            : `[${tag}] Operation failed`
+        const err = new Error(message)
+        ;(err as any).error = (result as any).error
+        return err
+    }
+
+    const executeOps = async (args2: {
+        channel: import('#client/types').IoChannel
+        ops: Operation[]
+        context?: ObservabilityContext
+        signal?: AbortSignal
+    }): Promise<OperationResult[]> => {
+        const traceId = (typeof args2.context?.traceId === 'string' && args2.context.traceId) ? args2.context.traceId : undefined
+        const opsWithTrace = Protocol.ops.build.withTraceMeta({
+            ops: args2.ops,
+            traceId,
+            ...(args2.context ? { nextRequestId: (args2.context as any).requestId } : {})
+        })
+        const meta = Protocol.ops.build.buildRequestMeta({
+            now,
+            traceId,
+            requestId: args2.context ? (args2.context as any).requestId() : undefined
+        })
+        Protocol.ops.validate.assertOutgoingOps({ ops: opsWithTrace, meta })
+
+        const res = await ioExecute({
+            channel: args2.channel,
+            ops: opsWithTrace,
+            meta,
+            ...(args2.signal ? { signal: args2.signal } : {}),
+            ...(args2.context ? { context: args2.context } : {})
+        })
+
+        return Protocol.ops.validate.assertOperationResults((res as any).results)
+    }
+
+    const queryChannel = async <T = unknown>(args2: {
+        channel: import('#client/types').IoChannel
+        store: StoreToken
+        params: QueryParams
+        context?: ObservabilityContext
+        signal?: AbortSignal
+    }): Promise<import('#client/types').ChannelQueryResult<T>> => {
+        const opId = Protocol.ids.createOpId('q', { now })
+        const op: Operation = Protocol.ops.build.buildQueryOp({
+            opId,
+            resource: String(args2.store),
+            params: args2.params
+        })
+        const results = await executeOps({
+            channel: args2.channel,
+            ops: [op],
+            ...(args2.context ? { context: args2.context } : {}),
+            ...(args2.signal ? { signal: args2.signal } : {})
+        })
+        const result = requireResultByOpId(results, opId, '[Atoma] Missing query result')
+        if (!(result as any).ok) throw toOpsError(result, 'query')
+
+        const data = Protocol.ops.validate.assertQueryResultData((result as any).data) as any
+        return {
+            items: Array.isArray(data?.items) ? (data.items as T[]) : [],
+            ...(data?.pageInfo ? { pageInfo: data.pageInfo } : {})
+        }
+    }
+
+    const writeChannel = async (args2: {
+        channel: import('#client/types').IoChannel
+        store: StoreToken
+        action: WriteAction
+        items: WriteItem[]
+        options?: WriteOptions
+        context?: ObservabilityContext
+        signal?: AbortSignal
+    }): Promise<WriteResultData> => {
+        const opId = Protocol.ids.createOpId('w', { now })
+        const op: Operation = Protocol.ops.build.buildWriteOp({
+            opId,
+            write: {
+                resource: String(args2.store),
+                action: args2.action,
+                items: args2.items,
+                ...(args2.options ? { options: args2.options } : {})
+            }
+        })
+        const results = await executeOps({
+            channel: args2.channel,
+            ops: [op],
+            ...(args2.context ? { context: args2.context } : {}),
+            ...(args2.signal ? { signal: args2.signal } : {})
+        })
+        const result = requireResultByOpId(results, opId, '[Atoma] Missing write result')
+        if (!(result as any).ok) throw toOpsError(result, 'write')
+        return Protocol.ops.validate.assertWriteResultData((result as any).data) as any
+    }
+
+    const makeChannelApi = (channel: import('#client/types').IoChannel): import('#client/types').ChannelApi => {
+        return {
+            query: (args2) => queryChannel({ channel, ...args2 } as any),
+            write: (args2) => writeChannel({ channel, ...args2 } as any)
+        }
+    }
+
+    const storeApi = makeChannelApi('store')
+
+    const requireRemote = () => {
+        if (!remoteBackend) {
+            throw new Error('[Atoma] remote backend 未配置（createClient({ remote })）')
+        }
+        return remoteBackend
+    }
+
+    const remoteApi: import('#client/types').RemoteApi = {
+        ...makeChannelApi('remote'),
+        changes: {
+            pull: async (args2: {
+                cursor: Cursor
+                limit: number
+                resources?: string[]
+                context?: ObservabilityContext
+                signal?: AbortSignal
+            }): Promise<ChangeBatch> => {
+                requireRemote()
+                const opId = Protocol.ids.createOpId('c', { now })
+                const op: Operation = Protocol.ops.build.buildChangesPullOp({
+                    opId,
+                    cursor: args2.cursor as Cursor,
+                    limit: args2.limit,
+                    ...(args2.resources?.length ? { resources: args2.resources } : {})
+                })
+                const results = await executeOps({
+                    channel: 'remote',
+                    ops: [op],
+                    ...(args2.context ? { context: args2.context } : {}),
+                    ...(args2.signal ? { signal: args2.signal } : {})
+                })
+                const result = requireResultByOpId(results, opId, '[Atoma] Missing changes.pull result')
+                if (!(result as any).ok) throw toOpsError(result, 'changes.pull')
+                return (result as any).data as ChangeBatch
+            }
+        },
+        ...(remoteBackend?.sse
+            ? {
+                subscribeNotify: (args2: {
+                    resources?: string[]
+                    onMessage: (msg: import('#client/types').NotifyMessage) => void
+                    onError: (err: unknown) => void
+                    signal?: AbortSignal
+                }) => {
+                    const remote = requireRemote()
+                    const buildUrl = remote.sse!.buildUrl
+                    const connect = remote.sse!.connect
+                    const url = buildUrl({ resources: args2.resources })
+
+                    let es: EventSource
+                    if (connect) es = connect(url)
+                    else if (typeof EventSource !== 'undefined') es = new EventSource(url)
+                    else throw new Error('[Atoma] subscribeNotify: EventSource not available and no connect provided')
+
+                    const eventName = Protocol.sse.events.NOTIFY
+
+                    es.addEventListener(eventName, (event: any) => {
+                        try {
+                            const msg = Protocol.sse.parse.notifyMessage(String(event.data))
+                            args2.onMessage(msg as any)
+                        } catch (err) {
+                            args2.onError(err)
+                        }
+                    })
+                    es.onerror = (err) => {
+                        args2.onError(err)
+                    }
+
+                    if (args2.signal) {
+                        const signal = args2.signal
+                        if (signal.aborted) {
+                            try { es.close() } catch {}
+                        } else {
+                            const onAbort = () => {
+                                try { es.close() } catch {}
+                            }
+                            signal.addEventListener('abort', onAbort, { once: true })
+                        }
+                    }
+
+                    return { close: () => es.close() }
+                }
+            }
+            : {})
+    } as any
+
+    const desiredBaseVersionFromTargetVersion = (version: unknown): number | undefined => {
+        if (typeof version !== 'number' || !Number.isFinite(version) || version <= 1) return undefined
+        return Math.floor(version) - 1
+    }
+
+    const newWriteItemMeta = (): import('#protocol').WriteItemMeta => {
+        return Protocol.ops.meta.newWriteItemMeta({ now })
+    }
+
+    const ensureWriteItemsOk = (data: WriteResultData, message: string) => {
+        const results = Array.isArray((data as any)?.results) ? (data as any).results : []
+        for (const r of results) {
+            if (r && typeof r === 'object' && (r as any).ok === false) {
+                const err: any = new Error(message)
+                ;(err as any).error = (r as any).error
+                ;(err as any).current = (r as any).current
+                throw err
+            }
+        }
+    }
+
+    const commitWriteback = async (storeName: StoreToken, writeback: PersistWriteback<any>, options?: { context?: ObservabilityContext }) => {
+        await clientRuntime.internal.applyWriteback(String(storeName), writeback as any)
+
+        // Only mirror into the durable store backend when Store is configured as local.
+        if (storeBackendState.role !== 'local') return
+
+        const upserts = Array.isArray(writeback?.upserts) ? writeback.upserts : []
+        const deletes = Array.isArray(writeback?.deletes) ? writeback.deletes : []
+        const versionUpdates = Array.isArray(writeback?.versionUpdates) ? writeback.versionUpdates : []
+
+        if (upserts.length) {
+            const items: WriteItem[] = []
+            for (const u of upserts) {
+                const id = (u as any)?.id
+                if (typeof id !== 'string' || !id) continue
+                const baseVersion = desiredBaseVersionFromTargetVersion((u as any)?.version)
+                items.push({
+                    entityId: id,
+                    ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+                    value: u,
+                    meta: newWriteItemMeta()
+                } as any)
+            }
+            if (items.length) {
+                const data = await storeApi.write({
+                    store: storeName,
+                    action: 'upsert',
+                    items,
+                    options: { merge: false, upsert: { mode: 'loose' } },
+                    ...(options?.context ? { context: options.context } : {})
+                } as any)
+                ensureWriteItemsOk(data, '[Atoma] writeback.commit: mirror upsert failed')
+            }
+        }
+
+        if (deletes.length) {
+            const { items: currentItems } = await storeApi.query<any>({
+                store: storeName,
+                params: { where: { id: { in: deletes } } } as any,
+                ...(options?.context ? { context: options.context } : {})
+            })
+            const currentById = new Map<string, any>()
+            for (const row of currentItems) {
+                const id = (row as any)?.id
+                if (typeof id === 'string' && id) currentById.set(id, row)
+            }
+
+            const items: WriteItem[] = []
+            for (const id of deletes) {
+                const row = currentById.get(String(id))
+                if (!row || typeof row !== 'object') continue
+                const baseVersion = (row as any).version
+                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
+                    throw new Error(`[Atoma] writeback.commit: mirror delete requires baseVersion (missing version for id=${String(id)})`)
+                }
+                items.push({
+                    entityId: String(id),
+                    baseVersion,
+                    meta: newWriteItemMeta()
+                } as any)
+            }
+
+            if (items.length) {
+                const data = await storeApi.write({
+                    store: storeName,
+                    action: 'delete',
+                    items,
+                    ...(options?.context ? { context: options.context } : {})
+                } as any)
+                ensureWriteItemsOk(data, '[Atoma] writeback.commit: mirror delete failed')
+            }
+        }
+
+        if (versionUpdates.length) {
+            const versionByKey = new Map<string, number>()
+            for (const v of versionUpdates) {
+                const key = String((v as any)?.key ?? '')
+                const version = (v as any)?.version
+                if (!key) continue
+                if (!(typeof version === 'number' && Number.isFinite(version) && version > 0)) continue
+                versionByKey.set(key, Math.floor(version))
+            }
+
+            const upsertedKeys = new Set<string>()
+            for (const u of upserts) {
+                const id = (u as any)?.id
+                if (typeof id === 'string' && id) upsertedKeys.add(id)
+            }
+
+            const toUpdate = Array.from(versionByKey.keys()).filter(k => !upsertedKeys.has(k))
+            if (toUpdate.length) {
+                const { items: currentItems } = await storeApi.query<any>({
+                    store: storeName,
+                    params: { where: { id: { in: toUpdate } } } as any,
+                    ...(options?.context ? { context: options.context } : {})
+                })
+
+                const items: WriteItem[] = []
+                for (const row of currentItems) {
+                    const id = (row as any)?.id
+                    if (typeof id !== 'string' || !id) continue
+                    const nextVersion = versionByKey.get(id)
+                    if (nextVersion === undefined) continue
+
+                    const baseVersion = desiredBaseVersionFromTargetVersion(nextVersion)
+                    items.push({
+                        entityId: id,
+                        ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+                        value: { ...(row as any), version: nextVersion },
+                        meta: newWriteItemMeta()
+                    } as any)
+                }
+
+                if (items.length) {
+                    const data = await storeApi.write({
+                        store: storeName,
+                        action: 'upsert',
+                        items,
+                        options: { merge: true, upsert: { mode: 'loose' } },
+                        ...(options?.context ? { context: options.context } : {})
+                    } as any)
+                    ensureWriteItemsOk(data, '[Atoma] writeback.commit: mirror versionUpdate failed')
+                }
+            }
+        }
+    }
+
     const ctx: import('#client/types').ClientPluginContext = {
         client,
         meta: {
@@ -155,7 +517,6 @@ export function buildAtomaClient<
         },
         onDispose,
         io: {
-            executeOps: (req) => ioExecute(req),
             use: (mw) => {
                 ioMiddlewares.push(mw)
                 ioExecute = composeIo()
@@ -165,57 +526,16 @@ export function buildAtomaClient<
                     ioExecute = composeIo()
                 }
             },
-            ...(remoteBackend?.sse
-                ? {
-                    subscribe: (req) => {
-                        if (req.channel !== 'remote') {
-                            throw new Error('[Atoma] io.subscribe: only channel=\"remote\" is supported')
-                        }
-                        const buildUrl = remoteBackend.sse!.buildUrl
-                        const connect = remoteBackend.sse!.connect
-                        const url = buildUrl({ resources: req.resources })
-
-                        let es: EventSource
-                        if (connect) es = connect(url)
-                        else if (typeof EventSource !== 'undefined') es = new EventSource(url)
-                        else throw new Error('[Atoma] io.subscribe: EventSource not available and no connect provided')
-
-                        const eventName = Protocol.sse.events.NOTIFY
-
-                        es.addEventListener(eventName, (event: any) => {
-                            try {
-                                req.onMessage(String(event.data))
-                            } catch (err) {
-                                req.onError(err)
-                            }
-                        })
-                        es.onerror = (err) => {
-                            req.onError(err)
-                        }
-
-                        if (req.signal) {
-                            const signal = req.signal
-                            if (signal.aborted) {
-                                try { es.close() } catch {}
-                            } else {
-                                const onAbort = () => {
-                                    try { es.close() } catch {}
-                                }
-                                signal.addEventListener('abort', onAbort, { once: true })
-                            }
-                        }
-
-                        return { close: () => es.close() }
-                    }
-                }
-                : {})
         },
+        store: storeApi,
+        remote: remoteApi,
+        observability: clientRuntime.observability,
         persistence: {
             register: clientRuntime.persistenceRouter.register
         },
         acks: clientRuntime.mutation.acks,
         writeback: {
-            apply: (storeName, writeback) => clientRuntime.internal.applyWriteback(String(storeName), writeback as any)
+            commit: (storeName, writeback, options) => commitWriteback(storeName, writeback as any, options as any)
         },
         stores: {
             view: (store, args2) => {
@@ -233,10 +553,6 @@ export function buildAtomaClient<
                     includeServerAssignedCreate: args2.includeServerAssignedCreate !== false
                 }) as any
             }
-        },
-        runtime: {
-            opsClient: clientRuntime.opsClient,
-            observability: clientRuntime.observability
         }
     }
 

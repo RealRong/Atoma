@@ -1,12 +1,12 @@
 import type { ClientPlugin, ClientPluginContext, PluginCapableClient } from 'atoma/client'
 import type { SyncBackoffConfig, SyncClient, SyncEvent, SyncMode, SyncPhase, SyncRetryConfig, SyncRuntimeConfig, SyncSubscribe, SyncTransport } from '#sync/types'
 import { SyncEngine } from '#sync/engine/SyncEngine'
-import { createStores } from '#sync/store'
-import { WritebackApplier } from './applier/WritebackApplier'
-import { SyncDevtools } from './devtools/SyncDevtools'
-import { registerSyncPersistHandlers } from './persistence/registerPersistHandlers'
-import { RemoteTransport } from './transport/RemoteTransport'
-import { getOrCreateGlobalReplicaId } from './internal/replicaId'
+import { createStores } from '#sync/storage'
+import { WritebackApplier } from '#sync/applier/WritebackApplier'
+import { SyncDevtools } from '#sync/devtools/SyncDevtools'
+import { SyncPersistHandlers } from '#sync/persistence/SyncPersistHandlers'
+import { RemoteTransport } from '#sync/transport/RemoteTransport'
+import { getOrCreateGlobalReplicaId } from '#sync/internal/replicaId'
 
 export type WithSyncOptions = Readonly<{
     mode?: SyncMode
@@ -69,7 +69,7 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
         now
     })
 
-    const transport: SyncTransport = new RemoteTransport(ctx, { now })
+    const transport: SyncTransport = new RemoteTransport(ctx)
     const remoteSubscribe: SyncSubscribe | undefined = transport.subscribe
 
     const devtools = new SyncDevtools({ now })
@@ -85,8 +85,7 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
     }
 
     const applier = new WritebackApplier({
-        ctx,
-        now
+        ctx
     })
 
     const engineConfigForMode = (m: SyncMode): SyncRuntimeConfig => {
@@ -165,7 +164,7 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
     }
 
     // Register persist handlers for the outbox store views.
-    const unregister: Array<() => void> = registerSyncPersistHandlers({ ctx, outbox: stores.outbox })
+    const persistHandlers = new SyncPersistHandlers({ ctx, outbox: stores.outbox })
 
     const sync = {
         start: (m?: SyncMode) => {
@@ -206,13 +205,7 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
         }
         engine = null
 
-        for (let i = unregister.length - 1; i >= 0; i--) {
-            try {
-                unregister[i]!()
-            } catch {
-                // ignore
-            }
-        }
+        persistHandlers.dispose()
     }
 
     ctx.onDispose(dispose)
