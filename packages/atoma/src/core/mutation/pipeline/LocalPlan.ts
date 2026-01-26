@@ -19,12 +19,11 @@ export function buildLocalMutationPlan<T extends Entity>({ operations, currentSt
         operations
     })
 
-    const { writeEvents, hasCreate, hasPatches } = validateAndCollectWriteEvents(operations)
+    const { writeEvents, hasPatches } = validateAndCollectWriteEvents(operations)
 
     const optimistic = deriveOptimisticState({
         baseState: base.baseState,
         writeEvents,
-        hasCreate,
         hasPatches
     })
 
@@ -53,7 +52,6 @@ export function buildLocalMutationPlan<T extends Entity>({ operations, currentSt
         optimisticState: optimistic.optimisticState,
         writeEvents,
         writeIntents,
-        hasCreate,
         hasPatches,
         changedIds,
         patches: optimistic.patches,
@@ -105,18 +103,13 @@ function applyHydrateToBaseState<T extends Entity>(args: {
 
 function validateAndCollectWriteEvents<T extends Entity>(operations: Array<StoreDispatchEvent<T>>) {
     const writeEvents: Array<StoreDispatchEvent<T>> = []
-    let batchKind: 'create' | 'patches' | 'writes' | undefined
+    let batchKind: 'patches' | 'writes' | undefined
 
     for (const e of operations) {
         if (e.type === 'hydrate' || e.type === 'hydrateMany') continue
         writeEvents.push(e)
 
-        const kind: 'create' | 'patches' | 'writes' =
-            e.type === 'create'
-                ? 'create'
-                : e.type === 'patches'
-                    ? 'patches'
-                    : 'writes'
+        const kind: 'patches' | 'writes' = (e.type === 'patches') ? 'patches' : 'writes'
 
         if (!batchKind) {
             batchKind = kind
@@ -125,16 +118,11 @@ function validateAndCollectWriteEvents<T extends Entity>(operations: Array<Store
 
         if (batchKind === kind) continue
 
-        // create/patches must be exclusive in a segment; writes cannot mix with them
-        if (batchKind === 'create' || kind === 'create') {
-            throw new Error('[Atoma] create operations cannot be batched with other operations')
-        }
         throw new Error('[Atoma] patches operations cannot be batched with other operations')
     }
 
     return {
         writeEvents,
-        hasCreate: batchKind === 'create',
         hasPatches: batchKind === 'patches'
     }
 }
@@ -173,16 +161,15 @@ function collectChangedIdsFromPatches(patches: Patch[], changedIds: Set<EntityId
 function deriveOptimisticState<T extends Entity>(args: {
     baseState: Map<EntityId, T>
     writeEvents: Array<StoreDispatchEvent<T>>
-    hasCreate: boolean
     hasPatches: boolean
 }): { optimisticState: Map<EntityId, T>; patches: Patch[]; inversePatches: Patch[]; changedIds: Set<EntityId> } {
-    const { baseState, writeEvents, hasCreate, hasPatches } = args
+    const { baseState, writeEvents, hasPatches } = args
 
     const changedIds = new Set<EntityId>()
     let patches: Patch[] = []
     let inversePatches: Patch[] = []
 
-    if (writeEvents.length === 0 || hasCreate) {
+    if (writeEvents.length === 0) {
         return {
             optimisticState: baseState,
             patches,
@@ -262,7 +249,6 @@ function deriveOptimisticState<T extends Entity>(args: {
                 setDraft(event.data.id, newObj)
                 break
             }
-            case 'create':
             case 'patches':
             case 'hydrate':
             case 'hydrateMany':

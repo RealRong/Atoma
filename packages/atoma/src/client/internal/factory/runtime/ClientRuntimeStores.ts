@@ -1,22 +1,50 @@
-import type { CoreStore, IStore, StoreDataProcessor, StoreToken } from '#core'
-import { Core } from '#core'
+import { atom } from 'jotai/vanilla'
+import type { CoreRuntime, Entity, IStore, StoreApi, StoreDataProcessor, StoreToken } from '#core'
 import type { EntityId } from '#protocol'
 import type { AtomaSchema } from '#client/types'
-import { storeHandleManager } from '#core/store/internals/storeHandleManager'
-import type { ClientRuntimeInternal } from '#client/internal/types'
 import type { ClientRuntimeStoresApi } from '#client/types/runtime'
 import { resolveStoreCreateOptions } from '#client/internal/factory/runtime/storeConfig'
+import { createStoreHandle } from '#core/store/internals/storeHandleManager'
+import type { StoreHandle } from '#core/store/internals/handleTypes'
+import {
+    createAddMany,
+    createAddOne,
+    createBatchGet,
+    createDeleteMany,
+    createDeleteOne,
+    createFetchAll,
+    createFindMany,
+    createGetAll,
+    createGetMany,
+    createUpdateMany,
+    createUpdateOne,
+    createUpsertMany,
+    createUpsertOne
+} from '#core/store/ops'
 
-type StoreListener = (store: CoreStore<any, any>) => void
-const toStoreKey = (name: unknown) => String(name)
+type StoreListener = (store: StoreApi<any, any> & { name: string }) => void
+
+const toStoreName = (name: unknown) => String(name)
+const STORE_INTERNAL = Symbol.for('atoma.storeInternal')
+
+type StoreEngine<T extends Entity = any> = Readonly<{
+    handle: StoreHandle<T>
+    api: StoreEngineApi<T>
+}>
+
+type StoreEngineApi<T extends Entity = any> = IStore<T, any> & Readonly<{
+    fetchAll: () => Promise<T[]>
+    findMany: (options?: any) => Promise<any>
+}>
 
 export class ClientRuntimeStores implements ClientRuntimeStoresApi {
-    private storeCache = new Map<string, CoreStore<any, any>>()
-    private createdStores: CoreStore<any, any>[] = []
-    private storeListeners = new Set<StoreListener>()
+    private readonly engineByName = new Map<string, StoreEngine<any>>()
+    private readonly facadeByName = new Map<string, StoreApi<any, any> & { name: string }>()
+    private readonly created: Array<StoreApi<any, any> & { name: string }> = []
+    private readonly listeners = new Set<StoreListener>()
 
     constructor(
-        private readonly runtime: ClientRuntimeInternal,
+        private readonly runtime: CoreRuntime,
         private readonly args: {
             schema: AtomaSchema<any>
             dataProcessor?: StoreDataProcessor<any>
@@ -26,9 +54,9 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
         }
     ) {}
 
-    private notifyStoreCreated = (store: CoreStore<any, any>) => {
-        this.createdStores.push(store)
-        for (const listener of this.storeListeners) {
+    private notifyCreated = (store: StoreApi<any, any> & { name: string }) => {
+        this.created.push(store)
+        for (const listener of this.listeners) {
             try {
                 listener(store)
             } catch {
@@ -37,31 +65,148 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
         }
     }
 
-    Store = (name: string) => {
-        const key = toStoreKey(name)
-        const existing = this.storeCache.get(key)
+    private getFacade = (storeName: string): StoreApi<any, any> & { name: string } => {
+        const key = toStoreName(storeName)
+        const existing = this.facadeByName.get(key)
         if (existing) return existing
 
-        const created = Core.store.createStore<any, any>(resolveStoreCreateOptions({
-            storeName: key,
-            schema: this.args.schema,
-            clientRuntime: this.runtime,
-            defaults: this.args.defaults,
-            dataProcessor: this.args.dataProcessor
-        }))
+        const facade: any = {
+            name: key,
+            addOne: (item: any, options?: any) => this.ensureEngine(key).api.addOne(item, options),
+            addMany: (items: any, options?: any) => this.ensureEngine(key).api.addMany(items, options),
+            updateOne: (id: any, recipe: any, options?: any) => this.ensureEngine(key).api.updateOne(id, recipe, options),
+            updateMany: (items: any, options?: any) => this.ensureEngine(key).api.updateMany(items, options),
+            deleteOne: (id: any, options?: any) => this.ensureEngine(key).api.deleteOne(id, options),
+            deleteMany: (ids: any, options?: any) => this.ensureEngine(key).api.deleteMany(ids, options),
+            upsertOne: (item: any, options?: any) => this.ensureEngine(key).api.upsertOne(item, options),
+            upsertMany: (items: any, options?: any) => this.ensureEngine(key).api.upsertMany(items, options),
+            getOne: (id: any, options?: any) => this.ensureEngine(key).api.getOne(id, options),
+            fetchOne: (id: any, options?: any) => this.ensureEngine(key).api.fetchOne(id, options),
+            getAll: (filter?: any, cacheFilter?: any, options?: any) => this.ensureEngine(key).api.getAll(filter, cacheFilter, options),
+            fetchAll: () => this.ensureEngine(key).api.fetchAll(),
+            getMany: (ids: any, cache?: any, options?: any) => this.ensureEngine(key).api.getMany(ids, cache, options),
+            findMany: (options?: any) => this.ensureEngine(key).api.findMany(options)
+        }
 
-        this.storeCache.set(key, created)
-        this.notifyStoreCreated(created)
-        return created
+        // Single internal channel for hooks/devtools (not part of public API).
+        // Keeps the user-facing store facade "stateless" while still enabling subscription/introspection internally.
+        facade[STORE_INTERNAL] = {
+            storeName: key,
+            resolveStore: (name: StoreToken) => this.resolveStore(name),
+            getHandle: () => {
+                this.ensureEngine(key)
+                const handle = this.runtime.handles.get(this.runtime.toStoreKey(key))
+                if (!handle) throw new Error(`[Atoma] storeInternal.getHandle: 未找到 store handle（storeName=${key}）`)
+                return handle
+            },
+            writeback: async (handle: StoreHandle<any>, item: any) => {
+                return await this.runtime.dataProcessor.writeback(handle, item)
+            }
+        }
+
+        this.facadeByName.set(key, facade)
+        return facade
     }
 
-    resolveStore = (name: StoreToken): IStore<any> | undefined => this.Store(toStoreKey(name))
+    private ensureEngine = (storeName: string): StoreEngine<any> => {
+        const name = toStoreName(storeName)
+        const existing = this.engineByName.get(name)
+        if (existing) return existing
 
-    listStores = () => this.storeCache.values()
+        const base = resolveStoreCreateOptions({
+            storeName: name,
+            schema: this.args.schema,
+            clientRuntime: this.runtime as any,
+            defaults: this.args.defaults,
+            dataProcessor: this.args.dataProcessor
+        }) as any
+
+        this.runtime.observability.registerStore?.({
+            storeName: name,
+            debug: base.debug,
+            debugSink: base.debugSink
+        })
+
+        const objectMapAtom = atom(new Map<EntityId, any>())
+        const handle = createStoreHandle<any>({
+            atom: objectMapAtom,
+            jotaiStore: this.runtime.jotaiStore,
+            config: {
+                idGenerator: base.idGenerator,
+                dataProcessor: base.dataProcessor,
+                hooks: base.hooks,
+                indexes: base.indexes,
+                storeName: name,
+                ...(base.write ? { write: base.write } : {})
+            }
+        })
+
+        // Relations are lazy; cache compiled relation map per store handle.
+        if (typeof base.relations === 'function') {
+            let cache: any | undefined
+            handle.relations = () => {
+                if (!cache) cache = base.relations()
+                return cache
+            }
+        }
+
+        // Stage-3 stateless store: build ops against handle, but never expose a "stateful store object" to users.
+        const addOne = createAddOne<any>(this.runtime, handle)
+        const addMany = createAddMany<any>(this.runtime, handle)
+        const updateOne = createUpdateOne<any>(this.runtime, handle)
+        const updateMany = createUpdateMany<any>(this.runtime, handle)
+        const deleteOne = createDeleteOne<any>(this.runtime, handle)
+        const deleteMany = createDeleteMany<any>(this.runtime, handle)
+        const upsertOne = createUpsertOne<any>(this.runtime, handle)
+        const upsertMany = createUpsertMany<any>(this.runtime, handle)
+
+        const getAll = createGetAll<any>(this.runtime, handle)
+        const getMany = createGetMany<any>(this.runtime, handle)
+        const { getOne, fetchOne } = createBatchGet(this.runtime as any, handle)
+        const fetchAll = createFetchAll<any>(this.runtime, handle)
+        const findMany = createFindMany<any>(this.runtime, handle)
+
+        const api: StoreEngineApi<any> = {
+            addOne,
+            addMany,
+            updateOne,
+            updateMany,
+            deleteOne,
+            deleteMany,
+            upsertOne,
+            upsertMany,
+            getOne,
+            fetchOne,
+            getAll,
+            fetchAll,
+            getMany,
+            findMany
+        }
+
+        // Register handle for storeKey-based resolution (new path).
+        this.runtime.handles.set(this.runtime.toStoreKey(name), handle)
+
+        const engine: StoreEngine<any> = { handle, api }
+        this.engineByName.set(name, engine)
+
+        // Notify only when the handle exists (so devtools/inspect can immediately read).
+        this.notifyCreated(this.getFacade(name))
+
+        return engine
+    }
+
+    resolveStore = (name: StoreToken): IStore<any> => {
+        const key = toStoreName(name)
+        // `resolveStore` is allowed to materialize the underlying handle/engine (used by core helpers).
+        this.ensureEngine(key)
+        return this.getFacade(key)
+    }
+
+    listStores = () => this.facadeByName.values()
 
     onStoreCreated = (listener: StoreListener, options?: { replay?: boolean }) => {
         if (options?.replay) {
-            for (const store of this.createdStores) {
+            for (const store of this.created) {
                 try {
                     listener(store)
                 } catch {
@@ -69,9 +214,9 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
                 }
             }
         }
-        this.storeListeners.add(listener)
+        this.listeners.add(listener)
         return () => {
-            this.storeListeners.delete(listener)
+            this.listeners.delete(listener)
         }
     }
 }

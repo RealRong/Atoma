@@ -1,6 +1,6 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { storeHandleManager } from '../internals/storeHandleManager'
+import { resolveObservabilityContext } from '../internals/storeHandleManager'
 import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
@@ -29,7 +29,7 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
         }
 
         if (missingUnique.length) {
-            const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
+            const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
             const { data } = await clientRuntime.io.query(handle, { where: { id: { in: missingUnique } } } as any, observabilityContext)
 
             const before = jotaiStore.get(atom) as Map<EntityId, T>

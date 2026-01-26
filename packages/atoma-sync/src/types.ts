@@ -130,7 +130,7 @@ export type SyncPushOutcome =
 export interface SyncApplier {
     applyPullChanges: (changes: Change[]) => Promise<void> | void
     applyWriteAck: (ack: SyncWriteAck) => Promise<void> | void
-    applyWriteReject: (reject: SyncWriteReject, conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual') => Promise<void> | void
+    applyWriteReject: (reject: SyncWriteReject) => Promise<void> | void
     /**
      * Optional batch apply for push outcomes.
      * When implemented, it SHOULD be atomic (e.g. a single transaction) to avoid partial apply.
@@ -139,7 +139,6 @@ export interface SyncApplier {
     applyWriteResults?: (args: {
         acks: SyncWriteAck[]
         rejects: SyncWriteReject[]
-        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
         signal?: AbortSignal
     }) => Promise<void> | void
 }
@@ -222,7 +221,6 @@ export type SyncRuntimeConfig = {
         enabled: boolean
         maxItems: number
         returning: boolean
-        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
         retry: SyncRetryConfig
         backoff: SyncBackoffConfig
     }

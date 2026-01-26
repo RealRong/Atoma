@@ -1,13 +1,12 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
 import { toErrorWithFallback as toError } from '#shared'
-import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpsertMany<T extends Entity>(
     clientRuntime: CoreRuntime,
-    handle: StoreHandle<T>,
-    writeConfig: StoreWriteConfig
+    handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
 
@@ -16,6 +15,7 @@ export function createUpsertMany<T extends Entity>(
         options?: StoreOperationOptions & UpsertWriteOptions
     ): Promise<WriteManyResult<T>> => {
         const opContext = storeWriteEngine.ensureActionId(options?.opContext)
+        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
         const confirmation = options?.confirmation ?? 'optimistic'
         const results: WriteManyResult<T> = new Array(items.length)
 
@@ -108,7 +108,7 @@ export function createUpsertMany<T extends Entity>(
                     handle,
                     opContext,
                     ticket,
-                    writeStrategy: writeConfig.writeStrategy,
+                    writeStrategy,
                     onSuccess: async (o) => {
                         await storeWriteEngine.runAfterSave(hooks, validObj, action)
                         resolve(o)

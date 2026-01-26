@@ -23,7 +23,6 @@ export class PushLane {
         applier: SyncApplier
         maxPushItems: number
         returning: boolean
-        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
         retry?: { maxAttempts?: number }
         backoff?: { baseDelayMs?: number; maxDelayMs?: number; jitterRatio?: number }
         now: () => number
@@ -301,7 +300,6 @@ export class PushLane {
                 await Promise.resolve((this.deps.applier as any).applyWriteResults({
                     acks,
                     rejects,
-                    conflictStrategy: this.deps.conflictStrategy,
                     signal
                 }))
             } else {
@@ -315,7 +313,7 @@ export class PushLane {
                 }
                 for (let i = 0; i < rejects.length; i++) {
                     if (signal.aborted) throw new AbortError('[Sync] push stopped')
-                    await Promise.resolve(this.deps.applier.applyWriteReject(rejects[i]!, this.deps.conflictStrategy))
+                    await Promise.resolve(this.deps.applier.applyWriteReject(rejects[i]!))
                     appliedRejected.push(rejectedKeys[i]!)
                 }
 

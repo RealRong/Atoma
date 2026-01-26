@@ -9,7 +9,7 @@
 
 `AtomaClient` 的对外形态非常克制，只有 4 个入口：
 
-- `Store(name)`：返回某个资源（resource/store）对应的 `AtomaStore`
+- `stores`：`client.stores.Todo` / `client.stores('Todo')` 返回某个资源对应的 store facade（无状态 CRUD API）
 - `Sync`：同步引擎控制面（start/stop/pull/flush/status/dispose）
 - `History`：撤销/重做控制面（undo/redo/canUndo/canRedo/clear）
 - `Devtools`：客户端检查器（snapshot/subscribe + stores/indexes/sync/history 子面板）
@@ -18,7 +18,7 @@
 
 ---
 
-## 2. Store：直接读写（`client.Store(name)`）
+## 2. Store：直接读写（`client.stores.<name>`）
 
 ### 2.1 CRUD/读写语义（来自 `IStore/CoreStore`）
 
@@ -28,7 +28,6 @@
 - `updateOne/updateMany`（`updateOne` 走 immer recipe）
 - `deleteOne/deleteMany`
 - `upsertOne/upsertMany`（支持 `upsert.mode` + `merge`）
-- `createServerAssignedOne/createServerAssignedMany`（“服务端分配 id”的强语义写入，见下文限制）
 
 **读取：**
 
@@ -59,36 +58,20 @@
 - `timeoutMs/timeoutBehavior`：strict 等待超时策略
 - `opContext`：携带 `scope/origin/actionId/label`；用于 history 聚合与可观测性
 
-### 2.4 server-assigned create 的定位与限制（功能存在但“边界强”）
+## 3. writeStrategy：队列写入（`queue` / `local-first`）
 
-`createServerAssigned*` 是“在线 + strict + direct”的强语义能力：
+不再提供“派生 store 入口”；队列语义通过每次写入的 `options.writeStrategy` 选择：
 
-- 只有在服务端返回最终实体（包含 id/version 等）后才写入本地并 resolve
-- 在 outbox/离线队列语义下明确禁止（避免幂等/回放一致性问题）
+```ts
+client.stores.Todo.addOne({ ... }, { writeStrategy: 'queue' })
+client.stores.Todo.addOne({ ... }, { writeStrategy: 'local-first' })
+```
 
-结论：**对 0.1 来说该功能“可用且边界清晰”，但需要用户理解其不属于离线队列写路径。**
+关键语义（保持最少概念）：
+- `queue`：写入转译为“意图”进入 durable outbox 队列（由 sync 引擎后续 push）；写入阶段默认禁止“缓存缺失时隐式补读”（避免 enqueue 阶段触网）
+- `local-first`：先写本地 durable 再入队；允许本地补读
 
----
-
-## 3. Store.Outbox：队列写入（`client.Store(name).Outbox`）
-
-`Outbox` 是基于同一个 storeHandle 的“写入视图”，核心变化是：把写入的 persist 路径改为 `outbox`。
-
-### 3.1 Outbox 写入的关键语义
-
-- Outbox 写入会被转译为“意图”进入 outbox 队列（由 sync 引擎后续 push）
-- 同一次 mutation 段内不允许混用 `direct` 与 `outbox`
-- **禁止** `createServerAssigned*`
-- update/delete 等需要 `baseVersion`（用于乐观并发控制/重放一致性）；版本缺失会直接抛错
-
-### 3.2 `queue` vs `local-first`
-
-通过 `withSync(createClient(...), { outbox: { mode } })` 派生（破坏式，一步到位）：
-
-- `queue`：只入队；写入阶段禁止“缓存缺失时隐式补读”（避免 enqueue 阶段触网）
-- `local-first`：先写本地 durable（IndexedDB/localServer/custom local）再入队；允许本地补读
-
-结论：**Outbox 能力对“离线优先”的核心闭环是齐的：本地写 + 队列 + 稍后 push。**
+结论：**offline-first 的核心闭环是齐的：本地写 + 队列 + 稍后 push。**
 
 ---
 
@@ -107,7 +90,6 @@
 
 默认模式会根据配置推导：
 
-- 若启用队列写（`Store(name).Outbox`）倾向 `full`
 - 若启用 subscribe 但后端不具备 subscribe 能力，会降级到 `pull-only`
 
 ### 4.2 引擎构成（功能点）
@@ -213,7 +195,7 @@ SyncEngine 由三条 lane 组成：
 理由：
 
 - Store 能力闭环完整（CRUD + cache + query + indexes + relations）
-- Offline-first 核心链路完整（Outbox 入队 + durable outbox/cursor + flush/pull + subscribe 通知）
+- Offline-first 核心链路完整（writes 入队 + durable outbox/cursor + push/pull + subscribe notify）
 - History/Devtools 属于“超出 0.1 预期”的加分项
 - React hooks 足以支撑 demo 级到中等规模应用的主要数据访问方式
 

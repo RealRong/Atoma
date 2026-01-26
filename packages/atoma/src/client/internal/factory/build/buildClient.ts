@@ -1,17 +1,14 @@
-import type { CoreStore, Entity, PersistWriteback, StoreDataProcessor, StoreToken } from '#core'
-import { createStoreView } from '#core/store/createStoreView'
-import { storeHandleManager } from '#core/store/internals/storeHandleManager'
+import type { Entity, StoreDataProcessor, StoreToken } from '#core'
 import { HistoryController } from '#client/internal/controllers/HistoryController'
 import { ClientRuntime } from '#client/internal/factory/runtime/createClientRuntime'
 import { Protocol } from '#protocol'
+import type { Backend } from '#backend'
+import { HttpOpsClient } from '#backend/ops/http/HttpOpsClient'
 import type {
     AtomaClient,
     AtomaSchema,
-    BackendEndpointConfig,
-    StoreBackendState,
-    StoreBatchArgs,
+    ClientPlugin,
 } from '#client/types'
-import { resolveBackend } from '#client/internal/factory/backend/resolveBackend'
 import { Devtools } from '#devtools'
 import type { ObservabilityContext } from '#observability'
 
@@ -21,28 +18,16 @@ export function buildAtomaClient<
 >(args: {
     schema: Schema
     dataProcessor?: StoreDataProcessor<any>
-    storeBackendState: StoreBackendState
-    remoteBackend?: BackendEndpointConfig
-    storeBatch?: StoreBatchArgs
+    backend: Backend
+    plugins?: ReadonlyArray<ClientPlugin<any>>
 }): AtomaClient<Entities, Schema> {
-    const storeBackendState = args.storeBackendState
-    // NOTE: resolveBackend cannot infer local/remote roles; we wire it based on storeBackendState.role.
-    const resolvedStore = (storeBackendState.role === 'local')
-        ? resolveBackend({
-            local: storeBackendState.backend,
-            ...(args.remoteBackend ? { remote: args.remoteBackend } : {})
-        } as any)
-        : resolveBackend(storeBackendState.backend as any)
+    const backend = args.backend
+    const storeBackend = backend.store
+    const remoteBackend = backend.remote
+    const clientKey = String(backend.key)
 
-    const storeBackend = resolvedStore.store
-    // When Store backend is remote, still allow an explicit `remote` channel override.
-    const remoteBackend = (storeBackendState.role === 'remote' && args.remoteBackend)
-        ? (() => {
-            const resolvedRemote = resolveBackend(args.remoteBackend as any)
-            return resolvedRemote.remote ?? resolvedRemote.store
-        })()
-        : resolvedStore.remote
-    const clientKey = String(remoteBackend?.key ?? storeBackend.key)
+    const storePersistence = backend.capabilities?.storePersistence ?? 'remote'
+    const storeRole: 'local' | 'remote' = (storePersistence === 'remote') ? 'remote' : 'local'
 
     // Build an I/O pipeline (middleware chain) shared by Store and extension packages.
     const baseExecuteOps = async (req: import('#client/types').IoRequest): Promise<import('#client/types').IoResponse> => {
@@ -55,7 +40,7 @@ export function buildAtomaClient<
             }) as any
         }
         if (!remoteBackend) {
-            throw new Error('[Atoma] io: remote backend 未配置（createClient({ remote })）')
+            throw new Error('[Atoma] io: remote backend 未配置（createClient({ backend })）')
         }
         return await remoteBackend.opsClient.executeOps({
             ops: req.ops as any,
@@ -80,6 +65,7 @@ export function buildAtomaClient<
     const clientRuntime = new ClientRuntime({
         schema: args.schema,
         dataProcessor: args.dataProcessor,
+        mirrorWritebackToStore: storePersistence === 'durable',
         // Important: all store ops go through the I/O pipeline (`channel: 'store'`).
         opsClient: {
             executeOps: (input: any) => ioExecute({
@@ -94,41 +80,46 @@ export function buildAtomaClient<
 
     const historyController = new HistoryController({ runtime: clientRuntime })
 
-    const Store = (<Name extends keyof Entities & string>(
-        name: Name,
-        options?: { writeStrategy?: import('#core').WriteStrategy }
-    ) => {
-        const store: any = clientRuntime.stores.Store(name) as any
-        const writeStrategy = options?.writeStrategy
-        if (!writeStrategy) {
-            return store as unknown as CoreStore<Entities[Name], any>
+    const resolveStore = (<Name extends keyof Entities & string>(name: Name) => {
+        return clientRuntime.stores.resolveStore(String(name)) as any
+    })
+
+    const stores = new Proxy(resolveStore as any, {
+        get: (target, prop, receiver) => {
+            // Prevent accidental thenable behavior (e.g. `await client.stores`).
+            if (prop === 'then') return undefined
+            if (prop === Symbol.toStringTag) return 'AtomaStores'
+
+            // Preserve built-in function props (name/length/prototype/call/apply/bind/etc).
+            if (typeof prop !== 'string' || prop in target) {
+                return Reflect.get(target, prop, receiver)
+            }
+
+            return resolveStore(prop as any)
+        },
+        apply: (_target, _thisArg, argArray) => {
+            return resolveStore(argArray[0] as any)
         }
-
-        const handle = storeHandleManager.requireStoreHandle(store as any, `client.Store:${String(name)}`)
-        const allowImplicitFetchForWrite = (writeStrategy === 'queue') ? false : true
-
-        return createStoreView(clientRuntime as any, handle as any, {
-            writeConfig: {
-                writeStrategy,
-                allowImplicitFetchForWrite
-            },
-            includeServerAssignedCreate: writeStrategy === 'direct'
-        }) as unknown as CoreStore<Entities[Name], any>
-    }) as AtomaClient<Entities, Schema>['Store']
+    }) as unknown as AtomaClient<Entities, Schema>['stores']
 
     const client: any = {
-        Store,
+        stores,
         History: historyController.history
     }
 
     const kind = (() => {
-        const b: any = storeBackendState.backend
-        if (typeof b === 'string') return 'http' as const
-        if (b && typeof b === 'object' && !Array.isArray(b)) {
-            if ('indexeddb' in b) return 'indexeddb' as const
-            if ('memory' in b) return 'memory' as const
-            if ('opsClient' in b) return 'custom' as const
-            if ('http' in b) return (storeBackendState.role === 'local' ? 'localServer' : 'http') as 'localServer' | 'http'
+        const opsClient: any = storeBackend.opsClient
+        const ctorName = (opsClient && typeof opsClient === 'object' && (opsClient as any).constructor && typeof (opsClient as any).constructor.name === 'string')
+            ? String((opsClient as any).constructor.name)
+            : ''
+
+        // Avoid importing non-HTTP backends into the core client package.
+        // Backend packages can still expose meaningful class names for devtools purposes.
+        if (ctorName === 'IndexedDBOpsClient') return 'indexeddb' as const
+        if (ctorName === 'MemoryOpsClient') return 'memory' as const
+
+        if (opsClient instanceof HttpOpsClient || ctorName === 'HttpOpsClient') {
+            return (storePersistence === 'durable' ? 'localServer' : 'http') as 'localServer' | 'http'
         }
         return 'custom' as const
     })()
@@ -274,7 +265,7 @@ export function buildAtomaClient<
 
     const requireRemote = () => {
         if (!remoteBackend) {
-            throw new Error('[Atoma] remote backend 未配置（createClient({ remote })）')
+            throw new Error('[Atoma] remote backend 未配置（createClient({ backend })）')
         }
         return remoteBackend
     }
@@ -308,7 +299,7 @@ export function buildAtomaClient<
                 return (result as any).data as ChangeBatch
             }
         },
-        ...(remoteBackend?.sse
+        ...(remoteBackend?.notify
             ? {
                 subscribeNotify: (args2: {
                     resources?: string[]
@@ -317,201 +308,18 @@ export function buildAtomaClient<
                     signal?: AbortSignal
                 }) => {
                     const remote = requireRemote()
-                    const buildUrl = remote.sse!.buildUrl
-                    const connect = remote.sse!.connect
-                    const url = buildUrl({ resources: args2.resources })
-
-                    let es: EventSource
-                    if (connect) es = connect(url)
-                    else if (typeof EventSource !== 'undefined') es = new EventSource(url)
-                    else throw new Error('[Atoma] subscribeNotify: EventSource not available and no connect provided')
-
-                    const eventName = Protocol.sse.events.NOTIFY
-
-                    es.addEventListener(eventName, (event: any) => {
-                        try {
-                            const msg = Protocol.sse.parse.notifyMessage(String(event.data))
-                            args2.onMessage(msg as any)
-                        } catch (err) {
-                            args2.onError(err)
-                        }
-                    })
-                    es.onerror = (err) => {
-                        args2.onError(err)
-                    }
-
-                    if (args2.signal) {
-                        const signal = args2.signal
-                        if (signal.aborted) {
-                            try { es.close() } catch {}
-                        } else {
-                            const onAbort = () => {
-                                try { es.close() } catch {}
-                            }
-                            signal.addEventListener('abort', onAbort, { once: true })
-                        }
-                    }
-
-                    return { close: () => es.close() }
+                    return remote.notify!.subscribe(args2 as any)
                 }
             }
             : {})
     } as any
-
-    const desiredBaseVersionFromTargetVersion = (version: unknown): number | undefined => {
-        if (typeof version !== 'number' || !Number.isFinite(version) || version <= 1) return undefined
-        return Math.floor(version) - 1
-    }
-
-    const newWriteItemMeta = (): import('#protocol').WriteItemMeta => {
-        return Protocol.ops.meta.newWriteItemMeta({ now })
-    }
-
-    const ensureWriteItemsOk = (data: WriteResultData, message: string) => {
-        const results = Array.isArray((data as any)?.results) ? (data as any).results : []
-        for (const r of results) {
-            if (r && typeof r === 'object' && (r as any).ok === false) {
-                const err: any = new Error(message)
-                ;(err as any).error = (r as any).error
-                ;(err as any).current = (r as any).current
-                throw err
-            }
-        }
-    }
-
-    const commitWriteback = async (storeName: StoreToken, writeback: PersistWriteback<any>, options?: { context?: ObservabilityContext }) => {
-        await clientRuntime.internal.applyWriteback(String(storeName), writeback as any)
-
-        // Only mirror into the durable store backend when Store is configured as local.
-        if (storeBackendState.role !== 'local') return
-
-        const upserts = Array.isArray(writeback?.upserts) ? writeback.upserts : []
-        const deletes = Array.isArray(writeback?.deletes) ? writeback.deletes : []
-        const versionUpdates = Array.isArray(writeback?.versionUpdates) ? writeback.versionUpdates : []
-
-        if (upserts.length) {
-            const items: WriteItem[] = []
-            for (const u of upserts) {
-                const id = (u as any)?.id
-                if (typeof id !== 'string' || !id) continue
-                const baseVersion = desiredBaseVersionFromTargetVersion((u as any)?.version)
-                items.push({
-                    entityId: id,
-                    ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
-                    value: u,
-                    meta: newWriteItemMeta()
-                } as any)
-            }
-            if (items.length) {
-                const data = await storeApi.write({
-                    store: storeName,
-                    action: 'upsert',
-                    items,
-                    options: { merge: false, upsert: { mode: 'loose' } },
-                    ...(options?.context ? { context: options.context } : {})
-                } as any)
-                ensureWriteItemsOk(data, '[Atoma] writeback.commit: mirror upsert failed')
-            }
-        }
-
-        if (deletes.length) {
-            const { items: currentItems } = await storeApi.query<any>({
-                store: storeName,
-                params: { where: { id: { in: deletes } } } as any,
-                ...(options?.context ? { context: options.context } : {})
-            })
-            const currentById = new Map<string, any>()
-            for (const row of currentItems) {
-                const id = (row as any)?.id
-                if (typeof id === 'string' && id) currentById.set(id, row)
-            }
-
-            const items: WriteItem[] = []
-            for (const id of deletes) {
-                const row = currentById.get(String(id))
-                if (!row || typeof row !== 'object') continue
-                const baseVersion = (row as any).version
-                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
-                    throw new Error(`[Atoma] writeback.commit: mirror delete requires baseVersion (missing version for id=${String(id)})`)
-                }
-                items.push({
-                    entityId: String(id),
-                    baseVersion,
-                    meta: newWriteItemMeta()
-                } as any)
-            }
-
-            if (items.length) {
-                const data = await storeApi.write({
-                    store: storeName,
-                    action: 'delete',
-                    items,
-                    ...(options?.context ? { context: options.context } : {})
-                } as any)
-                ensureWriteItemsOk(data, '[Atoma] writeback.commit: mirror delete failed')
-            }
-        }
-
-        if (versionUpdates.length) {
-            const versionByKey = new Map<string, number>()
-            for (const v of versionUpdates) {
-                const key = String((v as any)?.key ?? '')
-                const version = (v as any)?.version
-                if (!key) continue
-                if (!(typeof version === 'number' && Number.isFinite(version) && version > 0)) continue
-                versionByKey.set(key, Math.floor(version))
-            }
-
-            const upsertedKeys = new Set<string>()
-            for (const u of upserts) {
-                const id = (u as any)?.id
-                if (typeof id === 'string' && id) upsertedKeys.add(id)
-            }
-
-            const toUpdate = Array.from(versionByKey.keys()).filter(k => !upsertedKeys.has(k))
-            if (toUpdate.length) {
-                const { items: currentItems } = await storeApi.query<any>({
-                    store: storeName,
-                    params: { where: { id: { in: toUpdate } } } as any,
-                    ...(options?.context ? { context: options.context } : {})
-                })
-
-                const items: WriteItem[] = []
-                for (const row of currentItems) {
-                    const id = (row as any)?.id
-                    if (typeof id !== 'string' || !id) continue
-                    const nextVersion = versionByKey.get(id)
-                    if (nextVersion === undefined) continue
-
-                    const baseVersion = desiredBaseVersionFromTargetVersion(nextVersion)
-                    items.push({
-                        entityId: id,
-                        ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
-                        value: { ...(row as any), version: nextVersion },
-                        meta: newWriteItemMeta()
-                    } as any)
-                }
-
-                if (items.length) {
-                    const data = await storeApi.write({
-                        store: storeName,
-                        action: 'upsert',
-                        items,
-                        options: { merge: true, upsert: { mode: 'loose' } },
-                        ...(options?.context ? { context: options.context } : {})
-                    } as any)
-                    ensureWriteItemsOk(data, '[Atoma] writeback.commit: mirror versionUpdate failed')
-                }
-            }
-        }
-    }
 
     const ctx: import('#client/types').ClientPluginContext = {
         client,
         meta: {
             clientKey,
             storeBackend: {
-                role: storeBackendState.role,
+                role: storeRole,
                 kind
             }
         },
@@ -535,25 +343,8 @@ export function buildAtomaClient<
         },
         acks: clientRuntime.mutation.acks,
         writeback: {
-            commit: (storeName, writeback, options) => commitWriteback(storeName, writeback as any, options as any)
+            commit: (storeName, writeback, options) => clientRuntime.internal.commitWriteback(storeName as any, writeback as any, options as any)
         },
-        stores: {
-            view: (store, args2) => {
-                const name = storeHandleManager.getStoreName(store as any, 'plugin.view')
-                const handle = storeHandleManager.requireStoreHandle(store as any, `plugin.view:${name}`)
-                const allowImplicitFetchForWrite = (typeof args2.allowImplicitFetchForWrite === 'boolean')
-                    ? args2.allowImplicitFetchForWrite
-                    : (args2.writeStrategy === 'queue' ? false : true)
-
-                return createStoreView(clientRuntime as any, handle as any, {
-                    writeConfig: {
-                        writeStrategy: args2.writeStrategy,
-                        allowImplicitFetchForWrite
-                    },
-                    includeServerAssignedCreate: args2.includeServerAssignedCreate !== false
-                }) as any
-            }
-        }
     }
 
     client.use = (plugin: any) => {
@@ -576,6 +367,12 @@ export function buildAtomaClient<
         }
 
         return client
+    }
+
+    if (args.plugins?.length) {
+        for (const plugin of args.plugins) {
+            client.use(plugin as any)
+        }
     }
 
     let disposed = false
@@ -604,6 +401,12 @@ export function buildAtomaClient<
         } catch {
             // ignore
         }
+
+        try {
+            backend.dispose?.()
+        } catch {
+            // ignore
+        }
     }
 
     const clientDevtools = Devtools.createClientInspector({
@@ -612,7 +415,7 @@ export function buildAtomaClient<
         historyDevtools: historyController.devtools,
         meta: {
             storeBackend: {
-                role: storeBackendState.role,
+                role: storeRole,
                 kind
             },
         }

@@ -39,7 +39,7 @@ const client = createClient<{ users: User }>({
 })
 
 export function Users() {
-    const usersStore = client.Store('users')
+    const usersStore = client.stores.users
     const { data, loading, error } = useFindMany(usersStore)
     if (loading) return null
     if (error) throw error

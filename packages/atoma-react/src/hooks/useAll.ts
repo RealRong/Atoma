@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import type { Entity, StoreApi, WithRelations, RelationIncludeInput } from 'atoma/core'
-import { unstable_storeHandleManager as storeHandleManager } from 'atoma/core'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
+import { getStoreRelations } from './internal/storeInternal'
 
 /**
  * React hook to subscribe to entire collection
@@ -17,11 +17,9 @@ export function useAll<T extends Entity, Relations = {}, const Include extends R
     const all = useStoreSnapshot(store, 'useAll')
     const memoedArr = useMemo(() => Array.from(all.values()), [all])
 
-    const relations = storeHandleManager.getStoreRelations(store, 'useAll')
+    const { relations, resolveStore } = getStoreRelations<T, Relations>(store, 'useAll')
     if (!options?.include || !relations) return memoedArr as Result
 
-    const runtime = storeHandleManager.getStoreRuntime(store)
-    const resolveStore = runtime?.stores?.resolveStore
     const relationsResult = useRelations<T, Relations, Include>(memoedArr, options.include, relations as Relations, resolveStore)
     return relationsResult.data as unknown as Result
 }

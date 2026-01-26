@@ -27,3 +27,5 @@ export type {
     WriteResultData,
     ChangesPullResultData
 } from './ops'
+
+export type { NotifyMessage } from './transport/sse/parse'

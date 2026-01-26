@@ -16,7 +16,7 @@
         "dev:lib": "pnpm --filter atoma run dev:lib",
         "demo:web": "vite --config demo/web/vite.config.ts",
         "demo:server": "pnpm --filter atoma-demo-server run dev",
-        "typecheck": "pnpm --filter atoma run typecheck && pnpm --filter atoma-react run typecheck && pnpm --filter atoma-sync run typecheck",
+        "typecheck": "pnpm --filter atoma run typecheck && pnpm --filter atoma-react run typecheck && pnpm --filter atoma-sync run typecheck && pnpm --filter atoma-backend run typecheck && pnpm --filter atoma-backend-memory run typecheck && pnpm --filter atoma-backend-indexeddb run typecheck",
         "check:sync-alias": "bash -lc \"if rg -n \\\"from '#sync/\\\" packages devtools demo docs tests -g'!packages/atoma-sync/**'; then echo 'ERROR: #sync alias must only be used inside packages/atoma-sync.'; exit 1; fi\"",
         "test": "vitest run",
         "test:ui": "vitest --ui",
@@ -77,9 +77,6 @@
         "vite": "^7.2.0",
         "vitest": "^4.0.16",
         "xstate": "^5.25.1"
-    },
-    "optionalDependencies": {
-        "dexie": "^3.2.0 || ^4.0.0"
     },
     "repository": {
         "type": "git",

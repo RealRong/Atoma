@@ -37,16 +37,6 @@ export function buildWriteIntentsFromEvents<T extends Entity>(args: {
             continue
         }
 
-        if (op.type === 'create') {
-            pushIntent({
-                action: 'create',
-                item: { value: op.data, meta },
-                intent: 'created',
-                requireCreatedData: true
-            })
-            continue
-        }
-
         if (op.type === 'update' || op.type === 'remove') {
             const entityId = op.data.id
             const value = args.optimisticState.get(entityId)

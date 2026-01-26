@@ -1,9 +1,8 @@
-import type { CoreRuntime, CoreStore, RuntimeStores } from '#core'
+import type { CoreRuntime, RuntimeStores, StoreApi } from '#core'
 
 export interface ClientRuntimeStoresApi extends RuntimeStores {
-    Store: (name: string) => CoreStore<any, any>
-    listStores: () => Iterable<CoreStore<any, any>>
-    onStoreCreated: (listener: (store: CoreStore<any, any>) => void, options?: { replay?: boolean }) => () => void
+    listStores: () => Iterable<StoreApi<any, any> & { name: string }>
+    onStoreCreated: (listener: (store: StoreApi<any, any> & { name: string }) => void, options?: { replay?: boolean }) => () => void
 }
 
 export type ClientRuntime = Omit<CoreRuntime, 'stores'> & Readonly<{

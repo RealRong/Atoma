@@ -7,7 +7,6 @@ import type {
 } from '#core'
 import type { WriteStrategy } from '#core'
 import type { ObservabilityContext } from '#observability'
-import type { CoreStore } from '#core'
 
 export type IoChannel = 'store' | 'remote'
 
@@ -61,7 +60,7 @@ export type ChannelApi = Readonly<{
     }) => Promise<import('#protocol').WriteResultData>
 }>
 
-export type NotifyMessage = Readonly<{ resources?: string[]; traceId?: string }>
+export type NotifyMessage = import('#protocol').NotifyMessage
 
 export type RemoteApi = ChannelApi & Readonly<{
     changes: Readonly<{
@@ -104,7 +103,6 @@ export type ClientPluginContext = Readonly<{
     /**
      * Persistence strategy routing.
      * - `WriteStrategy` is opaque to core; plugins interpret it.
-     * - A plugin may also choose to set store views to use a specific writeStrategy.
      */
     persistence: Readonly<{
         register: (key: WriteStrategy, handler: PersistHandler) => () => void
@@ -123,15 +121,6 @@ export type ClientPluginContext = Readonly<{
             writeback: PersistWriteback<T>,
             options?: { context?: ObservabilityContext }
         ) => Promise<void>
-    }>
-
-    /** Optional helpers for creating store views (e.g. different write strategies). */
-    stores?: Readonly<{
-        view: <T extends Entity, Relations = {}>(store: CoreStore<T, Relations>, args: {
-            writeStrategy?: WriteStrategy
-            allowImplicitFetchForWrite?: boolean
-            includeServerAssignedCreate?: boolean
-        }) => CoreStore<T, Relations>
     }>
 }>
 

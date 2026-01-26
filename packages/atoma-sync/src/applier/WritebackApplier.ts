@@ -11,7 +11,6 @@ function idempotencyKeyFromWriteItem(item: unknown): string | undefined {
 export class WritebackApplier implements SyncApplier {
     constructor(private readonly deps: {
         ctx: ClientPluginContext
-        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
     }) {}
 
     applyPullChanges = async (changes: Change[]) => {
@@ -82,8 +81,7 @@ export class WritebackApplier implements SyncApplier {
     }
 
     applyWriteReject = async (
-        reject: SyncWriteReject,
-        conflictStrategy?: 'server-wins' | 'client-wins' | 'reject' | 'manual'
+        reject: SyncWriteReject
     ) => {
         const key = idempotencyKeyFromWriteItem(reject.item)
         if (key) {
@@ -103,10 +101,9 @@ export class WritebackApplier implements SyncApplier {
             }
         }
 
-        const strategy = conflictStrategy ?? this.deps.conflictStrategy ?? 'server-wins'
         const error = (reject.result as any)?.error
         const current = (reject.result as any)?.current
-        if (error?.code === 'CONFLICT' && current?.value && strategy === 'server-wins') {
+        if (error?.code === 'CONFLICT' && current?.value) {
             upserts.push(current.value)
         }
 
@@ -124,8 +121,7 @@ export class WritebackApplier implements SyncApplier {
         }
         for (const reject of rejects) {
             if (args?.signal?.aborted) return
-            await this.applyWriteReject(reject, args?.conflictStrategy)
+            await this.applyWriteReject(reject)
         }
     }
 }
-

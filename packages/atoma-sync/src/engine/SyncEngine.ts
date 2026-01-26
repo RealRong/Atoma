@@ -53,7 +53,6 @@ export class SyncEngine implements SyncClient {
             applier: this.applier,
             maxPushItems: this.config.push.maxItems,
             returning: this.config.push.returning,
-            conflictStrategy: this.config.push.conflictStrategy,
             retry: this.config.push.retry,
             backoff: this.config.push.backoff,
             now: () => this.now(),

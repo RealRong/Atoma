@@ -1,6 +1,6 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { storeHandleManager } from '../internals/storeHandleManager'
+import { resolveObservabilityContext } from '../internals/storeHandleManager'
 import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { ObservabilityContext } from '#observability'
 import type { StoreHandle } from '../internals/handleTypes'
@@ -177,7 +177,7 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
         reject: (error: unknown) => void,
         options?: StoreReadOptions
     ) => {
-        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
         if (batchGetOneTaskQueue.length) {
             batchGetOneTaskQueue.push({ resolve, reject, id, observabilityContext })
         } else {
@@ -194,7 +194,7 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
         reject: (error: unknown) => void,
         options?: StoreReadOptions
     ) => {
-        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
         if (batchFetchOneTaskQueue.length) {
             batchFetchOneTaskQueue.push({ resolve, reject, id, observabilityContext })
         } else {

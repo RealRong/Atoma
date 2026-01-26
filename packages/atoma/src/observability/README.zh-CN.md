@@ -35,9 +35,10 @@
 
 ## 端到端：整条观测管线如何运行
 
-### 1）用户在创建 store 时开启 debug
+### 1）通过 client schema 开启 debug（推荐）
 
-典型入口是 `Core.store.createStore({ debug: ... })`：
+Atoma 不再把 `Core.store.createStore(...)` 作为用户态入口。
+请把 `debug/debugSink` 配到 client schema 中，然后通过 `client.stores.*` 获取 store。
 
 - `debug.enabled` 关闭时：**不会创建 emitter**，所有埋点点位都会变成近似 0 成本的空操作。
 - `debug.sample` 默认为 `0`：store 通常会**避免分配 traceId**，降低默认开销。
@@ -109,18 +110,21 @@ Atoma 只负责生成 `DebugEvent`；事件最终流向哪里由 **wiring 层**�
 ## 实用示例（用户侧）
 
 ```ts
-	import { Core } from 'atoma'
+import { createClient } from 'atoma'
 
-	const store = Core.store.createStore({
-	    name: 'todos',
-	    adapter: /* ... */,
-	    debug: { enabled: true, sample: 1, payload: false, redact: (v) => v },
-	    debugSink: (e) => console.log(e)
-	})
+const client = createClient({
+    schema: {
+        todos: {
+            debug: { enabled: true, sample: 1, payload: false, redact: (v: unknown) => v },
+            debugSink: (e: any) => console.log(e)
+        }
+    },
+    backend: /* ... */
+})
 
-	// 生成 explain 诊断产物
-	const res = await store.findMany({ where: { done: { eq: false } }, explain: true })
-	console.log(res.explain)
+const store = client.stores.todos
+const res = await store.findMany?.({ where: { done: { eq: false } }, explain: true } as any)
+console.log(res?.explain)
 ```
 
 如果你想在开发期查看“client/store/sync/history 等运行时状态”，请使用 Inspector（`atoma/devtools`）。

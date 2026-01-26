@@ -2,7 +2,6 @@ import type { ClientRuntime } from '../client/types'
 import type { EntityId } from '#protocol'
 import type { DevtoolsEvent, SyncProvider, HistoryProvider } from './types'
 import type { ClientEntry } from './registry'
-import { storeHandleManager } from '../core/store/internals/storeHandleManager'
 
 function emit(entry: ClientEntry, e: DevtoolsEvent): void {
     if (!entry.subscribers.size) return
@@ -22,11 +21,16 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
 
     entry.stopStoreListener?.()
     entry.stopStoreListener = runtime.stores.onStoreCreated((store) => {
-        const name = storeHandleManager.getStoreName(store, 'devtools')
+        const name = String((store as any)?.name ?? '')
+        if (!name) return
+
+        const storeKey = runtime.toStoreKey(name)
+        const handle = runtime.handles.get(storeKey)
+        if (!handle) return
 
         if (!entry.storeProviders.has(name)) {
             const snapshot = () => {
-                const map = storeHandleManager.getStoreSnapshot(store, 'devtools') as Map<EntityId, any>
+                const map = handle.jotaiStore.get(handle.atom) as Map<EntityId, any>
                 const sample = Array.from(map.values()).slice(0, 5)
                 const approxSize = (() => {
                     try {
@@ -51,7 +55,7 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
             emit(entry, { type: 'store:registered', payload: { clientId: entry.id, name } })
         }
 
-        const indexesRef = storeHandleManager.getStoreIndexes(store, 'devtools')
+        const indexesRef = handle.indexes
         if (indexesRef && !entry.indexProviders.has(name)) {
             const snapshot = () => {
                 const indexes = indexesRef.getIndexSnapshots().map(s => ({

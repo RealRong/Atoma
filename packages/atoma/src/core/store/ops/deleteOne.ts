@@ -1,15 +1,15 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createDeleteOne<T extends Entity>(
     clientRuntime: CoreRuntime,
-    handle: StoreHandle<T>,
-    writeConfig: StoreWriteConfig
+    handle: StoreHandle<T>
 ) {
     return async (id: EntityId, options?: StoreOperationOptions) => {
         const { ticket } = clientRuntime.mutation.api.beginWrite()
+        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
 
         const resultPromise = new Promise<boolean>((resolve, reject) => {
             storeWriteEngine.dispatch<T>(clientRuntime, {
@@ -18,7 +18,7 @@ export function createDeleteOne<T extends Entity>(
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                writeStrategy: writeConfig.writeStrategy,
+                writeStrategy,
                 onSuccess: () => {
                     resolve(true)
                 },

@@ -1,14 +1,10 @@
 import { OpsClient } from './OpsClient'
 import { HttpOpsClient } from './http/HttpOpsClient'
-import { IndexedDBOpsClient } from './local/IndexedDBOpsClient'
-import { MemoryOpsClient } from './local/MemoryOpsClient'
 import { Batch } from './batch'
 
 export const Ops = {
     OpsClient,
     HttpOpsClient,
-    IndexedDBOpsClient,
-    MemoryOpsClient,
     Batch
 } as const
 

@@ -1,150 +1,22 @@
+import type { Backend } from '#backend'
 import type { Entity, StoreDataProcessor } from '#core'
-import type { Table } from 'dexie'
 import type { AtomaSchema } from './schema'
-import type { HttpBackendConfig, StoreBackendEndpointConfig } from './backend'
-
-/**
- * Extra HTTP backend options shared by both Store (direct) and Sync (replication) endpoints.
- * - `baseURL` is always provided by the high-level `url` fields, so it is omitted here.
- */
-export interface HttpEndpointOptions {
-    /**
-     * Override the ops endpoint path (defaults to the protocol constant).
-     * Example: `/ops`
-     */
-    opsPath?: HttpBackendConfig['opsPath']
-
-    /**
-     * Static or async request headers, evaluated per request.
-     * Useful for auth tokens.
-     */
-    headers?: HttpBackendConfig['headers']
-
-    /**
-     * Retry policy for HTTP requests.
-     * Applies to both direct CRUD (store) and sync transport (replicator).
-     */
-    retry?: HttpBackendConfig['retry']
-
-    /**
-     * Custom `fetch` implementation (e.g. to inject auth, mock, or block in offline mode).
-     */
-    fetchFn?: HttpBackendConfig['fetchFn']
-
-    /**
-     * Request interceptor, called before sending the request.
-     * You may return a new Request or mutate via cloning.
-     */
-    onRequest?: HttpBackendConfig['onRequest']
-
-    /**
-     * Response interceptor, called after parsing the protocol envelope.
-     */
-    onResponse?: HttpBackendConfig['onResponse']
-
-    /**
-     * Custom envelope parser for non-standard server responses.
-     */
-    responseParser?: HttpBackendConfig['responseParser']
-}
-
-export type StoreBatchOptions =
-    | boolean
-    | StoreBatchConfig
-
-export interface StoreBatchConfig {
-    /** Enable/disable batching for the default HTTP ops client (per-store 写入合批). */
-    enabled?: boolean
-    /** Maximum number of operations per batch request. */
-    maxBatchSize?: number
-    /** Flush interval for pending batched operations. */
-    flushIntervalMs?: number
-    /** Emit dev warnings when batching heuristics detect suspicious usage. */
-    devWarnings?: boolean
-}
-
-export interface IndexedDbTablesConfig {
-    /** Map of `resourceName -> Dexie Table` */
-    tables: Record<string, Table<any, string>>
-}
-
-export interface HttpLaneConfig {
-    /** Base URL of the target server that serves the ops endpoint. */
-    url: string
-    /**
-     * Optional per-lane HTTP overrides.
-     * When omitted, falls back to top-level `http` defaults on `createClient`.
-     */
-    http?: HttpEndpointOptions
-}
-
-export interface HttpStoreConfig extends HttpLaneConfig {
-    /** Direct CRUD hits a remote HTTP backend (online-first). */
-    type: 'http'
-}
-
-export interface IndexedDbStoreConfig {
-    /** Direct CRUD hits IndexedDB (durable local-first). */
-    type: 'indexeddb'
-    /** Dexie tables used as local storage. */
-    tables: IndexedDbTablesConfig['tables']
-}
-
-export interface LocalServerStoreConfig extends HttpLaneConfig {
-    /** Direct CRUD hits a local server (e.g. node/go on localhost). */
-    type: 'localServer'
-}
-
-export interface MemoryStoreConfig {
-    /** In-memory store only (tests/demos). */
-    type: 'memory'
-    /** Optional initial data to seed memory stores. */
-    seed?: Record<string, any[]>
-}
-
-export interface CustomStoreConfig {
-    /** Fully custom backend endpoint (advanced). */
-    type: 'custom'
-    /** Whether this backend behaves as local-durable or remote-online. */
-    role: 'local' | 'remote'
-    /** Custom backend endpoint config used to build the ops client. */
-    backend: StoreBackendEndpointConfig
-}
-
-export type StoreConfig =
-    | HttpStoreConfig
-    | IndexedDbStoreConfig
-    | LocalServerStoreConfig
-    | MemoryStoreConfig
-    | CustomStoreConfig
+import type { ClientPlugin } from './plugin'
 
 export type CreateClientOptions<
     Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
-> = {
+> = Readonly<{
     /** Domain schema (indexes/relations/validators/etc). */
     schema?: Schema
+
     /** Global dataProcessor applied to all stores (per-store config overrides). */
     dataProcessor?: StoreDataProcessor<any>
-    /**
-     * Shared HTTP defaults applied to both Store and Sync lanes.
-     * Use `store.http` / `sync.endpoint.http` to override per lane.
-     */
-    http?: HttpEndpointOptions
-    /** Store backend used for direct CRUD (`client.Store(name)`). */
-    store: StoreConfig
 
-    /**
-     * Optional remote backend (neutral I/O channel).
-     * - Used by extension packages (e.g. sync) via `ctx.io` with `channel: 'remote'`.
-     * - When omitted and `store` is remote HTTP, `remote` is implicitly available via the same endpoint.
-     */
-    remote?: string | {
-        url: string
-        http?: HttpEndpointOptions
-        sse?: string
-        subscribe?: { connect?: (url: string) => EventSource; eventName?: string }
-    }
-    /** Default batching config for the generated data sources. */
-    storeBatch?: StoreBatchOptions
-}
+    /** The fully assembled backend implementation (store/remote/notify/etc). */
+    backend: Backend
+
+    /** Optional plugins to install immediately (equivalent to calling `client.use(...)` in order). */
+    plugins?: ReadonlyArray<ClientPlugin<any>>
+}>
+

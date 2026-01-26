@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Entity, FindManyOptions, PageInfo, StoreApi } from 'atoma/core'
 import { Core } from 'atoma/core'
-import { unstable_storeHandleManager as storeHandleManager } from 'atoma/core'
+import { hydrateStore, requireStoreInternal } from './internal/storeInternal'
 
 type RemoteState<T extends Entity> = Readonly<{
     isFetching: boolean
@@ -73,8 +73,9 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
     enabled?: boolean
 }): UseRemoteFindManyResult<T> {
     const enabled = args.enabled !== false
-    const storeName = storeHandleManager.getStoreName(args.store, 'useRemoteFindMany')
-    const runtime = storeHandleManager.getStoreRuntime(args.store)
+    const internal = requireStoreInternal(args.store, 'useRemoteFindMany')
+    const storeName = String((args.store as any)?.name ?? internal.storeName ?? 'store')
+    const runtime = internal.getHandle().jotaiStore as unknown as object | null
 
     const key = useMemo(() => {
         const optionsKey = Core.query.stableStringify(stripRuntimeOptions(args.options))
@@ -82,7 +83,7 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
         return `${storeName}:${modeKey}:${optionsKey}`
     }, [storeName, args.behavior.transient, args.options])
 
-    const entry = useMemo(() => getOrCreateEntry<T>(runtime, key), [runtime, key])
+    const entry = useMemo(() => getOrCreateEntry<T>(runtime as unknown as object | null, key), [runtime, key])
     const [state, setState] = useState<RemoteState<T>>(() => entry.state)
 
     useEffect(() => {
@@ -119,7 +120,7 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
             .then(async (res: any) => {
                 const { data, pageInfo } = normalizeResult<T>(res)
                 if (!transient) {
-                    await storeHandleManager.hydrateStore(args.store, data, 'useRemoteFindMany')
+                    await hydrateStore(args.store, data, 'useRemoteFindMany')
                 }
                 publish(entry, {
                     isFetching: false,

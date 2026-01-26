@@ -1,15 +1,15 @@
 import type { CoreRuntime, Entity, StoreOperationOptions } from '../../types'
-import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createAddMany<T extends Entity>(
     clientRuntime: CoreRuntime,
-    handle: StoreHandle<T>,
-    writeConfig: StoreWriteConfig
+    handle: StoreHandle<T>
 ) {
     const { hooks } = handle
     return async (items: Array<Partial<T>>, options?: StoreOperationOptions) => {
         const opContext = storeWriteEngine.ensureActionId(options?.opContext)
+        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
 
         const validItems = await Promise.all(items.map(item => storeWriteEngine.prepareForAdd<T>(clientRuntime, handle, item, opContext)))
         const results: T[] = new Array(validItems.length)
@@ -26,7 +26,7 @@ export function createAddMany<T extends Entity>(
                     handle,
                     opContext,
                     ticket,
-                    writeStrategy: writeConfig.writeStrategy,
+                    writeStrategy,
                     onSuccess: (o) => {
                         void storeWriteEngine.runAfterSave(hooks, validObj as any, 'add')
                             .then(() => {

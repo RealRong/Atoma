@@ -72,7 +72,6 @@ export default defineConfig({
         'jotai/vanilla',
         'jotai/vanilla/utils',
         'immer',
-        'dexie',
         'lodash',
         'typeorm',
         '@prisma/client'

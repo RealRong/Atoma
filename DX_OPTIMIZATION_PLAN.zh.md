@@ -11,15 +11,15 @@
 
 当前对外导出（简化）：
 
-- `client.Store(name)`：direct CRUD（走 store backend）。
+- `client.stores.<name>` / `client.stores(name)`：store CRUD（store 无状态 facade；写入策略由每次 options 决定）。
 - `client.sync.*`：同步引擎控制（start/stop/pull/push/status）。
-- `client.Store(name).Outbox`：queued writes / outbox 写入入口（写入策略面）。
+- `options.writeStrategy: 'queue' | 'local-first'`：队列写入/离线优先语义（不再通过派生入口暴露）。
 - `client.History.*`：undo/redo/clear/canUndo/canRedo（按 scope 分区）。
 
 DX 的核心约束：
 
 - `Entities`/`Schema` 提供强类型：`name` 的补全来自 `keyof Entities & string`，relations 由 schema 推导。
-- `Store(name).Outbox` 与 `Store(name)` 语义不同（队列/离线策略/写路径），但需要保证“入口结构一致、命名直观”，避免新手误解。
+- direct vs queued/local-first 属于“写入策略面”；应尽量通过统一的 `options.writeStrategy` 表达，避免额外入口造成误解。
 
 ### 0.2 Devtools Inspector（库内）与 overlay（独立包）
 
@@ -92,12 +92,12 @@ overlay（`atoma-devtools`）的设计偏好：
 现状：
 
 - `client.sync.start/stop/pull/push/status` 是引擎控制面。
-- `client.Store(name).Outbox` 是写入策略面（queue/local-first/intent-only），并且某些能力被刻意移除（如 server-assigned create）。
+- `options.writeStrategy: 'queue' | 'local-first'` 是写入策略面（队列写/离线优先），且对能力有约束（例如 enqueue 阶段的“是否允许隐式补读”）。
 
 结果：
 
-- 新手容易将 `Sync.*` 误解为“业务读写入口”，或认为“要用 Sync 才能正确工作”；因此 queued writes 应从 `Store(name)` 下分支出来。
-- 熟手也需要在每个项目里重复“direct vs outbox”的解释与封装。
+- 新手容易将 `Sync.*` 误解为“业务读写入口”，或认为“要用 Sync 才能正确工作”；因此“写入策略面”应保持为写入 options，而不是另起一个 API 入口。
+- 熟手也需要在每个项目里重复“direct vs queue/local-first”的解释与封装。
 
 ### 2.4 createClient：配置字段映射存在“别名/翻译层”
 
@@ -206,20 +206,12 @@ overlay（`atoma-devtools`）的设计偏好：
 
 #### 3.2-A 将 “queued writes store” 一步到位改名为语义化入口（breaking）
 
-做法（一次性改名，不保留旧入口）：
+（已采用）把“队列写/离线优先”收敛为写入 options，而不是另起一个入口：
 
-- 删除 `client.sync.Store(name)`（不做 alias，不做双入口）。
-- queued writes 统一迁移为：`client.Store(name).Outbox`（`sync` 只保留引擎控制：start/stop/pull/push/status）。
-
-推荐命名：
-
-- `Outbox` 更贴近概念（离线队列、待发送）。
-- `Queue` 更通用，但可能与 batching/任务队列混淆。
-
-同时（强化“不会误用”）：
-
-- 在类型层明确 `Store(name).Outbox` 的差异（例如不支持 server-assigned create）。
-- 在运行时错误信息中明确“这是 outbox/queued store，选择 direct store 请用 client.Store”。
+- 删除 `sync` 下的 store 双入口（不做 alias）。
+- 不提供 `Outbox` 这类派生入口。
+- queued/local-first 统一使用 `options.writeStrategy: 'queue' | 'local-first'`。
+- `sync` 只保留引擎控制面（start/stop/pull/push/status）。
 
 #### 3.2-B History：让 scope 在类型层变为可选，并显式定义默认值
 
@@ -345,9 +337,8 @@ overlay（`atoma-devtools`）的设计偏好：
 
 ### 6.2 Phase 2（API 语义）任务拆分
 
-- `AtomaClient` 类型增加 `Outbox`（或 `Queue`）命名空间，仅包含 `Store(name)`。
+- `AtomaClient` 对外只保留 `client.stores`（不引入 `Outbox/Queue` 额外命名空间）；队列/离线优先通过 `options.writeStrategy` 表达。
 - `History` API 类型把 scope 变为可选，与默认 scope 行为对齐。
-- 为 `Store(name).Outbox` 的错误信息补充“这是 outbox/queued store”的提示（在 direct-only 能力被移除处也强化提示）。
 
 ### 6.3 Phase 4（server 类型能力矩阵）任务拆分
 
@@ -380,5 +371,5 @@ overlay（`atoma-devtools`）的设计偏好：
 
 增强验收（可选）：
 
-- 使用 `Store(name).Outbox` 后，新手无需记多个 `XX.Store` 入口即可理解 direct vs queued 的差异。
+- 使用 `options.writeStrategy: 'queue' | 'local-first'` 后，新手无需记多个入口即可理解 direct vs queued 的差异。
 - server config 在 TS 下能提前发现 “sync enabled 但缺 adapter/transaction”。

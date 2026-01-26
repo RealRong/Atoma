@@ -35,9 +35,10 @@ If you want the long-term “optimal architecture” (no hidden carrier, explici
 
 ## End-to-end data flow (how the pipeline runs)
 
-### 1) User enables debug at store creation
+### 1) User enables debug via client schema (recommended)
 
-At the public API level, users typically enable debug via `Core.store.createStore({ debug: ... })`.
+Atoma no longer exposes `Core.store.createStore(...)` as a user-facing API.
+Enable debug by putting `debug/debugSink` into the client schema, then access stores via `client.stores.*`.
 
 - If `debug.enabled` is false, **no emitter is created** and all callsites are effectively no-ops.
 - If `debug.sample` is `0` (default), the store will usually **avoid allocating a traceId**, keeping overhead near zero.
@@ -109,18 +110,21 @@ Today, explain contains deterministic, JSON-serializable fields (index/finalize/
 ## Practical example (user-side)
 
 ```ts
-	import { Core } from 'atoma'
+import { createClient } from 'atoma'
 
-	const store = Core.store.createStore({
-	    name: 'todos',
-	    adapter: /* ... */,
-	    debug: { enabled: true, sample: 1, payload: false, redact: (v) => v },
-	    debugSink: (e) => console.log(e)
-	})
+const client = createClient({
+    schema: {
+        todos: {
+            debug: { enabled: true, sample: 1, payload: false, redact: (v: unknown) => v },
+            debugSink: (e: any) => console.log(e)
+        }
+    },
+    backend: /* ... */
+})
 
-	// Produce an explain payload
-	const res = await store.findMany({ where: { done: { eq: false } }, explain: true })
-	console.log(res.explain)
+const store = client.stores.todos
+const res = await store.findMany?.({ where: { done: { eq: false } }, explain: true } as any)
+console.log(res?.explain)
 ```
 
 If you want to inspect “client/store/sync/history runtime state” in dev, use the inspector (`atoma/devtools`).

@@ -1,20 +1,8 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
-import type { Entity, JotaiStore, StoreConfig } from '../../types'
+import type { Entity, JotaiStore, StoreConfig, WriteStrategy } from '../../types'
 import type { EntityId } from '#protocol'
 import type { QueryMatcherOptions } from '../../query/QueryMatcher'
 import type { StoreIndexes } from '../../indexes/StoreIndexes'
-
-/**
- * Store 内部写入策略（仅影响“隐式行为”）
- */
-export type StoreWritePolicies = {
-    /**
-     * 写入时遇到 cache 缺失，是否允许自动补读（bulkGet/get）：
-     * - direct：通常允许（提升 DX）
-     * - 延迟持久化/队列化写入：通常必须禁止（提交阶段不触网），需由上层显式 fetch
-     */
-    allowImplicitFetchForWrite: boolean
-}
 
 /**
  * Store internal handle bindings.
@@ -26,6 +14,8 @@ export type StoreHandle<T extends Entity = any> = {
     jotaiStore: JotaiStore
     matcher?: QueryMatcherOptions
     storeName: string
+    /** Store-level default write strategy (from schema). Can be overridden per operation via StoreOperationOptions.writeStrategy. */
+    defaultWriteStrategy?: WriteStrategy
     relations?: () => any | undefined
     indexes: StoreIndexes<T> | null
     hooks: StoreConfig<T>['hooks']
@@ -34,7 +24,4 @@ export type StoreHandle<T extends Entity = any> = {
 
     /** 内部：生成本 store 的 opId */
     nextOpId: (prefix: 'q' | 'w') => string
-
-    /** 运行时写入策略（允许被 client/controller 动态切换） */
-    writePolicies?: StoreWritePolicies
 }

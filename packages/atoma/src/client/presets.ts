@@ -1,6 +1,7 @@
 import type { Entity } from '#core'
-import type { CreateClientOptions, AtomaSchema, HttpEndpointOptions, StoreBatchOptions } from './types'
-import type { IndexedDbTablesConfig } from './types/options'
+import type { CreateClientOptions, AtomaSchema } from './types'
+import { createHttpBackend } from '#backend'
+import type { CreateHttpBackendOptions } from '#backend'
 
 export const presets = {
     onlineOnly: <
@@ -9,53 +10,14 @@ export const presets = {
     >(args: {
         url: string
         schema?: S
-        http?: HttpEndpointOptions
-        storeBatch?: StoreBatchOptions
+        http?: Omit<CreateHttpBackendOptions, 'baseURL'>
     }): CreateClientOptions<E, S> => {
         return {
             ...(args.schema ? { schema: args.schema } : {}),
-            ...(args.http ? { http: args.http } : {}),
-            ...(typeof args.storeBatch !== 'undefined' ? { storeBatch: args.storeBatch } : {}),
-            store: {
-                type: 'http',
-                url: args.url
-            }
+            backend: createHttpBackend({
+                baseURL: args.url,
+                ...(args.http ? args.http : {})
+            })
         }
     },
-
-    localOnly: <
-        const E extends Record<string, Entity>,
-        const S extends AtomaSchema<E> = AtomaSchema<E>
-    >(args: {
-        schema?: S
-        tables: IndexedDbTablesConfig['tables']
-        storeBatch?: StoreBatchOptions
-    }): CreateClientOptions<E, S> => {
-        return {
-            ...(args.schema ? { schema: args.schema } : {}),
-            ...(typeof args.storeBatch !== 'undefined' ? { storeBatch: args.storeBatch } : {}),
-            store: {
-                type: 'indexeddb',
-                tables: args.tables
-            }
-        }
-    },
-
-    memoryOnly: <
-        const E extends Record<string, Entity>,
-        const S extends AtomaSchema<E> = AtomaSchema<E>
-    >(args?: {
-        schema?: S
-        seed?: Record<string, any[]>
-        storeBatch?: StoreBatchOptions
-    }): CreateClientOptions<E, S> => {
-        return {
-            ...(args?.schema ? { schema: args.schema } : {}),
-            ...(typeof args?.storeBatch !== 'undefined' ? { storeBatch: args.storeBatch } : {}),
-            store: {
-                type: 'memory',
-                ...(args?.seed ? { seed: args.seed } : {})
-            }
-        }
-    }
 } as const

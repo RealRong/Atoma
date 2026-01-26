@@ -1,11 +1,10 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, UpsertWriteOptions } from '../../types'
-import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpsertOne<T extends Entity>(
     clientRuntime: CoreRuntime,
-    handle: StoreHandle<T>,
-    writeConfig: StoreWriteConfig
+    handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
 
@@ -51,6 +50,7 @@ export function createUpsertOne<T extends Entity>(
         })()
 
         const { ticket } = clientRuntime.mutation.api.beginWrite()
+        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
 
         const resultPromise = new Promise<T>((resolve, reject) => {
             storeWriteEngine.dispatch<T>(clientRuntime, {
@@ -63,7 +63,7 @@ export function createUpsertOne<T extends Entity>(
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                writeStrategy: writeConfig.writeStrategy,
+                writeStrategy,
                 onSuccess: async (o) => {
                     await storeWriteEngine.runAfterSave(hooks, validObj, base ? 'update' : 'add')
                     resolve(o)

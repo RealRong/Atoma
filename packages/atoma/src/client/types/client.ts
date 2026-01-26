@@ -1,4 +1,4 @@
-import type { CoreStore, Entity, WriteStrategy } from '#core'
+import type { Entity, StoreApi } from '#core'
 import type { InferRelationsFromSchema } from './relations'
 import type { AtomaSchema } from './schema'
 import type { PluginCapableClient } from './plugin'
@@ -26,7 +26,14 @@ export type AtomaStore<
     Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities>,
     Name extends keyof Entities & string
-> = CoreStore<Entities[Name], InferRelationsFromSchema<Entities, Schema, Name>>
+> = StoreApi<Entities[Name], InferRelationsFromSchema<Entities, Schema, Name>>
+
+export type AtomaStores<
+    Entities extends Record<string, Entity>,
+    Schema extends AtomaSchema<Entities>
+> =
+    & (<Name extends keyof Entities & string>(name: Name) => AtomaStore<Entities, Schema, Name>)
+    & { [K in keyof Entities & string]: AtomaStore<Entities, Schema, K> }
 
 export type AtomaHistory = {
     canUndo: (scope?: string) => boolean
@@ -40,10 +47,12 @@ export type AtomaClient<
     Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
 > = PluginCapableClient & {
-    Store: <Name extends keyof Entities & string>(
-        name: Name,
-        options?: { writeStrategy?: WriteStrategy }
-    ) => AtomaStore<Entities, Schema, Name>
+    /**
+     * Unified store accessor.
+     * - `client.stores.Todo` (best DX / autocomplete)
+     * - `client.stores('Todo')` (dynamic name)
+     */
+    stores: AtomaStores<Entities, Schema>
     History: AtomaHistory
     Devtools: AtomaClientDevtools
 }

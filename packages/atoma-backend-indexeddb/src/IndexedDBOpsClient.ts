@@ -1,5 +1,5 @@
 import type { Table } from 'dexie'
-import { Core } from '#core'
+import { Core } from 'atoma/core'
 import type {
     ChangeBatch,
     Operation,
@@ -11,10 +11,9 @@ import type {
     WriteItem,
     WriteOptions,
     WriteResultData
-} from '#protocol'
-import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
-import { OpsClient } from '../OpsClient'
-import { Shared } from '#shared'
+} from 'atoma/protocol'
+import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma/backend'
+import { Shared } from 'atoma/shared'
 
 const { parseOrThrow, z } = Shared.zod
 
@@ -104,11 +103,10 @@ function serializeValue(value: any) {
     return cloned
 }
 
-export class IndexedDBOpsClient extends OpsClient {
+export class IndexedDBOpsClient implements OpsClientLike {
     constructor(private readonly config: {
         tableForResource: (resource: string) => Table<any, string>
     }) {
-        super()
         this.config = parseOrThrow(
             z.object({ tableForResource: z.any() })
                 .loose()
@@ -529,5 +527,5 @@ export class IndexedDBOpsClient extends OpsClient {
 
         return { transactionApplied: false, results } as WriteResultData
     }
-
 }
+

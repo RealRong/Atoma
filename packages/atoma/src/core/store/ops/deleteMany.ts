@@ -1,21 +1,22 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
 import { toErrorWithFallback as toError } from '#shared'
-import { storeHandleManager } from '../internals/storeHandleManager'
-import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
+import { resolveObservabilityContext } from '../internals/storeHandleManager'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createDeleteMany<T extends Entity>(
     clientRuntime: CoreRuntime,
-    handle: StoreHandle<T>,
-    writeConfig: StoreWriteConfig
+    handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom } = handle
 
     return async (ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
         const opContext = storeWriteEngine.ensureActionId(options?.opContext)
+        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
+        const allowImplicitFetchForWrite = storeWriteEngine.allowImplicitFetchForWrite(writeStrategy)
         const confirmation = options?.confirmation ?? 'optimistic'
-        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
         const results: WriteManyResult<boolean> = new Array(ids.length)
 
         const firstIndexById = new Map<EntityId, number>()
@@ -44,7 +45,7 @@ export function createDeleteMany<T extends Entity>(
         }
 
         if (missing.length) {
-            if (!writeConfig.allowImplicitFetchForWrite) {
+            if (!allowImplicitFetchForWrite) {
                 for (const id of missing) {
                     const firstIndex = firstIndexById.get(id)
                     if (typeof firstIndex !== 'number') continue
@@ -73,7 +74,7 @@ export function createDeleteMany<T extends Entity>(
                         handle,
                         items: toHydrate,
                         opContext,
-                        writeStrategy: writeConfig.writeStrategy
+                        writeStrategy
                     })
                 }
 
@@ -113,7 +114,7 @@ export function createDeleteMany<T extends Entity>(
                     handle,
                     opContext,
                     ticket,
-                    writeStrategy: writeConfig.writeStrategy,
+                    writeStrategy,
                     onSuccess: () => resolve(true),
                     onFail: (error) => reject(error || new Error(`Failed to delete item with id ${String(id)}`))
                 })

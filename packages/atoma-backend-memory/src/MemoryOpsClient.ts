@@ -1,8 +1,6 @@
-import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
-import { OpsClient } from '../OpsClient'
-import type { Operation, OperationResult, QueryParams, QueryResultData, StandardError, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
-import type { ChangeBatch } from '#protocol'
-import { Core } from '#core'
+import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma/backend'
+import type { ChangeBatch, Operation, OperationResult, QueryParams, QueryResultData, StandardError, WriteAction, WriteItem, WriteOptions, WriteResultData } from 'atoma/protocol'
+import { Core } from 'atoma/core'
 
 type ResourceStore = Map<string, any>
 
@@ -63,13 +61,12 @@ function selectFromFields(fields: string[] | undefined): Record<string, boolean>
     return out
 }
 
-export class MemoryOpsClient extends OpsClient {
+export class MemoryOpsClient implements OpsClientLike {
     private readonly storesByResource = new Map<string, ResourceStore>()
 
     constructor(private readonly config?: {
         seed?: Record<string, any[]>
     }) {
-        super()
         if (config?.seed && isPlainObject(config.seed)) {
             Object.entries(config.seed).forEach(([resource, items]) => {
                 if (!Array.isArray(items)) return
@@ -498,3 +495,4 @@ export class MemoryOpsClient extends OpsClient {
         return next
     }
 }
+

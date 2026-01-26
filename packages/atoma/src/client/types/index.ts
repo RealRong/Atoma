@@ -1,27 +1,6 @@
-export type {
-    BackendConfig,
-    BackendEndpointConfig,
-    CustomOpsBackendConfig,
-    HttpBackendConfig,
-    HttpSubscribeConfig,
-    HttpSyncBackendConfig,
-    IndexedDBBackendConfig,
-    MemoryBackendConfig,
-    ResolvedBackend,
-    ResolvedBackends,
-    StoreBackendEndpointConfig,
-    StoreCustomOpsBackendConfig
-} from './backend'
-
-export type {
-    CreateClientOptions,
-    HttpEndpointOptions,
-    StoreBatchOptions
-} from './options'
+export type { CreateClientOptions } from './options'
 
 export type { ClientRuntime } from './runtime'
-
-export type { StoreBackendState, StoreBatchArgs } from './internal'
 
 export type {
     ClientPlugin,

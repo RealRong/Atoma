@@ -197,20 +197,18 @@ function applyCreatedWriteback<T extends Entity>(args: {
     let cursor = 0
 
     for (const op of args.operations) {
-        if (op.type !== 'add' && op.type !== 'create') continue
+        if (op.type !== 'add') continue
         const serverItem = args.created[cursor++]
         if (!serverItem || typeof serverItem !== 'object') continue
 
         const serverId = serverItem.id
         if (serverId === undefined || serverId === null) continue
 
-        if (op.type === 'add') {
-            const tempId = op.data.id
-            if (tempId !== undefined && tempId !== null && tempId !== serverId && args.current.has(tempId)) {
-                if (!next) next = new Map(args.current)
-                next.delete(tempId)
-                changedIds.add(tempId)
-            }
+        const tempId = op.data.id
+        if (tempId !== undefined && tempId !== null && tempId !== serverId && args.current.has(tempId)) {
+            if (!next) next = new Map(args.current)
+            next.delete(tempId)
+            changedIds.add(tempId)
         }
 
         const currentMap = next ?? args.current
@@ -275,12 +273,6 @@ function finalizeCallbacks<T extends Entity>(args: {
             const payload = (args.persistResult.status === 'confirmed' && created[createdCursor])
                 ? created[createdCursor++]
                 : (current.get(op.data.id) ?? (op.data as unknown as T))
-            op.onSuccess?.(payload)
-            continue
-        }
-
-        if (op.type === 'create') {
-            const payload = created[createdCursor++]
             op.onSuccess?.(payload)
             continue
         }

@@ -21,14 +21,13 @@ export type WriteIntent = Readonly<{
     requireCreatedData?: boolean
 }>
 
-export type MutationProgramKind = 'noop' | 'hydrate' | 'writes' | 'patches' | 'serverAssignedCreate'
+export type MutationProgramKind = 'noop' | 'hydrate' | 'writes' | 'patches'
 
 export type LocalMutationPlan<T extends Entity> = Readonly<{
     baseState: Map<EntityId, T>
     optimisticState: Map<EntityId, T>
     writeEvents: Array<StoreDispatchEvent<T>>
     writeIntents: WriteIntent[]
-    hasCreate: boolean
     hasPatches: boolean
     changedIds: Set<EntityId>
     patches: Patch[]
@@ -66,4 +65,4 @@ export type MutationProgram<T extends Entity> =
     | (MutationProgramBase<T> & { kind: 'noop' | 'hydrate'; writeIntents: []; writeOps: [] })
     | (MutationProgramBase<T> & { kind: 'writes' })
     | (MutationProgramBase<T> & { kind: 'patches' })
-    | (MutationProgramBase<T> & { kind: 'serverAssignedCreate' })
+    

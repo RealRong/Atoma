@@ -31,11 +31,9 @@ export function buildMutationProgram<T extends Entity>({ handle, operations, cur
         ? translateWriteIntentsToOps({ handle, intents: plan.writeIntents })
         : []
 
-    const kind: MutationProgramKind = plan.hasCreate
-        ? 'serverAssignedCreate'
-        : plan.hasPatches
-            ? 'patches'
-            : (plan.writeEvents.length ? 'writes' : (plan.changedIds.size ? 'hydrate' : 'noop'))
+    const kind: MutationProgramKind = plan.hasPatches
+        ? 'patches'
+        : (plan.writeEvents.length ? 'writes' : (plan.changedIds.size ? 'hydrate' : 'noop'))
 
     const baseProgram = {
         writeStrategy,

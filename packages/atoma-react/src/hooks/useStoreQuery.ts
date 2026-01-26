@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { Core } from 'atoma/core'
 import type { Entity, FindManyOptions, StoreApi } from 'atoma/core'
-import { unstable_storeHandleManager as storeHandleManager } from 'atoma/core'
 import { useStoreSnapshot } from './internal/useStoreSelector'
+import { requireStoreInternal } from './internal/storeInternal'
 
 type UseStoreQuerySelect = 'entities' | 'ids'
 
@@ -20,8 +20,10 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
     options?: UseStoreQueryOptions<T>
 ): StoreQueryResult<T> {
     const map = useStoreSnapshot(store, 'useStoreQuery')
-    const indexes = storeHandleManager.getStoreIndexes(store, 'useStoreQuery')
-    const matcher = storeHandleManager.getStoreMatcher(store, 'useStoreQuery')
+    const internal = requireStoreInternal(store, 'useStoreQuery')
+    const handle: any = internal.getHandle()
+    const indexes = handle.indexes
+    const matcher = handle.matcher
     const queryKey = useMemo(() => Core.query.stableStringify(options), [options])
 
     return useMemo(() => {
@@ -30,7 +32,7 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
         if (candidate?.kind === 'empty') return { ids: [] as Array<T['id']>, data: [] as T[] }
 
         const source = (candidate?.kind === 'candidates')
-            ? Array.from(candidate.ids).map(id => map.get(id)).filter(Boolean) as T[]
+            ? Array.from(candidate.ids).map(id => map.get(id as any)).filter(Boolean) as T[]
             : Array.from(map.values())
 
         const shouldSkipWhere =

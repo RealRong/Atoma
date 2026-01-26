@@ -4,16 +4,20 @@ import { executeWriteOps } from '#core/mutation/pipeline/WriteOps'
 import { createRuntimeIo } from '#core/runtime'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
 import type { EntityId } from '#protocol'
+import type { StoreHandle } from '#core/store/internals/handleTypes'
 import type { AtomaSchema } from '#client/types'
-import { storeHandleManager } from '#core/store/internals/storeHandleManager'
-import { RuntimeStoreWriteEngine } from '#core/store/internals/storeWriteEngine'
 import type { ClientRuntimeInternal } from '#client/internal/types'
 import { DataProcessor } from '#core/store/internals/dataProcessor'
 import { ClientRuntimeObservability } from '#client/internal/factory/runtime/ClientRuntimeObservability'
 import { ClientRuntimeStores } from '#client/internal/factory/runtime/ClientRuntimeStores'
 import type { PersistHandler } from '#client/types/plugin'
+import { ClientRuntimeInternalEngine } from '#client/internal/factory/runtime/ClientRuntimeInternalEngine'
+import { Protocol } from '#protocol'
 
 export class ClientRuntime implements ClientRuntimeInternal {
+    readonly clientId: string
+    readonly handles: Map<string, StoreHandle<any>>
+    readonly toStoreKey: (storeName: import('#core').StoreToken) => string
     readonly opsClient: OpsClientLike
     readonly io: ClientRuntimeInternal['io']
     readonly mutation: MutationPipeline
@@ -32,7 +36,14 @@ export class ClientRuntime implements ClientRuntimeInternal {
         defaults?: {
             idGenerator?: () => EntityId
         }
+        mirrorWritebackToStore?: boolean
     }) {
+        // Internal stable id for namespacing store handles within this runtime instance.
+        // Note: Use protocol ids (uuid when available) to avoid collisions.
+        this.clientId = Protocol.ids.createOpId('client')
+        this.handles = new Map<string, StoreHandle<any>>()
+        this.toStoreKey = (storeName) => `${this.clientId}:${String(storeName)}`
+
         this.opsClient = args.opsClient
         this.jotaiStore = createJotaiStore()
         this.dataProcessor = new DataProcessor(() => this)
@@ -47,9 +58,9 @@ export class ClientRuntime implements ClientRuntimeInternal {
             defaults: args.defaults
         })
 
-        const storeWriteEngine = new RuntimeStoreWriteEngine(this, this.stores.Store, storeHandleManager)
-
-        this.internal = storeWriteEngine
+        this.internal = new ClientRuntimeInternalEngine(this, {
+            mirrorWritebackToStore: args.mirrorWritebackToStore
+        })
     }
 }
 

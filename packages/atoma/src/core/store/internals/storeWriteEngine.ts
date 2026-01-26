@@ -6,19 +6,13 @@ import type {
     LifecycleHooks,
     OperationContext,
     PartialWithId,
-    StoreApi,
     StoreDispatchEvent,
+    StoreOperationOptions,
     WriteStrategy,
     WriteTicket
 } from '../../types'
 import type { EntityId } from '#protocol'
-import type { Patch } from 'immer'
 import type { StoreHandle } from './handleTypes'
-
-export type StoreWriteConfig = Readonly<{
-    writeStrategy?: WriteStrategy
-    allowImplicitFetchForWrite: boolean
-}>
 
 export type WritebackVersionUpdate = {
     key: EntityId
@@ -33,12 +27,16 @@ export type StoreWritebackArgs<T extends Entity> = {
 
 type ChangedIds = ReadonlyArray<EntityId> | ReadonlySet<EntityId>
 
-type StoreHandleManagerLike = {
-    requireStoreHandle: <T extends Entity>(store: StoreApi<T, any>, tag: string) => StoreHandle<T>
-    getStoreSnapshot: <T extends Entity>(store: StoreApi<T, any>, tag?: string) => ReadonlyMap<EntityId, T>
-}
-
 export class StoreWriteEngine {
+    resolveWriteStrategy<T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions | undefined): WriteStrategy | undefined {
+        return options?.writeStrategy ?? handle.defaultWriteStrategy
+    }
+
+    allowImplicitFetchForWrite(writeStrategy?: WriteStrategy): boolean {
+        // Only 'queue' forbids implicit fetch during write. All other strategies keep DX-friendly behavior.
+        return writeStrategy !== 'queue'
+    }
+
     async prepareForAdd<T extends Entity>(
         clientRuntime: CoreRuntime,
         handle: StoreHandle<T>,
@@ -322,44 +320,6 @@ export class StoreWriteEngine {
         }
 
         return existing
-    }
-}
-
-export class RuntimeStoreWriteEngine {
-    constructor(
-        private runtime: CoreRuntime,
-        private getStore: (name: string) => StoreApi<any, any>,
-        private handleManager: StoreHandleManagerLike
-    ) {}
-
-    applyWriteback = async (storeName: string, args: StoreWritebackArgs<any>) => {
-        const name = String(storeName)
-        const store = this.getStore(name)
-        const handle = this.handleManager.requireStoreHandle(store, `runtime.applyWriteback:${name}`)
-        await storeWriteEngine.applyWriteback(this.runtime, handle, args)
-    }
-
-    dispatchPatches = (args: { storeName: string; patches: Patch[]; inversePatches: Patch[]; opContext: OperationContext }) => {
-        const storeName = String(args.storeName)
-        const store = this.getStore(storeName)
-        const handle = this.handleManager.requireStoreHandle(store, `runtime.dispatchPatches:${storeName}`)
-        return new Promise<void>((resolve, reject) => {
-            storeWriteEngine.dispatch(this.runtime, {
-                type: 'patches',
-                patches: args.patches,
-                inversePatches: args.inversePatches,
-                handle,
-                opContext: args.opContext,
-                onSuccess: resolve,
-                onFail: (error?: Error) => reject(error ?? new Error('[Atoma] runtime: patches 写入失败'))
-            } as any)
-        })
-    }
-
-    getStoreSnapshot = (storeName: string) => {
-        const name = String(storeName)
-        const store = this.getStore(name)
-        return this.handleManager.getStoreSnapshot(store, `runtime.snapshot:${name}`)
     }
 }
 

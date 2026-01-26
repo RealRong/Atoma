@@ -3,14 +3,13 @@ import type { Draft } from 'immer'
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
 import { toErrorWithFallback as toError } from '#shared'
-import { storeHandleManager } from '../internals/storeHandleManager'
-import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
+import { resolveObservabilityContext } from '../internals/storeHandleManager'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpdateMany<T extends Entity>(
     clientRuntime: CoreRuntime,
-    handle: StoreHandle<T>,
-    writeConfig: StoreWriteConfig
+    handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
 
@@ -19,8 +18,10 @@ export function createUpdateMany<T extends Entity>(
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>> => {
         const opContext = storeWriteEngine.ensureActionId(options?.opContext)
+        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
+        const allowImplicitFetchForWrite = storeWriteEngine.allowImplicitFetchForWrite(writeStrategy)
         const confirmation = options?.confirmation ?? 'optimistic'
-        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
 
         const results: WriteManyResult<T> = new Array(items.length)
 
@@ -53,7 +54,7 @@ export function createUpdateMany<T extends Entity>(
         }
 
         if (missing.length) {
-            if (!writeConfig.allowImplicitFetchForWrite) {
+            if (!allowImplicitFetchForWrite) {
                 for (const id of missing) {
                     const firstIndex = firstIndexById.get(id)
                     if (typeof firstIndex !== 'number') continue
@@ -82,7 +83,7 @@ export function createUpdateMany<T extends Entity>(
                         handle,
                         items: toHydrate,
                         opContext,
-                        writeStrategy: writeConfig.writeStrategy
+                        writeStrategy
                     })
                 }
             }
@@ -134,7 +135,7 @@ export function createUpdateMany<T extends Entity>(
                     data: validObj,
                     opContext,
                     ticket,
-                    writeStrategy: writeConfig.writeStrategy,
+                    writeStrategy,
                     onSuccess: async (updated) => {
                         await storeWriteEngine.runAfterSave(hooks, validObj, 'update')
                         resolve(updated)

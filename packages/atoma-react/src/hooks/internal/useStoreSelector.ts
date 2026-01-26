@@ -1,7 +1,7 @@
 import { useRef, useSyncExternalStore } from 'react'
 import type { Entity, StoreApi } from 'atoma/core'
 import type { EntityId } from 'atoma/protocol'
-import { unstable_storeHandleManager as storeHandleManager } from 'atoma/core'
+import { getStoreSource } from './storeInternal'
 
 type StoreSnapshot<T extends Entity> = ReadonlyMap<EntityId, T>
 
@@ -9,8 +9,9 @@ export function useStoreSnapshot<T extends Entity, Relations = {}>(
     store: StoreApi<T, Relations>,
     tag: string
 ): StoreSnapshot<T> {
-    const getSnapshot = () => storeHandleManager.getStoreSnapshot(store, tag) as StoreSnapshot<T>
-    const subscribe = (listener: () => void) => storeHandleManager.subscribeStore(store, listener, tag)
+    const source = getStoreSource(store, tag)
+    const getSnapshot = () => source.getSnapshot() as StoreSnapshot<T>
+    const subscribe = (listener: () => void) => source.subscribe(listener)
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
@@ -27,8 +28,10 @@ export function useStoreSelector<T extends Entity, Relations = {}, Selected = un
 
     const cacheRef = useRef<{ store: StoreApi<T, Relations>; snapshot: StoreSnapshot<T>; selection: Selected } | null>(null)
 
+    const source = getStoreSource(store, tag)
+
     const getSnapshot = () => {
-        const snapshot = storeHandleManager.getStoreSnapshot(store, tag) as StoreSnapshot<T>
+        const snapshot = source.getSnapshot() as StoreSnapshot<T>
         const cached = cacheRef.current
         if (cached && cached.store === store && cached.snapshot === snapshot) {
             return cached.selection
@@ -44,6 +47,6 @@ export function useStoreSelector<T extends Entity, Relations = {}, Selected = un
         return next
     }
 
-    const subscribe = (listener: () => void) => storeHandleManager.subscribeStore(store, listener, tag)
+    const subscribe = (listener: () => void) => source.subscribe(listener)
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

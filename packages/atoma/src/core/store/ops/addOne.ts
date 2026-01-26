@@ -1,16 +1,16 @@
 import type { CoreRuntime, Entity, StoreOperationOptions } from '../../types'
-import { storeWriteEngine, type StoreWriteConfig } from '../internals/storeWriteEngine'
+import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createAddOne<T extends Entity>(
     clientRuntime: CoreRuntime,
-    handle: StoreHandle<T>,
-    writeConfig: StoreWriteConfig
+    handle: StoreHandle<T>
 ) {
     const { hooks } = handle
     return async (obj: Partial<T>, options?: StoreOperationOptions) => {
         const validObj = await storeWriteEngine.prepareForAdd<T>(clientRuntime, handle, obj, options?.opContext)
         const { ticket } = clientRuntime.mutation.api.beginWrite()
+        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
 
         const resultPromise = new Promise<T>((resolve, reject) => {
             storeWriteEngine.dispatch<T>(clientRuntime, {
@@ -19,7 +19,7 @@ export function createAddOne<T extends Entity>(
                 handle,
                 opContext: options?.opContext,
                 ticket,
-                writeStrategy: writeConfig.writeStrategy,
+                writeStrategy,
                 onSuccess: (o) => {
                     void storeWriteEngine.runAfterSave(hooks, validObj, 'add')
                         .then(() => {

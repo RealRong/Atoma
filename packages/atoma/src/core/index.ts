@@ -1,4 +1,3 @@
-import { createStore } from './createStore'
 import { createActionId, createOpContext, normalizeOperationContext } from './operationContext'
 import { applyQuery, stableStringify } from './query'
 import { belongsTo, hasMany, hasOne, variants } from './relations/builders'
@@ -7,13 +6,8 @@ import { collectRelationStoreTokens, projectRelationsBatch } from './relations/p
 import { normalizeKey } from './relations/utils'
 import { HistoryManager } from './history/HistoryManager'
 import { fuzzySearch } from './search'
-import { createDirectStoreView } from './store/createDirectStoreView'
 
 export const Core = {
-    store: {
-        createStore,
-        createDirectStoreView
-    },
     operation: {
         createActionId,
         createOpContext,
@@ -87,11 +81,8 @@ export type {
     WriteManyResult
 } from './types'
 
-export type { CoreStore, CoreStoreConfig } from './createStore'
 export { MutationPipeline } from './mutation/MutationPipeline'
 export type { MutationApi, MutationAcks } from './mutation/MutationPipeline'
 export type { StoreIndexes } from './indexes/StoreIndexes'
 export type { FuzzySearchOptions, FuzzySearchResult } from './search'
-
-// For first-party extension packages (e.g. atoma-react). Not a stable public API.
-export { storeHandleManager as unstable_storeHandleManager } from './store/internals/storeHandleManager'
+export type { QueryMatcherOptions } from './query/QueryMatcher'

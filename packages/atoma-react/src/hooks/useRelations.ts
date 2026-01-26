@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Core } from 'atoma/core'
 import type { Entity, IStore, RelationIncludeInput, StoreToken, WithRelations } from 'atoma/core'
 import type { EntityId } from 'atoma/protocol'
-import { unstable_storeHandleManager as storeHandleManager } from 'atoma/core'
 import { useShallowStableArray } from './useShallowStableArray'
+import { getStoreSource, requireStoreInternal } from './internal/storeInternal'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 
@@ -80,9 +80,11 @@ export function useRelations<T extends Entity>(
         if (!resolveStore) return undefined
         const store = resolveStore(storeToken)
         if (!store) return undefined
+        const internal = requireStoreInternal(store as any, 'useRelations')
+        const handle: any = internal.getHandle()
         return {
-            map: storeHandleManager.getStoreSnapshot(store, 'useRelations') as Map<EntityId, any>,
-            indexes: storeHandleManager.getStoreIndexes(store, 'useRelations')
+            map: handle.jotaiStore.get(handle.atom) as Map<EntityId, any>,
+            indexes: handle.indexes
         }
     }
 
@@ -187,7 +189,8 @@ export function useRelations<T extends Entity>(
         tokens.forEach(token => {
             const store = resolveStore(token)
             if (!store) return
-            const unsub = storeHandleManager.subscribeStore(store, () => setLiveTick(t => t + 1), 'useRelations')
+            const source = getStoreSource(store as any, 'useRelations')
+            const unsub = source.subscribe(() => setLiveTick(t => t + 1))
             unsubscribers.push(unsub)
         })
 

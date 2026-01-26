@@ -8,7 +8,7 @@ import { resolveCachePolicy } from './cachePolicy'
 import { evaluateWithIndexes } from './localEvaluate'
 import { summarizeFindManyParams } from './paramsSummary'
 import { applyQuery } from '../../../query'
-import { storeHandleManager } from '../../internals/storeHandleManager'
+import { resolveObservabilityContext } from '../../internals/storeHandleManager'
 import type { StoreHandle } from '../../internals/handleTypes'
 import { normalizeAtomaServerQueryParams } from '../../internals/queryParams'
 
@@ -19,7 +19,7 @@ export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, han
         const explainEnabled = options?.explain === true
         const cachePolicy = resolveCachePolicy(options)
 
-        const observabilityContext = storeHandleManager.resolveObservabilityContext(clientRuntime, handle, options)
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
 
         const optionsForRemote = options
             ? ({ ...options, explain: undefined } as any as FindManyOptions<T>)

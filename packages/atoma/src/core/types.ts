@@ -174,16 +174,6 @@ export type StoreDispatchEvent<T extends Entity> = {
             onSuccess?: (o: T) => void
         }
         | {
-            /**
-             * Server-assigned create (non-optimistic):
-             * - 不要求 data.id 存在
-             * - 仅用于 createServerAssigned*（在线 strict + direct），真正写入发生在 persist 后的 commit 阶段
-             */
-            type: 'create'
-            data: Partial<T>
-            onSuccess?: (o: T) => void
-        }
-        | {
             type: 'upsert'
             data: PartialWithId<T>
             upsert?: UpsertWriteOptions
@@ -230,6 +220,14 @@ export type StoreDispatchEvent<T extends Entity> = {
  */
 export interface StoreOperationOptions {
     force?: boolean
+    /**
+     * 写入策略（本次调用级别）。不指定时使用该 store 的 schema 默认策略（若也未配置，则视为 direct）。
+     *
+     * 说明：
+     * - 这是“写入执行参数”，不属于 store identity。
+     * - 由 core 透传给 `CoreRuntime.persistence.persist`，并由 persistence handlers 决定语义。
+     */
+    writeStrategy?: WriteStrategy
     /**
      * `await` 完成语义（默认 optimistic）
      * - 注意：不影响 UI 是否立即更新（UI 仍默认 optimistic commit）
@@ -397,11 +395,9 @@ export interface StoreConfig<T> {
     /**
      * Default write behavior for this store.
      * - `strategy` is opaque to core (plugins interpret it).
-     * - `allowImplicitFetchForWrite` controls whether update/delete can auto-fetch missing base data.
      */
     write?: Readonly<{
         strategy?: WriteStrategy
-        allowImplicitFetchForWrite?: boolean
     }>
 
     /** 可观测性/诊断（默认关闭） */
@@ -486,6 +482,24 @@ export type RuntimeIo = Readonly<{
 }>
 
 export type CoreRuntime = Readonly<{
+    /**
+     * Stable client identity for namespacing internal store keys.
+     * - Not exposed as a user-facing concept; used to build `storeKey = clientId:storeName`.
+     */
+    clientId: string
+
+    /**
+     * Internal helper to derive a stable storeKey.
+     * - Keep as a function to avoid duplicating string formatting logic across modules.
+     */
+    toStoreKey: (storeName: StoreToken) => string
+
+    /**
+     * Internal handle registry keyed by storeKey.
+     * - This is the migration path away from `store object -> handle` WeakMap mapping.
+     */
+    handles: Map<string, StoreHandle<any>>
+
     opsClient: OpsClientLike
     io: RuntimeIo
     mutation: MutationPipeline
@@ -563,18 +577,6 @@ export interface IStore<T, Relations = {}> {
     /** Add many items (single action) */
     addMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
 
-    /**
-     * Create one item with server-assigned id (non-optimistic).
-     * - 强语义：在线 + strict + 立即持久化；仅在服务端返回最终实体后才写入本地并 resolve。
-     */
-    createServerAssignedOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
-
-    /**
-     * Create many items with server-assigned ids (non-optimistic).
-     * - 强语义：在线 + strict + 立即持久化；仅在服务端返回最终实体后才写入本地并 resolve。
-     */
-    createServerAssignedMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
-
     /** Update an existing item (Immer recipe) */
     updateOne(id: EntityId, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions): Promise<T>
 
@@ -620,15 +622,11 @@ export interface IStore<T, Relations = {}> {
 }
 
 /**
- * Store API shape used by hooks and derived views.
+ * Store API shape used by hooks and external packages.
  *
- * 说明：
- * - 某些 derived view（例如“延迟持久化/队列化写入”的视图）会显式移除 server-assigned create（只适用于立即持久化）
- * - hooks 仅依赖常规 API，因此这里把 server-assigned create 标为可选
+ * 路线A：完全使用 client-assigned id，因此 store API 不再包含 server-assigned create 变体，也不再需要 “derived view 裁剪 API”。
  */
-export type StoreApi<T extends Entity, Relations = {}> =
-    Omit<IStore<T, Relations>, 'createServerAssignedOne' | 'createServerAssignedMany'>
-    & Partial<Pick<IStore<T, Relations>, 'createServerAssignedOne' | 'createServerAssignedMany'>>
+export type StoreApi<T extends Entity, Relations = {}> = IStore<T, Relations>
 
 type InferStoreRelations<R> =
     R extends BelongsToConfig<any, any, infer TR> ? TR
