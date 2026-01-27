@@ -1,10 +1,9 @@
 import { Protocol, type Meta, type OpsResponseData } from '#protocol'
-import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
-import { OpsClient } from '../OpsClient'
-import { Batch, type BatchEngine } from '../batch'
-import { createOpsHttpTransport } from './transport/opsTransport'
-import { fetchWithRetry, type RetryOptions } from './transport/retryPolicy'
-import type { HttpInterceptors } from './transport/jsonClient'
+import { OpsClient, type ExecuteOpsInput, type ExecuteOpsOutput } from '../types'
+import { Batch, type BatchEngine } from './internal/batch'
+import { createOpsHttpTransport } from './internal/transport/opsTransport'
+import { fetchWithRetry, type RetryOptions } from './internal/transport/retryPolicy'
+import type { HttpInterceptors } from './internal/transport/jsonClient'
 
 export type HttpOpsClientConfig = {
     baseURL: string

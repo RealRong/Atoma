@@ -95,7 +95,6 @@ export type ClientPluginContext = Readonly<{
          * - Typically derived from the configured backend(s).
          */
         clientKey: string
-        storeBackend?: Readonly<{ role: 'local' | 'remote'; kind?: string }>
     }>
     /**
      * History snapshot provider (used by devtools).

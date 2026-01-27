@@ -3,7 +3,6 @@ import { HistoryController } from '#client/internal/controllers/HistoryControlle
 import { ClientRuntime } from '#client/internal/factory/runtime/createClientRuntime'
 import { Protocol } from '#protocol'
 import type { Backend } from '#backend'
-import { HttpOpsClient } from '#backend/ops/http/HttpOpsClient'
 import type {
     AtomaClient,
     AtomaSchema,
@@ -18,20 +17,20 @@ export function buildAtomaClient<
 >(args: {
     schema: Schema
     dataProcessor?: StoreDataProcessor<any>
-    backend: Backend
+    backend?: Backend
     plugins?: ReadonlyArray<ClientPlugin<any>>
 }): AtomaClient<Entities, Schema> {
     const backend = args.backend
-    const storeBackend = backend.store
-    const remoteBackend = backend.remote
-    const clientKey = String(backend.key)
-
-    const storePersistence = backend.capabilities?.storePersistence ?? 'remote'
-    const storeRole: 'local' | 'remote' = (storePersistence === 'remote') ? 'remote' : 'local'
+    const storeBackend = backend?.store
+    const remoteBackend = backend?.remote
+    const storePersistence = backend?.capabilities?.storePersistence ?? (backend ? 'remote' : 'ephemeral')
 
     // Build an I/O pipeline (middleware chain) shared by Store and extension packages.
     const baseExecuteOps = async (req: import('#client/types').IoRequest): Promise<import('#client/types').IoResponse> => {
         if (req.channel === 'store') {
+            if (!storeBackend) {
+                throw new Error('[Atoma] store backend 未配置（local-only 模式不支持 ctx.store）')
+            }
             return await storeBackend.opsClient.executeOps({
                 ops: req.ops as any,
                 meta: req.meta as any,
@@ -69,6 +68,7 @@ export function buildAtomaClient<
         dataProcessor: args.dataProcessor,
         mirrorWritebackToStore: storePersistence === 'durable',
         ownerClient: () => client,
+        localOnly: !backend,
         // Important: all store ops go through the I/O pipeline (`channel: 'store'`).
         opsClient: {
             executeOps: (input: any) => ioExecute({
@@ -82,6 +82,7 @@ export function buildAtomaClient<
     })
 
     const historyController = new HistoryController({ runtime: clientRuntime })
+    const clientKey = backend?.key ? String(backend.key) : clientRuntime.clientId
 
     const resolveStore = (<Name extends keyof Entities & string>(name: Name) => {
         return clientRuntime.stores.resolveStore(String(name)) as any
@@ -109,23 +110,6 @@ export function buildAtomaClient<
     client.History = historyController.history
 
     registerClientRuntime(client, clientRuntime)
-
-    const kind = (() => {
-        const opsClient: any = storeBackend.opsClient
-        const ctorName = (opsClient && typeof opsClient === 'object' && (opsClient as any).constructor && typeof (opsClient as any).constructor.name === 'string')
-            ? String((opsClient as any).constructor.name)
-            : ''
-
-        // Avoid importing non-HTTP backends into the core client package.
-        // Backend packages can still expose meaningful class names for devtools purposes.
-        if (ctorName === 'IndexedDBOpsClient') return 'indexeddb' as const
-        if (ctorName === 'MemoryOpsClient') return 'memory' as const
-
-        if (opsClient instanceof HttpOpsClient || ctorName === 'HttpOpsClient') {
-            return (storePersistence === 'durable' ? 'localServer' : 'http') as 'localServer' | 'http'
-        }
-        return 'custom' as const
-    })()
 
     // Plugin system (core is intentionally sync-agnostic).
     const installed = new Set<string>()
@@ -321,11 +305,7 @@ export function buildAtomaClient<
         client,
         runtime: clientRuntime,
         meta: {
-            clientKey,
-            storeBackend: {
-                role: storeRole,
-                kind
-            }
+            clientKey
         },
         historyDevtools: historyController.devtools,
         onDispose,
@@ -402,7 +382,7 @@ export function buildAtomaClient<
         }
 
         try {
-            backend.dispose?.()
+            backend?.dispose?.()
         } catch {
             // ignore
         }

@@ -1,5 +1,21 @@
-import type { ExecuteOpsInput, ExecuteOpsOutput } from './ops/OpsClient'
-import type { NotifyMessage } from '#protocol'
+import type { ObservabilityContext } from '#observability'
+import type { Meta, NotifyMessage, Operation, OperationResult } from '#protocol'
+
+export type ExecuteOpsInput = {
+    ops: Operation[]
+    meta: Meta
+    signal?: AbortSignal
+    context?: ObservabilityContext
+}
+
+export type ExecuteOpsOutput = {
+    results: OperationResult[]
+    status?: number
+}
+
+export abstract class OpsClient {
+    abstract executeOps(input: ExecuteOpsInput): Promise<ExecuteOpsOutput>
+}
 
 export type OpsClientLike = Readonly<{
     executeOps: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
@@ -40,4 +56,3 @@ export type Backend = Readonly<{
     /** Optional resource cleanup hook (sqlite handles, notify subscriptions, etc.). */
     dispose?: () => void | Promise<void>
 }>
-

@@ -3,42 +3,41 @@ import {
     createCoalescedScheduler,
     createAbortController,
     executeOpsTasksBatch,
-    normalizeMaxQueueLength,
+    isWriteQueueFull,
     normalizeMaxOpsPerRequest,
     toError
 } from './internal'
 import type { ObservabilityContext } from '#observability'
-import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
-import type { OperationResult, QueryOp } from '#protocol'
+import type { ExecuteOpsInput, ExecuteOpsOutput } from '../../../types'
+import type { OperationResult, WriteOp } from '#protocol'
 import type { OpsTask } from './types'
 
-type QueryLaneDeps = {
+type WriteLaneDeps = {
     endpoint: () => string
     config: () => {
         flushIntervalMs?: number
-        queryMaxInFlight?: number
+        writeMaxInFlight?: number
         maxQueueLength?: number | { query?: number; write?: number }
-        queryOverflowStrategy?: 'reject_new' | 'drop_old_queries'
         maxOpsPerRequest?: number
         onError?: (error: Error, context: unknown) => void
     }
     executeFn: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
 }
 
-export class QueryLane {
+export class WriteLane {
     private disposed = false
     private readonly disposedError = new Error('BatchEngine disposed')
     private readonly queueOverflowError = new Error('BatchEngine queue overflow')
-    private readonly droppedQueryError = new Error('BatchEngine dropped old query due to queue overflow')
 
-    private readonly queryQueue: Array<OpsTask> = []
-    private queryInFlight = 0
+    private readonly writeQueue: Array<OpsTask> = []
+    private writeInFlight = 0
+
     private readonly inFlightControllers = new Set<AbortController>()
     private readonly inFlightTasks = new Set<OpsTask>()
 
     private readonly scheduler: ReturnType<typeof createCoalescedScheduler>
 
-    constructor(private readonly deps: QueryLaneDeps) {
+    constructor(private readonly deps: WriteLaneDeps) {
         this.scheduler = createCoalescedScheduler({
             getDelayMs: () => this.deps.config().flushIntervalMs ?? 0,
             run: () => this.drain()
@@ -46,7 +45,7 @@ export class QueryLane {
     }
 
     enqueue(
-        op: QueryOp,
+        op: WriteOp,
         internalContext?: ObservabilityContext
     ): Promise<OperationResult> {
         return new Promise((resolve, reject) => {
@@ -54,50 +53,35 @@ export class QueryLane {
                 reject(this.disposedError)
                 return
             }
-
-            const config = this.deps.config()
-            const maxLen = normalizeMaxQueueLength(config, 'query')
-            if (maxLen !== Infinity) {
-                const strategy = config.queryOverflowStrategy ?? 'reject_new'
-                if (strategy === 'drop_old_queries') {
-                    while (this.queryQueue.length >= maxLen) {
-                        const dropped = this.queryQueue.shift()
-                        dropped?.deferred.reject(this.droppedQueryError)
-                    }
-                } else {
-                    if (this.queryQueue.length >= maxLen) {
-                        reject(this.queueOverflowError)
-                        return
-                    }
-                }
+            if (isWriteQueueFull(this.deps.config(), this.writeQueue.length)) {
+                reject(this.queueOverflowError)
+                return
             }
-
-            this.queryQueue.push({
+            this.writeQueue.push({
                 op,
                 ctx: internalContext,
                 deferred: { resolve, reject }
             })
-
             this.signal()
         })
     }
 
     async drain() {
         const config = this.deps.config()
-        const maxInFlight = clampInt(config.queryMaxInFlight ?? 2, 1, 64)
+        const maxInFlight = clampInt(config.writeMaxInFlight ?? 1, 1, 64)
         const maxOps = normalizeMaxOpsPerRequest(config)
 
-        while (!this.disposed && this.queryInFlight < maxInFlight && this.queryQueue.length) {
-            const batch = takeBatch(this.queryQueue, maxOps)
+        while (!this.disposed && this.writeInFlight < maxInFlight && this.writeQueue.length) {
+            const batch = takeBatch(this.writeQueue, maxOps)
 
-            this.queryInFlight++
+            this.writeInFlight++
             batch.forEach(t => this.inFlightTasks.add(t))
             const controller = createAbortController()
             if (controller) this.inFlightControllers.add(controller)
 
             try {
                 const results = await executeOpsTasksBatch({
-                    lane: 'query',
+                    lane: 'write',
                     endpoint: this.deps.endpoint(),
                     tasks: batch,
                     executeFn: this.deps.executeFn,
@@ -113,18 +97,18 @@ export class QueryLane {
                     task.deferred.resolve(results[i])
                 }
             } catch (error: unknown) {
-                this.deps.config().onError?.(toError(error), { lane: 'query' })
+                this.deps.config().onError?.(toError(error), { lane: 'write' })
                 for (const task of batch) {
                     task.deferred.reject(this.disposed ? this.disposedError : error)
                 }
             } finally {
                 if (controller) this.inFlightControllers.delete(controller)
                 batch.forEach(t => this.inFlightTasks.delete(t))
-                this.queryInFlight--
+                this.writeInFlight--
             }
         }
 
-        if (!this.disposed && this.queryQueue.length) {
+        if (!this.disposed && this.writeQueue.length) {
             this.signal()
         }
     }
@@ -143,7 +127,7 @@ export class QueryLane {
         }
         this.inFlightControllers.clear()
 
-        const pending = this.queryQueue.splice(0, this.queryQueue.length)
+        const pending = this.writeQueue.splice(0, this.writeQueue.length)
         pending.forEach(t => t.deferred.reject(this.disposedError))
 
         for (const task of this.inFlightTasks.values()) {

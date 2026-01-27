@@ -1,7 +1,7 @@
 import type { Entity } from '#core'
 import type { CreateClientOptions, AtomaSchema } from './types'
-import { createHttpBackend } from '#backend'
-import type { CreateHttpBackendOptions } from '#backend'
+
+type HttpBackendConfig = Extract<NonNullable<CreateClientOptions<any, any>['backend']>, { baseURL: string }>
 
 export const presets = {
     onlineOnly: <
@@ -10,14 +10,15 @@ export const presets = {
     >(args: {
         url: string
         schema?: S
-        http?: Omit<CreateHttpBackendOptions, 'baseURL'>
+        http?: Omit<HttpBackendConfig, 'baseURL'>
     }): CreateClientOptions<E, S> => {
+        const backend = args.http
+            ? { baseURL: args.url, ...args.http }
+            : args.url
+
         return {
             ...(args.schema ? { schema: args.schema } : {}),
-            backend: createHttpBackend({
-                baseURL: args.url,
-                ...(args.http ? args.http : {})
-            })
+            backend
         }
     },
 } as const

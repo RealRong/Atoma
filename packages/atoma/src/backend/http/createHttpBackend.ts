@@ -1,7 +1,7 @@
 import { Protocol } from '#protocol'
 import { url as urlUtils } from '#shared'
-import { HttpOpsClient, type HttpOpsClientConfig } from './ops/http/HttpOpsClient'
-import type { Backend, BackendEndpoint, NotifyClient } from './types'
+import { HttpOpsClient, type HttpOpsClientConfig } from './HttpOpsClient'
+import type { Backend, BackendEndpoint, NotifyClient } from '../types'
 
 export type CreateHttpBackendOptions = Readonly<{
     baseURL: string

@@ -1,6 +1,6 @@
 import type { ObservabilityContext } from '#observability'
 import type { Operation, OperationResult, WriteOp } from '#protocol'
-import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
+import type { ExecuteOpsInput, ExecuteOpsOutput } from '../../../types'
 import { QueryLane } from './queryLane'
 import { WriteLane } from './writeLane'
 import { Protocol } from '#protocol'
