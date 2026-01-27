@@ -60,7 +60,7 @@ All of the above are defined by the shared `#protocol` module (`src/protocol/*`)
 
 ## Server (protocol core)
 
-`atoma/server` is a **protocol core**:
+`atoma-server` is a **protocol core**:
 
 - Accepts **Web standard** `Request`/`Response` only
 - Exposes two handlers: `ops(request)` and `subscribe(request)` (SSE)
@@ -70,8 +70,8 @@ All of the above are defined by the shared `#protocol` module (`src/protocol/*`)
 ### Example (Next.js route handlers)
 
 ```ts
-import { createAtomaHandlers } from 'atoma/server'
-import { createPrismaServerAdapter } from 'atoma/server/adapters/prisma'
+import { createAtomaHandlers } from 'atoma-server'
+import { createPrismaServerAdapter } from 'atoma-server/adapters/prisma'
 
 const handlers = createAtomaHandlers({
     adapter: createPrismaServerAdapter({ prisma: /* PrismaClient */ } as any)

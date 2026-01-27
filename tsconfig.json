@@ -1,4 +1,5 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
@@ -88,9 +89,6 @@
       ],
       "#sync/*": [
         "packages/atoma-sync/src/*"
-      ],
-      "#devtools": [
-        "packages/atoma/src/devtools/index.ts"
       ]
     },
     "outDir": "./dist",
@@ -98,16 +96,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "lib": [
-      "ES2020",
-      "DOM"
-    ],
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
     "jsx": "react-jsx"
   },
   "include": [

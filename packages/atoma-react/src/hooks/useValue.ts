@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
 import type { Entity, WithRelations, RelationIncludeInput, StoreApi } from 'atoma/core'
+import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useStoreSelector } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
-import { getStoreRelations } from './internal/storeInternal'
+import { requireStoreOwner } from './internal/storeInternal'
 
 /**
  * React hook to subscribe to a single entity by ID
@@ -28,9 +29,15 @@ export function useOne<T extends Entity, Relations = {}, const Include extends R
         store.getOne(id)
     }, [id, base, store])
 
-    const { relations, resolveStore } = getStoreRelations<T, Relations>(store, 'useOne')
+    const { client, storeName } = requireStoreOwner(store, 'useOne')
+    const relations = getStoreRelations(client, storeName) as Relations | undefined
     if (!options?.include || !relations) return base as Result
 
-    const rel = useRelations<T, Relations, Include>(base ? [base] : [], options.include, relations as Relations, resolveStore)
+    const rel = useRelations<T, Relations, Include>(
+        base ? [base] : [],
+        options.include,
+        relations as Relations,
+        (name) => resolveStore(client, name)
+    )
     return rel.data[0] as unknown as Result
 }

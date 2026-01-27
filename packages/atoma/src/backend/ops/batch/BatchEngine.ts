@@ -4,9 +4,9 @@ import type { ExecuteOpsInput, ExecuteOpsOutput } from '../OpsClient'
 import { QueryLane } from './queryLane'
 import { WriteLane } from './writeLane'
 import { Protocol } from '#protocol'
-import { Shared } from '#shared'
+import { zod } from '#shared'
 
-const { parseOrThrow, z } = Shared.zod
+const { parseOrThrow, z } = zod
 
 export interface BatchEngineConfig {
     /** Ops endpoint (for observability payloads only). */

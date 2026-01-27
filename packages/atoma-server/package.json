@@ -1,0 +1,46 @@
+{
+    "name": "atoma-server",
+    "version": "0.0.0",
+    "type": "module",
+    "description": "Atoma server handlers + adapters (optional)",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./adapters": {
+            "types": "./dist/adapters/index.d.ts",
+            "import": "./dist/adapters/index.js"
+        },
+        "./adapters/typeorm": {
+            "types": "./dist/adapters/typeorm/index.d.ts",
+            "import": "./dist/adapters/typeorm/index.js"
+        },
+        "./adapters/prisma": {
+            "types": "./dist/adapters/prisma/index.d.ts",
+            "import": "./dist/adapters/prisma/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsup",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "atoma": "workspace:*"
+    },
+    "peerDependencies": {
+        "@prisma/client": "^5.0.0",
+        "typeorm": "^0.3.20"
+    },
+    "peerDependenciesMeta": {
+        "@prisma/client": {
+            "optional": true
+        },
+        "typeorm": {
+            "optional": true
+        }
+    }
+}

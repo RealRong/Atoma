@@ -8,10 +8,11 @@ import type {
     WithRelations,
     StoreApi
 } from 'atoma/core'
+import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'
 import { useRemoteFindMany } from './useRemoteFindMany'
-import { getStoreRelations } from './internal/storeInternal'
+import { requireStoreOwner } from './internal/storeInternal'
 
 type UseFindManySelect = 'entities' | 'ids'
 
@@ -151,14 +152,15 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
         } satisfies UseFindManyIdsResult<T>
     }
 
-    const { relations, resolveStore } = getStoreRelations<T, Relations>(store, 'useFindMany')
+    const { client, storeName } = requireStoreOwner(store, 'useFindMany')
+    const relations = getStoreRelations(client, storeName) as Relations | undefined
     const effectiveInclude = (options as any)?.include ?? ({} as Include)
 
     const relationsResult = useRelations<T, Relations, Include>(
         data as unknown as T[],
         effectiveInclude,
         relations,
-        resolveStore
+        (name) => resolveStore(client, name)
     )
 
     return {

@@ -9,8 +9,8 @@ import type {
     AtomaSchema,
     ClientPlugin,
 } from '#client/types'
-import { Devtools } from '#devtools'
 import type { ObservabilityContext } from '#observability'
+import { registerClientRuntime } from '../../../../internal/runtimeRegistry'
 
 export function buildAtomaClient<
     const Entities extends Record<string, Entity>,
@@ -62,10 +62,13 @@ export function buildAtomaClient<
 
     let ioExecute: import('#client/types').IoHandler = composeIo()
 
+    const client: any = {}
+
     const clientRuntime = new ClientRuntime({
         schema: args.schema,
         dataProcessor: args.dataProcessor,
         mirrorWritebackToStore: storePersistence === 'durable',
+        ownerClient: () => client,
         // Important: all store ops go through the I/O pipeline (`channel: 'store'`).
         opsClient: {
             executeOps: (input: any) => ioExecute({
@@ -102,10 +105,10 @@ export function buildAtomaClient<
         }
     }) as unknown as AtomaClient<Entities, Schema>['stores']
 
-    const client: any = {
-        stores,
-        History: historyController.history
-    }
+    client.stores = stores
+    client.History = historyController.history
+
+    registerClientRuntime(client, clientRuntime)
 
     const kind = (() => {
         const opsClient: any = storeBackend.opsClient
@@ -316,6 +319,7 @@ export function buildAtomaClient<
 
     const ctx: import('#client/types').ClientPluginContext = {
         client,
+        runtime: clientRuntime,
         meta: {
             clientKey,
             storeBackend: {
@@ -323,6 +327,7 @@ export function buildAtomaClient<
                 kind
             }
         },
+        historyDevtools: historyController.devtools,
         onDispose,
         io: {
             use: (mw) => {
@@ -397,31 +402,11 @@ export function buildAtomaClient<
         }
 
         try {
-            client.Devtools?.dispose?.()
-        } catch {
-            // ignore
-        }
-
-        try {
             backend.dispose?.()
         } catch {
             // ignore
         }
     }
-
-    const clientDevtools = Devtools.createClientInspector({
-        client,
-        runtime: clientRuntime,
-        historyDevtools: historyController.devtools,
-        meta: {
-            storeBackend: {
-                role: storeRole,
-                kind
-            },
-        }
-    })
-
-    client.Devtools = clientDevtools
 
     return client as AtomaClient<Entities, Schema>
 }

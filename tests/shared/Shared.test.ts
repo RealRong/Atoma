@@ -1,41 +1,41 @@
 import { describe, expect, it } from 'vitest'
-import { Shared } from '#shared'
+import { stableStringify, entityId, immer, version, writeOptions } from '#shared'
 
 describe('Shared', () => {
-    it('key.stableStringifyForKey 对对象 key 做稳定排序', () => {
-        expect(Shared.key.stableStringifyForKey({ b: 1, a: 2 })).toBe('{"a":2,"b":1}')
-        expect(Shared.key.stableStringifyForKey([{ b: 1, a: 2 }, 3])).toBe('[{"a":2,"b":1},3]')
+    it('stableStringify 对对象 key 做稳定排序', () => {
+        expect(stableStringify({ b: 1, a: 2 })).toBe('{"a":2,"b":1}')
+        expect(stableStringify([{ b: 1, a: 2 }, 3])).toBe('[{"a":2,"b":1},3]')
     })
 
-    it('key.optionsKey 区分 undefined 与空对象', () => {
-        expect(Shared.key.optionsKey(undefined)).toBe('')
-        expect(Shared.key.optionsKey({} as any)).toBe('{}')
+    it('stableStringify 区分 undefined 与空对象', () => {
+        expect(stableStringify(undefined)).toBe('')
+        expect(stableStringify({} as any)).toBe('{}')
     })
 
     it('version 解析与断言符合预期', () => {
-        expect(Shared.version.resolveFiniteVersion({ version: 0 })).toBe(0)
-        expect(Shared.version.resolvePositiveVersion({ version: 0 })).toBe(undefined)
-        expect(Shared.version.resolvePositiveVersion({ version: 2 })).toBe(2)
-        expect(() => Shared.version.requireBaseVersion('id' as any, { version: 0 })).toThrow('write requires baseVersion')
+        expect(version.resolveFiniteVersion({ version: 0 })).toBe(0)
+        expect(version.resolvePositiveVersion({ version: 0 })).toBe(undefined)
+        expect(version.resolvePositiveVersion({ version: 2 })).toBe(2)
+        expect(() => version.requireBaseVersion('id' as any, { version: 0 })).toThrow('write requires baseVersion')
     })
 
     it('entityId 判定与转换符合预期', () => {
-        expect(Shared.entityId.isEntityId('x')).toBe(true)
-        expect(Shared.entityId.isEntityId('')).toBe(false)
-        expect(Shared.entityId.toEntityId('x')).toBe('x')
-        expect(Shared.entityId.toEntityId('')).toBe(null)
+        expect(entityId.isEntityId('x')).toBe(true)
+        expect(entityId.isEntityId('')).toBe(false)
+        expect(entityId.toEntityId('x')).toBe('x')
+        expect(entityId.toEntityId('')).toBe(null)
     })
 
     it('writeOptions.upsertWriteOptionsFromDispatch 仅提取合法字段', () => {
-        expect(Shared.writeOptions.upsertWriteOptionsFromDispatch({ type: 'noop' })).toBe(undefined)
-        expect(Shared.writeOptions.upsertWriteOptionsFromDispatch({
+        expect(writeOptions.upsertWriteOptionsFromDispatch({ type: 'noop' })).toBe(undefined)
+        expect(writeOptions.upsertWriteOptionsFromDispatch({
             type: 'upsert',
             upsert: { mode: 'loose', merge: false }
         })).toEqual({ merge: false, upsert: { mode: 'loose' } })
     })
 
     it('immer.collectInverseRootAddsByEntityId 仅收集 root add', () => {
-        const m = Shared.immer.collectInverseRootAddsByEntityId([
+        const m = immer.collectInverseRootAddsByEntityId([
             { op: 'add', path: ['a'], value: { version: 1 } },
             { op: 'add', path: ['b', 'x'], value: { version: 2 } },
             { op: 'replace', path: ['c'], value: { version: 3 } }
@@ -44,4 +44,3 @@ describe('Shared', () => {
         expect(Array.from(m.entries())).toEqual([['a', { version: 1 }]])
     })
 })
-

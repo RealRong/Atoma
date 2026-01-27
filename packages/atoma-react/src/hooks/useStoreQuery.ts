@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import { Core } from 'atoma/core'
 import type { Entity, FindManyOptions, StoreApi } from 'atoma/core'
 import { useStoreSnapshot } from './internal/useStoreSelector'
-import { requireStoreInternal } from './internal/storeInternal'
+import { getStoreIndexes, getStoreMatcher } from 'atoma/internal'
+import { requireStoreOwner } from './internal/storeInternal'
 
 type UseStoreQuerySelect = 'entities' | 'ids'
 
@@ -20,10 +21,9 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
     options?: UseStoreQueryOptions<T>
 ): StoreQueryResult<T> {
     const map = useStoreSnapshot(store, 'useStoreQuery')
-    const internal = requireStoreInternal(store, 'useStoreQuery')
-    const handle: any = internal.getHandle()
-    const indexes = handle.indexes
-    const matcher = handle.matcher
+    const { client, storeName } = requireStoreOwner(store, 'useStoreQuery')
+    const indexes = getStoreIndexes(client, storeName)
+    const matcher = getStoreMatcher(client, storeName)
     const queryKey = useMemo(() => Core.query.stableStringify(options), [options])
 
     return useMemo(() => {

@@ -16,6 +16,7 @@ import { Protocol } from '#protocol'
 
 export class ClientRuntime implements ClientRuntimeInternal {
     readonly clientId: string
+    readonly ownerClient?: () => unknown
     readonly handles: Map<string, StoreHandle<any>>
     readonly toStoreKey: (storeName: import('#core').StoreToken) => string
     readonly opsClient: OpsClientLike
@@ -37,10 +38,12 @@ export class ClientRuntime implements ClientRuntimeInternal {
             idGenerator?: () => EntityId
         }
         mirrorWritebackToStore?: boolean
+        ownerClient?: () => unknown
     }) {
         // Internal stable id for namespacing store handles within this runtime instance.
         // Note: Use protocol ids (uuid when available) to avoid collisions.
         this.clientId = Protocol.ids.createOpId('client')
+        this.ownerClient = args.ownerClient
         this.handles = new Map<string, StoreHandle<any>>()
         this.toStoreKey = (storeName) => `${this.clientId}:${String(storeName)}`
 
@@ -55,7 +58,8 @@ export class ClientRuntime implements ClientRuntimeInternal {
         this.stores = new ClientRuntimeStores(this, {
             schema: args.schema,
             dataProcessor: args.dataProcessor,
-            defaults: args.defaults
+            defaults: args.defaults,
+            ownerClient: args.ownerClient
         })
 
         this.internal = new ClientRuntimeInternalEngine(this, {

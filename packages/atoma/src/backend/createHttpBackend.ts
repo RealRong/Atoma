@@ -1,5 +1,5 @@
 import { Protocol } from '#protocol'
-import { Shared } from '#shared'
+import { url as urlUtils } from '#shared'
 import { HttpOpsClient, type HttpOpsClientConfig } from './ops/http/HttpOpsClient'
 import type { Backend, BackendEndpoint, NotifyClient } from './types'
 
@@ -59,8 +59,8 @@ function createHttpNotifyClient(args: {
     const cfg = (notify && typeof notify === 'object') ? notify : undefined
     const buildUrl = cfg?.buildUrl
         ? cfg.buildUrl
-        : (args2?: { resources?: string[] }) => Shared.url.withResourcesParam(
-            Shared.url.resolveUrl(args.baseURL, cfg?.path ?? Protocol.http.paths.SYNC_SUBSCRIBE),
+        : (args2?: { resources?: string[] }) => urlUtils.withResourcesParam(
+            urlUtils.resolveUrl(args.baseURL, cfg?.path ?? Protocol.http.paths.SYNC_SUBSCRIBE),
             args2?.resources
         )
 
@@ -141,4 +141,3 @@ export function createHttpBackend(options: CreateHttpBackendOptions): Backend {
         }
     }
 }
-

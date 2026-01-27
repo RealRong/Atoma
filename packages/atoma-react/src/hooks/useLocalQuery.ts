@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { Core } from 'atoma/core'
 import type { Entity, FindManyOptions, StoreApi } from 'atoma/core'
-import { getStoreMatcher } from './internal/storeInternal'
+import { getStoreMatcher } from 'atoma/internal'
+import { requireStoreOwner } from './internal/storeInternal'
 
 type UseLocalQueryOptions<T> = Pick<FindManyOptions<T>, 'where' | 'orderBy' | 'limit' | 'offset'>
 
@@ -22,7 +23,9 @@ export function useLocalQuery<T extends Entity>(
 
     // Resolve matcher from store if provided, for advanced features like fuzzy search
     const matcher = useMemo(() => {
-        return store ? getStoreMatcher(store) : undefined
+        if (!store) return undefined
+        const { client, storeName } = requireStoreOwner(store, 'useLocalQuery')
+        return getStoreMatcher(client, storeName)
     }, [store])
 
     return useMemo(() => {

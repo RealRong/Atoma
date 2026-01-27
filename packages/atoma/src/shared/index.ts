@@ -1,20 +1,11 @@
-import * as errors from './errors'
-import * as entityId from './entityId'
-import * as immer from './immer'
-import * as stableKey from './stableKey'
-import * as url from './url'
-import * as version from './version'
-import * as writeOptions from './writeOptions'
-import * as zod from './zod'
+export * as errors from './errors'
 export { toError, toErrorWithFallback } from './errors'
 
-export const Shared = {
-    errors,
-    entityId,
-    immer,
-    key: stableKey,
-    url,
-    version,
-    writeOptions,
-    zod
-} as const
+export * as entityId from './entityId'
+export * as immer from './immer'
+export * as url from './url'
+export * as version from './version'
+export * as writeOptions from './writeOptions'
+export * as zod from './zod'
+
+export { stableStringify } from './stableStringify'

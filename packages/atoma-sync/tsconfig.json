@@ -1,48 +1,14 @@
 {
+    "extends": "../../tsconfig.base.json",
     "compilerOptions": {
         "baseUrl": ".",
         "noEmit": true,
         "paths": {
-            "#sync/*": ["src/*"],
-
-            "atoma": ["../atoma/src/index.ts"],
-            "atoma/client": ["../atoma/src/client/index.ts"],
-            "atoma/client/*": ["../atoma/src/client/*"],
-            "atoma/core": ["../atoma/src/core/index.ts"],
-            "atoma/core/*": ["../atoma/src/core/*"],
-            "atoma/shared": ["../atoma/src/shared/index.ts"],
-            "atoma/shared/*": ["../atoma/src/shared/*"],
-            "atoma/observability": ["../atoma/src/observability/index.ts"],
-            "atoma/observability/*": ["../atoma/src/observability/*"],
-            "atoma/protocol": ["../atoma/src/protocol/index.ts"],
-            "atoma/protocol/*": ["../atoma/src/protocol/*"],
-            "atoma/backend": ["../atoma/src/backend/index.ts"],
-            "atoma/backend/*": ["../atoma/src/backend/*"],
-
-            "#client": ["../atoma/src/client/index.ts"],
-            "#client/*": ["../atoma/src/client/*"],
-            "#core": ["../atoma/src/core/index.ts"],
-            "#core/*": ["../atoma/src/core/*"],
-            "#shared": ["../atoma/src/shared/index.ts"],
-            "#shared/*": ["../atoma/src/shared/*"],
-            "#observability": ["../atoma/src/observability/index.ts"],
-            "#observability/*": ["../atoma/src/observability/*"],
-            "#protocol": ["../atoma/src/protocol/index.ts"],
-            "#protocol/*": ["../atoma/src/protocol/*"],
-            "#backend": ["../atoma/src/backend/index.ts"],
-            "#backend/*": ["../atoma/src/backend/*"],
-            "#devtools": ["../atoma/src/devtools/index.ts"]
+            "#sync/*": ["src/*"]
         },
-        "lib": ["ES2020", "DOM"],
-        "target": "ES2020",
-        "module": "ESNext",
-        "moduleResolution": "bundler",
         "resolvePackageJsonImports": true,
         "resolvePackageJsonExports": true,
-        "customConditions": ["source"],
-        "strict": true,
-        "skipLibCheck": true,
-        "esModuleInterop": true
+        "customConditions": ["source"]
     },
     "include": ["src/**/*"],
     "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]

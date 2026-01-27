@@ -7,6 +7,7 @@ import type {
 } from '#core'
 import type { WriteStrategy } from '#core'
 import type { ObservabilityContext } from '#observability'
+import type { ClientRuntime } from './runtime'
 
 export type IoChannel = 'store' | 'remote'
 
@@ -83,6 +84,11 @@ export type RemoteApi = ChannelApi & Readonly<{
 export type ClientPluginContext = Readonly<{
     /** The client instance being extended (intentionally untyped to avoid circular generics). */
     client: unknown
+    /**
+     * Internal runtime (used by first-party plugins like devtools).
+     * - Not intended for most userland plugins.
+     */
+    runtime: ClientRuntime
     meta?: Readonly<{
         /**
          * Stable identifier for this client instance (used for namespacing plugin persistence).
@@ -91,6 +97,11 @@ export type ClientPluginContext = Readonly<{
         clientKey: string
         storeBackend?: Readonly<{ role: 'local' | 'remote'; kind?: string }>
     }>
+    /**
+     * History snapshot provider (used by devtools).
+     * - Shape is intentionally minimal and stable.
+     */
+    historyDevtools: Readonly<{ snapshot: () => any }>
     onDispose: (fn: () => void) => () => void
     io: ClientIo
     store: ChannelApi

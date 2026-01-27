@@ -23,7 +23,7 @@ DX 的核心约束：
 
 ### 0.2 Devtools Inspector（库内）与 overlay（独立包）
 
-库内 inspector（`atoma/devtools`）的设计偏好：
+Inspector（`atoma-devtools`）的设计偏好：
 
 - **client first + snapshot first**：事件用于触发刷新，数据以 snapshot 为准。
 - registry 维护多个 client entry，并可 `global().clients.list/get/snapshot`。

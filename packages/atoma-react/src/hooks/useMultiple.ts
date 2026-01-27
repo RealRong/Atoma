@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import type { Entity, RelationIncludeInput, StoreApi, WithRelations } from 'atoma/core'
+import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'
 import { useStoreSelector } from './internal/useStoreSelector'
-import { getStoreRelations } from './internal/storeInternal'
+import { requireStoreOwner } from './internal/storeInternal'
 
 interface UseMultipleOptions<T, Relations = {}> {
     limit?: number
@@ -56,9 +57,15 @@ export function useMany<T extends Entity, Relations = {}, const Include extends 
 
     const baseList = useStoreSelector(store, selectorFn, shallowEqual, 'useMany')
 
-    const { relations, resolveStore } = getStoreRelations<T, Relations>(store, 'useMany')
+    const { client, storeName } = requireStoreOwner(store, 'useMany')
+    const relations = getStoreRelations(client, storeName) as Relations | undefined
     const effectiveInclude = (include ?? ({} as Include))
-    const relationsResult = useRelations<T, Relations, Include>(baseList, effectiveInclude, relations, resolveStore)
+    const relationsResult = useRelations<T, Relations, Include>(
+        baseList,
+        effectiveInclude,
+        relations,
+        (name) => resolveStore(client, name)
+    )
     const withRelations = relationsResult.data
 
     return useMemo(() => {

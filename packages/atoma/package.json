@@ -8,52 +8,37 @@
     "types": "dist/index.d.ts",
     "exports": {
         ".": {
-            "types": "./src/index.ts",
+            "types": "./dist/index.d.ts",
             "import": "./dist/index.js"
         },
         "./client": {
-            "types": "./src/client/index.ts",
+            "types": "./dist/client/index.d.ts",
             "import": "./dist/client/index.js"
         },
-        "./devtools": {
-            "types": "./src/devtools/index.ts",
-            "import": "./dist/devtools/index.js"
-        },
         "./core": {
-            "types": "./src/core/index.ts",
+            "types": "./dist/core/index.d.ts",
             "import": "./dist/core/index.js"
         },
         "./shared": {
-            "types": "./src/shared/index.ts",
+            "types": "./dist/shared/index.d.ts",
             "import": "./dist/shared/index.js"
         },
         "./observability": {
-            "types": "./src/observability/index.ts",
+            "types": "./dist/observability/index.d.ts",
             "import": "./dist/observability/index.js"
         },
         "./protocol": {
-            "types": "./src/protocol/index.ts",
+            "types": "./dist/protocol/index.d.ts",
             "import": "./dist/protocol/index.js"
         },
         "./backend": {
-            "types": "./src/backend/index.ts",
+            "types": "./dist/backend/index.d.ts",
             "import": "./dist/backend/index.js"
         },
-        "./server": {
-            "types": "./src/server/index.ts",
-            "import": "./dist/server/index.js"
-        },
-        "./server/adapters": {
-            "types": "./src/server/adapters/index.ts",
-            "import": "./dist/server/adapters.js"
-        },
-        "./server/adapters/typeorm": {
-            "types": "./src/server/adapters/typeorm/index.ts",
-            "import": "./dist/server/adapters/typeorm.js"
-        },
-        "./server/adapters/prisma": {
-            "types": "./src/server/adapters/prisma/index.ts",
-            "import": "./dist/server/adapters/prisma.js"
+        "./internal": {
+            "types": "./dist/internal/index.d.ts",
+            "import": "./dist/internal/index.js",
+            "source": "./src/internal/index.ts"
         }
     },
     "imports": {

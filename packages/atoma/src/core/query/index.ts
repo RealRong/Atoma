@@ -118,24 +118,4 @@ export function applyQuery<T extends Record<string, any>>(
     return end !== undefined ? result.slice(start, end) : result.slice(start)
 }
 
-export const stableStringify = (obj: any): string => {
-    const seen = new WeakSet()
-    const helper = (value: any): any => {
-        if (value === null || typeof value !== 'object') return value
-        if (seen.has(value)) return undefined
-        seen.add(value)
-        if (Array.isArray(value)) return value.map(v => helper(v))
-        const entries = Object.entries(value as Record<string, any>).sort(([a], [b]) => a.localeCompare(b))
-        const normalized: Record<string, any> = {}
-        entries.forEach(([k, v]) => {
-            if (typeof v === 'function') return
-            normalized[k] = helper(v)
-        })
-        return normalized
-    }
-    try {
-        return JSON.stringify(helper(obj))
-    } catch {
-        return ''
-    }
-}
+export { stableStringify } from '#shared'

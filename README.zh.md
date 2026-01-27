@@ -60,7 +60,7 @@ export function Users() {
 
 ## Server
 
-`atoma/server` 的定位是**协议内核**：
+`atoma-server` 的定位是**协议内核**：
 
 - **只认 Web 标准 `Request`/`Response`**
 - 默认只暴露两个 handler：`ops(request)` / `subscribe(request)`（SSE）
@@ -70,8 +70,8 @@ export function Users() {
 ### 示例（Next.js route handlers）
 
 ```ts
-import { createAtomaHandlers } from 'atoma/server'
-import { createPrismaServerAdapter } from 'atoma/server/adapters/prisma'
+import { createAtomaHandlers } from 'atoma-server'
+import { createPrismaServerAdapter } from 'atoma-server/adapters/prisma'
 
 const handlers = createAtomaHandlers({
     adapter: createPrismaServerAdapter({ prisma: /* PrismaClient */ } as any)

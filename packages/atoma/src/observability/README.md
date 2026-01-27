@@ -127,7 +127,7 @@ const res = await store.findMany?.({ where: { done: { eq: false } }, explain: tr
 console.log(res?.explain)
 ```
 
-If you want to inspect “client/store/sync/history runtime state” in dev, use the inspector (`atoma/devtools`).
+If you want to inspect “client/store/sync/history runtime state” in dev, use `atoma-devtools` (register via `devtoolsPlugin()`, mount the UI via `mountAtomaDevTools()`).
 
 ## Notes on IDs and trace propagation
 

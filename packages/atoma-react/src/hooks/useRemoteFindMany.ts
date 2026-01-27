@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Entity, FindManyOptions, PageInfo, StoreApi } from 'atoma/core'
 import { Core } from 'atoma/core'
-import { hydrateStore, requireStoreInternal } from './internal/storeInternal'
+import { hydrateStore } from 'atoma/internal'
+import { getStoreRuntimeKey, requireStoreOwner } from './internal/storeInternal'
 
 type RemoteState<T extends Entity> = Readonly<{
     isFetching: boolean
@@ -73,9 +74,8 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
     enabled?: boolean
 }): UseRemoteFindManyResult<T> {
     const enabled = args.enabled !== false
-    const internal = requireStoreInternal(args.store, 'useRemoteFindMany')
-    const storeName = String((args.store as any)?.name ?? internal.storeName ?? 'store')
-    const runtime = internal.getHandle().jotaiStore as unknown as object | null
+    const { client, storeName } = requireStoreOwner(args.store, 'useRemoteFindMany')
+    const runtime = getStoreRuntimeKey(args.store, 'useRemoteFindMany')
 
     const key = useMemo(() => {
         const optionsKey = Core.query.stableStringify(stripRuntimeOptions(args.options))
@@ -120,7 +120,7 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
             .then(async (res: any) => {
                 const { data, pageInfo } = normalizeResult<T>(res)
                 if (!transient) {
-                    await hydrateStore(args.store, data, 'useRemoteFindMany')
+                    await hydrateStore<T>(client, storeName, data)
                 }
                 publish(entry, {
                     isFetching: false,

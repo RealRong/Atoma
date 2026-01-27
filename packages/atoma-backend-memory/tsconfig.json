@@ -1,19 +1,12 @@
 {
+    "extends": "../../tsconfig.base.json",
     "compilerOptions": {
         "baseUrl": ".",
         "noEmit": true,
-        "lib": ["ES2020", "DOM"],
-        "target": "ES2020",
-        "module": "ESNext",
-        "moduleResolution": "bundler",
         "resolvePackageJsonImports": true,
         "resolvePackageJsonExports": true,
-        "customConditions": ["source"],
-        "strict": true,
-        "skipLibCheck": true,
-        "esModuleInterop": true
+        "customConditions": ["source"]
     },
     "include": ["src/**/*"],
     "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }
-

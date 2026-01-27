@@ -7,17 +7,16 @@
     "description": "Atomic state management with universal persistence - built on Jotai and Immer",
     "workspaces": [
         "docs",
-        "devtools",
         "demo/server",
         "packages/*"
     ],
     "scripts": {
-        "build": "pnpm --filter atoma run build",
+        "build": "pnpm --filter atoma run build && pnpm --filter atoma-backend run build && pnpm --filter atoma-backend-memory run build && pnpm --filter atoma-backend-indexeddb run build && pnpm --filter atoma-sync run build && pnpm --filter atoma-react run build && pnpm --filter atoma-server run build && pnpm --filter atoma-devtools run build",
         "dev:lib": "pnpm --filter atoma run dev:lib",
         "demo:web": "vite --config demo/web/vite.config.ts",
         "demo:server": "pnpm --filter atoma-demo-server run dev",
-        "typecheck": "pnpm --filter atoma run typecheck && pnpm --filter atoma-react run typecheck && pnpm --filter atoma-sync run typecheck && pnpm --filter atoma-backend run typecheck && pnpm --filter atoma-backend-memory run typecheck && pnpm --filter atoma-backend-indexeddb run typecheck",
-        "check:sync-alias": "bash -lc \"if rg -n \\\"from '#sync/\\\" packages devtools demo docs tests -g'!packages/atoma-sync/**'; then echo 'ERROR: #sync alias must only be used inside packages/atoma-sync.'; exit 1; fi\"",
+        "typecheck": "pnpm build && pnpm --filter atoma run typecheck && pnpm --filter atoma-react run typecheck && pnpm --filter atoma-sync run typecheck && pnpm --filter atoma-backend run typecheck && pnpm --filter atoma-backend-memory run typecheck && pnpm --filter atoma-backend-indexeddb run typecheck && pnpm --filter atoma-server run typecheck && pnpm --filter atoma-devtools run typecheck",
+        "check:sync-alias": "bash -lc \"if rg -n \\\"from '#sync/\\\" packages demo docs tests -g'!packages/atoma-sync/**'; then echo 'ERROR: #sync alias must only be used inside packages/atoma-sync.'; exit 1; fi\"",
         "test": "vitest run",
         "test:ui": "vitest --ui",
         "start:docs": "npm run dev --prefix docs"

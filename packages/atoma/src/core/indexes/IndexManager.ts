@@ -7,9 +7,9 @@ import { StringIndex } from './implementations/StringIndex'
 import { SubstringIndex } from './implementations/SubstringIndex'
 import { TextIndex } from './implementations/TextIndex'
 import { IIndex } from './base/IIndex'
-import { Shared } from '#shared'
+import { zod } from '#shared'
 
-const { parseOrThrow, z } = Shared.zod
+const { parseOrThrow, z } = zod
 
 const indexDefinitionSchema = z.object({
     field: z.string().trim().min(1),

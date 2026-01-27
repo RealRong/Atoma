@@ -127,7 +127,7 @@ const res = await store.findMany?.({ where: { done: { eq: false } }, explain: tr
 console.log(res?.explain)
 ```
 
-如果你想在开发期查看“client/store/sync/history 等运行时状态”，请使用 Inspector（`atoma/devtools`）。
+如果你想在开发期查看“client/store/sync/history 等运行时状态”，请使用 `atoma-devtools`（通过 `devtoolsPlugin()` 注册，UI 用 `mountAtomaDevTools()` 挂载）。
 
 ## 关于 ID 与 trace 传递
 

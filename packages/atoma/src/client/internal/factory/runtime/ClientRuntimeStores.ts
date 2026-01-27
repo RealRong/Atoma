@@ -25,7 +25,6 @@ import {
 type StoreListener = (store: StoreApi<any, any> & { name: string }) => void
 
 const toStoreName = (name: unknown) => String(name)
-const STORE_INTERNAL = Symbol.for('atoma.storeInternal')
 
 type StoreEngine<T extends Entity = any> = Readonly<{
     handle: StoreHandle<T>
@@ -51,6 +50,7 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
             defaults?: {
                 idGenerator?: () => EntityId
             }
+            ownerClient?: () => unknown
         }
     ) {}
 
@@ -88,21 +88,13 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
             findMany: (options?: any) => this.ensureEngine(key).api.findMany(options)
         }
 
-        // Single internal channel for hooks/devtools (not part of public API).
-        // Keeps the user-facing store facade "stateless" while still enabling subscription/introspection internally.
-        facade[STORE_INTERNAL] = {
-            storeName: key,
-            resolveStore: (name: StoreToken) => this.resolveStore(name),
-            getHandle: () => {
-                this.ensureEngine(key)
-                const handle = this.runtime.handles.get(this.runtime.toStoreKey(key))
-                if (!handle) throw new Error(`[Atoma] storeInternal.getHandle: 未找到 store handle（storeName=${key}）`)
-                return handle
-            },
-            writeback: async (handle: StoreHandle<any>, item: any) => {
-                return await this.runtime.dataProcessor.writeback(handle, item)
-            }
-        }
+        // Non-enumerable owner pointer for bindings (e.g. atoma-react) to locate the runtime/client.
+        // This keeps StoreApi DX as CRUD-first while still allowing hooks to access runtime capabilities.
+        Object.defineProperty(facade, 'client', {
+            get: () => this.args.ownerClient?.(),
+            enumerable: false,
+            configurable: false
+        })
 
         this.facadeByName.set(key, facade)
         return facade

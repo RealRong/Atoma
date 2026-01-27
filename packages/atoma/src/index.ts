@@ -10,6 +10,4 @@ export { Core } from './core'
 
 export { Protocol } from './protocol'
 
-export { Shared } from './shared'
-
 export { Observability } from './observability'

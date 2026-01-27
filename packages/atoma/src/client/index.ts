@@ -7,6 +7,7 @@ export type {
     ClientPluginContext,
     PersistHandler,
     PluginCapableClient,
+    ClientRuntime,
     AtomaClient,
     AtomaHistory
 } from './types'

@@ -5,16 +5,12 @@ export default defineConfig({
     entry: {
         index: 'src/index.ts',
         'client/index': 'src/client/index.ts',
-        'devtools/index': 'src/devtools/index.ts',
         'core/index': 'src/core/index.ts',
         'shared/index': 'src/shared/index.ts',
         'observability/index': 'src/observability/index.ts',
         'protocol/index': 'src/protocol/index.ts',
         'backend/index': 'src/backend/index.ts',
-        'server/index': 'src/server/index.ts',
-        'server/adapters': 'src/server/adapters/index.ts',
-        'server/adapters/typeorm': 'src/server/adapters/typeorm/index.ts',
-        'server/adapters/prisma': 'src/server/adapters/prisma/index.ts'
+        'internal/index': 'src/internal/index.ts'
     },
     format: ['esm'],
     dts: true,
@@ -37,7 +33,6 @@ export default defineConfig({
                         '#observability': path.resolve(__dirname, 'src/observability/index.ts'),
                         '#protocol': path.resolve(__dirname, 'src/protocol/index.ts'),
                         '#backend': path.resolve(__dirname, 'src/backend/index.ts'),
-                        '#devtools': path.resolve(__dirname, 'src/devtools/index.ts'),
                     }
 
                     const map: Record<string, string> = {
@@ -47,10 +42,9 @@ export default defineConfig({
                         '#observability/': path.resolve(__dirname, 'src/observability/'),
                         '#protocol/': path.resolve(__dirname, 'src/protocol/'),
                         '#backend/': path.resolve(__dirname, 'src/backend/'),
-                        '#devtools/': path.resolve(__dirname, 'src/devtools/'),
                     }
 
-                    build.onResolve({ filter: /^#(client|core|shared|observability|protocol|backend|devtools)(\/.*)?$/ }, (args) => {
+                    build.onResolve({ filter: /^#(client|core|shared|observability|protocol|backend)(\/.*)?$/ }, (args) => {
                         const direct = exact[args.path]
                         if (direct) return { path: direct }
 
@@ -72,8 +66,6 @@ export default defineConfig({
         'jotai/vanilla',
         'jotai/vanilla/utils',
         'immer',
-        'lodash',
-        'typeorm',
-        '@prisma/client'
+        'lodash'
     ]
 })

@@ -13,9 +13,9 @@ import type {
     WriteResultData
 } from 'atoma/protocol'
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma/backend'
-import { Shared } from 'atoma/shared'
+import { zod } from 'atoma/shared'
 
-const { parseOrThrow, z } = Shared.zod
+const { parseOrThrow, z } = zod
 
 function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -528,4 +528,3 @@ export class IndexedDBOpsClient implements OpsClientLike {
         return { transactionApplied: false, results } as WriteResultData
     }
 }
-

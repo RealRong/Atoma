@@ -21,10 +21,12 @@ packages/atoma/src/
   observability/
   client/
   backend/
-  server/
-  devtools/        # 运行时 inspector（不是 devtools UI app）
   index.ts
 ```
+
+补充（已落地）：
+- `server` 已从 `packages/atoma/src/server` 拆到独立包 `packages/atoma-server`。
+- `devtools` 已从 `packages/atoma/src/devtools` 拆到独立包 `packages/atoma-devtools`（含 Inspector + Shadow DOM UI）。
 
 这意味着：
 - 任何对 `atoma` 的依赖都会“潜在”把 backend/server 等重模块带进来（即使通过 tree-shaking 规避，心智负担仍在）。
@@ -62,7 +64,7 @@ packages/atoma/src/
 ```
 packages/
   atoma/                  # 可选：聚合包（见 3.3）
-  atoma-shared/           # 最底层：纯工具/原语（zod、url、errors、stableKey、version...）
+  atoma-shared/           # 最底层：纯工具/原语（zod、url、errors、stableStringify、version...）
   atoma-protocol/         # 协议与传输工具（ops build/validate/sse/http）
   atoma-observability/    # trace/debug/sampling/runtime types
   atoma-core/             # 本地状态核心（store/mutation/history/indexes/relations）
@@ -224,4 +226,3 @@ atoma-react（独立，可依赖 client/core 的“公开 API”）
 4) sync 依赖边界
 - `atoma-sync` 应该只依赖 `atoma-protocol`（transport/ops builder）+（可选）`atoma-core`（如果需要 core 的某些公开类型）。
 - 避免 `atoma-sync` 依赖 `atoma-client`（否则 client 又依赖 sync 会形成环）。
-

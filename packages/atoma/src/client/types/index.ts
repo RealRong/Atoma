@@ -37,7 +37,6 @@ export type { AtomaSchema, AtomaStoreSchema } from './schema'
 
 export type {
     AtomaClient,
-    AtomaClientDevtools,
     AtomaStore,
     AtomaHistory
 } from './client'

@@ -5,7 +5,7 @@
  */
 import type { Patch } from 'immer'
 import { Protocol, type EntityId, type WriteAction, type WriteItem, type WriteItemMeta, type WriteOptions } from '#protocol'
-import { Shared } from '#shared'
+import { entityId as entityIdUtils, immer as immerUtils, version, writeOptions as writeOptionsUtils } from '#shared'
 import type { Entity, StoreDispatchEvent } from '../../types'
 import type { WriteIntent } from './types'
 
@@ -44,7 +44,7 @@ export function buildWriteIntentsFromEvents<T extends Entity>(args: {
             const baseForVersion = args.baseState.get(entityId) ?? value
             pushIntent({
                 action: 'update',
-                item: { entityId, baseVersion: Shared.version.requireBaseVersion(entityId, baseForVersion), value, meta }
+                item: { entityId, baseVersion: version.requireBaseVersion(entityId, baseForVersion), value, meta }
             })
             continue
         }
@@ -54,7 +54,7 @@ export function buildWriteIntentsFromEvents<T extends Entity>(args: {
             const base = args.baseState.get(entityId) ?? op.data
             pushIntent({
                 action: 'delete',
-                item: { entityId, baseVersion: Shared.version.requireBaseVersion(entityId, base), meta }
+                item: { entityId, baseVersion: version.requireBaseVersion(entityId, base), meta }
             })
             continue
         }
@@ -63,8 +63,8 @@ export function buildWriteIntentsFromEvents<T extends Entity>(args: {
             const entityId = op.data.id
             const value = args.optimisticState.get(entityId)
             if (!value) continue
-            const baseVersion = Shared.version.resolvePositiveVersion(value)
-            const options = Shared.writeOptions.upsertWriteOptionsFromDispatch(op)
+            const baseVersion = version.resolvePositiveVersion(value)
+            const options = writeOptionsUtils.upsertWriteOptionsFromDispatch(op)
             pushIntent({
                 action: 'upsert',
                 item: {
@@ -126,13 +126,13 @@ export function buildRestoreWriteItemsFromPatches<T extends Entity>(args: {
     const touchedIds = new Set<EntityId>()
     args.patches.forEach(p => {
         const root = p.path?.[0]
-        if (Shared.entityId.isEntityId(root)) touchedIds.add(root as EntityId)
+        if (entityIdUtils.isEntityId(root)) touchedIds.add(root as EntityId)
     })
 
-    const inverseRootAdds = Shared.immer.collectInverseRootAddsByEntityId(args.inversePatches)
+    const inverseRootAdds = immerUtils.collectInverseRootAddsByEntityId(args.inversePatches)
     const baseVersionByDeletedId = new Map<EntityId, number>()
     inverseRootAdds.forEach((value, id) => {
-        baseVersionByDeletedId.set(id, Shared.version.requireBaseVersion(id, value))
+        baseVersionByDeletedId.set(id, version.requireBaseVersion(id, value))
     })
 
     const upsertItems: WriteItem[] = []
@@ -142,7 +142,7 @@ export function buildRestoreWriteItemsFromPatches<T extends Entity>(args: {
         const meta = args.metaForItem()
         const next = args.nextState.get(id)
         if (next) {
-            const baseVersion = Shared.version.resolvePositiveVersion(next)
+            const baseVersion = version.resolvePositiveVersion(next)
             const item: WriteItem = {
                 entityId: id,
                 ...(typeof baseVersion === 'number' ? { baseVersion } : {}),

@@ -29,7 +29,6 @@ export interface IBase extends Entity {
     deleted?: boolean
     deletedAt?: number
     version?: number      // Optional: for optimistic locking
-    _etag?: string        // Optional: HTTP ETag for conflict detection
 }
 
 /**

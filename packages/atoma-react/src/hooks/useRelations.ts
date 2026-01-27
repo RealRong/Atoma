@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Core } from 'atoma/core'
 import type { Entity, IStore, RelationIncludeInput, StoreToken, WithRelations } from 'atoma/core'
 import type { EntityId } from 'atoma/protocol'
+import { getStoreIndexes, getStoreSnapshotMap, getStoreSource } from 'atoma/internal'
 import { useShallowStableArray } from './useShallowStableArray'
-import { getStoreSource, requireStoreInternal } from './internal/storeInternal'
+import { requireStoreOwner } from './internal/storeInternal'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 
@@ -80,11 +81,10 @@ export function useRelations<T extends Entity>(
         if (!resolveStore) return undefined
         const store = resolveStore(storeToken)
         if (!store) return undefined
-        const internal = requireStoreInternal(store as any, 'useRelations')
-        const handle: any = internal.getHandle()
+        const { client, storeName } = requireStoreOwner(store as any, 'useRelations')
         return {
-            map: handle.jotaiStore.get(handle.atom) as Map<EntityId, any>,
-            indexes: handle.indexes
+            map: getStoreSnapshotMap(client, storeName) as Map<EntityId, any>,
+            indexes: getStoreIndexes(client, storeName)
         }
     }
 
@@ -189,7 +189,8 @@ export function useRelations<T extends Entity>(
         tokens.forEach(token => {
             const store = resolveStore(token)
             if (!store) return
-            const source = getStoreSource(store as any, 'useRelations')
+            const { client, storeName } = requireStoreOwner(store as any, 'useRelations')
+            const source = getStoreSource<any>(client, storeName)
             const unsub = source.subscribe(() => setLiveTick(t => t + 1))
             unsubscribers.push(unsub)
         })

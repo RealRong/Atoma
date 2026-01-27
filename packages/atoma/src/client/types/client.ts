@@ -3,25 +3,6 @@ import type { InferRelationsFromSchema } from './relations'
 import type { AtomaSchema } from './schema'
 import type { PluginCapableClient } from './plugin'
 
-export type AtomaClientDevtools = {
-    id: string
-    label?: string
-    snapshot: () => any
-    subscribe: (fn: (e: { type: string; payload?: any }) => void) => () => void
-    stores: {
-        list: () => Array<{ name: string }>
-        snapshot: (name?: string) => any[]
-    }
-    indexes: {
-        list: () => Array<{ name: string }>
-        snapshot: (name?: string) => any[]
-    }
-    history: {
-        snapshot: () => any
-    }
-    dispose: () => void
-}
-
 export type AtomaStore<
     Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities>,
@@ -54,5 +35,4 @@ export type AtomaClient<
      */
     stores: AtomaStores<Entities, Schema>
     History: AtomaHistory
-    Devtools: AtomaClientDevtools
 }
