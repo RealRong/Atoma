@@ -34,7 +34,7 @@ export type LocalMutationPlan<T extends Entity> = Readonly<{
     inversePatches: Patch[]
 }>
 
-export type MutationCommitInfo = Readonly<{
+export type StoreCommit = Readonly<{
     storeName: string
     opContext: OperationContext
     patches: Patch[]

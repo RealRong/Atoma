@@ -42,10 +42,10 @@ export type Backend = Readonly<{
     /** Stable identifier for this backend instance (used for clientKey, plugin namespaces, etc.). */
     key: string
 
-    /** Store endpoint (used by ctx.store and direct CRUD). */
+    /** Store endpoint (used by ctx.transport.store and direct CRUD). */
     store: BackendEndpoint
 
-    /** Optional remote endpoint (used by ctx.remote for sync/notify/changes.pull, etc.). */
+    /** Optional remote endpoint (used by ctx.transport.remote for sync/notify/changes.pull, etc.). */
     remote?: BackendEndpoint
 
     /** Optional backend capabilities (client reads capabilities, not configuration). */

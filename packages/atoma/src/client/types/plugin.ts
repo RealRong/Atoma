@@ -1,12 +1,15 @@
 import type {
     Entity,
+    OperationContext,
     PersistRequest,
     PersistResult,
     PersistWriteback,
-    StoreToken
+    StoreCommit,
+    StoreToken,
+    WriteStrategy
 } from '#core'
-import type { WriteStrategy } from '#core'
-import type { ObservabilityContext } from '#observability'
+import type { DebugConfig, DebugEvent, ObservabilityContext } from '#observability'
+import type { Patch } from 'immer'
 import type { ClientRuntime } from './runtime'
 
 export type IoChannel = 'store' | 'remote'
@@ -31,6 +34,13 @@ export type IoMiddleware = (next: IoHandler) => IoHandler
 export type ClientIo = Readonly<{
     use: (mw: IoMiddleware) => () => void
 }>
+
+export type DevtoolsProvider = Readonly<{
+    snapshot: () => any
+    subscribe?: (fn: (e: any) => void) => () => void
+}>
+
+export type DevtoolsProviderInput = DevtoolsProvider | (() => any)
 
 export type PersistHandler = <T extends Entity>(args: {
     req: PersistRequest<T>
@@ -82,32 +92,43 @@ export type RemoteApi = ChannelApi & Readonly<{
 }>
 
 export type ClientPluginContext = Readonly<{
-    /** The client instance being extended (intentionally untyped to avoid circular generics). */
-    client: unknown
-    /**
-     * Internal runtime (used by first-party plugins like devtools).
-     * - Not intended for most userland plugins.
-     */
-    runtime: ClientRuntime
-    meta?: Readonly<{
+    core: Readonly<{
+        /** The client instance being extended (intentionally untyped to avoid circular generics). */
+        client: unknown
         /**
-         * Stable identifier for this client instance (used for namespacing plugin persistence).
-         * - Typically derived from the configured backend(s).
+         * Internal runtime (used by first-party plugins like devtools).
+         * - Not intended for most userland plugins.
          */
-        clientKey: string
+        runtime: ClientRuntime
+        meta?: Readonly<{
+            /**
+             * Stable identifier for this client instance (used for namespacing plugin persistence).
+             * - Typically derived from the configured backend(s).
+             */
+            clientKey: string
+            storeBackend?: Readonly<{
+                role: 'local' | 'remote'
+                kind: 'http' | 'indexeddb' | 'memory' | 'localServer' | 'custom'
+            }>
+        }>
     }>
-    /**
-     * History snapshot provider (used by devtools).
-     * - Shape is intentionally minimal and stable.
-     */
-    historyDevtools: Readonly<{ snapshot: () => any }>
+
     onDispose: (fn: () => void) => () => void
-    io: ClientIo
-    store: ChannelApi
-    remote: RemoteApi
+
+    transport: Readonly<{
+        io: ClientIo
+        store: ChannelApi
+        remote: RemoteApi
+    }>
+
+    commit: Readonly<{
+        subscribe: (listener: (commit: StoreCommit) => void) => () => void
+        applyPatches: (args: { storeName: StoreToken; patches: Patch[]; inversePatches: Patch[]; opContext: OperationContext }) => Promise<void>
+    }>
 
     observability: Readonly<{
         createContext: (storeName: StoreToken, args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
+        registerStore?: (args: { storeName: StoreToken; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => void
     }>
 
     /**
@@ -116,21 +137,17 @@ export type ClientPluginContext = Readonly<{
      */
     persistence: Readonly<{
         register: (key: WriteStrategy, handler: PersistHandler) => () => void
-    }>
-
-    /** Write tickets (for deferred confirmations). */
-    acks: Readonly<{
         ack: (idempotencyKey: string) => void
         reject: (idempotencyKey: string, reason?: unknown) => void
-    }>
-
-    /** Applies writeback results to memory; and commits to durable store when Store backend is local. */
-    writeback: Readonly<{
-        commit: <T extends Entity>(
+        writeback: <T extends Entity>(
             storeName: StoreToken,
             writeback: PersistWriteback<T>,
             options?: { context?: ObservabilityContext }
         ) => Promise<void>
+    }>
+
+    devtools: Readonly<{
+        register: (key: string, provider: DevtoolsProviderInput) => () => void
     }>
 }>
 

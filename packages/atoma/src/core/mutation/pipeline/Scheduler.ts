@@ -8,7 +8,7 @@ import type { PrimitiveAtom } from 'jotai/vanilla'
 import type { StoreDispatchEvent } from '../../types'
 import { createActionId, normalizeOperationContext } from '../../operationContext'
 import type { OperationContext } from '../../types'
-import type { MutationCommitInfo, MutationSegment } from './types'
+import type { StoreCommit, MutationSegment } from './types'
 
 type AtomKey = PrimitiveAtom<any>
 
@@ -21,7 +21,7 @@ function opContextSegmentKey(op: StoreDispatchEvent<any>) {
 export class Scheduler {
     constructor(
         private readonly deps: {
-            run: (args: MutationSegment<any>) => Promise<MutationCommitInfo | null | void>
+            run: (args: MutationSegment<any>) => Promise<StoreCommit | null | void>
         }
     ) { }
 

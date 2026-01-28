@@ -3,6 +3,12 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
+      "atoma-history": [
+        "packages/atoma-history/src/index.ts"
+      ],
+      "atoma-history/*": [
+        "packages/atoma-history/src/*"
+      ],
       "atoma-sync": [
         "packages/atoma-sync/src/index.ts"
       ],

@@ -1,13 +1,12 @@
 /**
  * Mutation Pipeline: Entry
- * Purpose: Wires scheduling, ticket tracking, and history recording for store mutations.
- * Call chain: Store.dispatch -> MutationPipeline.api.dispatch -> Scheduler.enqueue -> executeMutationFlow -> HistoryManager.record.
+ * Purpose: Wires scheduling and ticket tracking for store mutations.
+ * Call chain: Store.dispatch -> MutationPipeline.api.dispatch -> Scheduler.enqueue -> executeMutationFlow -> emitCommit.
  */
 import type { CoreRuntime, StoreDispatchEvent, StoreOperationOptions, WriteItemMeta, WriteTicket } from '../types'
 import { Scheduler } from './pipeline/Scheduler'
 import { WriteTicketManager } from './pipeline/WriteTicketManager'
-import { HistoryManager } from '../history/HistoryManager'
-import type { MutationCommitInfo, MutationSegment } from './pipeline/types'
+import type { StoreCommit } from './pipeline/types'
 import { executeMutationFlow } from './pipeline/MutationFlow'
 
 export type MutationApi = Readonly<{
@@ -24,17 +23,16 @@ export type MutationAcks = Readonly<{
 export class MutationPipeline {
     readonly api: MutationApi
     readonly acks: MutationAcks
-    readonly history: HistoryManager
 
     private readonly scheduler: Scheduler
     private readonly tickets: WriteTicketManager
+    private readonly commitListeners = new Set<(commit: StoreCommit) => void>()
 
     constructor(runtime: CoreRuntime) {
-        this.history = new HistoryManager()
         this.scheduler = new Scheduler({
             run: async (segment) => {
                 const committed = await executeMutationFlow(runtime, segment)
-                if (committed) this.history.record(committed)
+                if (committed) this.emitCommit(committed)
             }
         })
         this.tickets = new WriteTicketManager()
@@ -48,6 +46,24 @@ export class MutationPipeline {
         this.acks = {
             ack: (idempotencyKey) => this.tickets.ack(idempotencyKey),
             reject: (idempotencyKey, reason) => this.tickets.reject(idempotencyKey, reason)
+        }
+    }
+
+    subscribeCommit = (listener: (commit: StoreCommit) => void) => {
+        this.commitListeners.add(listener)
+        return () => {
+            this.commitListeners.delete(listener)
+        }
+    }
+
+    private emitCommit = (commit: StoreCommit) => {
+        if (!this.commitListeners.size) return
+        for (const listener of this.commitListeners) {
+            try {
+                listener(commit)
+            } catch {
+                // ignore
+            }
         }
     }
 }

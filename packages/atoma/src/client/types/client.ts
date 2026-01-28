@@ -34,5 +34,4 @@ export type AtomaClient<
      * - `client.stores('Todo')` (dynamic name)
      */
     stores: AtomaStores<Entities, Schema>
-    History: AtomaHistory
 }

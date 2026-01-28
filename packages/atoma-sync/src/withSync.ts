@@ -55,7 +55,7 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
     const resources = opts.resources
 
     const replicaId = getOrCreateGlobalReplicaId({ now })
-    const clientKey = String(ctx.meta?.clientKey ?? 'default').trim() || 'default'
+    const clientKey = String(ctx.core.meta?.clientKey ?? 'default').trim() || 'default'
     const namespace = `${clientKey}:${replicaId}`
     const keyOutbox = `atoma-sync:${namespace}:outbox`
     const keyCursor = `atoma-sync:${namespace}:cursor`
@@ -197,6 +197,11 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
 
     const extension: WithSyncExtension = { sync }
 
+    const unregisterDevtools = ctx.devtools.register('sync', {
+        snapshot: devtools.snapshot,
+        subscribe: devtools.subscribe
+    })
+
     const dispose = () => {
         try {
             engine?.dispose()
@@ -204,6 +209,12 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
             // ignore
         }
         engine = null
+
+        try {
+            unregisterDevtools()
+        } catch {
+            // ignore
+        }
 
         persistHandlers.dispose()
     }

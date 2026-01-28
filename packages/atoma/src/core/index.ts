@@ -4,7 +4,6 @@ import { belongsTo, hasMany, hasOne, variants } from './relations/builders'
 import { RelationResolver } from './relations/RelationResolver'
 import { collectRelationStoreTokens, projectRelationsBatch } from './relations/projector'
 import { normalizeKey } from './relations/utils'
-import { HistoryManager } from './history/HistoryManager'
 import { fuzzySearch } from './search'
 
 export const Core = {
@@ -26,9 +25,6 @@ export const Core = {
         hasMany,
         hasOne,
         variants
-    },
-    history: {
-        HistoryManager
     },
     search: {
         fuzzySearch
@@ -86,6 +82,7 @@ export type {
 
 export { MutationPipeline } from './mutation/MutationPipeline'
 export type { MutationApi, MutationAcks } from './mutation/MutationPipeline'
+export type { StoreCommit } from './mutation'
 export type { StoreIndexes } from './indexes/StoreIndexes'
 export type { FuzzySearchOptions, FuzzySearchResult } from './search'
 export type { QueryMatcherOptions } from './query/QueryMatcher'

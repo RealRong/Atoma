@@ -1,0 +1,15 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "baseUrl": ".",
+        "noEmit": true,
+        "paths": {
+            "#history/*": ["src/*"]
+        },
+        "resolvePackageJsonImports": true,
+        "resolvePackageJsonExports": true,
+        "customConditions": ["source"]
+    },
+    "include": ["src/**/*"],
+    "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

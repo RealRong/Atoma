@@ -1,0 +1,25 @@
+{
+    "name": "atoma-history",
+    "version": "0.0.0",
+    "type": "module",
+    "description": "Atoma History Plugin (optional extension package)",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "imports": {
+        "#history/*": "./src/*"
+    },
+    "scripts": {
+        "build": "tsup",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "atoma": "workspace:*"
+    }
+}

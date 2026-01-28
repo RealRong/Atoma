@@ -42,14 +42,16 @@ export class WritebackApplier implements SyncApplier {
             const obs = this.deps.ctx.observability.createContext(resource as any)
 
             const upserts = uniqueUpsertKeys.length
-                ? (await this.deps.ctx.remote.query<any>({
+                ? (await this.deps.ctx.transport.remote.query<any>({
                     store: resource as any,
-                    params: { where: { id: { in: uniqueUpsertKeys } } } as any,
+                    query: {
+                        filter: { op: 'in', field: 'id', values: uniqueUpsertKeys }
+                    },
                     context: obs
-                })).items.filter((i: any): i is any => i !== undefined)
+                })).data.filter((i: any): i is any => i !== undefined)
                 : []
 
-            await this.deps.ctx.writeback.commit(resource as any, {
+            await this.deps.ctx.persistence.writeback(resource as any, {
                 upserts,
                 deletes: uniqueDeleteKeys
             } as any, { context: obs })
@@ -59,7 +61,7 @@ export class WritebackApplier implements SyncApplier {
     applyWriteAck = async (ack: SyncWriteAck) => {
         const key = idempotencyKeyFromWriteItem(ack.item)
         if (key) {
-            this.deps.ctx.acks.ack(key)
+            this.deps.ctx.persistence.ack(key)
         }
 
         const upserts: any[] = []
@@ -77,7 +79,7 @@ export class WritebackApplier implements SyncApplier {
         }
 
         const obs = this.deps.ctx.observability.createContext(ack.resource as any)
-        await this.deps.ctx.writeback.commit(ack.resource as any, { upserts, deletes, versionUpdates } as any, { context: obs })
+        await this.deps.ctx.persistence.writeback(ack.resource as any, { upserts, deletes, versionUpdates } as any, { context: obs })
     }
 
     applyWriteReject = async (
@@ -85,7 +87,7 @@ export class WritebackApplier implements SyncApplier {
     ) => {
         const key = idempotencyKeyFromWriteItem(reject.item)
         if (key) {
-            this.deps.ctx.acks.reject(key, (reject.result as any)?.error ?? reject.result)
+            this.deps.ctx.persistence.reject(key, (reject.result as any)?.error ?? reject.result)
         }
 
         const upserts: any[] = []
@@ -108,7 +110,7 @@ export class WritebackApplier implements SyncApplier {
         }
 
         const obs = this.deps.ctx.observability.createContext(reject.resource as any)
-        await this.deps.ctx.writeback.commit(reject.resource as any, { upserts, deletes } as any, { context: obs })
+        await this.deps.ctx.persistence.writeback(reject.resource as any, { upserts, deletes } as any, { context: obs })
     }
 
     applyWriteResults: SyncApplier['applyWriteResults'] = async (args) => {

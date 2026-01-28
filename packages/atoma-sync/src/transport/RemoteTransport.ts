@@ -6,8 +6,8 @@ export class RemoteTransport implements SyncTransport {
     readonly subscribe?: SyncSubscribe
 
     constructor(private readonly ctx: ClientPluginContext) {
-        if (this.ctx.remote.subscribeNotify) {
-            this.subscribe = (args) => this.ctx.remote.subscribeNotify!({
+        if (this.ctx.transport.remote.subscribeNotify) {
+            this.subscribe = (args) => this.ctx.transport.remote.subscribeNotify!({
                 resources: args.resources,
                 signal: args.signal,
                 onError: args.onError,
@@ -17,7 +17,7 @@ export class RemoteTransport implements SyncTransport {
     }
 
     pullChanges: SyncTransport['pullChanges'] = async (input) => {
-        return await this.ctx.remote.changes.pull({
+        return await this.ctx.transport.remote.changes.pull({
             cursor: input.cursor,
             limit: input.limit,
             ...(input.resources?.length ? { resources: input.resources } : {}),
@@ -67,7 +67,7 @@ export class RemoteTransport implements SyncTransport {
         for (const group of groups) {
             let data: WriteResultData
             try {
-                data = await this.ctx.remote.write({
+                data = await this.ctx.transport.remote.write({
                     store: group.resource as any,
                     action: group.action,
                     items: group.entries.map(e => e.entry.item),
@@ -137,4 +137,3 @@ function isRetryableOpError(error: any): boolean {
     const kind = error.kind
     return kind === 'internal' || kind === 'adapter'
 }
-

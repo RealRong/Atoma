@@ -6,6 +6,8 @@ export type {
     ClientPlugin,
     ClientPluginContext,
     ClientIo,
+    DevtoolsProvider,
+    DevtoolsProviderInput,
     IoChannel,
     IoRequest,
     IoResponse,

@@ -6,5 +6,6 @@ enablePatches()
 export { MutationPipeline } from './MutationPipeline'
 export type { MutationAcks, MutationApi } from './MutationPipeline'
 export type {
-    PersistResult
+    PersistResult,
+    StoreCommit
 } from './pipeline/types'

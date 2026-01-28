@@ -1,5 +1,4 @@
 import type { Entity, StoreDataProcessor, StoreToken } from '#core'
-import { HistoryController } from '#client/internal/controllers/HistoryController'
 import { ClientRuntime } from '#client/internal/factory/runtime/createClientRuntime'
 import { Protocol } from '#protocol'
 import type { Backend } from '#backend'
@@ -10,6 +9,8 @@ import type {
 } from '#client/types'
 import type { ObservabilityContext } from '#observability'
 import { registerClientRuntime } from '../../../../internal/runtimeRegistry'
+
+const DEVTOOLS_REGISTRY_KEY = Symbol.for('atoma.devtools.registry')
 
 export function buildAtomaClient<
     const Entities extends Record<string, Entity>,
@@ -29,7 +30,7 @@ export function buildAtomaClient<
     const baseExecuteOps = async (req: import('#client/types').IoRequest): Promise<import('#client/types').IoResponse> => {
         if (req.channel === 'store') {
             if (!storeBackend) {
-                throw new Error('[Atoma] store backend 未配置（local-only 模式不支持 ctx.store）')
+                throw new Error('[Atoma] store backend 未配置（local-only 模式不支持 ctx.transport.store）')
             }
             return await storeBackend.opsClient.executeOps({
                 ops: req.ops as any,
@@ -81,7 +82,6 @@ export function buildAtomaClient<
         }
     })
 
-    const historyController = new HistoryController({ runtime: clientRuntime })
     const clientKey = backend?.key ? String(backend.key) : clientRuntime.clientId
 
     const resolveStore = (<Name extends keyof Entities & string>(name: Name) => {
@@ -107,8 +107,6 @@ export function buildAtomaClient<
     }) as unknown as AtomaClient<Entities, Schema>['stores']
 
     client.stores = stores
-    client.History = historyController.history
-
     registerClientRuntime(client, clientRuntime)
 
     // Plugin system (core is intentionally sync-agnostic).
@@ -122,6 +120,58 @@ export function buildAtomaClient<
             disposeListeners.delete(fn)
         }
     }
+
+    type DevtoolsProvider = import('#client/types').DevtoolsProvider
+    type DevtoolsProviderInput = import('#client/types').DevtoolsProviderInput
+
+    const devtoolsRegistry = (() => {
+        const providers = new Map<string, DevtoolsProvider>()
+        const listeners = new Set<(e: { type: 'register' | 'unregister'; key: string }) => void>()
+
+        const emit = (e: { type: 'register' | 'unregister'; key: string }) => {
+            for (const fn of listeners) {
+                try {
+                    fn(e)
+                } catch {
+                    // ignore
+                }
+            }
+        }
+
+        const normalizeProvider = (input: DevtoolsProviderInput): DevtoolsProvider => {
+            if (typeof input === 'function') {
+                return { snapshot: input }
+            }
+            const snapshot = (input as any)?.snapshot
+            if (typeof snapshot === 'function') return input as DevtoolsProvider
+            throw new Error('[Atoma] devtools.register: provider.snapshot 必须是函数')
+        }
+
+        return {
+            register: (key: string, providerInput: DevtoolsProviderInput) => {
+                const k = String(key ?? '').trim()
+                if (!k) throw new Error('[Atoma] devtools.register: key 必填')
+                const provider = normalizeProvider(providerInput)
+                providers.set(k, provider)
+                emit({ type: 'register', key: k })
+                return () => {
+                    if (providers.delete(k)) {
+                        emit({ type: 'unregister', key: k })
+                    }
+                }
+            },
+            get: (key: string) => providers.get(String(key)),
+            list: () => Array.from(providers.entries()).map(([key, provider]) => ({ key, provider })),
+            subscribe: (listener: (e: { type: 'register' | 'unregister'; key: string }) => void) => {
+                listeners.add(listener)
+                return () => {
+                    listeners.delete(listener)
+                }
+            }
+        }
+    })()
+
+    ;(clientRuntime as any)[DEVTOOLS_REGISTRY_KEY] = devtoolsRegistry
 
     type Operation = import('#protocol').Operation
     type OperationResult = import('#protocol').OperationResult
@@ -303,34 +353,48 @@ export function buildAtomaClient<
     } as any
 
     const ctx: import('#client/types').ClientPluginContext = {
-        client,
-        runtime: clientRuntime,
-        meta: {
-            clientKey
+        core: {
+            client,
+            runtime: clientRuntime,
+            meta: {
+                clientKey
+            }
         },
-        historyDevtools: historyController.devtools,
         onDispose,
-        io: {
-            use: (mw) => {
-                ioMiddlewares.push(mw)
-                ioExecute = composeIo()
-                return () => {
-                    const idx = ioMiddlewares.indexOf(mw)
-                    if (idx >= 0) ioMiddlewares.splice(idx, 1)
+        transport: {
+            io: {
+                use: (mw) => {
+                    ioMiddlewares.push(mw)
                     ioExecute = composeIo()
-                }
+                    return () => {
+                        const idx = ioMiddlewares.indexOf(mw)
+                        if (idx >= 0) ioMiddlewares.splice(idx, 1)
+                        ioExecute = composeIo()
+                    }
+                },
             },
+            store: storeApi,
+            remote: remoteApi
         },
-        store: storeApi,
-        remote: remoteApi,
+        commit: {
+            subscribe: (listener) => clientRuntime.mutation.subscribeCommit(listener),
+            applyPatches: (args) => clientRuntime.internal.dispatchPatches({
+                storeName: String(args.storeName),
+                patches: args.patches,
+                inversePatches: args.inversePatches,
+                opContext: args.opContext
+            })
+        },
         observability: clientRuntime.observability,
         persistence: {
-            register: clientRuntime.persistenceRouter.register
+            register: clientRuntime.persistenceRouter.register,
+            ack: clientRuntime.mutation.acks.ack,
+            reject: clientRuntime.mutation.acks.reject,
+            writeback: (storeName, writeback, options) => clientRuntime.internal.commitWriteback(storeName as any, writeback as any, options as any)
         },
-        acks: clientRuntime.mutation.acks,
-        writeback: {
-            commit: (storeName, writeback, options) => clientRuntime.internal.commitWriteback(storeName as any, writeback as any, options as any)
-        },
+        devtools: {
+            register: devtoolsRegistry.register
+        }
     }
 
     client.use = (plugin: any) => {

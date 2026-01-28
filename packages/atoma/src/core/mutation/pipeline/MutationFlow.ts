@@ -9,13 +9,13 @@ import type { EntityId } from '#protocol'
 import { storeWriteEngine } from '../../store/internals/storeWriteEngine'
 import { buildMutationProgram } from './MutationProgram'
 import { executeMutationPersistence } from './Persist'
-import type { MutationCommitInfo, MutationSegment, PersistResult, TranslatedWriteOp } from './types'
+import type { StoreCommit, MutationSegment, PersistResult, TranslatedWriteOp } from './types'
 import type { StoreHandle } from '../../store/internals/handleTypes'
 
 export async function executeMutationFlow<T extends Entity>(
     clientRuntime: CoreRuntime,
     args: MutationSegment<T>
-): Promise<MutationCommitInfo | null> {
+): Promise<StoreCommit | null> {
     const { handle, operations, opContext } = args
     const { atom, jotaiStore: store, indexes, storeName } = handle
 

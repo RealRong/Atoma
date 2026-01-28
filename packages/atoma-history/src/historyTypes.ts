@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type { OperationContext } from '../types'
+import type { OperationContext } from 'atoma/core'
 
 export type ChangeRecord = Readonly<{
     storeName: string
@@ -20,4 +20,3 @@ export type UndoStack = {
     undo: ActionRecord[]
     redo: ActionRecord[]
 }
-
