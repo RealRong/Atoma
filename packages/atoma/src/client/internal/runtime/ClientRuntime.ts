@@ -9,10 +9,10 @@ import type { StoreHandle } from '#core/store/internals/handleTypes'
 import type { AtomaSchema } from '#client/types'
 import type { ClientRuntimeInternal } from '#client/internal/types'
 import { DataProcessor } from '#core/store/internals/dataProcessor'
-import { ClientRuntimeObservability } from '#client/internal/factory/runtime/ClientRuntimeObservability'
-import { ClientRuntimeStores } from '#client/internal/factory/runtime/ClientRuntimeStores'
+import { ClientRuntimeObservability } from '#client/internal/runtime/ClientRuntimeObservability'
+import { ClientRuntimeStores } from '#client/internal/runtime/ClientRuntimeStores'
 import type { PersistHandler } from '#client/types/plugin'
-import { ClientRuntimeInternalEngine } from '#client/internal/factory/runtime/ClientRuntimeInternalEngine'
+import { ClientRuntimeInternalEngine } from '#client/internal/runtime/ClientRuntimeInternalEngine'
 import { Protocol } from '#protocol'
 
 export class ClientRuntime implements ClientRuntimeInternal {

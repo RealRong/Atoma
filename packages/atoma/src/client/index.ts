@@ -1,4 +1,4 @@
-export { createClient } from './internal/factory/createClient'
+export { createClient } from './internal/ClientFactory'
 export { presets } from './presets'
 export type { CreateClientOptions } from './types'
 

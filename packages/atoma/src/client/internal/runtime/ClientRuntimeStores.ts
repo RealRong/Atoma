@@ -3,7 +3,7 @@ import type { CoreRuntime, Entity, IStore, StoreApi, StoreDataProcessor, StoreTo
 import type { EntityId } from '#protocol'
 import type { AtomaSchema } from '#client/types'
 import type { ClientRuntimeStoresApi } from '#client/types/runtime'
-import { resolveStoreCreateOptions } from '#client/internal/factory/runtime/storeConfig'
+import { StoreConfigResolver } from '#client/internal/runtime/StoreConfigResolver'
 import { createStoreHandle } from '#core/store/internals/storeHandleManager'
 import type { StoreHandle } from '#core/store/internals/handleTypes'
 import {
@@ -43,6 +43,7 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
     private readonly facadeByName = new Map<string, StoreApi<any, any> & { name: string }>()
     private readonly created: Array<StoreApi<any, any> & { name: string }> = []
     private readonly listeners = new Set<StoreListener>()
+    private readonly configResolver: StoreConfigResolver
 
     constructor(
         private readonly runtime: CoreRuntime,
@@ -54,7 +55,14 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
             }
             ownerClient?: () => unknown
         }
-    ) {}
+    ) {
+        this.configResolver = new StoreConfigResolver({
+            schema: this.args.schema,
+            clientRuntime: this.runtime as any,
+            defaults: this.args.defaults,
+            dataProcessor: this.args.dataProcessor
+        })
+    }
 
     private notifyCreated = (store: StoreApi<any, any> & { name: string }) => {
         this.created.push(store)
@@ -108,13 +116,7 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
         const existing = this.engineByName.get(name)
         if (existing) return existing
 
-        const base = resolveStoreCreateOptions({
-            storeName: name,
-            schema: this.args.schema,
-            clientRuntime: this.runtime as any,
-            defaults: this.args.defaults,
-            dataProcessor: this.args.dataProcessor
-        }) as any
+        const base = this.configResolver.resolve(name) as any
 
         this.runtime.observability.registerStore?.({
             storeName: name,
