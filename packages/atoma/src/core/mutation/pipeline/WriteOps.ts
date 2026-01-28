@@ -5,7 +5,7 @@
  */
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type OperationResult, type StandardError, type WriteAction, type WriteItemResult, type WriteOp, type WriteResultData } from '#protocol'
-import type { CoreRuntime, Entity, PersistWriteback } from '../../types'
+import type { CoreRuntime, Entity, PersistAck } from '../../types'
 import type { TranslatedWriteOp, WriteIntent } from './types'
 import { createWritebackCollector } from './WritebackCollector'
 import type { StoreHandle } from '../../store/internals/handleTypes'
@@ -43,7 +43,7 @@ export async function executeWriteOps<T extends Entity>(args: {
     handle: StoreHandle<T>
     ops: Array<TranslatedWriteOp>
     context?: ObservabilityContext
-}): Promise<{ created?: T[]; writeback?: PersistWriteback<T> }> {
+}): Promise<{ ack?: PersistAck<T> }> {
     if (!args.ops.length) return {}
 
     const processedOps: TranslatedWriteOp[] = []
@@ -115,27 +115,28 @@ export async function executeWriteOps<T extends Entity>(args: {
     }
 
     const result = writeback.result()
+    const ack = result.ack
 
-    const created = result.created
-        ? (await Promise.all(result.created.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
+    const created = ack?.created
+        ? (await Promise.all(ack.created.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
             .filter(Boolean) as T[]
         : undefined
 
-    const writebackResult = result.writeback
-        ? {
-            ...result.writeback,
-            ...(result.writeback.upserts
-                ? {
-                    upserts: (await Promise.all(result.writeback.upserts.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
-                        .filter(Boolean) as T[]
-                }
-                : {})
-        }
+    const upserts = ack?.upserts
+        ? (await Promise.all(ack.upserts.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
+            .filter(Boolean) as T[]
+        : undefined
+
+    const ackResult = ack
+        ? ({
+            ...(created && created.length ? { created } : {}),
+            ...(upserts && upserts.length ? { upserts } : {}),
+            ...(ack.versionUpdates?.length ? { versionUpdates: ack.versionUpdates } : {})
+        } as PersistAck<T>)
         : undefined
 
     return {
-        ...(created && created.length ? { created } : {}),
-        ...(writebackResult ? { writeback: writebackResult } : {})
+        ...(ackResult ? { ack: ackResult } : {})
     }
 }
 

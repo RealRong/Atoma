@@ -89,8 +89,7 @@ export class SyncPersistHandlers {
             if (writes.length) await outbox.enqueueWrites({ writes })
             return {
                 status: 'enqueued',
-                ...(direct.created ? { created: direct.created } : {}),
-                ...(direct.writeback ? { writeback: direct.writeback } : {})
+                ...(direct.ack ? { ack: direct.ack } : {})
             } as PersistResult<T>
         }))
     }

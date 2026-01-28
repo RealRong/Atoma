@@ -3,7 +3,7 @@ import { Core, MutationPipeline } from '#core'
 import { executeWriteOps } from '#core/mutation/pipeline/WriteOps'
 import { createRuntimeIo } from '#core/runtime'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
-import type { EntityId, QueryParams, WriteAction } from '#protocol'
+import type { EntityId, QueryParams } from '#protocol'
 import type { StoreHandle } from '#core/store/internals/handleTypes'
 import type { AtomaSchema } from '#client/types'
 import type { ClientRuntimeInternal } from '#client/internal/types'
@@ -13,7 +13,6 @@ import { ClientRuntimeStores } from '#client/internal/factory/runtime/ClientRunt
 import type { PersistHandler } from '#client/types/plugin'
 import { ClientRuntimeInternalEngine } from '#client/internal/factory/runtime/ClientRuntimeInternalEngine'
 import { Protocol } from '#protocol'
-import { version } from '#shared'
 
 export class ClientRuntime implements ClientRuntimeInternal {
     readonly clientId: string
@@ -108,7 +107,7 @@ function createClientRuntimePersistenceRouter(
 ): PersistenceRouter {
     const persistDirect = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
         if (opts?.localOnly) {
-            return persistLocalOnly(req)
+            return { status: 'confirmed' }
         }
         const normalized = await executeWriteOps<T>({
             clientRuntime: runtime() as any,
@@ -118,8 +117,7 @@ function createClientRuntimePersistenceRouter(
         })
         return {
             status: 'confirmed',
-            ...(normalized.created ? { created: normalized.created } : {}),
-            ...(normalized.writeback ? { writeback: normalized.writeback } : {})
+            ...(normalized.ack ? { ack: normalized.ack } : {})
         }
     }
 
@@ -242,82 +240,6 @@ function createLocalRuntimeIo(_runtime: () => ClientRuntimeInternal) {
     return { executeOps, query, write }
 }
 
-function persistLocalOnly<T extends Entity>(req: PersistRequest<T>): PersistResult<T> {
-    const versionUpdates: Array<{ key: EntityId; version: number }> = []
-    const map = req.handle.jotaiStore.get(req.handle.atom) as Map<EntityId, T>
-
-    for (const entry of req.writeOps) {
-        const op = entry.op as any
-        if (!op || op.kind !== 'write') continue
-
-        const write = op.write as { action: WriteAction; items: any[]; options?: any }
-        const items = Array.isArray(write?.items) ? write.items : []
-        const options = write?.options as { upsert?: { mode?: 'strict' | 'loose' } } | undefined
-        const action = entry.action
-        const upsertMode = options?.upsert?.mode === 'loose' ? 'loose' : 'strict'
-
-        for (const item of items) {
-            const entityId = resolveEntityId(item)
-            if (!entityId) {
-                throw new Error('[Atoma] local persistence: 缺少 entityId')
-            }
-
-            if (action === 'create') {
-                const value = (item as any)?.value
-                const nextVersion = version.resolvePositiveVersion(value) ?? 1
-                versionUpdates.push({ key: entityId, version: nextVersion })
-                continue
-            }
-
-            if (action === 'update') {
-                const baseVersion = (item as any)?.baseVersion
-                if (!isPositiveVersion(baseVersion)) {
-                    throw new Error(`[Atoma] local persistence: update 缺少 baseVersion（id=${entityId})`)
-                }
-                const currentVersion = version.resolvePositiveVersion(map.get(entityId))
-                if (typeof currentVersion === 'number' && currentVersion !== baseVersion) {
-                    throw new Error(`[Atoma] local persistence: update 版本冲突（id=${entityId})`)
-                }
-                versionUpdates.push({ key: entityId, version: baseVersion + 1 })
-                continue
-            }
-
-            if (action === 'upsert') {
-                const baseVersion = (item as any)?.baseVersion
-                if (upsertMode === 'strict' && isPositiveVersion(baseVersion) === false) {
-                    const currentVersion = version.resolvePositiveVersion(map.get(entityId))
-                    if (typeof currentVersion === 'number') {
-                        throw new Error(`[Atoma] local persistence: strict upsert 缺少 baseVersion（id=${entityId})`)
-                    }
-                }
-                const currentVersion = version.resolvePositiveVersion(map.get(entityId))
-                const nextVersion = isPositiveVersion(baseVersion)
-                    ? baseVersion + 1
-                    : (typeof currentVersion === 'number' ? currentVersion + 1 : 1)
-                versionUpdates.push({ key: entityId, version: nextVersion })
-                continue
-            }
-
-            if (action === 'delete') {
-                const baseVersion = (item as any)?.baseVersion
-                if (!isPositiveVersion(baseVersion)) {
-                    throw new Error(`[Atoma] local persistence: delete 缺少 baseVersion（id=${entityId})`)
-                }
-                const currentVersion = version.resolvePositiveVersion(map.get(entityId))
-                if (typeof currentVersion === 'number' && currentVersion !== baseVersion) {
-                    throw new Error(`[Atoma] local persistence: delete 版本冲突（id=${entityId})`)
-                }
-                versionUpdates.push({ key: entityId, version: baseVersion + 1 })
-            }
-        }
-    }
-
-    return {
-        status: 'confirmed',
-        ...(versionUpdates.length ? { writeback: { versionUpdates } } : {})
-    }
-}
-
 function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -354,20 +276,4 @@ function projectSelect(data: unknown, select?: Record<string, boolean>): unknown
         if (Object.prototype.hasOwnProperty.call(data, k)) out[k] = (data as any)[k]
     })
     return out
-}
-
-function resolveEntityId(item: unknown): string {
-    if (!item || typeof item !== 'object') return ''
-    const raw = (item as any).entityId
-    if (typeof raw === 'string' && raw) return raw
-    const value = (item as any).value
-    if (value && typeof value === 'object') {
-        const id = (value as any).id
-        if (typeof id === 'string' && id) return id
-    }
-    return ''
-}
-
-function isPositiveVersion(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value > 0
 }

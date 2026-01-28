@@ -59,6 +59,7 @@ export type {
     PersistRequest,
     PersistResult,
     PersistStatus,
+    PersistAck,
     DataProcessor,
     DataProcessorContext,
     DataProcessorMode,

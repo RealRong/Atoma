@@ -1,14 +1,14 @@
 # Mutation Pipeline (Core)
 
-This folder contains the mutation execution pipeline for Atoma stores. It turns dispatch events into optimistic state updates, persistence operations, and final writeback/callback handling.
+This folder contains the mutation execution pipeline for Atoma stores. It turns dispatch events into optimistic state updates, persistence operations, and final server-ack/callback handling.
 
 ## Call chain (high level)
 
 1. `MutationPipeline.api.dispatch` enqueues events in `Scheduler`.
 2. `Scheduler` normalizes `opContext`, segments compatible events, and calls `executeMutationFlow` per segment.
-3. `executeMutationFlow` builds a `MutationProgram` and applies optimistic state updates.
+3. `executeMutationFlow` builds a `MutationProgram`, applies optimistic state updates, and advances local versions.
 4. `executeMutationPersistence` delegates to `CoreRuntime.persistence.persist`.
-5. Flow finalizes writeback, callbacks, and rollback on errors.
+5. Flow applies server ack (if any), callbacks, and rollback on errors.
 
 ## Module map
 
@@ -20,7 +20,7 @@ This folder contains the mutation execution pipeline for Atoma stores. It turns 
 - `WriteIntents.ts`: Dispatch/patch translation into protocol write intents.
 - `WriteOps.ts`: Protocol op construction and execution.
 - `Persist.ts`: Derives `writeStrategy` and calls `runtime.persistence.persist`.
-- `WritebackCollector.ts`: Aggregation of server writeback (created, upserts, versions).
+- `WritebackCollector.ts`: Aggregation of server ack (created, upserts, versions).
 - `WriteTicketManager.ts`: Write ticket creation and confirmation lifecycle.
 - `types.ts`: Shared pipeline types.
 
@@ -30,6 +30,7 @@ This folder contains the mutation execution pipeline for Atoma stores. It turns 
 - **Optimistic state**: Local state updates applied before persistence completes.
 - **Patches**: Immer patches/inverse patches for history and rollback.
 - **Persistence**: Core does not choose a strategy; `writeStrategy` is opaque to core and interpreted by the injected `Persistence`.
+- **Server ack**: Optional authoritative responses used to override local versions/data after persistence.
 - **Tickets**: `beginWrite` creates a write ticket; `awaitTicket` controls optimistic vs strict confirmation.
 
 ## Error handling

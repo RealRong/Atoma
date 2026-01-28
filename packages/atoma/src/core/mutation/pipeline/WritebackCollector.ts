@@ -1,15 +1,15 @@
 /**
  * Mutation Pipeline: Writeback Collector
- * Purpose: Collects server writeback (created entities, upserts, version updates).
+ * Purpose: Collects server ack (created entities, upserts, version updates).
  * Call chain: executeWriteOps -> createWritebackCollector -> executeMutationPersistence -> executeMutationFlow finalize.
  */
 import type { EntityId, WriteItemResult } from '#protocol'
-import type { Entity, PersistWriteback } from '../../types'
+import type { Entity, PersistAck } from '../../types'
 import type { TranslatedWriteOp } from './types'
 
 export type WritebackCollector<T extends Entity> = Readonly<{
     collect: (entry: TranslatedWriteOp, itemRes: WriteItemResult) => void
-    result: () => { created?: T[]; writeback?: PersistWriteback<T> }
+    result: () => { ack?: PersistAck<T> }
 }>
 
 export function createWritebackCollector<T extends Entity>(): WritebackCollector<T> {
@@ -25,13 +25,14 @@ export function createWritebackCollector<T extends Entity>(): WritebackCollector
             if (entityId) versionUpdates.push({ key: entityId, version })
         }
 
+        const shouldApplyData = shouldUseWritebackData(entry)
         const returned = itemRes.data
-        if (returned && typeof returned === 'object') {
+        if (shouldApplyData && returned && typeof returned === 'object') {
             upserts.push(returned as T)
         }
 
         if (entry.intent === 'created') {
-            if (returned && typeof returned === 'object') {
+            if (shouldApplyData && returned && typeof returned === 'object') {
                 created.push(returned as T)
             } else if (entry.requireCreatedData) {
                 throw new Error('[Atoma] server-assigned create requires returning created results')
@@ -40,18 +41,29 @@ export function createWritebackCollector<T extends Entity>(): WritebackCollector
     }
 
     const result = () => {
-        const writeback = (upserts.length || versionUpdates.length)
+        const ack = (created.length || upserts.length || versionUpdates.length)
             ? ({
+                ...(created.length ? { created } : {}),
                 ...(upserts.length ? { upserts } : {}),
                 ...(versionUpdates.length ? { versionUpdates } : {})
-            } as PersistWriteback<T>)
+            } as PersistAck<T>)
             : undefined
 
         return {
-            ...(created.length ? { created } : {}),
-            ...(writeback ? { writeback } : {})
+            ...(ack ? { ack } : {})
         }
     }
 
     return { collect, result }
+}
+
+function shouldUseWritebackData(entry: TranslatedWriteOp): boolean {
+    const op: any = entry.op
+    if (!op || op.kind !== 'write') return false
+    const options = (op.write && typeof op.write === 'object') ? (op.write as any).options : undefined
+    if (!options || typeof options !== 'object') return true
+    if ((options as any).returning === false) return false
+    const select = (options as any).select
+    if (select && typeof select === 'object' && Object.keys(select as any).length) return false
+    return true
 }

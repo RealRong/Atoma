@@ -72,10 +72,20 @@ export type DeleteItem = {
 }
 
 /**
- * Persist writeback (direct confirmed result):
- * - 用于把服务端确认后的 version（以及可选 data）写回本地 store
+ * Writeback payload for applying remote changes to memory/durable stores.
  */
 export type PersistWriteback<T extends Entity> = Readonly<{
+    upserts?: T[]
+    deletes?: EntityId[]
+    versionUpdates?: Array<{ key: EntityId; version: number }>
+}>
+
+/**
+ * Persist ack (server authoritative response for a write batch).
+ * - Used to override local state with server versions/data when available.
+ */
+export type PersistAck<T extends Entity> = Readonly<{
+    created?: T[]
     upserts?: T[]
     deletes?: EntityId[]
     versionUpdates?: Array<{ key: EntityId; version: number }>
@@ -454,8 +464,7 @@ export type PersistRequest<T extends Entity> = Readonly<{
 
 export type PersistResult<T extends Entity> = Readonly<{
     status: PersistStatus
-    created?: T[]
-    writeback?: PersistWriteback<T>
+    ack?: PersistAck<T>
 }>
 
 export interface Persistence {
