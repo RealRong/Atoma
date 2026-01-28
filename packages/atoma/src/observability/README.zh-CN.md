@@ -47,7 +47,7 @@ Atoma 不再把 `Core.store.createStore(...)` 作为用户态入口。
 
 ### 2）Store 决定是否分配 `traceId`
 
-以 `findMany` 为例：
+以 `query` 为例：
 
 - 若创建 `ObservabilityContext` 时显式传入了 `traceId`（例如 `createContext({ traceId })`），直接沿用。
 - 否则只在“确实需要时”分配：
@@ -103,7 +103,7 @@ Atoma 只负责生成 `DebugEvent`；事件最终流向哪里由 **wiring 层**�
 ## Explain vs Debug 事件流
 
 - **Debug 事件流**：时间线证据（`DebugEvent[]`），由 wiring 层按需接出（当前不作为稳定对外 API 文档化）。
-- **Explain**：可复制粘贴的诊断快照；当 `findMany({ explain: true })` 时挂在返回值上。
+- **Explain**：可复制粘贴的诊断快照；当 `query({ explain: true })` 时挂在返回值上。
 
 目前 explain 主要包含可 JSON 序列化的结构化信息（index/finalize/cacheWrite/adapter/errors…）。类型里虽然有 `Explain.events`，但 core 并不会自动把事件流塞进去；如需把事件也附到 explain，需要在你控制的边界处用 sink 按 trace 缓存并注入。
 
@@ -123,7 +123,10 @@ const client = createClient({
 })
 
 const store = client.stores.todos
-const res = await store.findMany?.({ where: { done: { eq: false } }, explain: true } as any)
+const res = await store.query?.({
+    filter: { op: 'eq', field: 'done', value: false },
+    explain: true
+} as any)
 console.log(res?.explain)
 ```
 

@@ -1,7 +1,7 @@
 import { throwError } from '../../error'
 import { Protocol } from 'atoma/protocol'
 import type { Meta, Operation, OpsRequest, StandardErrorDetails } from 'atoma/protocol'
-import type { QueryParams } from '../../adapters/ports'
+import type { Query } from '../../adapters/ports'
 
 type JsonObject = Record<string, unknown>
 
@@ -43,9 +43,11 @@ export function ensureProtocolVersion(meta: Meta) {
     })
 }
 
-export function clampQueryLimit(params: QueryParams, maxLimit: number) {
-    if (typeof (params as any)?.limit === 'number' && (params as any).limit > maxLimit) {
-        ;(params as any).limit = maxLimit
+export function clampQueryLimit(query: Query, maxLimit: number) {
+    if (!query?.page) return
+    const page = query.page as any
+    if (typeof page.limit === 'number' && page.limit > maxLimit) {
+        page.limit = maxLimit
     }
 }
 

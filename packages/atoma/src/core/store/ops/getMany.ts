@@ -30,7 +30,9 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
 
         if (missingUnique.length) {
             const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
-            const { data } = await clientRuntime.io.query(handle, { where: { id: { in: missingUnique } } } as any, observabilityContext)
+            const { data } = await clientRuntime.io.query(handle, {
+                filter: { op: 'in', field: 'id', values: missingUnique }
+            }, observabilityContext)
 
             const before = jotaiStore.get(atom) as Map<EntityId, T>
             const fetchedById = new Map<EntityId, T>()

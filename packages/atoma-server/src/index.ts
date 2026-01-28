@@ -18,9 +18,12 @@ export type { ErrorKind, AtomaErrorDetails } from './error'
 
 export type {
     IOrmAdapter,
-    OrderByRule,
     CursorToken,
-    QueryParams,
+    FilterExpr,
+    PageInfo,
+    PageSpec,
+    Query,
+    SortRule,
     QueryResult,
     QueryResultOne,
     QueryResultMany,

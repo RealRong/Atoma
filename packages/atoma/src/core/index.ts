@@ -1,5 +1,5 @@
 import { createActionId, createOpContext, normalizeOperationContext } from './operationContext'
-import { applyQuery, stableStringify } from './query'
+import { executeLocalQuery, stableStringify } from './query'
 import { belongsTo, hasMany, hasOne, variants } from './relations/builders'
 import { RelationResolver } from './relations/RelationResolver'
 import { collectRelationStoreTokens, projectRelationsBatch } from './relations/projector'
@@ -14,7 +14,7 @@ export const Core = {
         normalizeOperationContext
     },
     query: {
-        applyQuery,
+        executeLocalQuery,
         stableStringify
     },
     relations: {
@@ -40,8 +40,12 @@ export type {
     DeleteItem,
     Entity,
     FetchPolicy,
-    FindManyOptions,
-    FindManyResult,
+    Query,
+    QueryResult,
+    QueryOneResult,
+    FilterExpr,
+    SortRule,
+    PageSpec,
     HasManyConfig,
     HasOneConfig,
     IStore,
@@ -66,7 +70,6 @@ export type {
     DataProcessorStage,
     DataProcessorStageFn,
     DataProcessorValidate,
-    OrderBy,
     PageInfo,
     PersistWriteback,
     RelationIncludeInput,
@@ -78,7 +81,6 @@ export type {
     StoreToken,
     UpsertWriteOptions,
     WithRelations,
-    WhereOperator,
     WriteManyResult
 } from './types'
 

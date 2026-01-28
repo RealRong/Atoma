@@ -1,28 +1,43 @@
-import type { FindManyOptions } from '../../../types'
+import type { Query } from '../../../types'
 
-export function summarizeFindManyParams<T>(opts?: FindManyOptions<T>) {
-    if (!opts) return {}
+function collectFilterFields(filter: any, out: Set<string>) {
+    if (!filter || typeof filter !== 'object') return
+    const op = (filter as any).op
+    if (op === 'and' || op === 'or') {
+        const args = (filter as any).args
+        if (Array.isArray(args)) args.forEach(a => collectFilterFields(a, out))
+        return
+    }
+    if (op === 'not') {
+        collectFilterFields((filter as any).arg, out)
+        return
+    }
+    const field = (filter as any).field
+    if (typeof field === 'string' && field) out.add(field)
+}
 
-    const where = opts.where
-    const whereFields = (where && typeof where === 'object' && !Array.isArray(where))
-        ? Object.keys(where as any)
+export function summarizeQuery<T>(query?: Query<T>) {
+    if (!query) return {}
+
+    const fieldSet = new Set<string>()
+    collectFilterFields((query as any).filter, fieldSet)
+    const filterFields = fieldSet.size ? Array.from(fieldSet) : undefined
+
+    const sortFields = Array.isArray((query as any).sort)
+        ? (query as any).sort.map((r: any) => String(r.field))
         : undefined
 
-    const orderBy = opts.orderBy
-    const orderByFields = orderBy
-        ? (Array.isArray(orderBy) ? orderBy : [orderBy]).map(r => String((r as any).field))
-        : undefined
+    const page = (query as any).page
 
     return {
-        whereFields,
-        orderByFields,
-        limit: typeof opts.limit === 'number' ? opts.limit : undefined,
-        offset: typeof opts.offset === 'number' ? opts.offset : undefined,
-        before: typeof (opts as any).before === 'string' ? (opts as any).before : undefined,
-        after: typeof (opts as any).after === 'string' ? (opts as any).after : undefined,
-        cursor: typeof (opts as any).cursor === 'string' ? (opts as any).cursor : undefined,
-        includeTotal: typeof (opts as any).includeTotal === 'boolean' ? (opts as any).includeTotal : undefined,
-        fields: Array.isArray((opts as any).fields) ? (opts as any).fields : undefined,
-        skipStore: Boolean((opts as any).skipStore)
+        filterFields,
+        sortFields,
+        pageMode: page?.mode,
+        limit: typeof page?.limit === 'number' ? page.limit : undefined,
+        offset: typeof page?.offset === 'number' ? page.offset : undefined,
+        after: typeof page?.after === 'string' ? page.after : undefined,
+        before: typeof page?.before === 'string' ? page.before : undefined,
+        includeTotal: typeof page?.includeTotal === 'boolean' ? page.includeTotal : undefined,
+        select: Array.isArray((query as any).select) ? (query as any).select : undefined
     }
 }

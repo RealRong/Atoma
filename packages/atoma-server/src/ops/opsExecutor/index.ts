@@ -105,7 +105,7 @@ export function createOpsExecutor<Ctx>(args: {
 
             if (limits?.query?.maxLimit) {
                 for (const op of queryOps) {
-                    clampQueryLimit(op.query.params, limits.query.maxLimit)
+                    clampQueryLimit(op.query.query, limits.query.maxLimit)
                 }
             }
 

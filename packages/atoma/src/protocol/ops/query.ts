@@ -1,29 +1,30 @@
-export type OrderByRule = { field: string; direction: 'asc' | 'desc' }
-
 export type CursorToken = string
 
-export interface QueryParams {
-    where?: Record<string, any>
-    /**
-     * FindManyOptions 兼容形态：允许单条或数组（服务端/本地实现会统一 normalize 成数组）
-     */
-    orderBy?: OrderByRule[] | OrderByRule
+export type SortRule = { field: string; dir: 'asc' | 'desc' }
 
-    /**
-     * FindManyOptions 风格分页字段（推荐）：
-     * - offset: limit + offset (+ includeTotal)
-     * - cursor: after/before
-     */
-    limit?: number
-    offset?: number
-    includeTotal?: boolean
-    after?: CursorToken
-    before?: CursorToken
+export type PageSpec =
+    | { mode: 'offset'; limit?: number; offset?: number; includeTotal?: boolean }
+    | { mode: 'cursor'; limit?: number; after?: CursorToken; before?: CursorToken }
 
-    /**
-     * FindManyOptions 风格字段投影（推荐）
-     */
-    fields?: string[]
+export type FilterExpr =
+    | { op: 'and'; args: FilterExpr[] }
+    | { op: 'or'; args: FilterExpr[] }
+    | { op: 'not'; arg: FilterExpr }
+    | { op: 'eq'; field: string; value: any }
+    | { op: 'in'; field: string; values: any[] }
+    | { op: 'gt' | 'gte' | 'lt' | 'lte'; field: string; value: number }
+    | { op: 'startsWith' | 'endsWith' | 'contains'; field: string; value: string }
+    | { op: 'isNull'; field: string }
+    | { op: 'exists'; field: string }
+    | { op: 'text'; field: string; query: string; mode?: 'match' | 'fuzzy'; distance?: 0 | 1 | 2 }
+
+export type Query = {
+    filter?: FilterExpr
+    sort?: SortRule[]
+    page?: PageSpec
+    select?: string[]
+    include?: Record<string, Query>
+    explain?: boolean
 }
 
 export type PageInfo = {
@@ -31,4 +32,3 @@ export type PageInfo = {
     hasNext?: boolean
     total?: number
 }
-

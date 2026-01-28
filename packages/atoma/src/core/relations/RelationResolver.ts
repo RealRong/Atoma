@@ -1,13 +1,13 @@
 import {
     Entity,
-    FindManyOptions,
     IStore,
+    Query,
     RelationConfig,
     RelationMap,
     VariantsConfig
 } from '../types'
 import type { EntityId } from '#protocol'
-import { deepMergeWhere, getValueByPath } from './utils'
+import { getValueByPath } from './utils'
 
 export interface ResolveBatchOptions {
     onError?: 'skip' | 'throw' | 'partial'
@@ -22,7 +22,7 @@ export class RelationResolver {
      */
     static async resolveBatch<T extends Entity>(
         items: T[],
-        include: Record<string, boolean | FindManyOptions<any>> | undefined,
+        include: Record<string, boolean | Query<any>> | undefined,
         relations: RelationMap<T> | undefined,
         resolveStore: (name: string) => IStore<any> | undefined,
         options: ResolveBatchOptions = {}
@@ -33,7 +33,7 @@ export class RelationResolver {
 
     static async prefetchBatch<T extends Entity>(
         items: T[],
-        include: Record<string, boolean | FindManyOptions<any>> | undefined,
+        include: Record<string, boolean | Query<any>> | undefined,
         relations: RelationMap<T> | undefined,
         resolveStore: (name: string) => IStore<any> | undefined,
         options: ResolveBatchOptions = {}
@@ -67,17 +67,17 @@ export class RelationResolver {
     private static async prefetchSingleRelation<T extends Entity>(
         items: T[],
         relName: string,
-        relOpts: boolean | FindManyOptions<any>,
+        relOpts: boolean | Query<any>,
         config: RelationConfig<T, any>,
         resolveStore: (name: string) => IStore<any> | undefined,
         signal: AbortSignal
     ): Promise<void> {
         if (signal.aborted) return
 
-        const userOptions = typeof relOpts === 'object' ? relOpts : {}
-        this.validateIncludeOptions(relName, userOptions)
+        const userQuery = typeof relOpts === 'object' ? relOpts : {}
+        this.validateIncludeQuery(relName, userQuery)
         if (config.type !== 'variants') {
-            this.validateIncludeOptions(relName, (config as any).options)
+            this.validateIncludeQuery(relName, (config as any).options)
         }
 
         if (config.type === 'variants') {
@@ -91,7 +91,7 @@ export class RelationResolver {
     private static async prefetchVariants<T extends Entity>(
         items: T[],
         relName: string,
-        relOpts: boolean | FindManyOptions<any>,
+        relOpts: boolean | Query<any>,
         config: VariantsConfig<T>,
         resolveStore: (name: string) => IStore<any> | undefined,
         signal: AbortSignal
@@ -118,7 +118,7 @@ export class RelationResolver {
     private static async prefetchStandardRelation<T extends Entity>(
         items: T[],
         relName: string,
-        relOpts: boolean | FindManyOptions<any>,
+        relOpts: boolean | Query<any>,
         config: Exclude<RelationConfig<T, any>, VariantsConfig<T>>,
         resolveStore: (name: string) => IStore<any> | undefined,
         signal: AbortSignal
@@ -134,13 +134,13 @@ export class RelationResolver {
             return
         }
 
-        const mergedOptions = this.mergeQueryOptions((config as any).options, typeof relOpts === 'object' ? relOpts : undefined)
+        const mergedQuery = this.mergeQuery((config as any).options, typeof relOpts === 'object' ? relOpts : undefined)
         const targetKeyField = this.getTargetKeyField(config)
 
         const shouldUseIdLookup = config.type === 'belongsTo'
             && targetKeyField === 'id'
-            && mergedOptions.include === undefined
-            && mergedOptions.where === undefined
+            && mergedQuery.include === undefined
+            && mergedQuery.filter === undefined
 
         if (shouldUseIdLookup && typeof store.getMany === 'function') {
             if (signal.aborted) return
@@ -148,30 +148,20 @@ export class RelationResolver {
             return
         }
 
-        const keySet = new Set(uniqueKeys)
-        const inWhere = { [targetKeyField]: { in: uniqueKeys } } as any
-        const where = typeof mergedOptions.where === 'function'
-            ? ((item: any) => Boolean((mergedOptions.where as any)(item)) && keySet.has((item as any)?.[targetKeyField]))
-            : deepMergeWhere(mergedOptions.where as any, inWhere)
+        const keyFilter = { op: 'in', field: targetKeyField, values: uniqueKeys } as any
+        const filter = mergedQuery.filter
+            ? ({ op: 'and', args: [mergedQuery.filter, keyFilter] } as any)
+            : keyFilter
 
-        const query: FindManyOptions<any> = {
-            ...mergedOptions,
-            // prefetch-only：确保写入 store map，且避免 sparse fields 污染缓存
-            skipStore: false,
-            fields: undefined,
-            // include 不支持分页：强制清空分页相关参数
-            offset: undefined,
-            after: undefined,
-            before: undefined,
-            cursor: undefined,
-            // hasMany/hasOne 的 limit/orderBy 是“每个 parent 的 Top-N”语义，无法用单次 where-in 正确表达，prefetch 阶段不下推
-            limit: undefined,
-            orderBy: undefined,
-            where
+        const query: Query<any> = {
+            ...mergedQuery,
+            filter,
+            // include 不支持分页：强制清空 page
+            page: undefined
         }
 
         if (signal.aborted) return
-        await store.findMany?.(query)
+        await store.query?.(query)
     }
 
     private static collectKeys<T extends Entity>(
@@ -205,28 +195,21 @@ export class RelationResolver {
         return undefined
     }
 
-    private static mergeQueryOptions(
-        base?: FindManyOptions<any>,
-        override?: FindManyOptions<any>
-    ): FindManyOptions<any> {
+    private static mergeQuery(base?: Query<any>, override?: Query<any>): Query<any> {
         if (!base && !override) return {}
-        if (!base) return { ...override, offset: undefined, after: undefined, before: undefined, cursor: undefined }
-        if (!override) return { ...base, offset: undefined, after: undefined, before: undefined, cursor: undefined }
+        if (!base) return { ...override, page: undefined }
+        if (!override) return { ...base, page: undefined }
 
-        const where = (() => {
-            const b: any = base.where
-            const o: any = override.where
-            if (typeof o === 'function') return o
-            if (typeof b === 'function') return b
-            return deepMergeWhere(b, o)
-        })()
+        const filter = base.filter && override.filter
+            ? ({ op: 'and', args: [base.filter, override.filter] } as any)
+            : (override.filter ?? base.filter)
 
         return {
-            where,
-            orderBy: override.orderBy !== undefined ? override.orderBy : base.orderBy,
-            limit: override.limit !== undefined ? override.limit : base.limit,
+            filter,
+            sort: override.sort !== undefined ? override.sort : base.sort,
+            select: override.select !== undefined ? override.select : base.select,
             include: override.include !== undefined ? override.include : base.include,
-            skipStore: override.skipStore !== undefined ? override.skipStore : base.skipStore
+            page: override.page !== undefined ? override.page : base.page
         }
     }
 
@@ -238,11 +221,10 @@ export class RelationResolver {
             : config.foreignKey
     }
 
-    private static validateIncludeOptions(relName: string, options?: FindManyOptions<any>) {
-        if (!options) return
-        const o: any = options
-        if (o.offset !== undefined || o.after !== undefined || o.before !== undefined || o.cursor !== undefined) {
-            throw new Error(`include.${relName} 不支持分页（offset/after/before/cursor）；请使用子 store 的 useFindMany 进行分页`)
+    private static validateIncludeQuery(relName: string, query?: Query<any>) {
+        if (!query) return
+        if ((query as any).page !== undefined) {
+            throw new Error(`include.${relName} 不支持分页（page）；请使用子 store 的 query 进行分页`)
         }
     }
 
@@ -259,31 +241,34 @@ export class RelationResolver {
                 reject(new Error(`Relation "${relName}" timeout`))
             }, timeoutMs)
         })
+
         try {
             return await Promise.race([task, timeoutTask])
         } finally {
-            if (timer) clearTimeout(timer)
+            clearTimeout(timer)
         }
     }
 
     private static async runWithConcurrency<T>(
-        items: T[],
-        maxConcurrency: number,
-        worker: (item: T) => Promise<void>
+        tasks: T[],
+        limit: number,
+        runner: (task: T) => Promise<void>
     ): Promise<void> {
-        if (items.length === 0) return
-        const concurrency = Math.max(1, Math.min(maxConcurrency, items.length))
-        let index = 0
+        const queue = tasks.slice()
+        const running: Promise<void>[] = []
 
-        await Promise.all(
-            Array.from({ length: concurrency }).map(async () => {
-                while (true) {
-                    const current = index
-                    index++
-                    if (current >= items.length) return
-                    await worker(items[current])
-                }
-            })
-        )
+        const runNext = async () => {
+            const next = queue.shift()
+            if (!next) return
+            await runner(next)
+            await runNext()
+        }
+
+        const count = Math.min(limit, queue.length)
+        for (let i = 0; i < count; i++) {
+            running.push(runNext())
+        }
+
+        await Promise.all(running)
     }
 }

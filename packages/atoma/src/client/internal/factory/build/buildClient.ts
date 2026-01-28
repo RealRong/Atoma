@@ -125,7 +125,7 @@ export function buildAtomaClient<
 
     type Operation = import('#protocol').Operation
     type OperationResult = import('#protocol').OperationResult
-    type QueryParams = import('#protocol').QueryParams
+    type QuerySpec = import('#protocol').Query
     type WriteAction = import('#protocol').WriteAction
     type WriteItem = import('#protocol').WriteItem
     type WriteOptions = import('#protocol').WriteOptions
@@ -185,7 +185,7 @@ export function buildAtomaClient<
     const queryChannel = async <T = unknown>(args2: {
         channel: import('#client/types').IoChannel
         store: StoreToken
-        params: QueryParams
+        query: QuerySpec
         context?: ObservabilityContext
         signal?: AbortSignal
     }): Promise<import('#client/types').ChannelQueryResult<T>> => {
@@ -193,7 +193,7 @@ export function buildAtomaClient<
         const op: Operation = Protocol.ops.build.buildQueryOp({
             opId,
             resource: String(args2.store),
-            params: args2.params
+            query: args2.query
         })
         const results = await executeOps({
             channel: args2.channel,
@@ -206,8 +206,9 @@ export function buildAtomaClient<
 
         const data = Protocol.ops.validate.assertQueryResultData((result as any).data) as any
         return {
-            items: Array.isArray(data?.items) ? (data.items as T[]) : [],
-            ...(data?.pageInfo ? { pageInfo: data.pageInfo } : {})
+            data: Array.isArray(data?.data) ? (data.data as T[]) : [],
+            ...(data?.pageInfo ? { pageInfo: data.pageInfo } : {}),
+            ...(data?.explain !== undefined ? { explain: data.explain } : {})
         }
     }
 

@@ -1,11 +1,11 @@
 import type {
     IOrmAdapter,
     OrmAdapterOptions,
-    OrderByRule,
-    QueryParams,
+    Query,
     QueryResult,
     QueryResultMany,
     QueryResultOne,
+    SortRule,
     WriteOptions
 } from '../ports'
 import {
@@ -17,6 +17,7 @@ import {
     reverseOrderBy
 } from '../shared/keyset'
 import { createError, isAtomaError, throwError } from '../../error'
+import { compileFilterToPrismaWhere } from '../../query/compile'
 
 type PrismaDelegate = {
     findMany: (args: any) => Promise<any[]>
@@ -55,7 +56,7 @@ function normalizeFields(fields: unknown): string[] | undefined {
 
 export class AtomaPrismaAdapter implements IOrmAdapter {
     private readonly idField: string
-    private readonly defaultOrderBy?: OrderByRule[]
+    private readonly defaultSort?: SortRule[]
     private readonly adapterOptions: OrmAdapterOptions
     private readonly inTransaction: boolean
 
@@ -67,7 +68,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         this.adapterOptions = options
         this.inTransaction = inTransaction
         this.idField = options.idField ?? 'id'
-        this.defaultOrderBy = options.defaultOrderBy
+        this.defaultSort = options.defaultSort
     }
 
     async transaction<T>(fn: (args: { orm: IOrmAdapter; tx: unknown }) => Promise<T>): Promise<T> {
@@ -80,41 +81,43 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         })
     }
 
-    async findMany(resource: string, params: QueryParams = {}): Promise<QueryResult> {
+    async findMany(resource: string, query: Query = {}): Promise<QueryResult> {
         const delegate = this.getDelegate(resource)
         if (!delegate?.findMany) {
             throwError('RESOURCE_NOT_ALLOWED', `Resource not allowed: ${resource}`, { kind: 'auth', resource })
         }
 
-        const inputOrderBy = Array.isArray(params.orderBy)
-            ? params.orderBy
-            : (params.orderBy && typeof params.orderBy === 'object' ? [params.orderBy] : undefined)
-
-        const orderBy = ensureStableOrderBy(inputOrderBy, {
+        const orderBy = ensureStableOrderBy(query.sort, {
             idField: this.idField,
-            defaultOrderBy: this.defaultOrderBy
+            defaultSort: this.defaultSort
         })
 
-        const baseWhere = this.buildWhere(params.where)
-        const beforeToken = (typeof (params as any).before === 'string' && (params as any).before) ? (params as any).before as string : undefined
-        const afterToken = (typeof (params as any).after === 'string' && (params as any).after) ? (params as any).after as string : undefined
-        const afterOrCursor = afterToken
+        const baseWhere = compileFilterToPrismaWhere(query.filter)
+        const page = query.page
+        const pageMode = page?.mode ?? undefined
+        const beforeToken = (pageMode === 'cursor' && typeof (page as any).before === 'string') ? (page as any).before as string : undefined
+        const afterToken = (pageMode === 'cursor' && typeof (page as any).after === 'string') ? (page as any).after as string : undefined
 
-        const cursor = beforeToken || afterOrCursor
-            ? { token: beforeToken ?? afterOrCursor!, before: Boolean(beforeToken) }
+        const cursor = (pageMode === 'cursor' && (beforeToken || afterToken))
+            ? { token: beforeToken ?? afterToken!, before: Boolean(beforeToken) }
             : undefined
 
         const { prismaOrderBy, reverseResult, keysetWhere } = this.buildKeysetWhere(cursor, orderBy)
         const where = keysetWhere ? this.andWhere(baseWhere, keysetWhere) : baseWhere
 
-        const fields = normalizeFields((params as any).fields)
+        const fields = normalizeFields(query.select)
         const { select, project } = this.buildSelectWithProjection(fields, orderBy)
 
-        const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
+        if (!page) {
+            const data = await delegate.findMany({ where, orderBy: prismaOrderBy, select })
+            const projected = project ? data.map(project) : data
+            return { data: projected }
+        }
 
-        if (!cursor) {
-            const skip = normalizeOffset((params as any).offset)
-            const take = normalizeOptionalLimit((params as any).limit)
+        if (pageMode === 'offset') {
+            const skip = normalizeOffset((page as any).offset) ?? 0
+            const take = normalizeOptionalLimit((page as any).limit)
+            const includeTotal = (page as any).includeTotal === true
 
             if (includeTotal && delegate.count && typeof take === 'number') {
                 const [data, total] = await Promise.all([
@@ -126,7 +129,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                     data: projected,
                     pageInfo: {
                         total,
-                        hasNext: typeof skip === 'number' ? skip + take < total : take < total
+                        hasNext: skip + take < total
                     }
                 }
             }
@@ -138,7 +141,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                 const projected = project ? sliced.map(project) : sliced
                 return {
                     data: projected,
-                    pageInfo: { hasNext }
+                    pageInfo: { hasNext, ...(includeTotal && delegate.count ? { total: await delegate.count({ where }) } : {}) }
                 }
             }
 
@@ -146,12 +149,12 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             const projected = project ? data.map(project) : data
             return {
                 data: projected,
-                pageInfo: { ...(includeTotal && delegate.count ? { total: await delegate.count({ where }) } : {}), hasNext: false }
+                pageInfo: { hasNext: false, ...(includeTotal && delegate.count ? { total: await delegate.count({ where }) } : {}) }
             }
         }
 
         // cursor keyset：默认不返回 total
-        const take = normalizeOptionalLimit((params as any).limit) ?? 50
+        const take = normalizeOptionalLimit((page as any).limit) ?? 50
         const data = await delegate.findMany({
             where,
             orderBy: prismaOrderBy,
@@ -163,9 +166,9 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const finalRows = reverseResult ? sliced.reverse() : sliced
 
         const projected = project ? finalRows.map(project) : finalRows
-        const cursorRow = cursor.before ? finalRows[0] : finalRows[finalRows.length - 1]
+        const cursorRow = cursor?.before ? finalRows[0] : finalRows[finalRows.length - 1]
         const nextCursor = cursorRow
-            ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy))
+            ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy), orderBy)
             : undefined
 
         return {
@@ -177,8 +180,8 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         }
     }
 
-    async batchFindMany(requests: Array<{ resource: string; params: QueryParams }>): Promise<QueryResult[]> {
-        const operations = requests.map(r => this.findMany(r.resource, r.params))
+    async batchFindMany(requests: Array<{ resource: string; query: Query }>): Promise<QueryResult[]> {
+        const operations = requests.map(r => this.findMany(r.resource, r.query))
         if (this.client.$transaction) {
             return this.client.$transaction(operations)
         }
@@ -475,44 +478,8 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return { resultsByIndex, transactionApplied: false }
     }
 
-    private buildWhere(where: QueryParams['where']) {
-        const result: Record<string, any> = {}
-        if (where) {
-            Object.entries(where).forEach(([field, value]) => {
-                const mapped = this.mapWhereValue(value)
-                if (mapped !== undefined) {
-                    result[field] = mapped
-                }
-            })
-        }
-        return Object.keys(result).length ? result : undefined
-    }
-
-    private mapWhereValue(value: any) {
-        if (value === undefined) return undefined
-        if (Array.isArray(value)) {
-            return { in: value }
-        }
-        if (value === null) return null
-        if (this.isOperatorValue(value)) {
-            const mapped: Record<string, any> = {}
-            const { eq, in: inArr, gt, gte, lt, lte, startsWith, endsWith, contains } = value
-            if (eq !== undefined) mapped.equals = eq
-            if (inArr !== undefined) mapped.in = inArr
-            if (gt !== undefined) mapped.gt = gt
-            if (gte !== undefined) mapped.gte = gte
-            if (lt !== undefined) mapped.lt = lt
-            if (lte !== undefined) mapped.lte = lte
-            if (startsWith !== undefined) mapped.startsWith = startsWith
-            if (endsWith !== undefined) mapped.endsWith = endsWith
-            if (contains !== undefined) mapped.contains = contains
-            return mapped
-        }
-        return value
-    }
-
-    private buildOrderBy(orderBy: OrderByRule[]) {
-        return orderBy.map(rule => ({ [rule.field]: rule.direction ?? 'asc' }))
+    private buildOrderBy(orderBy: SortRule[]) {
+        return orderBy.map(rule => ({ [rule.field]: rule.dir }))
     }
 
     private buildSelect(select?: Record<string, boolean>) {
@@ -552,22 +519,6 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return delegate
     }
 
-    private isOperatorValue(value: any): value is {
-        eq?: any
-        in?: any[]
-        gt?: number
-        gte?: number
-        lt?: number
-        lte?: number
-        startsWith?: string
-        endsWith?: string
-        contains?: string
-    } {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-        return ['eq', 'in', 'gt', 'gte', 'lt', 'lte', 'startsWith', 'endsWith', 'contains']
-            .some(k => (value as any)[k] !== undefined)
-    }
-
     private normalizeWhereOrId(whereOrId: any) {
         if (whereOrId && typeof whereOrId === 'object' && !Array.isArray(whereOrId)) return whereOrId
         return { id: whereOrId }
@@ -597,7 +548,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     }
 
     // patch/JSONPatch 已移除：不再需要 stripIdPrefix
-    private buildKeysetWhere(cursor: { token: string; before: boolean } | undefined, orderBy: OrderByRule[]) {
+    private buildKeysetWhere(cursor: { token: string; before: boolean } | undefined, orderBy: SortRule[]) {
         if (!cursor?.token) {
             return {
                 prismaOrderBy: this.buildOrderBy(orderBy),
@@ -624,7 +575,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         }
     }
 
-    private buildPrismaKeysetWhere(orderBy: OrderByRule[], values: any[], path: string) {
+    private buildPrismaKeysetWhere(orderBy: SortRule[], values: any[], path: string) {
         if (values.length < orderBy.length) {
             throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path })
         }
@@ -635,7 +586,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             for (let j = 0; j < i; j++) {
                 and.push({ [orderBy[j].field]: values[j] })
             }
-            const op = compareOpForAfter(orderBy[i].direction)
+            const op = compareOpForAfter(orderBy[i].dir)
             and.push({ [orderBy[i].field]: { [op]: values[i] } })
             or.push({ AND: and })
         }
@@ -648,7 +599,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return a || b
     }
 
-    private buildSelectWithProjection(fields: string[] | undefined, orderBy: OrderByRule[]) {
+    private buildSelectWithProjection(fields: string[] | undefined, orderBy: SortRule[]) {
         if (!fields?.length) {
             return { select: undefined as any, project: undefined as ((row: any) => any) | undefined }
         }

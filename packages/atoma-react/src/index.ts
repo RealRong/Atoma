@@ -1,7 +1,7 @@
 export {
     useOne,
     useAll,
-    useFindMany,
+    useQuery,
     useMany,
     useFuzzySearch,
     useLocalQuery

@@ -8,30 +8,18 @@ import {
     reverseOrderBy
 } from '../shared/keyset'
 import { createError, isAtomaError, throwError } from '../../error'
+import { compileFilterToSql } from '../../query/compile'
 
 import type {
     IOrmAdapter,
     OrmAdapterOptions,
-    OrderByRule,
-    QueryParams,
+    Query,
     QueryResult,
     QueryResultMany,
     QueryResultOne,
+    SortRule,
     WriteOptions
 } from '../ports'
-
-type OperatorValue = {
-    in?: any[]
-    gt?: number
-    gte?: number
-    lt?: number
-    lte?: number
-    startsWith?: string
-    endsWith?: string
-    contains?: string
-}
-
-type WhereValue = any | OperatorValue
 
 function normalizeOptionalLimit(value: unknown): number | undefined {
     if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
@@ -52,7 +40,7 @@ function normalizeFields(fields: unknown): string[] | undefined {
 export class AtomaTypeormAdapter implements IOrmAdapter {
     private paramIndex = 0
     private readonly idField: string
-    private readonly defaultOrderBy?: OrderByRule[]
+    private readonly defaultSort?: SortRule[]
     private readonly adapterOptions: OrmAdapterOptions
 
     constructor(
@@ -62,7 +50,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
     ) {
         this.adapterOptions = options
         this.idField = options.idField ?? 'id'
-        this.defaultOrderBy = options.defaultOrderBy
+        this.defaultSort = options.defaultSort
     }
 
     async transaction<T>(fn: (args: { orm: IOrmAdapter; tx: unknown }) => Promise<T>): Promise<T> {
@@ -81,43 +69,47 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         }
     }
 
-    async findMany(resource: string, params: QueryParams = {}): Promise<QueryResult> {
+    async findMany(resource: string, query: Query = {}): Promise<QueryResult> {
         const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
         const alias = this.getAlias(resource)
         const qb = repo.createQueryBuilder(alias)
 
-        const inputOrderBy = Array.isArray(params.orderBy)
-            ? params.orderBy
-            : (params.orderBy && typeof params.orderBy === 'object' ? [params.orderBy] : undefined)
-
-        const orderBy = ensureStableOrderBy(inputOrderBy, {
+        const orderBy = ensureStableOrderBy(query.sort, {
             idField: this.idField,
-            defaultOrderBy: this.defaultOrderBy
+            defaultSort: this.defaultSort
         })
 
-        this.applyWhere(qb, params.where, alias)
+        const filter = compileFilterToSql(query.filter, { alias, nextParam: this.nextParam.bind(this) })
+        if (filter) qb.andWhere(filter.sql, filter.params)
 
-        const beforeToken = (typeof (params as any).before === 'string' && (params as any).before) ? (params as any).before as string : undefined
-        const afterToken = (typeof (params as any).after === 'string' && (params as any).after) ? (params as any).after as string : undefined
-        const afterOrCursor = afterToken
+        const page = query.page
+        const pageMode = page?.mode ?? undefined
+        const beforeToken = (pageMode === 'cursor' && typeof (page as any).before === 'string') ? (page as any).before as string : undefined
+        const afterToken = (pageMode === 'cursor' && typeof (page as any).after === 'string') ? (page as any).after as string : undefined
 
-        const cursor = beforeToken || afterOrCursor
-            ? { token: beforeToken ?? afterOrCursor!, before: Boolean(beforeToken) }
+        const cursor = (pageMode === 'cursor' && (beforeToken || afterToken))
+            ? { token: beforeToken ?? afterToken!, before: Boolean(beforeToken) }
             : undefined
 
         const { queryOrderBy, reverseResult } = this.applyKeysetIfNeeded(qb, cursor, orderBy, alias)
         this.applyOrderBy(qb, queryOrderBy, alias)
 
-        const fields = normalizeFields((params as any).fields)
+        const fields = normalizeFields(query.select)
         const { selectFields, project } = this.buildSelectFieldsWithProjection(fields, orderBy, alias)
         if (selectFields) qb.select(selectFields)
 
-        if (!cursor) {
-            const offset = normalizeOffset((params as any).offset) ?? 0
-            const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
+        if (!page) {
+            const data = await qb.getMany()
+            const projected = project ? data.map(project) : data
+            return { data: projected }
+        }
+
+        if (pageMode === 'offset') {
+            const offset = normalizeOffset((page as any).offset) ?? 0
+            const includeTotal = (page as any).includeTotal === true
 
             if (typeof offset === 'number') qb.skip(offset)
-            const limit = normalizeOptionalLimit((params as any).limit)
+            const limit = normalizeOptionalLimit((page as any).limit)
             if (typeof limit === 'number') qb.take(limit)
 
             if (includeTotal) {
@@ -143,7 +135,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         }
 
         // cursor keyset：默认不返回 total
-        const cursorLimit = normalizeOptionalLimit((params as any).limit) ?? 50
+        const cursorLimit = normalizeOptionalLimit((page as any).limit) ?? 50
         qb.take(cursorLimit + 1)
         const dataPlus = await qb.getMany()
         const hasNext = dataPlus.length > cursorLimit
@@ -151,9 +143,9 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         const finalRows = reverseResult ? sliced.reverse() : sliced
         const projected = project ? finalRows.map(project) : finalRows
 
-        const cursorRow = cursor.before ? finalRows[0] : finalRows[finalRows.length - 1]
+        const cursorRow = cursor?.before ? finalRows[0] : finalRows[finalRows.length - 1]
         const nextCursor = cursorRow
-            ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy))
+            ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy), orderBy)
             : undefined
 
         return {
@@ -162,8 +154,8 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         }
     }
 
-    async batchFindMany(requests: Array<{ resource: string; params: QueryParams }>): Promise<QueryResult[]> {
-        return Promise.all(requests.map(r => this.findMany(r.resource, r.params)))
+    async batchFindMany(requests: Array<{ resource: string; query: Query }>): Promise<QueryResult[]> {
+        return Promise.all(requests.map(r => this.findMany(r.resource, r.query)))
     }
 
     async create(resource: string, data: any, options: WriteOptions = {}): Promise<QueryResultOne> {
@@ -554,72 +546,9 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         return { resultsByIndex, transactionApplied: Boolean(this.manager) }
     }
 
-    private applyWhere(qb: SelectQueryBuilder<any>, where: QueryParams['where'], alias: string) {
-        if (!where) return
-
-        Object.entries(where).forEach(([field, value]) => {
-            if (value === undefined) return
-            const column = `${alias}.${field}`
-
-            if (Array.isArray(value)) {
-                const key = this.nextParam(field)
-                qb.andWhere(`${column} IN (:...${key})`, { [key]: value })
-                return
-            }
-
-            if (value === null) {
-                qb.andWhere(`${column} IS NULL`)
-                return
-            }
-
-            if (this.isOperatorValue(value)) {
-                this.applyOperators(qb, column, field, value)
-                return
-            }
-
-            const key = this.nextParam(field)
-            qb.andWhere(`${column} = :${key}`, { [key]: value })
-        })
-    }
-
-    private applyOperators(qb: SelectQueryBuilder<any>, column: string, field: string, ops: OperatorValue) {
-        if (ops.in) {
-            const key = this.nextParam(`${field}_in`)
-            qb.andWhere(`${column} IN (:...${key})`, { [key]: ops.in })
-        }
-        if (ops.gt !== undefined) {
-            const key = this.nextParam(`${field}_gt`)
-            qb.andWhere(`${column} > :${key}`, { [key]: ops.gt })
-        }
-        if (ops.gte !== undefined) {
-            const key = this.nextParam(`${field}_gte`)
-            qb.andWhere(`${column} >= :${key}`, { [key]: ops.gte })
-        }
-        if (ops.lt !== undefined) {
-            const key = this.nextParam(`${field}_lt`)
-            qb.andWhere(`${column} < :${key}`, { [key]: ops.lt })
-        }
-        if (ops.lte !== undefined) {
-            const key = this.nextParam(`${field}_lte`)
-            qb.andWhere(`${column} <= :${key}`, { [key]: ops.lte })
-        }
-        if (ops.startsWith !== undefined) {
-            const key = this.nextParam(`${field}_sw`)
-            qb.andWhere(`${column} LIKE :${key}`, { [key]: `${ops.startsWith}%` })
-        }
-        if (ops.endsWith !== undefined) {
-            const key = this.nextParam(`${field}_ew`)
-            qb.andWhere(`${column} LIKE :${key}`, { [key]: `%${ops.endsWith}` })
-        }
-        if (ops.contains !== undefined) {
-            const key = this.nextParam(`${field}_ct`)
-            qb.andWhere(`${column} LIKE :${key}`, { [key]: `%${ops.contains}%` })
-        }
-    }
-
-    private applyOrderBy(qb: SelectQueryBuilder<any>, orderBy: OrderByRule[], alias: string) {
+    private applyOrderBy(qb: SelectQueryBuilder<any>, orderBy: SortRule[], alias: string) {
         orderBy.forEach((rule, idx) => {
-            const direction = rule.direction?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
+            const direction = rule.dir === 'asc' ? 'ASC' : 'DESC'
             const column = `${alias}.${rule.field}`
             if (idx === 0) qb.orderBy(column, direction)
             else qb.addOrderBy(column, direction)
@@ -629,7 +558,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
     private applyKeysetIfNeeded(
         qb: SelectQueryBuilder<any>,
         cursor: { token: string; before: boolean } | undefined,
-        orderBy: OrderByRule[],
+        orderBy: SortRule[],
         alias: string
     ) {
         if (!cursor?.token) {
@@ -650,7 +579,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         return { queryOrderBy, reverseResult: before }
     }
 
-    private applyKeysetWhere(qb: SelectQueryBuilder<any>, orderBy: OrderByRule[], values: any[], alias: string, path: string) {
+    private applyKeysetWhere(qb: SelectQueryBuilder<any>, orderBy: SortRule[], values: any[], alias: string, path: string) {
         if (values.length < orderBy.length) {
             throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path })
         }
@@ -677,7 +606,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             const field = orderBy[i].field
             const column = `${alias}.${field}`
             const value = values[i]
-            const op = compareOpForAfter(orderBy[i].direction)
+            const op = compareOpForAfter(orderBy[i].dir)
             const sqlOp = op === 'gt' ? '>' : '<'
             const key = this.nextParam(`ks_cmp_${field}`)
             andParts.push(`${column} ${sqlOp} :${key}`)
@@ -694,7 +623,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         return fields.length ? fields : undefined
     }
 
-    private buildSelectFieldsWithProjection(fields: string[] | undefined, orderBy: OrderByRule[], alias: string) {
+    private buildSelectFieldsWithProjection(fields: string[] | undefined, orderBy: SortRule[], alias: string) {
         if (!fields?.length) {
             return { selectFields: undefined as string[] | undefined, project: undefined as ((row: any) => any) | undefined }
         }
@@ -724,20 +653,6 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     private nextParam(field: string) {
         return `${field}_${this.paramIndex++}`
-    }
-
-    private isOperatorValue(value: WhereValue): value is OperatorValue {
-        if (!value || typeof value !== 'object') return false
-        return [
-            'in',
-            'gt',
-            'gte',
-            'lt',
-            'lte',
-            'startsWith',
-            'endsWith',
-            'contains'
-        ].some(k => (value as Record<string, unknown>)[k] !== undefined)
     }
 
     private getAlias(resource: string) {

@@ -47,7 +47,7 @@ Note: Atoma intentionally keeps `DebugConfig` as pure data. The actual event sin
 
 ### 2) Store decides whether to allocate a `traceId`
 
-For read paths like `findMany`:
+For read paths like `query`:
 
 - If `traceId` is explicitly provided when creating the `ObservabilityContext` (e.g. `createContext({ traceId })`), it’s used as-is.
 - Otherwise, Atoma allocates a trace only when it’s useful:
@@ -103,7 +103,7 @@ The library no longer ships the legacy `DevtoolsBridge` event stream. If you nee
 ## Explain vs Debug Events
 
 - **Debug events**: a stream of timeline evidence (`DebugEvent[]`), exposed by wiring as needed (not documented as a stable public surface yet).
-- **Explain**: a copy/paste friendly diagnostic artifact attached to `findMany` results when `options.explain === true`.
+- **Explain**: a copy/paste friendly diagnostic artifact attached to `query` results when `query.explain === true`.
 
 Today, explain contains deterministic, JSON-serializable fields (index/finalize/cacheWrite/adapter/errors…). The `Explain.events` field exists in the type but is not automatically populated by core; if you want it, implement a sink that buffers events per trace and attaches them at the boundary you control.
 
@@ -123,7 +123,10 @@ const client = createClient({
 })
 
 const store = client.stores.todos
-const res = await store.findMany?.({ where: { done: { eq: false } }, explain: true } as any)
+const res = await store.query?.({
+    filter: { op: 'eq', field: 'done', value: false },
+    explain: true
+} as any)
 console.log(res?.explain)
 ```
 

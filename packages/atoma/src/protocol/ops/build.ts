@@ -1,6 +1,6 @@
 import type { Cursor } from '../core/scalars'
 import type { Meta } from '../core/meta'
-import type { QueryParams } from './query'
+import type { Query } from './query'
 import type { ChangesPullOp, Operation, QueryOp, WriteOp } from './types'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -68,7 +68,7 @@ export function buildWriteOp(args: {
 export function buildQueryOp(args: {
     opId: string
     resource: string
-    params: QueryParams
+    query: Query
     meta?: Meta
 }): QueryOp {
     return {
@@ -76,7 +76,7 @@ export function buildQueryOp(args: {
         kind: 'query',
         query: {
             resource: args.resource,
-            params: args.params
+            query: args.query
         },
         ...(args.meta ? { meta: args.meta } : {})
     }

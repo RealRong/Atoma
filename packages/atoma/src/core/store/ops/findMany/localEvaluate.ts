@@ -1,27 +1,27 @@
-import { applyQuery } from '../../../query'
+import { executeLocalQuery } from '../../../query'
 import type { StoreIndexes } from '../../../indexes/StoreIndexes'
 import type { QueryMatcherOptions } from '../../../query/QueryMatcher'
-import type { FindManyOptions, Entity } from '../../../types'
+import type { Query, Entity } from '../../../types'
 import type { EntityId } from '#protocol'
 import type { Explain } from '#observability'
-import { summarizeFindManyParams } from './paramsSummary'
+import { summarizeQuery } from './paramsSummary'
 
 export function evaluateWithIndexes<T extends Entity>(params: {
     mapRef: Map<EntityId, T>
-    options?: FindManyOptions<T>
+    query: Query<T>
     indexes: StoreIndexes<T> | null
     matcher?: QueryMatcherOptions
     emit: (type: string, payload: any) => void
     explain?: Explain
-}) {
-    const { mapRef, options, indexes, matcher, emit, explain } = params
+}): { data: T[]; pageInfo?: any } {
+    const { mapRef, query, indexes, matcher, emit, explain } = params
 
-    const paramsSummary = summarizeFindManyParams(options)
-    const candidateRes = indexes ? indexes.collectCandidates(options?.where) : { kind: 'unsupported' as const }
+    const paramsSummary = summarizeQuery(query)
+    const candidateRes = indexes ? indexes.collectCandidates(query?.filter as any) : { kind: 'unsupported' as const }
     const plan = indexes?.getLastQueryPlan()
 
     emit('query:index', {
-        params: { whereFields: paramsSummary.whereFields },
+        params: { filterFields: paramsSummary.filterFields },
         result: candidateRes.kind === 'candidates'
             ? { kind: 'candidates', exactness: candidateRes.exactness, count: candidateRes.ids.size }
             : { kind: candidateRes.kind },
@@ -41,7 +41,7 @@ export function evaluateWithIndexes<T extends Entity>(params: {
         if (explain) {
             ;(explain as any).finalize = { inputCount: 0, outputCount: 0, paramsSummary }
         }
-        return [] as T[]
+        return { data: [] }
     }
 
     const source =
@@ -56,32 +56,19 @@ export function evaluateWithIndexes<T extends Entity>(params: {
             })()
             : Array.from(mapRef.values()) as T[]
 
-    const shouldSkipWhere =
+    const effectiveQuery =
         candidateRes.kind === 'candidates'
         && candidateRes.exactness === 'exact'
-        && options?.where
-        && typeof options.where === 'object'
-        && typeof options.where !== 'function'
+        && query?.filter
+            ? ({ ...query, filter: undefined } as Query<T>)
+            : query
 
-    const effectiveOptions = shouldSkipWhere
-        ? ({ ...(options as any), where: undefined } as any)
-        : options
+    const out = executeLocalQuery(source as any, effectiveQuery as any, { preSorted: false, matcher })
 
-    const shouldSkipApplyQuery =
-        effectiveOptions
-        && !effectiveOptions.where
-        && !effectiveOptions.orderBy
-        && effectiveOptions.limit === undefined
-        && effectiveOptions.offset === undefined
-
-    const out = shouldSkipApplyQuery
-        ? (source as any as T[])
-        : (applyQuery(source as any, effectiveOptions, { preSorted: false, matcher }) as T[])
-
-    emit('query:finalize', { inputCount: source.length, outputCount: out.length, params: paramsSummary })
+    emit('query:finalize', { inputCount: source.length, outputCount: out.data.length, params: paramsSummary })
     if (explain) {
-        ;(explain as any).finalize = { inputCount: source.length, outputCount: out.length, paramsSummary }
+        ;(explain as any).finalize = { inputCount: source.length, outputCount: out.data.length, paramsSummary }
     }
 
-    return out
+    return out as any
 }

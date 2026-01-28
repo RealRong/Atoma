@@ -1,9 +1,10 @@
 import type { Entity, JotaiStore, OpsClientLike, Persistence, PersistRequest, PersistResult, RuntimeIo, StoreDataProcessor, WriteStrategy } from '#core'
-import { Core, MutationPipeline } from '#core'
+import { MutationPipeline } from '#core'
+import { executeLocalQuery } from '#core/query'
 import { executeWriteOps } from '#core/mutation/pipeline/WriteOps'
 import { createRuntimeIo } from '#core/runtime'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
-import type { EntityId, QueryParams } from '#protocol'
+import type { EntityId, Query } from '#protocol'
 import type { StoreHandle } from '#core/store/internals/handleTypes'
 import type { AtomaSchema } from '#client/types'
 import type { ClientRuntimeInternal } from '#client/internal/types'
@@ -131,106 +132,11 @@ function createLocalRuntimeIo(_runtime: () => ClientRuntimeInternal) {
 
     const query: RuntimeIo['query'] = async <T extends Entity>(
         handle: StoreHandle<T>,
-        params: QueryParams
+        query: Query
     ) => {
         const map = handle.jotaiStore.get(handle.atom) as Map<EntityId, T>
         const items = Array.from(map.values()) as T[]
-
-        const where = isPlainObject(params?.where) && Object.keys(params.where as any).length
-            ? (params.where as any)
-            : undefined
-
-        const orderBy = Array.isArray(params?.orderBy)
-            ? params.orderBy
-            : (params?.orderBy ? [params.orderBy] : [])
-
-        const normalizedOrderBy = orderBy.length
-            ? orderBy
-            : [{ field: 'id', direction: 'asc' as const }]
-
-        const sorted = Core.query.applyQuery(items as any, {
-            where,
-            orderBy: normalizedOrderBy as any
-        } as any) as any[]
-
-        const fields = normalizeFields((params as any).fields)
-        const select = selectFromFields(fields)
-
-        const beforeToken = (typeof (params as any).before === 'string' && (params as any).before)
-            ? (params as any).before as string
-            : undefined
-        const afterToken = (typeof (params as any).after === 'string' && (params as any).after)
-            ? (params as any).after as string
-            : undefined
-        const wantsCursorPaging = Boolean(beforeToken || afterToken)
-
-        if (!wantsCursorPaging) {
-            const offset = normalizeOffset((params as any).offset) ?? 0
-            const includeTotal = (typeof (params as any).includeTotal === 'boolean')
-                ? (params as any).includeTotal as boolean
-                : true
-            const limit = normalizeOptionalLimit((params as any).limit)
-
-            const slice = typeof limit === 'number'
-                ? sorted.slice(offset, offset + limit)
-                : sorted.slice(offset)
-
-            const last = slice[slice.length - 1]
-            const hasNext = typeof limit === 'number' ? (offset + limit < sorted.length) : false
-
-            return {
-                data: slice.map(i => projectSelect(i, select)) as any[],
-                pageInfo: {
-                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : undefined,
-                    hasNext,
-                    ...(includeTotal ? { total: sorted.length } : {})
-                }
-            }
-        }
-
-        const limit = normalizeOptionalLimit((params as any).limit) ?? 50
-
-        if (beforeToken) {
-            const idx = sorted.findIndex(item => String((item as any)?.id) === beforeToken)
-            const end = idx >= 0 ? idx : sorted.length
-            const start = Math.max(0, end - limit)
-            const slice = sorted.slice(start, end)
-            const last = slice[slice.length - 1]
-            const hasNext = start > 0
-            return {
-                data: slice.map(i => projectSelect(i, select)) as any[],
-                pageInfo: {
-                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : beforeToken,
-                    hasNext
-                }
-            }
-        }
-
-        if (afterToken) {
-            const idx = sorted.findIndex(item => String((item as any)?.id) === afterToken)
-            const start = idx >= 0 ? idx + 1 : 0
-            const slice = sorted.slice(start, start + limit)
-            const last = slice[slice.length - 1]
-            const hasNext = start + limit < sorted.length
-            return {
-                data: slice.map(i => projectSelect(i, select)) as any[],
-                pageInfo: {
-                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : afterToken,
-                    hasNext
-                }
-            }
-        }
-
-        const slice = sorted.slice(0, limit)
-        const last = slice[slice.length - 1]
-        const hasNext = limit < sorted.length
-        return {
-            data: slice.map(i => projectSelect(i, select)) as any[],
-            pageInfo: {
-                cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : undefined,
-                hasNext
-            }
-        }
+        return executeLocalQuery(items as any, query as any)
     }
 
     const write: RuntimeIo['write'] = async () => {
@@ -238,42 +144,4 @@ function createLocalRuntimeIo(_runtime: () => ClientRuntimeInternal) {
     }
 
     return { executeOps, query, write }
-}
-
-function isPlainObject(value: unknown): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function normalizeOptionalLimit(value: unknown): number | undefined {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
-    return Math.max(0, Math.floor(value))
-}
-
-function normalizeOffset(value: unknown): number | undefined {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
-    return Math.max(0, Math.floor(value))
-}
-
-function normalizeFields(fields: unknown): string[] | undefined {
-    if (!Array.isArray(fields) || !fields.length) return undefined
-    const out = fields.filter(f => typeof f === 'string' && f) as string[]
-    return out.length ? out : undefined
-}
-
-function selectFromFields(fields: string[] | undefined): Record<string, boolean> | undefined {
-    if (!fields?.length) return undefined
-    const out: Record<string, boolean> = {}
-    fields.forEach(f => { out[f] = true })
-    return out
-}
-
-function projectSelect(data: unknown, select?: Record<string, boolean>): unknown {
-    if (!select) return data
-    if (!isPlainObject(data)) return data
-    const out: Record<string, any> = {}
-    Object.entries(select).forEach(([k, enabled]) => {
-        if (!enabled) return
-        if (Object.prototype.hasOwnProperty.call(data, k)) out[k] = (data as any)[k]
-    })
-    return out
 }

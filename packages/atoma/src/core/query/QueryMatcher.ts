@@ -1,65 +1,34 @@
 import { defaultTokenizer } from '../indexes/tokenizer'
 import { levenshteinDistance } from '../indexes/utils'
+import type { FilterExpr } from '#protocol'
 
 export type TextOperator = 'and' | 'or'
 
-export type MatchSpec =
-    | string
-    | {
-        q: string
-        op?: TextOperator
-        minTokenLength?: number
-        tokenizer?: (text: string) => string[]
-    }
+export type MatchDefaults = {
+    op?: TextOperator
+    minTokenLength?: number
+    tokenizer?: (text: string) => string[]
+}
 
-export type FuzzySpec =
-    | string
-    | {
-        q: string
-        op?: TextOperator
-        distance?: 0 | 1 | 2
-        minTokenLength?: number
-        tokenizer?: (text: string) => string[]
-    }
+export type FuzzyDefaults = {
+    op?: TextOperator
+    distance?: 0 | 1 | 2
+    minTokenLength?: number
+    tokenizer?: (text: string) => string[]
+}
 
 export type FieldMatcherOptions = {
-    match?: Omit<Exclude<MatchSpec, string>, 'q'>
-    fuzzy?: Omit<Exclude<FuzzySpec, string>, 'q'>
+    match?: MatchDefaults
+    fuzzy?: FuzzyDefaults
 }
 
 export type QueryMatcherOptions = {
     fields?: Record<string, FieldMatcherOptions>
 }
 
-type WhereValue =
-    | any
-    | {
-        eq?: any
-        in?: any[]
-        gt?: number
-        gte?: number
-        lt?: number
-        lte?: number
-        contains?: string
-        startsWith?: string
-        endsWith?: string
-        match?: MatchSpec
-        fuzzy?: FuzzySpec
-    }
-
 const normalizeString = (value: any) => {
     if (value === undefined || value === null) return ''
     return String(value).toLowerCase()
-}
-
-const resolveMatchSpec = (spec: MatchSpec, defaults?: FieldMatcherOptions['match']) => {
-    if (typeof spec === 'string') return { q: spec, ...(defaults || {}) }
-    return { ...defaults, ...spec }
-}
-
-const resolveFuzzySpec = (spec: FuzzySpec, defaults?: FieldMatcherOptions['fuzzy']) => {
-    if (typeof spec === 'string') return { q: spec, ...(defaults || {}) }
-    return { ...defaults, ...spec }
 }
 
 const tokenize = (input: any, tokenizer?: (text: string) => string[], minTokenLength = 3): string[] => {
@@ -69,12 +38,11 @@ const tokenize = (input: any, tokenizer?: (text: string) => string[], minTokenLe
     return tk(text).filter(t => t.length >= minTokenLength)
 }
 
-const matchesMatch = (fieldValue: any, spec: MatchSpec, defaults?: FieldMatcherOptions['match']): boolean => {
-    const resolved = resolveMatchSpec(spec, defaults)
-    const operator: TextOperator = resolved.op || 'and'
-    const minTokenLength = resolved.minTokenLength ?? 3
-    const docTokens = tokenize(fieldValue, resolved.tokenizer, minTokenLength)
-    const queryTokens = tokenize(resolved.q, resolved.tokenizer, minTokenLength)
+const matchesMatch = (fieldValue: any, query: string, defaults?: MatchDefaults): boolean => {
+    const operator: TextOperator = defaults?.op || 'and'
+    const minTokenLength = defaults?.minTokenLength ?? 3
+    const docTokens = tokenize(fieldValue, defaults?.tokenizer, minTokenLength)
+    const queryTokens = tokenize(query, defaults?.tokenizer, minTokenLength)
     if (!queryTokens.length) return false
     if (!docTokens.length) return false
     const docSet = new Set(docTokens)
@@ -82,13 +50,12 @@ const matchesMatch = (fieldValue: any, spec: MatchSpec, defaults?: FieldMatcherO
     return queryTokens.every(t => docSet.has(t))
 }
 
-const matchesFuzzy = (fieldValue: any, spec: FuzzySpec, defaults?: FieldMatcherOptions['fuzzy']): boolean => {
-    const resolved = resolveFuzzySpec(spec, defaults)
-    const operator: TextOperator = resolved.op || 'and'
-    const distance: 0 | 1 | 2 = resolved.distance ?? 1
-    const minTokenLength = resolved.minTokenLength ?? 3
-    const docTokens = tokenize(fieldValue, resolved.tokenizer, minTokenLength)
-    const queryTokens = tokenize(resolved.q, resolved.tokenizer, minTokenLength)
+const matchesFuzzy = (fieldValue: any, query: string, defaults?: FuzzyDefaults, distanceOverride?: 0 | 1 | 2): boolean => {
+    const operator: TextOperator = defaults?.op || 'and'
+    const distance: 0 | 1 | 2 = distanceOverride ?? defaults?.distance ?? 1
+    const minTokenLength = defaults?.minTokenLength ?? 3
+    const docTokens = tokenize(fieldValue, defaults?.tokenizer, minTokenLength)
+    const queryTokens = tokenize(query, defaults?.tokenizer, minTokenLength)
     if (!queryTokens.length) return false
     if (!docTokens.length) return false
 
@@ -104,60 +71,75 @@ const matchesFuzzy = (fieldValue: any, spec: FuzzySpec, defaults?: FieldMatcherO
     return queryTokens.every(fuzzyHas)
 }
 
-const matchesCondition = (value: any, condition: WhereValue, fieldDefaults?: FieldMatcherOptions): boolean => {
-    if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
-        const { eq, in: inArr, gt, gte, lt, lte, contains, startsWith, endsWith, match, fuzzy } = condition as any
-
-        if (eq !== undefined) {
-            return value === eq
-        }
-
-        if (inArr && Array.isArray(inArr)) {
-            if (!inArr.some(v => v === value)) return false
-        }
-        if (gt !== undefined && !(value > gt)) return false
-        if (gte !== undefined && !(value >= gte)) return false
-        if (lt !== undefined && !(value < lt)) return false
-        if (lte !== undefined && !(value <= lte)) return false
-
-        const haystack = normalizeString(value)
-        if (startsWith !== undefined) {
-            if (!haystack.startsWith(normalizeString(startsWith))) return false
-        }
-        if (endsWith !== undefined) {
-            if (!haystack.endsWith(normalizeString(endsWith))) return false
-        }
-        if (contains !== undefined) {
-            const needle = normalizeString(contains)
-            if (!haystack.includes(needle)) return false
-        }
-
-        if (match !== undefined) {
-            if (!matchesMatch(value, match, fieldDefaults?.match)) return false
-        }
-        if (fuzzy !== undefined) {
-            if (!matchesFuzzy(value, fuzzy, fieldDefaults?.fuzzy)) return false
-        }
-
-        return true
-    }
-
-    return value === condition
-}
-
 export const QueryMatcher = {
-    matchesWhere<T extends Record<string, any>>(
+    matchesFilter<T extends Record<string, any>>(
         item: T,
-        where: any,
+        filter: FilterExpr,
         opts?: QueryMatcherOptions
     ): boolean {
-        if (!where) return true
-        if (typeof where === 'function') return Boolean(where(item))
-        if (typeof where !== 'object') return true
+        if (!filter) return true
 
-        return Object.entries(where).every(([field, cond]) => {
-            const defaults = opts?.fields?.[field]
-            return matchesCondition((item as any)[field], cond as WhereValue, defaults)
-        })
+        const op = (filter as any).op
+        switch (op) {
+            case 'and':
+                return Array.isArray((filter as any).args)
+                    ? (filter as any).args.every((f: any) => QueryMatcher.matchesFilter(item, f, opts))
+                    : true
+            case 'or':
+                return Array.isArray((filter as any).args)
+                    ? (filter as any).args.some((f: any) => QueryMatcher.matchesFilter(item, f, opts))
+                    : false
+            case 'not':
+                return (filter as any).arg
+                    ? !QueryMatcher.matchesFilter(item, (filter as any).arg, opts)
+                    : true
+            case 'eq':
+                return (item as any)[(filter as any).field] === (filter as any).value
+            case 'in': {
+                const values = (filter as any).values
+                return Array.isArray(values)
+                    ? values.some((v: any) => (item as any)[(filter as any).field] === v)
+                    : false
+            }
+            case 'gt':
+                return (item as any)[(filter as any).field] > (filter as any).value
+            case 'gte':
+                return (item as any)[(filter as any).field] >= (filter as any).value
+            case 'lt':
+                return (item as any)[(filter as any).field] < (filter as any).value
+            case 'lte':
+                return (item as any)[(filter as any).field] <= (filter as any).value
+            case 'startsWith': {
+                const hay = normalizeString((item as any)[(filter as any).field])
+                return hay.startsWith(normalizeString((filter as any).value))
+            }
+            case 'endsWith': {
+                const hay = normalizeString((item as any)[(filter as any).field])
+                return hay.endsWith(normalizeString((filter as any).value))
+            }
+            case 'contains': {
+                const hay = normalizeString((item as any)[(filter as any).field])
+                return hay.includes(normalizeString((filter as any).value))
+            }
+            case 'isNull':
+                return (item as any)[(filter as any).field] === null
+            case 'exists': {
+                const v = (item as any)[(filter as any).field]
+                return v !== undefined && v !== null
+            }
+            case 'text': {
+                const field = (filter as any).field
+                const query = (filter as any).query
+                const mode = (filter as any).mode
+                const distance = (filter as any).distance
+                const defaults = opts?.fields?.[field]
+                if (mode === 'fuzzy') {
+                    return matchesFuzzy((item as any)[field], query, defaults?.fuzzy, distance)
+                }
+                return matchesMatch((item as any)[field], query, defaults?.match)
+            }
+            default:
+                return true
+        }
     }
 }

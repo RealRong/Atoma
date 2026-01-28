@@ -1,4 +1,5 @@
-import { IndexDefinition, WhereOperator } from '../types'
+import { IndexDefinition } from '../types'
+import type { FilterExpr } from '#protocol'
 import type { EntityId } from '#protocol'
 import { CandidateExactness, CandidateResult, IndexStats } from './types'
 import { intersectAll } from './utils'
@@ -71,8 +72,9 @@ export class IndexManager<T> {
         source.forEach(item => this.add(item))
     }
 
-    collectCandidates(where?: WhereOperator<T>): CandidateResult {
-        if (!where || typeof where === 'function') {
+    collectCandidates(filter?: FilterExpr): CandidateResult {
+        const where = filterToWhere(filter)
+        if (!where) {
             this.lastQueryPlan = {
                 timestamp: Date.now(),
                 whereFields: [],
@@ -184,4 +186,42 @@ export class IndexManager<T> {
                 return new TextIndex<T>(def)
         }
     }
+}
+
+function filterToWhere(filter?: FilterExpr): Record<string, any> | undefined {
+    if (!filter) return undefined
+    const op = (filter as any).op
+
+    if (op === 'and' && Array.isArray((filter as any).args)) {
+        const out: Record<string, any> = {}
+        for (const child of (filter as any).args as any[]) {
+            const partial = filterToWhere(child as any)
+            if (!partial) return undefined
+            for (const [k, v] of Object.entries(partial)) {
+                if (Object.prototype.hasOwnProperty.call(out, k)) return undefined
+                out[k] = v
+            }
+        }
+        return Object.keys(out).length ? out : undefined
+    }
+
+    if (op === 'eq') return { [(filter as any).field]: { eq: (filter as any).value } }
+    if (op === 'in') return { [(filter as any).field]: { in: (filter as any).values } }
+    if (op === 'gt') return { [(filter as any).field]: { gt: (filter as any).value } }
+    if (op === 'gte') return { [(filter as any).field]: { gte: (filter as any).value } }
+    if (op === 'lt') return { [(filter as any).field]: { lt: (filter as any).value } }
+    if (op === 'lte') return { [(filter as any).field]: { lte: (filter as any).value } }
+    if (op === 'startsWith') return { [(filter as any).field]: { startsWith: (filter as any).value } }
+    if (op === 'endsWith') return { [(filter as any).field]: { endsWith: (filter as any).value } }
+    if (op === 'contains') return { [(filter as any).field]: { contains: (filter as any).value } }
+    if (op === 'text') {
+        const mode = (filter as any).mode
+        const query = (filter as any).query
+        if (mode === 'fuzzy') {
+            return { [(filter as any).field]: { fuzzy: { q: query, distance: (filter as any).distance } } }
+        }
+        return { [(filter as any).field]: { match: { q: query } } }
+    }
+
+    return undefined
 }

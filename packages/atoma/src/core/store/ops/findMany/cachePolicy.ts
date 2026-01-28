@@ -1,15 +1,12 @@
-import type { FindManyOptions } from '../../../types'
+import type { Query } from '../../../types'
 
 export type CacheWriteDecision =
-    | { effectiveSkipStore: true; reason: 'skipStore' | 'sparseFields' }
+    | { effectiveSkipStore: true; reason: 'select' }
     | { effectiveSkipStore: false; reason?: undefined }
 
-export function resolveCachePolicy<T>(options?: FindManyOptions<T>): CacheWriteDecision {
-    const effectiveSkipStore = Boolean(options?.skipStore || (options as any)?.fields?.length)
+export function resolveCachePolicy<T>(query?: Query<T>): CacheWriteDecision {
+    const effectiveSkipStore = Boolean(Array.isArray((query as any)?.select) && (query as any).select.length)
     if (!effectiveSkipStore) return { effectiveSkipStore: false }
 
-    return {
-        effectiveSkipStore: true,
-        reason: options?.skipStore ? 'skipStore' : 'sparseFields'
-    }
+    return { effectiveSkipStore: true, reason: 'select' }
 }

@@ -6,7 +6,7 @@ export type { Meta } from './core/meta'
 export type { ErrorKind, StandardErrorDetails, StandardError } from './core/error'
 export type { EnvelopeOk, EnvelopeErr, Envelope } from './core/envelope'
 
-export type { OrderByRule, CursorToken, QueryParams, PageInfo } from './ops/query'
+export type { CursorToken, PageInfo, Query, FilterExpr, SortRule, PageSpec } from './ops/query'
 export type { ChangeKind, Change, ChangeBatch } from './ops/changes'
 
 export type {

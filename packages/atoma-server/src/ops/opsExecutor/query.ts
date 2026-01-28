@@ -12,7 +12,7 @@ function toQueryOk(opId: string, res?: QueryResult): QueryOkResult {
     return {
         opId,
         ok: true,
-        data: { items: res?.data ?? [], ...(res?.pageInfo ? { pageInfo: res.pageInfo } : {}) }
+        data: { data: res?.data ?? [], ...(res?.pageInfo ? { pageInfo: res.pageInfo } : {}) }
     }
 }
 
@@ -36,13 +36,13 @@ export async function executeQueryOps<Ctx>(args: {
 }) {
     if (!args.queryOps.length) return
 
-    const entries = args.queryOps.map(q => ({ opId: q.opId, resource: q.query.resource, params: q.query.params }))
+    const entries = args.queryOps.map(q => ({ opId: q.opId, resource: q.query.resource, query: q.query.query }))
     const queryOpById = new Map(args.queryOps.map(q => [q.opId, q] as const))
     let didBatch = false
 
     if (!args.hasOpPlugins && typeof args.adapter.batchFindMany === 'function') {
         try {
-            const resList = await args.adapter.batchFindMany(entries.map(e => ({ resource: e.resource, params: e.params })))
+            const resList = await args.adapter.batchFindMany(entries.map(e => ({ resource: e.resource, query: e.query })))
             for (let i = 0; i < entries.length; i++) {
                 const e = entries[i]
                 args.resultsByOpId.set(e.opId, toQueryOk(e.opId, resList[i] as QueryResult | undefined))
@@ -56,7 +56,7 @@ export async function executeQueryOps<Ctx>(args: {
     if (didBatch) return
 
     if (!args.hasOpPlugins) {
-        const settled = await Promise.allSettled(entries.map(e => args.adapter.findMany(e.resource, e.params)))
+        const settled = await Promise.allSettled(entries.map(e => args.adapter.findMany(e.resource, e.query)))
         for (let i = 0; i < entries.length; i++) {
             const e = entries[i]
             const res = settled[i]
@@ -80,7 +80,7 @@ export async function executeQueryOps<Ctx>(args: {
             runtime: args.pluginRuntime
         }, async () => {
             try {
-                const res = await args.adapter.findMany(e.resource, e.params)
+                const res = await args.adapter.findMany(e.resource, e.query)
                 return { ok: true, data: toQueryOk(e.opId, res).data }
             } catch (err) {
                 return { ok: false, error: err }

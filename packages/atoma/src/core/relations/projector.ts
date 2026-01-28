@@ -1,6 +1,6 @@
 import type {
     Entity,
-    FindManyOptions,
+    Query,
     KeySelector,
     RelationConfig,
     RelationMap,
@@ -9,7 +9,7 @@ import type {
 } from '../types'
 import type { EntityId } from '#protocol'
 import type { StoreIndexes } from '../indexes/StoreIndexes'
-import { applyQuery } from '../query'
+import { executeLocalQuery } from '../query'
 import { getValueByPath } from './utils'
 
 export type StoreRuntime = {
@@ -19,7 +19,7 @@ export type StoreRuntime = {
 
 export type GetStoreMap = (store: StoreToken) => Map<EntityId, any> | StoreRuntime | undefined
 
-type IncludeInput = Record<string, boolean | FindManyOptions<any>> | undefined
+type IncludeInput = Record<string, boolean | Query<any>> | undefined
 
 type RelationShape<TSource> =
     | {
@@ -27,21 +27,21 @@ type RelationShape<TSource> =
         store: StoreToken
         sourceKeySelector: KeySelector<TSource>
         targetKeyField: string
-        options: Pick<FindManyOptions<any>, 'orderBy' | 'limit'>
+        options: { sort?: any[]; limit?: number }
     }
     | {
         kind: 'hasMany'
         store: StoreToken
         sourceKeySelector: KeySelector<TSource>
         targetKeyField: string
-        options: Pick<FindManyOptions<any>, 'orderBy' | 'limit'>
+        options: { sort?: any[]; limit?: number }
     }
     | {
         kind: 'hasOne'
         store: StoreToken
         sourceKeySelector: KeySelector<TSource>
         targetKeyField: string
-        options: Pick<FindManyOptions<any>, 'orderBy' | 'limit'>
+        options: { sort?: any[]; limit?: number }
     }
 
 const getDefaultValue = (config: RelationConfig<any, any> | undefined) => {
@@ -65,19 +65,25 @@ const pickFirstKey = (value: EntityId | EntityId[] | undefined | null): EntityId
 }
 
 const normalizeIncludeOptions = (
-    configOptions: FindManyOptions<any> | undefined,
-    includeValue: boolean | FindManyOptions<any>
-): Pick<FindManyOptions<any>, 'orderBy' | 'limit'> => {
+    configOptions: Query<any> | undefined,
+    includeValue: boolean | Query<any>
+): { sort?: any[]; limit?: number } => {
     const user = typeof includeValue === 'object' ? includeValue : undefined
+    const userLimit = user?.page && (user.page as any).limit !== undefined
+        ? (user.page as any).limit
+        : undefined
+    const configLimit = configOptions?.page && (configOptions.page as any).limit !== undefined
+        ? (configOptions.page as any).limit
+        : undefined
     return {
-        orderBy: user?.orderBy !== undefined ? user.orderBy : configOptions?.orderBy,
-        limit: user?.limit !== undefined ? user.limit : configOptions?.limit
+        sort: user?.sort !== undefined ? user.sort : configOptions?.sort,
+        limit: userLimit !== undefined ? userLimit : configLimit
     }
 }
 
 const toRelationShape = <TSource>(
     config: Exclude<RelationConfig<TSource, any>, VariantsConfig<TSource>>,
-    includeValue: boolean | FindManyOptions<any>
+    includeValue: boolean | Query<any>
 ): RelationShape<TSource> => {
     const options = normalizeIncludeOptions((config as any).options, includeValue)
 
@@ -154,7 +160,7 @@ function projectVariants<T extends Entity>(
     results: T[],
     relName: string,
     config: VariantsConfig<T>,
-    relOpts: boolean | FindManyOptions<any>,
+    relOpts: boolean | Query<any>,
     getStoreMap: GetStoreMap
 ) {
     const branchGroups = new Map<number, T[]>()
@@ -180,7 +186,7 @@ function projectStandard<TSource extends Entity>(
     results: TSource[],
     relName: string,
     config: Exclude<RelationConfig<TSource, any>, VariantsConfig<TSource>>,
-    relOpts: boolean | FindManyOptions<any>,
+    relOpts: boolean | Query<any>,
     getStoreMap: GetStoreMap
 ) {
     const shape = toRelationShape(config, relOpts)
@@ -321,21 +327,21 @@ function projectStandard<TSource extends Entity>(
             if (arr.length) matches.push(...arr)
         })
 
-        const orderBy = shape.options.orderBy
-        if (shape.kind === 'hasOne' && !orderBy) {
+        const sort = shape.options.sort
+        if (shape.kind === 'hasOne' && !sort) {
             ;(item as any)[relName] = matches[0] ?? null
             return
         }
 
         const limit = shape.kind === 'hasOne' ? 1 : shape.options.limit
-        if (!orderBy) {
+        if (!sort) {
             ;(item as any)[relName] = shape.kind === 'hasOne'
                 ? (matches[0] ?? null)
                 : (limit === undefined ? matches : matches.slice(0, limit))
             return
         }
 
-        const projected = applyQuery(matches, { orderBy, limit })
+        const projected = executeLocalQuery(matches as any, {\n            sort: sort as any,\n            page: { mode: 'offset', limit }\n        } as any).data
 
         ;(item as any)[relName] = shape.kind === 'hasOne'
             ? (projected[0] ?? null)

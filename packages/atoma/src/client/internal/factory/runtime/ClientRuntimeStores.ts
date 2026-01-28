@@ -13,7 +13,8 @@ import {
     createDeleteMany,
     createDeleteOne,
     createFetchAll,
-    createFindMany,
+    createQuery,
+    createQueryOne,
     createGetAll,
     createGetMany,
     createUpdateMany,
@@ -33,7 +34,8 @@ type StoreEngine<T extends Entity = any> = Readonly<{
 
 type StoreEngineApi<T extends Entity = any> = IStore<T, any> & Readonly<{
     fetchAll: () => Promise<T[]>
-    findMany: (options?: any) => Promise<any>
+    query: (query: any) => Promise<any>
+    queryOne: (query: any) => Promise<any>
 }>
 
 export class ClientRuntimeStores implements ClientRuntimeStoresApi {
@@ -85,7 +87,8 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
             getAll: (filter?: any, cacheFilter?: any, options?: any) => this.ensureEngine(key).api.getAll(filter, cacheFilter, options),
             fetchAll: () => this.ensureEngine(key).api.fetchAll(),
             getMany: (ids: any, cache?: any, options?: any) => this.ensureEngine(key).api.getMany(ids, cache, options),
-            findMany: (options?: any) => this.ensureEngine(key).api.findMany(options)
+            query: (query: any) => this.ensureEngine(key).api.query(query),
+            queryOne: (query: any) => this.ensureEngine(key).api.queryOne(query)
         }
 
         // Non-enumerable owner pointer for bindings (e.g. atoma-react) to locate the runtime/client.
@@ -156,7 +159,8 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
         const getMany = createGetMany<any>(this.runtime, handle)
         const { getOne, fetchOne } = createBatchGet(this.runtime as any, handle)
         const fetchAll = createFetchAll<any>(this.runtime, handle)
-        const findMany = createFindMany<any>(this.runtime, handle)
+        const query = createQuery<any>(this.runtime, handle)
+        const queryOne = createQueryOne<any>(this.runtime, handle)
 
         const api: StoreEngineApi<any> = {
             addOne,
@@ -172,7 +176,8 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
             getAll,
             fetchAll,
             getMany,
-            findMany
+            query,
+            queryOne
         }
 
         // Register handle for storeKey-based resolution (new path).

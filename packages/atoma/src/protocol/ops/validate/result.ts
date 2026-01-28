@@ -51,9 +51,9 @@ export function assertOperationResults(value: unknown): OperationResult[] {
 export function assertQueryResultData(value: unknown): QueryResultData {
     const detailsFor = makeValidationDetails('queryResult')
     const obj = requireObject(value, { code: 'INVALID_RESPONSE', message: 'Invalid query result data', details: detailsFor() })
-    const items = (obj as any).items
-    if (!Array.isArray(items)) {
-        throw invalid('INVALID_RESPONSE', 'Invalid query result data (missing items)', detailsFor('items'))
+    const data = (obj as any).data
+    if (!Array.isArray(data)) {
+        throw invalid('INVALID_RESPONSE', 'Invalid query result data (missing data)', detailsFor('data'))
     }
     return obj as unknown as QueryResultData
 }

@@ -21,7 +21,7 @@ Atoma 当前最强的定位不是“又一个 query/hooks 库”，而是：
 ## 1. 现状亮点（作为竞争卖点的部分）
 
 ### 1.1 Client 侧亮点
-- `Store`：CRUD + `findMany`（本地索引候选集 + 远端可 hydrate/transient）+ `relations include` 投影与预取。
+- `Store`：CRUD + `query`（本地索引候选集 + 远端可 hydrate/transient）+ `relations include` 投影与预取。
 - `Outbox`：队列写（`queue` / `local-first`）与“禁止隐式补读”语义区分，能保证 enqueue 阶段不触网。
 - `Sync`：push/pull/subscribe 的 lane 架构 + outbox/cursor 持久化 + single instance lock + outbox rebase（减少离线连续写自冲突）。
 - `History`：按 `scope + actionId` 聚合的撤销/重做，且天然排除 sync/history origin 的写入回灌。

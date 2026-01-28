@@ -1,5 +1,5 @@
 import type { ObservabilityContext } from '#observability'
-import { Protocol, type Operation, type OperationResult, type QueryParams, type QueryResultData, type WriteAction, type WriteItem, type WriteOptions, type WriteResultData } from '#protocol'
+import { Protocol, type Operation, type OperationResult, type Query, type QueryResultData, type WriteAction, type WriteItem, type WriteOptions, type WriteResultData } from '#protocol'
 import type { CoreRuntime, Entity, RuntimeIo } from '../types'
 import type { StoreHandle } from '../store/internals/handleTypes'
 
@@ -64,14 +64,14 @@ export function createRuntimeIo(runtime: () => CoreRuntime, opts?: Readonly<{ no
 
     const query: RuntimeIo['query'] = async <T extends Entity>(
         handle: StoreHandle<T>,
-        params: QueryParams,
+        query: Query,
         context?: ObservabilityContext,
         signal?: AbortSignal
     ) => {
         const op: Operation = Protocol.ops.build.buildQueryOp({
             opId: handle.nextOpId('q'),
             resource: handle.storeName,
-            params
+            query
         })
         const results = await executeOps({ ops: [op], context, ...(signal ? { signal } : {}) })
         const result = requireSingleResult(results, 'Missing query result')
@@ -85,8 +85,9 @@ export function createRuntimeIo(runtime: () => CoreRuntime, opts?: Readonly<{ no
         }
 
         return {
-            data: Array.isArray((data as any)?.items) ? ((data as any).items as unknown[]) : [],
-            pageInfo: (data as any)?.pageInfo
+            data: Array.isArray((data as any)?.data) ? ((data as any).data as unknown[]) : [],
+            pageInfo: (data as any)?.pageInfo,
+            ...(data && (data as any).explain !== undefined ? { explain: (data as any).explain } : {})
         }
     }
 
@@ -133,4 +134,3 @@ export function createRuntimeIo(runtime: () => CoreRuntime, opts?: Readonly<{ no
         write
     }
 }
-

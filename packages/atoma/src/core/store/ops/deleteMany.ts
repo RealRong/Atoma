@@ -56,7 +56,9 @@ export function createDeleteMany<T extends Entity>(
                     }
                 }
             } else {
-                const { data } = await clientRuntime.io.query(handle, { where: { id: { in: missing } } } as any, observabilityContext)
+                const { data } = await clientRuntime.io.query(handle, {
+                    filter: { op: 'in', field: 'id', values: missing }
+                }, observabilityContext)
                 const toHydrate: Array<PartialWithId<T>> = []
 
                 for (const fetched of data) {

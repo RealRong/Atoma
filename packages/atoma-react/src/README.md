@@ -11,6 +11,5 @@ npm i atoma atoma-react
 ## Usage
 
 ```ts
-import { useFindMany } from 'atoma-react'
+import { useQuery } from 'atoma-react'
 ```
-

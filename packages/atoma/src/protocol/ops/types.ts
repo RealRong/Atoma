@@ -1,4 +1,4 @@
-import type { PageInfo, QueryParams } from './query'
+import type { PageInfo, Query } from './query'
 import type { Cursor, EntityId, Version } from '../core/scalars'
 import type { Meta } from '../core/meta'
 import type { StandardError } from '../core/error'
@@ -16,7 +16,7 @@ export type QueryOp = OperationBase & {
     kind: 'query'
     query: {
         resource: string
-        params: QueryParams
+        query: Query
     }
 }
 
@@ -116,8 +116,9 @@ export type OpsResponseData = {
 }
 
 export type QueryResultData = {
-    items: unknown[]
+    data: unknown[]
     pageInfo?: PageInfo
+    explain?: any
 }
 
 export type WriteItemResult =

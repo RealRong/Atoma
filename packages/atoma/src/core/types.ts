@@ -3,7 +3,7 @@ import type { Draft, Patch } from 'immer'
 import type { MutationPipeline } from './mutation/MutationPipeline'
 import type { StoreHandle } from './store/internals/handleTypes'
 import type { DebugConfig, DebugEvent, Explain, ObservabilityContext } from '#observability'
-import type { EntityId, Meta, Operation, OperationResult, QueryParams, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
+import type { EntityId, Meta, Operation, OperationResult, Query, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
 
 /**
  * Minimal entity interface - all stored entities must have an id
@@ -259,66 +259,19 @@ export interface StoreOperationOptions {
 export interface StoreReadOptions {
 }
 
-export type WhereOperator<T> = Partial<Record<keyof T & string, any | {
-    eq?: any
-    in?: any[]
-    gt?: number
-    gte?: number
-    lt?: number
-    lte?: number
-    startsWith?: string
-    endsWith?: string
-    contains?: string
-    match?: string | { q: string; op?: 'and' | 'or'; minTokenLength?: number; tokenizer?: (text: string) => string[] }
-    fuzzy?: string | { q: string; op?: 'and' | 'or'; distance?: 0 | 1 | 2; minTokenLength?: number; tokenizer?: (text: string) => string[] }
-}>>
-
-export type OrderBy<T> =
-    | { field: keyof T & string, direction: 'asc' | 'desc' }
-    | Array<{ field: keyof T & string, direction: 'asc' | 'desc' }>
+export type Query<T = any> = import('#protocol').Query
+export type FilterExpr<T = any> = import('#protocol').FilterExpr
+export type SortRule<T = any> = import('#protocol').SortRule
+export type PageSpec = import('#protocol').PageSpec
+export type PageInfo = import('#protocol').PageInfo
 
 export type FetchPolicy = 'cache-only' | 'network-only' | 'cache-and-network'
 
-export type PageInfo = import('#protocol').PageInfo
-
-export interface FindManyOptions<T, Include extends Record<string, any> = {}> {
-    where?: WhereOperator<T>
-    orderBy?: OrderBy<T>
-    /**
-     * 请求后端仅返回指定字段（sparse fieldset）。
-     * 注意：当指定 fields 时，查询结果默认视为 transient（不会写入 store），避免半字段对象污染缓存。
-     */
-    fields?: Array<keyof T & string>
-    limit?: number
-    offset?: number
-    /**
-     * Atoma server/adapter 的 keyset cursor token：
-     * - after: 下一页（向后翻页）
-     * - before: 上一页（向前翻页）
-     * - cursor: 旧别名（等同 after）
-     */
-    after?: string
-    before?: string
-    cursor?: string
-    /** offset 分页时是否返回 total（Atoma server REST/batch 支持；默认 true） */
-    includeTotal?: boolean
-    cache?: {
-        key?: string
-        tags?: string[]
-        staleTime?: number
-    }
-    /** If true, fetched data will NOT be stored in the central atom or indexed. Use for high-volume read-only data. */
-    skipStore?: boolean
-    /** Relations include 配置 */
-    include?: Include
-    /** 生成 explain 诊断产物（默认 false） */
-    explain?: boolean
-}
-
-export type FindManyResult<T> = { data: T[]; pageInfo?: PageInfo; explain?: Explain }
+export type QueryResult<T> = { data: T[]; pageInfo?: PageInfo; explain?: Explain }
+export type QueryOneResult<T> = { data?: T; explain?: Explain }
 
 // Relations include 专用（仅支持 Top-N 预览，不含分页）
-export type RelationIncludeOptions<T, Include extends Record<string, any> = Record<string, any>> = Pick<FindManyOptions<T, Include>, 'limit' | 'orderBy' | 'include' | 'skipStore'> & {
+export type RelationIncludeOptions<T, Include extends Record<string, any> = Record<string, any>> = Pick<Query<T>, 'sort' | 'page' | 'include' | 'select'> & {
     /** live=true 订阅子 store 实时变化；false 则使用快照（默认 true） */
     live?: boolean
 }
@@ -395,7 +348,7 @@ export interface StoreConfig<T> {
     /** Lifecycle hooks for add/update */
     hooks?: LifecycleHooks<T>
 
-    /** Optional index definitions (for findMany 优先命中) */
+    /** Optional index definitions (for query 优先命中) */
     indexes?: Array<IndexDefinition<T>>
 
     /** Store name（用于 devtools 标识） */
@@ -485,7 +438,7 @@ export interface RuntimeObservability {
 
 export type RuntimeIo = Readonly<{
     executeOps: (args: { ops: Operation[]; signal?: AbortSignal; context?: ObservabilityContext }) => Promise<OperationResult[]>
-    query: <T extends Entity>(handle: StoreHandle<T>, params: QueryParams, context?: ObservabilityContext, signal?: AbortSignal) => Promise<{ data: unknown[]; pageInfo?: any }>
+    query: <T extends Entity>(handle: StoreHandle<T>, query: Query, context?: ObservabilityContext, signal?: AbortSignal) => Promise<{ data: unknown[]; pageInfo?: any; explain?: any }>
     write: <T extends Entity>(handle: StoreHandle<T>, args: { action: WriteAction; items: WriteItem[]; options?: WriteOptions }, context?: ObservabilityContext, signal?: AbortSignal) => Promise<WriteResultData>
 }>
 
@@ -625,8 +578,11 @@ export interface IStore<T, Relations = {}> {
     /** Get multiple items by IDs */
     getMany(ids: EntityId[], cache?: boolean, options?: StoreReadOptions): Promise<T[]>
 
-    /** Query with filtering/sorting/paging */
-    findMany?(options?: FindManyOptions<T>): Promise<FindManyResult<T>>
+    /** Query list */
+    query?(query: Query<T>): Promise<QueryResult<T>>
+
+    /** Query single item (limit=1) */
+    queryOne?(query: Query<T>): Promise<QueryOneResult<T>>
 }
 
 /**

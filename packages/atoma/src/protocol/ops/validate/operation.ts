@@ -2,7 +2,7 @@ import type { Operation, OperationKind, QueryOp, WriteAction, WriteOp, ChangesPu
 import type { Meta } from '../../core/meta'
 import { assertFiniteNumber, assertNonEmptyString, invalid, isObject, makeValidationDetails, requireObject, requireString, readString } from './common'
 import { assertOpMeta } from './meta'
-import { assertQueryParams } from './query'
+import { assertQuery } from './query'
 import { assertWriteItems } from './write'
 
 type JsonObject = Record<string, unknown>
@@ -40,12 +40,12 @@ function assertQueryOp(obj: JsonObject, base: OpBase): QueryOp {
         message: 'Missing query.resource',
         details: detailsForQuery('resource')
     })
-    const params = assertQueryParams((queryObj as any).params, { opId: base.opId, resource })
+    const query = assertQuery((queryObj as any).query, { opId: base.opId, resource })
     return {
         opId: base.opId,
         kind: 'query',
         ...(base.meta ? { meta: base.meta } : {}),
-        query: { resource, params }
+        query: { resource, query }
     }
 }
 

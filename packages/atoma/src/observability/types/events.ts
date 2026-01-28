@@ -2,31 +2,29 @@ import type { TraceContext } from './public'
 
 export type DebugEmitMeta = Partial<Pick<TraceContext, 'requestId' | 'opId'>> & { parentSpanId?: string }
 
-export type FindManyParamsSummary = {
-    whereFields?: string[]
-    orderByFields?: string[]
+export type QueryParamsSummary = {
+    filterFields?: string[]
+    sortFields?: string[]
+    pageMode?: 'offset' | 'cursor'
     limit?: number
     offset?: number
     before?: string
     after?: string
-    cursor?: string
     includeTotal?: boolean
-    fields?: string[]
-    skipStore?: boolean
+    select?: string[]
 }
 
 export type AtomaDebugEventMap = {
     // Query (core)
-    'query:start': { params: FindManyParamsSummary }
+    'query:start': { params: QueryParamsSummary }
     'query:index': {
-        params: { whereFields?: string[] }
+        params: { filterFields?: string[] }
         result:
             | { kind: 'unsupported' | 'empty' }
             | { kind: 'candidates'; exactness?: 'exact' | 'superset'; count: number }
         plan?: any
     }
-    'query:finalize': { inputCount: number; outputCount: number; params: FindManyParamsSummary }
-    'query:cacheWrite': { writeToCache: boolean; reason?: 'skipStore' | 'sparseFields' | 'other'; params: { skipStore: boolean; fields?: string[] } }
+    'query:finalize': { inputCount: number; outputCount: number; params: QueryParamsSummary }
 
     // Mutation (core)
     'mutation:patches': { patchCount: number; inversePatchCount: number; changedFields?: string[] }

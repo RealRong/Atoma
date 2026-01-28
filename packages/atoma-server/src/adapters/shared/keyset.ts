@@ -1,49 +1,48 @@
-import type { CursorToken, OrderByRule } from '../ports'
+import type { CursorToken, SortRule } from '../ports'
 
-type CursorPayload = { v: any[] }
+type CursorPayload = { v: number; sort: SortRule[]; values: any[] }
 
 export function ensureStableOrderBy(
-    orderBy: OrderByRule[] | undefined,
-    options: { idField: string; defaultOrderBy?: OrderByRule[] }
-): OrderByRule[] {
-    const base = (orderBy && orderBy.length)
-        ? orderBy
-        : (options.defaultOrderBy && options.defaultOrderBy.length)
-            ? options.defaultOrderBy
-            : [{ field: options.idField, direction: 'asc' as const }]
+    sort: SortRule[] | undefined,
+    options: { idField: string; defaultSort?: SortRule[] }
+): SortRule[] {
+    const base = (sort && sort.length)
+        ? sort
+        : (options.defaultSort && options.defaultSort.length)
+            ? options.defaultSort
+            : [{ field: options.idField, dir: 'asc' as const }]
 
-    // 追加 idField 作为 tie-breaker，确保排序稳定且唯一
     const hasId = base.some(r => r.field === options.idField)
-    return hasId ? base : [...base, { field: options.idField, direction: 'asc' }]
+    return hasId ? base : [...base, { field: options.idField, dir: 'asc' as const }]
 }
 
-export function reverseOrderBy(orderBy: OrderByRule[]): OrderByRule[] {
-    return orderBy.map(r => ({
+export function reverseOrderBy(sort: SortRule[]): SortRule[] {
+    return sort.map(r => ({
         field: r.field,
-        direction: r.direction === 'asc' ? 'desc' : 'asc'
+        dir: r.dir === 'asc' ? 'desc' : 'asc'
     }))
 }
 
-export function encodeCursorToken(values: any[]): CursorToken {
-    const json = JSON.stringify({ v: values } satisfies CursorPayload)
+export function encodeCursorToken(values: any[], sort: SortRule[]): CursorToken {
+    const json = JSON.stringify({ v: 1, sort, values } satisfies CursorPayload)
     return base64UrlEncode(json)
 }
 
 export function decodeCursorToken(token: CursorToken): any[] {
     const json = base64UrlDecode(token)
     const parsed = JSON.parse(json) as CursorPayload
-    if (!parsed || !Array.isArray(parsed.v)) {
+    if (!parsed || !Array.isArray(parsed.values)) {
         throw new Error('Invalid cursor token')
     }
-    return parsed.v
+    return parsed.values
 }
 
-export function getCursorValuesFromRow(row: any, orderBy: OrderByRule[]): any[] {
-    return orderBy.map(r => (row as any)?.[r.field])
+export function getCursorValuesFromRow(row: any, sort: SortRule[]): any[] {
+    return sort.map(r => (row as any)?.[r.field])
 }
 
-export function compareOpForAfter(direction: OrderByRule['direction']) {
-    return direction === 'asc' ? 'gt' : 'lt'
+export function compareOpForAfter(dir: SortRule['dir']) {
+    return dir === 'asc' ? 'gt' : 'lt'
 }
 
 function base64UrlEncode(input: string) {

@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import type {
     Entity,
-    FindManyOptions,
     FetchPolicy,
     PageInfo,
+    Query,
     RelationIncludeInput,
     WithRelations,
     StoreApi
@@ -11,12 +11,12 @@ import type {
 import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'
-import { useRemoteFindMany } from './useRemoteFindMany'
+import { useRemoteQuery } from './useRemoteQuery'
 import { requireStoreOwner } from './internal/storeInternal'
 
-type UseFindManySelect = 'entities' | 'ids'
+type UseQueryResultMode = 'entities' | 'ids'
 
-type UseFindManyStatus = {
+type UseQueryStatus = {
     loading: boolean
     isFetching: boolean
     isStale: boolean
@@ -24,74 +24,66 @@ type UseFindManyStatus = {
     pageInfo?: PageInfo
 }
 
-type UseFindManyEntitiesResult<
+type UseQueryEntitiesResult<
     T extends Entity,
     Relations = {},
     Include extends RelationIncludeInput<Relations> = {}
-> = UseFindManyStatus & {
+> = UseQueryStatus & {
     data: keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]
     refetch: () => Promise<T[]>
-    fetchMore: (options: FindManyOptions<T>) => Promise<T[]>
+    fetchMore: (options: Query<T>) => Promise<T[]>
 }
 
-type UseFindManyIdsResult<T extends Entity> = UseFindManyStatus & {
+type UseQueryIdsResult<T extends Entity> = UseQueryStatus & {
     data: Array<T['id']>
     refetch: () => Promise<Array<T['id']>>
-    fetchMore: (options: FindManyOptions<T>) => Promise<Array<T['id']>>
+    fetchMore: (options: Query<T>) => Promise<Array<T['id']>>
 }
+
+type UseQueryOptions<T extends Entity, Relations, Include extends RelationIncludeInput<Relations>> =
+    & Omit<Query<T>, 'include'>
+    & {
+        include?: RelationIncludeInput<Relations> & Include
+        fetchPolicy?: FetchPolicy
+        result?: UseQueryResultMode
+    }
 
 const stripRuntimeOptions = (options?: any) => {
     if (!options) return undefined
-    const { fetchPolicy: _fetchPolicy, select: _select, ...rest } = options
+    const { fetchPolicy: _fetchPolicy, result: _result, include: _include, ...rest } = options
     return rest
 }
 
-export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
+export function useQuery<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: StoreApi<T, Relations>,
-    options?: FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy; select?: 'entities' }
-): UseFindManyEntitiesResult<T, Relations, Include>
+    options?: UseQueryOptions<T, Relations, Include> & { result?: 'entities' }
+): UseQueryEntitiesResult<T, Relations, Include>
 
-export function useFindMany<T extends Entity, Relations = {}>(
+export function useQuery<T extends Entity, Relations = {}>(
     store: StoreApi<T, Relations>,
-    options: Omit<FindManyOptions<T, any>, 'include'> & { include?: never; fetchPolicy?: FetchPolicy; select: 'ids' }
-): UseFindManyIdsResult<T>
+    options: UseQueryOptions<T, Relations, any> & { include?: never; result: 'ids' }
+): UseQueryIdsResult<T>
 
-export function useFindMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
+export function useQuery<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: StoreApi<T, Relations>,
-    options?: (FindManyOptions<T, RelationIncludeInput<Relations> & Include> & { fetchPolicy?: FetchPolicy; select?: UseFindManySelect })
-): UseFindManyEntitiesResult<T, Relations, Include> | UseFindManyIdsResult<T> {
+    options?: UseQueryOptions<T, Relations, Include>
+): UseQueryEntitiesResult<T, Relations, Include> | UseQueryIdsResult<T> {
     const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'cache-and-network'
-    const select: UseFindManySelect = (options as any)?.select || 'entities'
+    const resultMode: UseQueryResultMode = (options as any)?.result || 'entities'
 
-    const baseFields = (options as any)?.fields
-    const wantsTransientRemote = Boolean(options?.skipStore || baseFields?.length)
+    const wantsTransientRemote = Boolean(options?.select?.length)
 
-    const optionsForStoreQuery = useMemo(() => {
-        const stripped = stripRuntimeOptions(options) as any
-        if (!stripped) return undefined
-        const { where, orderBy, limit, offset } = stripped
-        return { where, orderBy, limit, offset } as any
-    }, [options])
+    const optionsForStoreQuery = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
 
     const localEntities = useStoreQuery(store, optionsForStoreQuery)
-    const localIds = useStoreQuery(store, { ...(optionsForStoreQuery as any), select: 'ids' as const })
+    const localIds = useStoreQuery(store, { ...(optionsForStoreQuery as any), result: 'ids' as const })
 
     const remoteEnabled = fetchPolicy !== 'cache-only'
     const remoteBehavior = wantsTransientRemote ? ({ transient: true } as const) : ({ hydrate: true } as const)
 
-    const optionsForRemote = useMemo(() => {
-        const stripped = stripRuntimeOptions(options) as any
-        if (!stripped) return undefined
+    const optionsForRemote = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
 
-        const effectiveSkipStore = Boolean(stripped?.skipStore || stripped?.fields?.length)
-        return {
-            ...stripped,
-            // fields 存在时，强制 transient（不写入 store）
-            skipStore: effectiveSkipStore
-        } as any
-    }, [options])
-
-    const remote = useRemoteFindMany<T, Relations>({
+    const remote = useRemoteQuery<T, Relations>({
         store,
         options: optionsForRemote,
         behavior: remoteBehavior,
@@ -99,15 +91,12 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
     })
 
     const data = (() => {
-        if (select === 'ids') {
-            if (fetchPolicy === 'network-only' && remoteBehavior.transient) {
-                return (remote.data ?? []).map(item => item.id) as Array<T['id']>
-            }
+        if (resultMode === 'ids') {
+            const remoteIds = remote.data !== undefined ? (remote.data ?? []).map(item => item.id) as Array<T['id']> : undefined
+            if (remoteBehavior.transient && remoteIds !== undefined) return remoteIds
             return localIds
         }
-        if (fetchPolicy === 'network-only' && remoteBehavior.transient) {
-            return (remote.data ?? []) as T[]
-        }
+        if (remoteBehavior.transient && remote.data !== undefined) return (remote.data ?? []) as T[]
         return localEntities
     })()
 
@@ -124,22 +113,22 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
             return Promise.resolve(data as any)
         }
         return remote.refetch().then(res => {
-            if (select === 'ids') return res.map(i => i.id) as any
+            if (resultMode === 'ids') return res.map(i => i.id) as any
             return res as any
         })
     }
 
-    const fetchMore = (moreOptions: FindManyOptions<T>) => {
+    const fetchMore = (moreOptions: Query<T>) => {
         if (!remoteEnabled) {
             return Promise.resolve([] as any)
         }
         return remote.fetchMore(moreOptions as any).then(res => {
-            if (select === 'ids') return res.map(i => i.id) as any
+            if (resultMode === 'ids') return res.map(i => i.id) as any
             return res as any
         })
     }
 
-    if (select === 'ids') {
+    if (resultMode === 'ids') {
         return {
             data: data as Array<T['id']>,
             loading,
@@ -149,10 +138,10 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
             pageInfo,
             refetch,
             fetchMore
-        } satisfies UseFindManyIdsResult<T>
+        } satisfies UseQueryIdsResult<T>
     }
 
-    const { client, storeName } = requireStoreOwner(store, 'useFindMany')
+    const { client, storeName } = requireStoreOwner(store, 'useQuery')
     const relations = getStoreRelations(client, storeName) as Relations | undefined
     const effectiveInclude = (options as any)?.include ?? ({} as Include)
 
@@ -172,5 +161,5 @@ export function useFindMany<T extends Entity, Relations = {}, const Include exte
         pageInfo,
         refetch,
         fetchMore
-    } satisfies UseFindManyEntitiesResult<T, Relations, Include>
+    } satisfies UseQueryEntitiesResult<T, Relations, Include>
 }

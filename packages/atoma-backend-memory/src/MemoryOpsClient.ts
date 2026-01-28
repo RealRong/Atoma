@@ -1,6 +1,6 @@
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma/backend'
-import type { ChangeBatch, Operation, OperationResult, QueryParams, QueryResultData, StandardError, WriteAction, WriteItem, WriteOptions, WriteResultData } from 'atoma/protocol'
-import { Core } from 'atoma/core'
+import type { ChangeBatch, Operation, OperationResult, Query, QueryResultData, StandardError, WriteAction, WriteItem, WriteOptions, WriteResultData } from 'atoma/protocol'
+import { executeLocalQuery } from 'atoma/core'
 
 type ResourceStore = Map<string, any>
 
@@ -33,9 +33,9 @@ function normalizeWriteOptions(options: unknown): WriteOptions | undefined {
     return options as WriteOptions
 }
 
-function normalizeQueryParams(params: unknown): QueryParams | undefined {
+function normalizeQuery(params: unknown): Query | undefined {
     if (!isPlainObject(params)) return undefined
-    return params as QueryParams
+    return params as Query
 }
 
 function normalizeOptionalLimit(value: unknown): number | undefined {
@@ -107,14 +107,14 @@ export class MemoryOpsClient implements OpsClientLike {
 
             if (op.kind === 'query') {
                 const resource = (op as any).query?.resource
-                const params = normalizeQueryParams((op as any).query?.params)
+                const query = normalizeQuery((op as any).query?.query)
                 if (typeof resource !== 'string' || !resource) {
                     return { opId, ok: false, error: standardError({ code: 'INVALID_REQUEST', message: 'Missing query.resource', kind: 'validation' }) }
                 }
-                if (!params) {
-                    return { opId, ok: false, error: standardError({ code: 'INVALID_REQUEST', message: 'Missing query.params', kind: 'validation' }) }
+                if (!query) {
+                    return { opId, ok: false, error: standardError({ code: 'INVALID_REQUEST', message: 'Missing query.query', kind: 'validation' }) }
                 }
-                const data = this.executeQuery(resource, params)
+                const data = this.executeQuery(resource, query)
                 return { opId, ok: true, data }
             }
 
@@ -160,91 +160,13 @@ export class MemoryOpsClient implements OpsClientLike {
         }
     }
 
-    private executeQuery(resource: string, params: QueryParams): QueryResultData {
+    private executeQuery(resource: string, query: Query): QueryResultData {
         const store = this.requireStore(resource)
         const items = Array.from(store.values())
-
-        const where = params.where
-        const orderBy = Array.isArray(params.orderBy) && params.orderBy.length
-            ? params.orderBy
-            : (params.orderBy && typeof params.orderBy === 'object' ? [params.orderBy] : [])
-        const normalizedOrderBy = orderBy.length ? orderBy : [{ field: 'id', direction: 'asc' as const }]
-        const sorted = Core.query.applyQuery(items as any, {
-            where: (where && isPlainObject(where) && Object.keys(where).length) ? (where as any) : undefined,
-            orderBy: normalizedOrderBy as any
-        } as any) as any[]
-
-        const fields = normalizeFields((params as any).fields)
-        const select = selectFromFields(fields)
-
-        const beforeToken = (typeof (params as any).before === 'string' && (params as any).before) ? (params as any).before as string : undefined
-        const afterToken = (typeof (params as any).after === 'string' && (params as any).after) ? (params as any).after as string : undefined
-        const afterOrCursor = afterToken
-
-        const wantsCursorPaging = Boolean(beforeToken || afterOrCursor)
-
-        if (!wantsCursorPaging) {
-            const offset = normalizeOffset((params as any).offset) ?? 0
-            const includeTotal = (typeof (params as any).includeTotal === 'boolean') ? (params as any).includeTotal as boolean : true
-
-            const limit = normalizeOptionalLimit((params as any).limit)
-            const slice = typeof limit === 'number'
-                ? sorted.slice(offset, offset + limit)
-                : sorted.slice(offset)
-            const last = slice[slice.length - 1]
-            const hasNext = typeof limit === 'number' ? (offset + limit < sorted.length) : false
-            return {
-                items: slice.map(i => projectSelect(i, select)),
-                pageInfo: {
-                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : undefined,
-                    hasNext,
-                    ...(includeTotal ? { total: sorted.length } : {})
-                }
-            }
-        }
-
-        const limit = normalizeOptionalLimit((params as any).limit) ?? 50
-
-        if (beforeToken) {
-            const idx = sorted.findIndex(item => String((item as any)?.id) === beforeToken)
-            const end = idx >= 0 ? idx : sorted.length
-            const start = Math.max(0, end - limit)
-            const slice = sorted.slice(start, end)
-            const last = slice[slice.length - 1]
-            const hasNext = start > 0
-            return {
-                items: slice.map(i => projectSelect(i, select)),
-                pageInfo: {
-                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : beforeToken,
-                    hasNext
-                }
-            }
-        }
-
-        if (afterOrCursor) {
-            const idx = sorted.findIndex(item => String((item as any)?.id) === afterOrCursor)
-            const start = idx >= 0 ? idx + 1 : 0
-            const slice = sorted.slice(start, start + limit)
-            const last = slice[slice.length - 1]
-            const hasNext = start + limit < sorted.length
-            return {
-                items: slice.map(i => projectSelect(i, select)),
-                pageInfo: {
-                    cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : afterOrCursor,
-                    hasNext
-                }
-            }
-        }
-
-        const slice = sorted.slice(0, limit)
-        const last = slice[slice.length - 1]
-        const hasNext = limit < sorted.length
+        const result = executeLocalQuery(items as any, query as any)
         return {
-            items: slice.map(i => projectSelect(i, select)),
-            pageInfo: {
-                cursor: last && (last as any)?.id !== undefined ? String((last as any).id) : undefined,
-                hasNext
-            }
+            data: result.data,
+            ...(result.pageInfo ? { pageInfo: result.pageInfo } : {})
         }
     }
 
@@ -495,4 +417,3 @@ export class MemoryOpsClient implements OpsClientLike {
         return next
     }
 }
-

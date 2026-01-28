@@ -34,18 +34,18 @@
 - `getOne/fetchOne`：`getOne` 会命中本地 atom 缓存，否则走 `dataSource.bulkGet`（有批量合并队列）；`fetchOne` 强制走后端
 - `getMany`：缓存命中优先，缺失部分批量 `bulkGet`；可选是否写回缓存（`cache=true/false`）
 - `getAll`：直接读取后端 `getAll`，并对缓存做“全量对齐”（会移除本地缓存中不再出现的 id）
-- `findMany`：若后端支持 `dataSource.findMany` 则走后端查询；否则 fallback 为 `getAll + 本地过滤/排序`
+- `query`：若后端支持 `dataSource.query` 则走后端查询；否则 fallback 为 `getAll + 本地过滤/排序`
 
 **缓存/引用稳定：**
 
 - 读写回缓存时做了浅层引用保留（`preserveReferenceShallow`），对 React 渲染友好
 - `CoreStore.reset()` 可以清空内存缓存（不触碰后端）
 
-### 2.2 查询能力（where/orderBy/limit/offset + 索引）
+### 2.2 查询能力（filter/sort/page + 索引）
 
-- `where` 支持多种操作符：`eq/in/gt/gte/lt/lte/startsWith/endsWith/contains`，以及 `match/fuzzy`（文本/分词/模糊距离）
-- `orderBy` 支持单字段或多字段排序
-- `limit/offset` 支持分页（同时 `findMany` 还支持 keyset：`after/before/cursor` + `pageInfo`）
+- `filter` 支持多种操作符：`eq/in/gt/gte/lt/lte/startsWith/endsWith/contains`，以及 `text(match/fuzzy)`（文本/分词/模糊距离）
+- `sort` 支持单字段或多字段排序
+- `page` 支持 offset/cursor 分页（`after/before/cursor` + `pageInfo`）
 - 若配置了 `indexes`，查询会先走候选集收集（`collectCandidates`），可显著降低全表扫描成本；并在候选集“exact”时跳过二次 where 过滤
 
 ### 2.3 写入确认（optimistic vs strict）

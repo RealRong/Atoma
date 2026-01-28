@@ -42,12 +42,12 @@ export type PersistHandler = <T extends Entity>(args: {
     next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
 }) => Promise<PersistResult<T>>
 
-export type ChannelQueryResult<T = unknown> = Readonly<{ items: T[]; pageInfo?: any }>
+export type ChannelQueryResult<T = unknown> = Readonly<{ data: T[]; pageInfo?: any; explain?: any }>
 
 export type ChannelApi = Readonly<{
     query: <T = unknown>(args: {
         store: StoreToken
-        params: import('#protocol').QueryParams
+        query: import('#protocol').Query
         context?: ObservabilityContext
         signal?: AbortSignal
     }) => Promise<ChannelQueryResult<T>>

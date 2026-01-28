@@ -53,7 +53,7 @@
 
 最小实现要求：
 - relations 定义
-- findMany + include 投影链路
+- query + include 投影链路
 
 ---
 

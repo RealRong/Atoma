@@ -26,7 +26,10 @@ export function createUpdateOne<T extends Entity>(
                 throw new Error(`[Atoma] updateOne: 缓存缺失且当前写入模式禁止补读，请先 fetch 再 update（id=${String(id)}）`)
             }
 
-            const { data } = await clientRuntime.io.query(handle, { where: { id }, limit: 1, includeTotal: false } as any, observabilityContext)
+            const { data } = await clientRuntime.io.query(handle, {
+                filter: { op: 'eq', field: 'id', value: id },
+                page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
+            }, observabilityContext)
             const one = data[0]
             const fetched = one !== undefined ? (one as T) : undefined
             if (!fetched) {

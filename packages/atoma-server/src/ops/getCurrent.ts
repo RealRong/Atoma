@@ -9,7 +9,11 @@ export function createGetCurrent(adapter: IOrmAdapter, resource: string) {
             if (!key) return undefined
             if (cache.has(key)) return cache.get(key)
 
-            const res = await adapter.findMany(resource, { where: { id }, fields: normalized })
+            const res = await adapter.findMany(resource, {
+                filter: { op: 'eq', field: 'id', value: id },
+                select: normalized,
+                page: { mode: 'offset', limit: 1 }
+            })
             const cur = Array.isArray(res?.data) ? res.data[0] : undefined
             cache.set(key, cur)
             return cur

@@ -1,5 +1,5 @@
 import type { AtomaError } from '../error'
-import type { ChangeKind, CursorToken, OrderByRule, PageInfo, QueryParams, WriteOptions } from 'atoma/protocol'
+import type { ChangeKind, CursorToken, FilterExpr, PageInfo, PageSpec, Query, SortRule, WriteOptions } from 'atoma/protocol'
 
 export interface QueryResult<T = any> {
     data: T[]
@@ -41,8 +41,8 @@ export type OrmTransactionArgs = {
 }
 
 export interface IOrmAdapter {
-    findMany(resource: string, params: QueryParams): Promise<QueryResult>
-    batchFindMany?(requests: Array<{ resource: string; params: QueryParams }>): Promise<QueryResult[]>
+    findMany(resource: string, query: Query): Promise<QueryResult>
+    batchFindMany?(requests: Array<{ resource: string; query: Query }>): Promise<QueryResult[]>
     transaction<T>(fn: (args: OrmTransactionArgs) => Promise<T>): Promise<T>
     create?(resource: string, data: any, options?: WriteOptions): Promise<QueryResultOne>
     update?(
@@ -69,8 +69,8 @@ export interface IOrmAdapter {
 export interface OrmAdapterOptions {
     /** 主键/唯一 tie-breaker 字段名，默认 'id' */
     idField?: string
-    /** 默认排序（若请求未提供 orderBy）；若未提供则默认按 idField asc */
-    defaultOrderBy?: OrderByRule[]
+    /** 默认排序（若请求未提供 sort）；若未提供则默认按 idField asc */
+    defaultSort?: SortRule[]
 }
 
 export type AtomaChange = {
@@ -106,5 +106,5 @@ export interface ISyncAdapter {
 }
 
 export type { ChangeKind } from 'atoma/protocol'
-export type { CursorToken, OrderByRule, QueryParams, WriteOptions } from 'atoma/protocol'
+export type { CursorToken, FilterExpr, PageInfo, PageSpec, Query, SortRule, WriteOptions } from 'atoma/protocol'
 export type { StandardError } from 'atoma/protocol'

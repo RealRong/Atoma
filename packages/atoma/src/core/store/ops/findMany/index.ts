@@ -1,29 +1,20 @@
 import { Observability } from '#observability'
 import type { Explain } from '#observability'
-import type { CoreRuntime, Entity, FindManyOptions, FindManyResult } from '../../../types'
+import type { CoreRuntime, Entity, Query, QueryResult, QueryOneResult } from '../../../types'
 import type { EntityId } from '#protocol'
 import { toErrorWithFallback as toError } from '#shared'
 import { storeWriteEngine } from '../../internals/storeWriteEngine'
-import { resolveCachePolicy } from './cachePolicy'
 import { evaluateWithIndexes } from './localEvaluate'
-import { summarizeFindManyParams } from './paramsSummary'
-import { applyQuery } from '../../../query'
+import { summarizeQuery } from './paramsSummary'
 import { resolveObservabilityContext } from '../../internals/storeHandleManager'
 import type { StoreHandle } from '../../internals/handleTypes'
-import { normalizeAtomaServerQueryParams } from '../../internals/queryParams'
 
-export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
+export function createQuery<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom, indexes, matcher } = handle
 
-    return async (options?: FindManyOptions<T>): Promise<FindManyResult<T>> => {
-        const explainEnabled = options?.explain === true
-        const cachePolicy = resolveCachePolicy(options)
-
-        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
-
-        const optionsForRemote = options
-            ? ({ ...options, explain: undefined } as any as FindManyOptions<T>)
-            : options
+    return async (query: Query<T>): Promise<QueryResult<T>> => {
+        const explainEnabled = query?.explain === true
+        const observabilityContext = resolveObservabilityContext(clientRuntime, handle, query)
 
         const explain: Explain | undefined = explainEnabled
             ? { schemaVersion: 1, traceId: observabilityContext.traceId || Observability.trace.createId() }
@@ -36,33 +27,24 @@ export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, han
             return { ...out, explain: { ...explain, ...(extra || {}) } }
         }
 
-        emit('query:start', { params: summarizeFindManyParams(options) })
+        emit('query:start', { params: summarizeQuery(query) })
 
-        let localCache: { data: T[]; result: FindManyResult<T> } | null = null
-        const getLocalResult = (): { data: T[]; result: FindManyResult<T> } => {
+        let localCache: { data: T[]; result: QueryResult<T> } | null = null
+        const getLocalResult = (): { data: T[]; result: QueryResult<T> } => {
             if (localCache) return localCache
 
             const map = jotaiStore.get(atom) as Map<EntityId, T>
-            const localData = evaluateWithIndexes({
+            const localResult = evaluateWithIndexes({
                 mapRef: map,
-                options,
+                query,
                 indexes,
                 matcher,
                 emit,
                 explain
             })
 
-            const localResult = withExplain(
-                { data: localData },
-                {
-                    cacheWrite: {
-                        writeToCache: !cachePolicy.effectiveSkipStore,
-                        ...(cachePolicy.effectiveSkipStore ? { reason: cachePolicy.reason } : {})
-                    }
-                }
-            )
-
-            localCache = { data: localData, result: localResult }
+            const result = withExplain({ data: localResult.data, ...(localResult.pageInfo ? { pageInfo: localResult.pageInfo } : {}) })
+            localCache = { data: localResult.data, result }
             return localCache
         }
 
@@ -70,10 +52,8 @@ export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, han
         if (shouldEagerEvaluateLocal) getLocalResult()
 
         try {
-            const whereIsFn = typeof (options as any)?.where === 'function'
-            const params = whereIsFn ? {} : normalizeAtomaServerQueryParams(optionsForRemote)
             const startedAt = Date.now()
-            const { data, pageInfo } = await clientRuntime.io.query(handle, params, observabilityContext)
+            const { data, pageInfo } = await clientRuntime.io.query(handle, query, observabilityContext)
             const durationMs = Date.now() - startedAt
 
             const fetched = Array.isArray(data) ? data : []
@@ -85,23 +65,11 @@ export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, han
                 }
             }
 
-            if (cachePolicy.effectiveSkipStore) {
-                emit('query:cacheWrite', {
-                    writeToCache: false,
-                    reason: cachePolicy.reason,
-                    params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields }
-                })
-
-                if (whereIsFn) {
-                    return withExplain(
-                        { data: applyQuery(remote as any, options as any, { matcher }) as T[] },
-                        { cacheWrite: { writeToCache: false, reason: cachePolicy.reason }, dataSource: { ok: true, durationMs } }
-                    )
-                }
-
+            const shouldWriteToStore = !(Array.isArray((query as any)?.select) && (query as any).select.length)
+            if (!shouldWriteToStore) {
                 return withExplain(
-                    { data: remote, pageInfo: pageInfo as any },
-                    { cacheWrite: { writeToCache: false, reason: cachePolicy.reason }, dataSource: { ok: true, durationMs } }
+                    { data: remote, ...(pageInfo ? { pageInfo: pageInfo as any } : {}) },
+                    { dataSource: { ok: true, durationMs } }
                 )
             }
 
@@ -131,32 +99,25 @@ export function createFindMany<T extends Entity>(clientRuntime: CoreRuntime, han
                 })
             }
 
-            emit('query:cacheWrite', { writeToCache: true, params: { skipStore: Boolean(options?.skipStore), fields: (options as any)?.fields } })
-
-            if (whereIsFn) {
-                const mapRef = next ?? existingMap
-                return withExplain(
-                    {
-                        data: evaluateWithIndexes({
-                            mapRef,
-                            options,
-                            indexes,
-                            matcher,
-                            emit,
-                            explain
-                        })
-                    },
-                    { cacheWrite: { writeToCache: true }, dataSource: { ok: true, durationMs } }
-                )
-            }
-
             return withExplain(
-                { data: processed, pageInfo: pageInfo as any },
-                { cacheWrite: { writeToCache: true }, dataSource: { ok: true, durationMs } }
+                { data: processed, ...(pageInfo ? { pageInfo: pageInfo as any } : {}) },
+                { dataSource: { ok: true, durationMs } }
             )
         } catch (error) {
-            const err = toError(error, '[Atoma] findMany failed')
+            void toError(error, '[Atoma] query failed')
             return getLocalResult().result
         }
+    }
+}
+
+export function createQueryOne<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
+    const query = createQuery(clientRuntime, handle)
+    return async (input: Query<T>): Promise<QueryOneResult<T>> => {
+        const next: Query<T> = {
+            ...input,
+            page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
+        }
+        const res = await query(next)
+        return { data: res.data[0], ...(res.explain ? { explain: res.explain } : {}) }
     }
 }

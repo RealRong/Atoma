@@ -8,7 +8,7 @@ export type {
     AtomaDebugEventMap,
     DebugEmitMeta,
     EmitFn,
-    FindManyParamsSummary
+    QueryParamsSummary
 } from './types'
 export type { RequestSequencer } from './trace'
 export type { ObservabilityRuntime, ObservabilityRuntimeApi, ObservabilityRuntimeCreateArgs, ObservabilityCreateContextArgs } from './runtime'

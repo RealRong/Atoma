@@ -140,7 +140,7 @@ export class ClientRuntimeInternalEngine {
         if (deletes.length) {
             const { data: currentItems } = await this.runtime.io.query<any>(
                 handle,
-                { where: { id: { in: deletes } } } as any,
+                { filter: { op: 'in', field: 'id', values: deletes } },
                 options?.context
             )
 
@@ -191,7 +191,7 @@ export class ClientRuntimeInternalEngine {
             if (toUpdate.length) {
                 const { data: currentItems } = await this.runtime.io.query<any>(
                     handle,
-                    { where: { id: { in: toUpdate } } } as any,
+                    { filter: { op: 'in', field: 'id', values: toUpdate } },
                     options?.context
                 )
 

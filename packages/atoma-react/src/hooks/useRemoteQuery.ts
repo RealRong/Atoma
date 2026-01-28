@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Entity, FindManyOptions, PageInfo, StoreApi } from 'atoma/core'
+import type { Entity, PageInfo, Query, StoreApi } from 'atoma/core'
 import { Core } from 'atoma/core'
-import { hydrateStore } from 'atoma/internal'
 import { getStoreRuntimeKey, requireStoreOwner } from './internal/storeInternal'
 
 type RemoteState<T extends Entity> = Readonly<{
@@ -15,9 +14,9 @@ type RemoteBehavior =
     | { hydrate: true; transient?: false }
     | { hydrate?: false; transient: true }
 
-type UseRemoteFindManyResult<T extends Entity> = RemoteState<T> & Readonly<{
+type UseRemoteQueryResult<T extends Entity> = RemoteState<T> & Readonly<{
     refetch: () => Promise<T[]>
-    fetchMore: (options: FindManyOptions<T>) => Promise<T[]>
+    fetchMore: (options: Query<T>) => Promise<T[]>
 }>
 
 type CacheEntry<T extends Entity> = {
@@ -31,7 +30,7 @@ const FALLBACK_QUERY_CACHE = new Map<string, CacheEntry<any>>()
 
 function stripRuntimeOptions(options?: any) {
     if (!options) return undefined
-    const { fetchPolicy: _fetchPolicy, select: _select, ...rest } = options
+    const { fetchPolicy: _fetchPolicy, result: _result, include: _include, ...rest } = options
     return rest
 }
 
@@ -67,15 +66,15 @@ function publish<T extends Entity>(entry: CacheEntry<T>, patch: Partial<RemoteSt
     entry.subscribers.forEach(fn => fn(entry.state))
 }
 
-export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
+export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
     store: StoreApi<T, Relations>
-    options?: FindManyOptions<T>
+    options?: Query<T>
     behavior: RemoteBehavior
     enabled?: boolean
-}): UseRemoteFindManyResult<T> {
+}): UseRemoteQueryResult<T> {
     const enabled = args.enabled !== false
-    const { client, storeName } = requireStoreOwner(args.store, 'useRemoteFindMany')
-    const runtime = getStoreRuntimeKey(args.store, 'useRemoteFindMany')
+    const { storeName } = requireStoreOwner(args.store, 'useRemoteQuery')
+    const runtime = getStoreRuntimeKey(args.store, 'useRemoteQuery')
 
     const key = useMemo(() => {
         const optionsKey = Core.query.stableStringify(stripRuntimeOptions(args.options))
@@ -95,10 +94,10 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
         }
     }, [entry])
 
-    const runFetch = async (options: FindManyOptions<T> | undefined, mode: 'refetch' | 'fetchMore'): Promise<T[]> => {
+    const runFetch = async (options: Query<T> | undefined, mode: 'refetch' | 'fetchMore'): Promise<T[]> => {
         if (!enabled) return []
-        if (!args.store.findMany) {
-            const err = new Error('findMany not implemented')
+        if (!args.store.query) {
+            const err = new Error('query not implemented')
             publish(entry, { error: err, isFetching: false })
             throw err
         }
@@ -110,23 +109,14 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
             ...(mode === 'refetch' ? { error: undefined } : {})
         })
 
-        const transient = Boolean(args.behavior.transient)
-        const effectiveOptions: any = stripRuntimeOptions(options) ?? {}
-        if (transient) {
-            effectiveOptions.skipStore = true
-        }
-
-        const p = args.store.findMany(effectiveOptions)
+        const p = args.store.query(options ?? {})
             .then(async (res: any) => {
                 const { data, pageInfo } = normalizeResult<T>(res)
-                if (!transient) {
-                    await hydrateStore<T>(client, storeName, data)
-                }
                 publish(entry, {
                     isFetching: false,
                     error: undefined,
                     pageInfo,
-                    ...(transient
+                    ...(args.behavior.transient
                         ? { data: mode === 'fetchMore' ? [...(entry.state.data ?? []), ...data] : data }
                         : {})
                 })
@@ -154,7 +144,7 @@ export function useRemoteFindMany<T extends Entity, Relations = {}>(args: {
     }, [key, enabled])
 
     const refetch = () => runFetch(args.options, 'refetch')
-    const fetchMore = (moreOptions: FindManyOptions<T>) => runFetch(moreOptions, 'fetchMore')
+    const fetchMore = (moreOptions: Query<T>) => runFetch(moreOptions, 'fetchMore')
 
     return {
         ...state,
