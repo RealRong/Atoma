@@ -14,6 +14,7 @@ import { ClientRuntimeStores } from '#client/internal/runtime/ClientRuntimeStore
 import type { PersistHandler } from '#client/types/plugin'
 import { ClientRuntimeInternalEngine } from '#client/internal/runtime/ClientRuntimeInternalEngine'
 import { Protocol } from '#protocol'
+import { StoreWriteCoordinator } from '#client/internal/runtime/StoreWriteCoordinator'
 
 export class ClientRuntime implements ClientRuntimeInternal {
     readonly clientId: string
@@ -23,6 +24,7 @@ export class ClientRuntime implements ClientRuntimeInternal {
     readonly opsClient: OpsClientLike
     readonly io: ClientRuntimeInternal['io']
     readonly mutation: MutationPipeline
+    readonly storeWrite: ClientRuntimeInternal['storeWrite']
     readonly dataProcessor: DataProcessor
     readonly jotaiStore: JotaiStore
     readonly stores: ClientRuntimeInternal['stores']
@@ -52,6 +54,7 @@ export class ClientRuntime implements ClientRuntimeInternal {
         this.opsClient = args.opsClient
         this.jotaiStore = createJotaiStore()
         this.dataProcessor = new DataProcessor(() => this)
+        this.storeWrite = new StoreWriteCoordinator(this)
         this.observability = new ClientRuntimeObservability()
         this.io = args.localOnly
             ? createLocalRuntimeIo(() => this as any)

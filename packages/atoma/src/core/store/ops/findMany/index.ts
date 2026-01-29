@@ -3,14 +3,16 @@ import type { Explain } from '#observability'
 import type { CoreRuntime, Entity, Query, QueryResult, QueryOneResult } from '../../../types'
 import type { EntityId } from '#protocol'
 import { toErrorWithFallback as toError } from '#shared'
-import { storeWriteEngine } from '../../internals/storeWriteEngine'
 import { evaluateWithIndexes } from './localEvaluate'
 import { summarizeQuery } from './paramsSummary'
 import { resolveObservabilityContext } from '../../internals/storeHandleManager'
 import type { StoreHandle } from '../../internals/handleTypes'
+import { StoreStateWriter } from '../../internals/StoreStateWriter'
+import { StoreWriteUtils } from '../../internals/StoreWriteUtils'
 
 export function createQuery<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom, indexes, matcher } = handle
+    const stateWriter = new StoreStateWriter(handle)
 
     return async (query: Query<T>): Promise<QueryResult<T>> => {
         const explainEnabled = query?.explain === true
@@ -82,7 +84,7 @@ export function createQuery<T extends Entity>(clientRuntime: CoreRuntime, handle
                 const item = remote[i] as T
                 const id = (item as any).id as EntityId
                 const existing = existingMap.get(id)
-                const preserved = storeWriteEngine.preserveReferenceShallow(existing, item)
+                const preserved = StoreWriteUtils.preserveReferenceShallow(existing, item)
                 processed[i] = preserved
                 if (existing === preserved) continue
                 changedIds.add(id)
@@ -91,8 +93,7 @@ export function createQuery<T extends Entity>(clientRuntime: CoreRuntime, handle
             }
 
             if (next && changedIds.size) {
-                storeWriteEngine.commitAtomMapUpdateDelta({
-                    handle,
+                stateWriter.commitMapUpdateDelta({
                     before: existingMap,
                     after: next,
                     changedIds

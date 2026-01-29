@@ -1,5 +1,4 @@
 import type { CoreRuntime, Entity, StoreOperationOptions } from '../../types'
-import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createAddMany<T extends Entity>(
@@ -7,11 +6,12 @@ export function createAddMany<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { hooks } = handle
+    const write = clientRuntime.storeWrite
     return async (items: Array<Partial<T>>, options?: StoreOperationOptions) => {
-        const opContext = storeWriteEngine.ensureActionId(options?.opContext)
-        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
+        const opContext = write.ensureActionId(options?.opContext)
+        const writeStrategy = write.resolveWriteStrategy(handle, options)
 
-        const validItems = await Promise.all(items.map(item => storeWriteEngine.prepareForAdd<T>(clientRuntime, handle, item, opContext)))
+        const validItems = await Promise.all(items.map(item => write.prepareForAdd<T>(handle, item, opContext)))
         const results: T[] = new Array(validItems.length)
 
         const tickets = new Array(validItems.length)
@@ -20,7 +20,7 @@ export function createAddMany<T extends Entity>(
             tickets[idx] = ticket
 
             return new Promise<void>((resolve, reject) => {
-                storeWriteEngine.dispatch<T>(clientRuntime, {
+                write.dispatch<T>({
                     type: 'add',
                     data: validObj as any,
                     handle,
@@ -28,7 +28,7 @@ export function createAddMany<T extends Entity>(
                     ticket,
                     writeStrategy,
                     onSuccess: (o) => {
-                        void storeWriteEngine.runAfterSave(hooks, validObj as any, 'add')
+                        void write.runAfterSave(hooks, validObj as any, 'add')
                             .then(() => {
                                 results[idx] = o
                                 resolve()
@@ -47,7 +47,7 @@ export function createAddMany<T extends Entity>(
         const confirmation = options?.confirmation ?? 'optimistic'
         if (confirmation === 'optimistic') {
             tickets.forEach((ticket) => {
-                storeWriteEngine.ignoreTicketRejections(ticket)
+                write.ignoreTicketRejections(ticket)
             })
             await Promise.all(resultPromises)
             return results

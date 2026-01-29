@@ -3,7 +3,6 @@ import type { Draft } from 'immer'
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { resolveObservabilityContext } from '../internals/storeHandleManager'
-import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpdateOne<T extends Entity>(
@@ -11,10 +10,11 @@ export function createUpdateOne<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
+    const write = clientRuntime.storeWrite
     return async (id: EntityId, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
-        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
-        const allowImplicitFetchForWrite = storeWriteEngine.allowImplicitFetchForWrite(writeStrategy)
+        const writeStrategy = write.resolveWriteStrategy(handle, options)
+        const allowImplicitFetchForWrite = write.allowImplicitFetchForWrite(writeStrategy)
 
         const resolveBase = async (): Promise<{ base: PartialWithId<T>; hydrate?: PartialWithId<T> }> => {
             const cached = jotaiStore.get(atom).get(id) as T | undefined
@@ -50,13 +50,13 @@ export function createUpdateOne<T extends Entity>(
 
         const next = produce(base as any, (draft: Draft<T>) => recipe(draft)) as any
         const patched = { ...(next as any), id } as PartialWithId<T>
-        const validObj = await storeWriteEngine.prepareForUpdate<T>(clientRuntime, handle, base, patched, options?.opContext)
+        const validObj = await write.prepareForUpdate<T>(handle, base, patched, options?.opContext)
 
         const { ticket } = clientRuntime.mutation.api.beginWrite()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
             if (hydrate) {
-                storeWriteEngine.dispatch<T>(clientRuntime, {
+                write.dispatch<T>({
                     type: 'hydrate',
                     handle,
                     data: hydrate,
@@ -65,7 +65,7 @@ export function createUpdateOne<T extends Entity>(
                 })
             }
 
-            storeWriteEngine.dispatch<T>(clientRuntime, {
+            write.dispatch<T>({
                 type: 'update',
                 handle,
                 data: validObj,
@@ -73,7 +73,7 @@ export function createUpdateOne<T extends Entity>(
                 ticket,
                 writeStrategy,
                 onSuccess: async updated => {
-                    await storeWriteEngine.runAfterSave(hooks, validObj, 'update')
+                    await write.runAfterSave(hooks, validObj, 'update')
                     resolve(updated)
                 },
                 onFail: (error) => {
@@ -84,7 +84,7 @@ export function createUpdateOne<T extends Entity>(
 
         const confirmation = options?.confirmation ?? 'optimistic'
         if (confirmation === 'optimistic') {
-            storeWriteEngine.ignoreTicketRejections(ticket)
+            write.ignoreTicketRejections(ticket)
             return resultPromise
         }
 

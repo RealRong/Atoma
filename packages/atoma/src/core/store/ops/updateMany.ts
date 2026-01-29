@@ -4,7 +4,6 @@ import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, WriteMa
 import type { EntityId } from '#protocol'
 import { toErrorWithFallback as toError } from '#shared'
 import { resolveObservabilityContext } from '../internals/storeHandleManager'
-import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpdateMany<T extends Entity>(
@@ -12,14 +11,15 @@ export function createUpdateMany<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
+    const write = clientRuntime.storeWrite
 
     return async (
         items: Array<{ id: EntityId; recipe: (draft: Draft<T>) => void }>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>> => {
-        const opContext = storeWriteEngine.ensureActionId(options?.opContext)
-        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
-        const allowImplicitFetchForWrite = storeWriteEngine.allowImplicitFetchForWrite(writeStrategy)
+        const opContext = write.ensureActionId(options?.opContext)
+        const writeStrategy = write.resolveWriteStrategy(handle, options)
+        const allowImplicitFetchForWrite = write.allowImplicitFetchForWrite(writeStrategy)
         const confirmation = options?.confirmation ?? 'optimistic'
         const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
 
@@ -80,7 +80,7 @@ export function createUpdateMany<T extends Entity>(
                 }
 
                 if (toHydrate.length) {
-                    storeWriteEngine.dispatch<T>(clientRuntime, {
+                    write.dispatch<T>({
                         type: 'hydrateMany',
                         handle,
                         items: toHydrate,
@@ -112,7 +112,7 @@ export function createUpdateMany<T extends Entity>(
             try {
                 const next = produce(base as any, (draft: Draft<T>) => item.recipe(draft)) as any
                 const patched = { ...(next as any), id } as PartialWithId<T>
-                validObj = await storeWriteEngine.prepareForUpdate<T>(clientRuntime, handle, base, patched, opContext)
+                validObj = await write.prepareForUpdate<T>(handle, base, patched, opContext)
             } catch (error) {
                 results[index] = { index, ok: false, error: toError(error, `Failed to prepare update for id ${String(id)}`) }
                 continue
@@ -131,7 +131,7 @@ export function createUpdateMany<T extends Entity>(
             const { ticket } = clientRuntime.mutation.api.beginWrite()
 
             const resultPromise = new Promise<T>((resolve, reject) => {
-                storeWriteEngine.dispatch<T>(clientRuntime, {
+                write.dispatch<T>({
                     type: 'update',
                     handle,
                     data: validObj,
@@ -139,7 +139,7 @@ export function createUpdateMany<T extends Entity>(
                     ticket,
                     writeStrategy,
                     onSuccess: async (updated) => {
-                        await storeWriteEngine.runAfterSave(hooks, validObj, 'update')
+                        await write.runAfterSave(hooks, validObj, 'update')
                         resolve(updated)
                     },
                     onFail: (error) => {
@@ -151,7 +151,7 @@ export function createUpdateMany<T extends Entity>(
             tasks.push(
                 (confirmation === 'optimistic'
                     ? (() => {
-                        storeWriteEngine.ignoreTicketRejections(ticket)
+                        write.ignoreTicketRejections(ticket)
                         return resultPromise
                     })()
                     : Promise.all([

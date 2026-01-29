@@ -1,7 +1,6 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from '../../types'
 import type { EntityId } from '#protocol'
 import { toErrorWithFallback as toError } from '#shared'
-import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createUpsertMany<T extends Entity>(
@@ -9,13 +8,14 @@ export function createUpsertMany<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
+    const write = clientRuntime.storeWrite
 
     return async (
         items: Array<PartialWithId<T>>,
         options?: StoreOperationOptions & UpsertWriteOptions
     ): Promise<WriteManyResult<T>> => {
-        const opContext = storeWriteEngine.ensureActionId(options?.opContext)
-        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
+        const opContext = write.ensureActionId(options?.opContext)
+        const writeStrategy = write.resolveWriteStrategy(handle, options)
         const confirmation = options?.confirmation ?? 'optimistic'
         const results: WriteManyResult<T> = new Array(items.length)
 
@@ -50,10 +50,10 @@ export function createUpsertMany<T extends Entity>(
             try {
                 if (!base) {
                     action = 'add'
-                    validObj = await storeWriteEngine.prepareForAdd<T>(clientRuntime, handle, item as any, opContext)
+                    validObj = await write.prepareForAdd<T>(handle, item as any, opContext)
                 } else if (merge) {
                     action = 'update'
-                    validObj = await storeWriteEngine.prepareForUpdate<T>(clientRuntime, handle, base, item, opContext)
+                    validObj = await write.prepareForUpdate<T>(handle, base, item, opContext)
                 } else {
                     action = 'update'
                     const now = Date.now()
@@ -72,7 +72,7 @@ export function createUpsertMany<T extends Entity>(
                         candidate._etag = (base as any)._etag
                     }
 
-                    let next = await storeWriteEngine.runBeforeSave(handle.hooks, candidate as any, 'update')
+                    let next = await write.runBeforeSave(handle.hooks, candidate as any, 'update')
                     const processed = await clientRuntime.dataProcessor.inbound(handle, next as any, opContext)
                     if (!processed) {
                         throw new Error('[Atoma] upsertMany: dataProcessor returned empty')
@@ -98,7 +98,7 @@ export function createUpsertMany<T extends Entity>(
             const { ticket } = clientRuntime.mutation.api.beginWrite()
 
             const resultPromise = new Promise<T>((resolve, reject) => {
-                storeWriteEngine.dispatch<T>(clientRuntime, {
+                write.dispatch<T>({
                     type: 'upsert',
                     data: validObj,
                     upsert: {
@@ -110,7 +110,7 @@ export function createUpsertMany<T extends Entity>(
                     ticket,
                     writeStrategy,
                     onSuccess: async (o) => {
-                        await storeWriteEngine.runAfterSave(hooks, validObj, action)
+                        await write.runAfterSave(hooks, validObj, action)
                         resolve(o)
                     },
                     onFail: (error) => {
@@ -122,7 +122,7 @@ export function createUpsertMany<T extends Entity>(
             tasks.push(
                 (confirmation === 'optimistic'
                     ? (() => {
-                        storeWriteEngine.ignoreTicketRejections(ticket)
+                        write.ignoreTicketRejections(ticket)
                         return resultPromise
                     })()
                     : Promise.all([

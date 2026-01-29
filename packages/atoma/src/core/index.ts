@@ -52,6 +52,7 @@ export type {
     OperationContext,
     OperationOrigin,
     CoreRuntime,
+    RuntimeStoreWrite,
     RuntimeObservability,
     RuntimeStores,
     Persistence,

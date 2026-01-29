@@ -1,5 +1,4 @@
 import type { CoreRuntime, Entity, StoreOperationOptions } from '../../types'
-import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createAddOne<T extends Entity>(
@@ -7,13 +6,14 @@ export function createAddOne<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { hooks } = handle
+    const write = clientRuntime.storeWrite
     return async (obj: Partial<T>, options?: StoreOperationOptions) => {
-        const validObj = await storeWriteEngine.prepareForAdd<T>(clientRuntime, handle, obj, options?.opContext)
+        const validObj = await write.prepareForAdd<T>(handle, obj, options?.opContext)
         const { ticket } = clientRuntime.mutation.api.beginWrite()
-        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
+        const writeStrategy = write.resolveWriteStrategy(handle, options)
 
         const resultPromise = new Promise<T>((resolve, reject) => {
-            storeWriteEngine.dispatch<T>(clientRuntime, {
+            write.dispatch<T>({
                 type: 'add',
                 data: validObj,
                 handle,
@@ -21,7 +21,7 @@ export function createAddOne<T extends Entity>(
                 ticket,
                 writeStrategy,
                 onSuccess: (o) => {
-                    void storeWriteEngine.runAfterSave(hooks, validObj, 'add')
+                    void write.runAfterSave(hooks, validObj, 'add')
                         .then(() => {
                             resolve(o)
                         })
@@ -37,7 +37,7 @@ export function createAddOne<T extends Entity>(
 
         const confirmation = options?.confirmation ?? 'optimistic'
         if (confirmation === 'optimistic') {
-            storeWriteEngine.ignoreTicketRejections(ticket)
+            write.ignoreTicketRejections(ticket)
             return resultPromise
         }
 

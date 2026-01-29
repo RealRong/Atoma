@@ -1,18 +1,18 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreOperationOptions } from '../../types'
 import type { EntityId } from '#protocol'
-import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
 
 export function createDeleteOne<T extends Entity>(
     clientRuntime: CoreRuntime,
     handle: StoreHandle<T>
 ) {
+    const write = clientRuntime.storeWrite
     return async (id: EntityId, options?: StoreOperationOptions) => {
         const { ticket } = clientRuntime.mutation.api.beginWrite()
-        const writeStrategy = storeWriteEngine.resolveWriteStrategy(handle, options)
+        const writeStrategy = write.resolveWriteStrategy(handle, options)
 
         const resultPromise = new Promise<boolean>((resolve, reject) => {
-            storeWriteEngine.dispatch<T>(clientRuntime, {
+            write.dispatch<T>({
                 type: options?.force ? 'forceRemove' : 'remove',
                 data: { id } as PartialWithId<T>,
                 handle,
@@ -30,7 +30,7 @@ export function createDeleteOne<T extends Entity>(
 
         const confirmation = options?.confirmation ?? 'optimistic'
         if (confirmation === 'optimistic') {
-            storeWriteEngine.ignoreTicketRejections(ticket)
+            write.ignoreTicketRejections(ticket)
             return resultPromise
         }
 

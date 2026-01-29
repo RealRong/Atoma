@@ -442,6 +442,19 @@ export type RuntimeIo = Readonly<{
     write: <T extends Entity>(handle: StoreHandle<T>, args: { action: WriteAction; items: WriteItem[]; options?: WriteOptions }, context?: ObservabilityContext, signal?: AbortSignal) => Promise<WriteResultData>
 }>
 
+export type RuntimeStoreWrite = Readonly<{
+    resolveWriteStrategy: <T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions | undefined) => WriteStrategy | undefined
+    allowImplicitFetchForWrite: (writeStrategy?: WriteStrategy) => boolean
+    prepareForAdd: <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, opContext?: OperationContext) => Promise<PartialWithId<T>>
+    prepareForUpdate: <T extends Entity>(handle: StoreHandle<T>, base: PartialWithId<T>, patch: PartialWithId<T>, opContext?: OperationContext) => Promise<PartialWithId<T>>
+    runBeforeSave: <T>(hooks: LifecycleHooks<T> | undefined, item: PartialWithId<T>, action: 'add' | 'update') => Promise<PartialWithId<T>>
+    runAfterSave: <T>(hooks: LifecycleHooks<T> | undefined, item: PartialWithId<T>, action: 'add' | 'update') => Promise<void>
+    ensureActionId: (opContext: OperationContext | undefined) => OperationContext | undefined
+    ignoreTicketRejections: (ticket: WriteTicket) => void
+    dispatch: <T extends Entity>(event: StoreDispatchEvent<T>) => void
+    applyWriteback: <T extends Entity>(handle: StoreHandle<T>, writeback: PersistWriteback<T>) => Promise<void>
+}>
+
 export type CoreRuntime = Readonly<{
     /**
      * Stable client identity for namespacing internal store keys.
@@ -464,6 +477,7 @@ export type CoreRuntime = Readonly<{
     opsClient: OpsClientLike
     io: RuntimeIo
     mutation: MutationPipeline
+    storeWrite: RuntimeStoreWrite
     dataProcessor: DataProcessor
     stores: RuntimeStores
     observability: RuntimeObservability

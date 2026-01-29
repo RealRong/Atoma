@@ -1,9 +1,10 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { resolveObservabilityContext } from '../internals/storeHandleManager'
-import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { ObservabilityContext } from '#observability'
 import type { StoreHandle } from '../internals/handleTypes'
+import { StoreStateWriter } from '../internals/StoreStateWriter'
+import { StoreWriteUtils } from '../internals/StoreWriteUtils'
 
 type GetOneTask<T> = {
     id: EntityId
@@ -67,6 +68,7 @@ const dedupeTaskIds = <T>(tasks: GetOneTask<T>[]): EntityId[] => {
 
 export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom } = handle
+    const stateWriter = new StoreStateWriter(handle)
 
     let batchGetOneTaskQueue: GetOneTask<T>[] = []
     let batchFetchOneTaskQueue: GetOneTask<T>[] = []
@@ -101,7 +103,7 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
 
                 const before = jotaiStore.get(atom)
                 const after = itemsToCache.length
-                    ? storeWriteEngine.bulkAdd(itemsToCache as PartialWithId<T>[], before)
+                    ? StoreWriteUtils.bulkAdd(itemsToCache as PartialWithId<T>[], before)
                     : before
 
                 if (before !== after && itemsToCache.length) {
@@ -110,7 +112,7 @@ export function createBatchGet<T extends Entity>(clientRuntime: CoreRuntime, han
                         const id = (item as any).id as EntityId
                         if (before.get(id) !== item) changedIds.add(id)
                     }
-                    storeWriteEngine.commitAtomMapUpdateDelta({ handle, before, after, changedIds })
+                    stateWriter.commitMapUpdateDelta({ before, after, changedIds })
                 }
 
                 const currentMap = after

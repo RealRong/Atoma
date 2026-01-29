@@ -1,11 +1,13 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { resolveObservabilityContext } from '../internals/storeHandleManager'
-import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
+import { StoreStateWriter } from '../internals/StoreStateWriter'
+import { StoreWriteUtils } from '../internals/StoreWriteUtils'
 
 export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom } = handle
+    const stateWriter = new StoreStateWriter(handle)
 
     return async (ids: EntityId[], cache = true, options?: StoreReadOptions) => {
         const beforeMap = jotaiStore.get(atom) as Map<EntityId, T>
@@ -45,7 +47,7 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
                 const id = (processed as any).id as EntityId
 
                 const existing = before.get(id)
-                const preserved = storeWriteEngine.preserveReferenceShallow(existing, processed)
+                const preserved = StoreWriteUtils.preserveReferenceShallow(existing, processed)
 
                 fetchedById.set(id, preserved)
                 if (cache) {
@@ -54,7 +56,7 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
             }
 
             if (cache && itemsToCache.length) {
-                const after = storeWriteEngine.bulkAdd(itemsToCache as PartialWithId<T>[], before)
+                const after = StoreWriteUtils.bulkAdd(itemsToCache as PartialWithId<T>[], before)
                 if (after !== before) {
                     const changedIds = new Set<EntityId>()
                     for (const item of itemsToCache) {
@@ -63,7 +65,7 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
                             changedIds.add(id)
                         }
                     }
-                    storeWriteEngine.commitAtomMapUpdateDelta({ handle, before, after, changedIds })
+                    stateWriter.commitMapUpdateDelta({ before, after, changedIds })
                 }
             }
 

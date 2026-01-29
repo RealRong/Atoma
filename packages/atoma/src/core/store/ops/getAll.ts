@@ -1,11 +1,13 @@
 import type { CoreRuntime, Entity, PartialWithId, StoreReadOptions } from '../../types'
 import type { EntityId } from '#protocol'
 import { resolveObservabilityContext } from '../internals/storeHandleManager'
-import { storeWriteEngine } from '../internals/storeWriteEngine'
 import type { StoreHandle } from '../internals/handleTypes'
+import { StoreStateWriter } from '../internals/StoreStateWriter'
+import { StoreWriteUtils } from '../internals/StoreWriteUtils'
 
 export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>) {
     const { jotaiStore, atom } = handle
+    const stateWriter = new StoreStateWriter(handle)
 
     return async (filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions) => {
         const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
@@ -31,7 +33,7 @@ export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handl
             }
 
             const existing = existingMap.get(id)
-            const preserved = storeWriteEngine.preserveReferenceShallow(existing, processed)
+            const preserved = StoreWriteUtils.preserveReferenceShallow(existing, processed)
             itemsToCache.push(preserved as any)
             arr.push(preserved)
         }
@@ -41,9 +43,9 @@ export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handl
             if (!incomingIds.has(id)) toRemove.push(id)
         })
 
-        const withRemovals = storeWriteEngine.bulkRemove(toRemove, existingMap)
+        const withRemovals = StoreWriteUtils.bulkRemove(toRemove, existingMap)
         const next = itemsToCache.length
-            ? storeWriteEngine.bulkAdd(itemsToCache as PartialWithId<T>[], withRemovals)
+            ? StoreWriteUtils.bulkAdd(itemsToCache as PartialWithId<T>[], withRemovals)
             : withRemovals
 
         const changedIds = new Set<EntityId>(toRemove)
@@ -55,7 +57,7 @@ export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handl
             }
         }
 
-        storeWriteEngine.commitAtomMapUpdateDelta({ handle, before: existingMap, after: next, changedIds })
+        stateWriter.commitMapUpdateDelta({ before: existingMap, after: next, changedIds })
 
         return arr
     }

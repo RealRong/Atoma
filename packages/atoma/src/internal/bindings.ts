@@ -2,6 +2,7 @@ import type { Entity, StoreApi, StoreToken } from '#core'
 import type { EntityId } from '#protocol'
 import type { AtomaClient } from '#client/types'
 import { requireClientRuntime } from './runtimeRegistry'
+import { StoreHandleResolver } from './StoreHandleResolver'
 
 export type StoreSource<T extends Entity> = Readonly<{
     getSnapshot: () => ReadonlyMap<EntityId, T>
@@ -20,12 +21,7 @@ const toStoreName = (name: unknown) => String(name)
 function ensureHandle(client: AtomaClient<any, any>, storeName: StoreToken, tag: string) {
     const runtime = requireClientRuntime(client, tag) as RuntimeLike
     const name = toStoreName(storeName)
-
-    // Materialize engine/handle if needed.
-    runtime.stores.resolveStore(name)
-
-    const handle = runtime.handles.get(runtime.toStoreKey(name))
-    if (!handle) throw new Error(`[Atoma] ${tag}: 未找到 store handle（storeName=${name}）`)
+    const handle = new StoreHandleResolver(runtime as any).resolve(name, tag)
     return { runtime, handle, name }
 }
 
