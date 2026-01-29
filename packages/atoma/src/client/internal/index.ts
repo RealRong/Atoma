@@ -1,1 +1,1 @@
-export { createClient } from './ClientFactory'
+export { createClient } from './createClient'
