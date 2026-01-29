@@ -14,8 +14,9 @@ export function executeLocalQuery<T extends Record<string, any>>(
     opts?: ExecuteOptions
 ): { data: T[]; pageInfo?: PageInfo } {
     const normalized = normalizeQuery(query)
-    const filtered = normalized.filter
-        ? items.filter(item => QueryMatcher.matchesFilter(item, normalized.filter, opts?.matcher))
+    const filter = normalized.filter
+    const filtered = filter
+        ? items.filter(item => QueryMatcher.matchesFilter(item, filter, opts?.matcher))
         : items.slice()
 
     const sorted = opts?.preSorted ? filtered : filtered.slice().sort(compareBy(normalized.sort))

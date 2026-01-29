@@ -6,7 +6,7 @@ export function createUpsertOne<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
-    const write = clientRuntime.storeWrite
+    const write = clientRuntime.write
 
     return async (
         item: PartialWithId<T>,
@@ -42,14 +42,14 @@ export function createUpsertOne<T extends Entity>(
             }
 
             let next = await write.runBeforeSave(handle.hooks, candidate as any, 'update')
-            const processed = await clientRuntime.dataProcessor.inbound(handle, next as any, options?.opContext)
+            const processed = await clientRuntime.transform.inbound(handle, next as any, options?.opContext)
             if (!processed) {
-                throw new Error('[Atoma] upsertOne: dataProcessor returned empty')
+                throw new Error('[Atoma] upsertOne: transform returned empty')
             }
             return processed as PartialWithId<T>
         })()
 
-        const { ticket } = clientRuntime.mutation.api.beginWrite()
+        const { ticket } = clientRuntime.mutation.begin()
         const writeStrategy = write.resolveWriteStrategy(handle, options)
 
         const resultPromise = new Promise<T>((resolve, reject) => {
@@ -82,7 +82,7 @@ export function createUpsertOne<T extends Entity>(
 
         await Promise.all([
             resultPromise,
-            clientRuntime.mutation.api.awaitTicket(ticket, options)
+            clientRuntime.mutation.await(ticket, options)
         ])
 
         return resultPromise

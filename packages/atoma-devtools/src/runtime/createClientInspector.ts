@@ -13,7 +13,7 @@ type CreateClientDevtoolsArgs = {
 }
 
 export function createClientInspector(args: CreateClientDevtoolsArgs): DevtoolsClientInspector & { dispose: () => void } {
-    const entry = ensureEntry(args.runtime, { id: args.runtime.clientId, label: args.label, meta: args.meta })
+    const entry = ensureEntry(args.runtime, { id: args.runtime.id, label: args.label, meta: args.meta })
 
     attachRuntime(entry, args.runtime)
     if (args.syncDevtools) attachSyncProvider(entry, args.syncDevtools)

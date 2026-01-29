@@ -178,6 +178,8 @@ export function assertFilterExpr(value: unknown, ctx: { opId: string; resource: 
             return value as FilterExpr
         }
     }
+
+    throw invalid('INVALID_FILTER', 'Invalid filter', detailsFor())
 }
 
 export function assertQuery(value: unknown, ctx: { opId: string; resource: string }): Query {

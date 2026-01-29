@@ -6,10 +6,10 @@ export function createAddOne<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { hooks } = handle
-    const write = clientRuntime.storeWrite
+    const write = clientRuntime.write
     return async (obj: Partial<T>, options?: StoreOperationOptions) => {
         const validObj = await write.prepareForAdd<T>(handle, obj, options?.opContext)
-        const { ticket } = clientRuntime.mutation.api.beginWrite()
+        const { ticket } = clientRuntime.mutation.begin()
         const writeStrategy = write.resolveWriteStrategy(handle, options)
 
         const resultPromise = new Promise<T>((resolve, reject) => {
@@ -43,7 +43,7 @@ export function createAddOne<T extends Entity>(
 
         const [value] = await Promise.all([
             resultPromise,
-            clientRuntime.mutation.api.awaitTicket(ticket, options)
+            clientRuntime.mutation.await(ticket, options)
         ])
 
         return value

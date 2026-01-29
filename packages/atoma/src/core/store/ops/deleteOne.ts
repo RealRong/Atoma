@@ -6,9 +6,9 @@ export function createDeleteOne<T extends Entity>(
     clientRuntime: CoreRuntime,
     handle: StoreHandle<T>
 ) {
-    const write = clientRuntime.storeWrite
+    const write = clientRuntime.write
     return async (id: EntityId, options?: StoreOperationOptions) => {
-        const { ticket } = clientRuntime.mutation.api.beginWrite()
+        const { ticket } = clientRuntime.mutation.begin()
         const writeStrategy = write.resolveWriteStrategy(handle, options)
 
         const resultPromise = new Promise<boolean>((resolve, reject) => {
@@ -36,7 +36,7 @@ export function createDeleteOne<T extends Entity>(
 
         const [value] = await Promise.all([
             resultPromise,
-            clientRuntime.mutation.api.awaitTicket(ticket, options)
+            clientRuntime.mutation.await(ticket, options)
         ])
 
         return value

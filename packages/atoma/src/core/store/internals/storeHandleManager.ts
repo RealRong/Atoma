@@ -17,7 +17,7 @@ import type { StoreHandle } from './handleTypes'
 // Internal helpers for building store handles and attaching context.
 //
 // 注意：这里不再维护任何 “store object -> handle/runtime” 的全局映射。
-// - handle 的唯一权威来源是 `runtime.handles`（storeKey -> handle）。
+// - handle 的唯一权威来源是 `runtime.stores.resolveHandle`。
 // - store 对象（用户态 facade）应保持无状态，不应持有 handle。
 
 function buildQueryMatcherOptions<T>(indexes?: Array<IndexDefinition<T>>): QueryMatcherOptions | undefined {
@@ -82,7 +82,7 @@ export function resolveObservabilityContext<T extends Entity>(
     options?: StoreOperationOptions | StoreReadOptions | { explain?: boolean }
 ): ObservabilityContext {
     const anyOptions = options as any
-    return clientRuntime.observability.createContext(handle.storeName, {
+    return clientRuntime.observe.createContext(handle.storeName, {
         explain: anyOptions?.explain === true
     })
 }

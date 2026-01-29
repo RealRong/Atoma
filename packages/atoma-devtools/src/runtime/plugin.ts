@@ -82,7 +82,7 @@ export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugi
 
             const stopRegistry = registry?.subscribe?.((e: { type: string; key: string }) => {
                 if (e.type !== 'register') return
-                const entry = getEntryById(runtime.clientId)
+                const entry = getEntryById(runtime.id)
                 if (!entry) return
                 if (e.key === 'history') {
                     const provider = asHistoryProvider(registry?.get?.('history'))

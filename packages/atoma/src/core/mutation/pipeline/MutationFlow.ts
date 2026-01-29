@@ -97,7 +97,7 @@ export async function executeMutationFlow<T extends Entity>(
 }
 
 function createObservabilityContext<T extends Entity>(clientRuntime: CoreRuntime, handle: StoreHandle<T>): ObservabilityContext {
-    return clientRuntime.observability.createContext(handle.storeName)
+    return clientRuntime.observe.createContext(handle.storeName)
 }
 
 function resolveFallbackClientTimeMs<T extends Entity>(operations: Array<StoreDispatchEvent<T>>): number {

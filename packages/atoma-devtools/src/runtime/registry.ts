@@ -58,7 +58,7 @@ export function ensureEntry(
     runtime: ClientRuntime,
     args?: { id?: string; label?: string; meta?: ClientMeta }
 ): ClientEntry {
-    const stableId = String(args?.id ?? runtime.clientId)
+    const stableId = String(args?.id ?? runtime.id)
     const now = Date.now()
 
     const existing = byId.get(stableId)

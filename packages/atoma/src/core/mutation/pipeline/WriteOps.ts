@@ -72,9 +72,9 @@ export async function executeWriteOps<T extends Entity>(args: {
                 nextItems.push(item)
                 continue
             }
-            const processed = await args.clientRuntime.dataProcessor.outbound(args.handle, value as T)
+            const processed = await args.clientRuntime.transform.outbound(args.handle, value as T)
             if (processed === undefined) {
-                throw new Error('[Atoma] dataProcessor returned empty for outbound write')
+                throw new Error('[Atoma] transform returned empty for outbound write')
             }
             nextItems.push({ ...(item as any), value: processed })
         }
@@ -118,12 +118,12 @@ export async function executeWriteOps<T extends Entity>(args: {
     const ack = result.ack
 
     const created = ack?.created
-        ? (await Promise.all(ack.created.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
+        ? (await Promise.all(ack.created.map(async item => args.clientRuntime.transform.writeback(args.handle, item))))
             .filter(Boolean) as T[]
         : undefined
 
     const upserts = ack?.upserts
-        ? (await Promise.all(ack.upserts.map(async item => args.clientRuntime.dataProcessor.writeback(args.handle, item))))
+        ? (await Promise.all(ack.upserts.map(async item => args.clientRuntime.transform.writeback(args.handle, item))))
             .filter(Boolean) as T[]
         : undefined
 

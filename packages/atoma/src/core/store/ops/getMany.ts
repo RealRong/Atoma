@@ -42,7 +42,7 @@ export function createGetMany<T extends Entity>(clientRuntime: CoreRuntime, hand
 
             for (const got of data) {
                 if (got === undefined) continue
-                const processed = await clientRuntime.dataProcessor.writeback(handle, got as T)
+                const processed = await clientRuntime.transform.writeback(handle, got as T)
                 if (!processed) continue
                 const id = (processed as any).id as EntityId
 

@@ -20,7 +20,7 @@ export function createGetAll<T extends Entity>(clientRuntime: CoreRuntime, handl
         const incomingIds = new Set<EntityId>()
 
         for (let i = 0; i < fetched.length; i++) {
-            const processed = await clientRuntime.dataProcessor.writeback(handle, fetched[i] as T)
+            const processed = await clientRuntime.transform.writeback(handle, fetched[i] as T)
             if (!processed) continue
             if (filter && !filter(processed)) continue
             const id = (processed as any).id as EntityId

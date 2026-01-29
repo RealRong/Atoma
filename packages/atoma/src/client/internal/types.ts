@@ -1,10 +1,11 @@
-import type { OperationContext, PersistWriteback, StoreToken } from '#core'
+import type { JotaiStore, OperationContext, PersistWriteback, StoreToken } from '#core'
 import type { EntityId } from '#protocol'
 import type { Patch } from 'immer'
 import type { ClientRuntime } from '#client/types'
 import type { ObservabilityContext } from '#observability'
 
 export type ClientRuntimeInternal = ClientRuntime & Readonly<{
+    jotaiStore: JotaiStore
     internal: Readonly<{
         getStoreSnapshot: (storeName: string) => ReadonlyMap<EntityId, any>
         applyWriteback: (storeName: string, args: PersistWriteback<any>) => Promise<void>

@@ -16,7 +16,10 @@ import { StoreStateWriter } from '#core/store/internals/StoreStateWriter'
 import { StoreWriteUtils } from '#core/store/internals/StoreWriteUtils'
 
 export class StoreWriteCoordinator {
-    constructor(private readonly runtime: CoreRuntime) {}
+    constructor(
+        private readonly runtime: CoreRuntime,
+        private readonly dispatchMutation: (event: StoreDispatchEvent<any>) => void
+    ) {}
 
     resolveWriteStrategy<T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions | undefined): WriteStrategy | undefined {
         return options?.writeStrategy ?? handle.defaultWriteStrategy
@@ -34,7 +37,7 @@ export class StoreWriteCoordinator {
     ): Promise<PartialWithId<T>> {
         let initedObj = StoreWriteUtils.initBaseObject<T>(item, handle.idGenerator)
         initedObj = await this.runBeforeSave(handle.hooks, initedObj, 'add')
-        const processed = await this.runtime.dataProcessor.inbound(handle, initedObj as T, opContext)
+        const processed = await this.runtime.transform.inbound(handle, initedObj as T, opContext)
         return this.requireProcessed(processed as PartialWithId<T> | undefined, 'prepareForAdd')
     }
 
@@ -46,7 +49,7 @@ export class StoreWriteCoordinator {
     ): Promise<PartialWithId<T>> {
         let merged = StoreWriteUtils.mergeForUpdate(base, patch)
         merged = await this.runBeforeSave(handle.hooks, merged, 'update')
-        const processed = await this.runtime.dataProcessor.inbound(handle, merged as T, opContext)
+        const processed = await this.runtime.transform.inbound(handle, merged as T, opContext)
         return this.requireProcessed(processed as PartialWithId<T> | undefined, 'prepareForUpdate')
     }
 
@@ -96,7 +99,7 @@ export class StoreWriteCoordinator {
     }
 
     dispatch<T extends Entity>(event: StoreDispatchEvent<T>) {
-        this.runtime.mutation.api.dispatch(event)
+        this.dispatchMutation(event)
     }
 
     applyWriteback = async <T extends Entity>(
@@ -110,7 +113,7 @@ export class StoreWriteCoordinator {
         if (!upserts.length && !deletes.length && !versionUpdates.length) return
 
         const processed = (await Promise.all(
-            upserts.map(item => this.runtime.dataProcessor.writeback(handle, item))
+            upserts.map(item => this.runtime.transform.writeback(handle, item))
         )).filter(Boolean) as T[]
 
         const stateWriter = new StoreStateWriter(handle)
@@ -123,7 +126,7 @@ export class StoreWriteCoordinator {
 
     private requireProcessed<T>(value: T | undefined, tag: string): T {
         if (value === undefined) {
-            throw new Error(`[Atoma] ${tag}: dataProcessor returned empty`)
+            throw new Error(`[Atoma] ${tag}: transform returned empty`)
         }
         return value
     }

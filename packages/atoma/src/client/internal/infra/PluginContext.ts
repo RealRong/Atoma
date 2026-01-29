@@ -39,11 +39,11 @@ export class PluginContext {
                     opContext: applyArgs.opContext
                 })
             },
-            observability: args.runtime.observability,
+            observability: args.runtime.observe,
             persistence: {
-                register: args.runtime.persistenceRouter.register,
-                ack: args.runtime.mutation.acks.ack,
-                reject: args.runtime.mutation.acks.reject,
+                register: args.runtime.persistence.register,
+                ack: args.runtime.mutation.ack,
+                reject: args.runtime.mutation.reject,
                 writeback: (storeName, writeback, options) => args.runtime.internal.commitWriteback(storeName as any, writeback as any, options as any)
             },
             devtools: {

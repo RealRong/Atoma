@@ -31,6 +31,8 @@ export const Core = {
     }
 } as const
 
+export { executeLocalQuery } from './query'
+
 export type {
     BelongsToConfig,
     DeleteItem,
@@ -52,15 +54,23 @@ export type {
     OperationContext,
     OperationOrigin,
     CoreRuntime,
-    RuntimeStoreWrite,
+    RuntimeIo,
     RuntimeObservability,
-    RuntimeStores,
     Persistence,
+    StoreRegistry,
+    RuntimeWrite,
+    RuntimeMutation,
+    RuntimePersistence,
+    RuntimeTransform,
     WriteStrategy,
+    PersistHandler,
     PersistRequest,
     PersistResult,
     PersistStatus,
     PersistAck,
+    PartialWithId,
+    StoreDispatchEvent,
+    StoreOperationOptions,
     DataProcessor,
     DataProcessorContext,
     DataProcessorMode,
@@ -78,11 +88,11 @@ export type {
     StoreToken,
     UpsertWriteOptions,
     WithRelations,
+    WriteTicket,
     WriteManyResult
 } from './types'
 
 export { MutationPipeline } from './mutation/MutationPipeline'
-export type { MutationApi, MutationAcks } from './mutation/MutationPipeline'
 export type { StoreCommit } from './mutation'
 export type { StoreIndexes } from './indexes/StoreIndexes'
 export type { FuzzySearchOptions, FuzzySearchResult } from './search'

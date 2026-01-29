@@ -10,7 +10,7 @@ export function createUpdateOne<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
-    const write = clientRuntime.storeWrite
+    const write = clientRuntime.write
     return async (id: EntityId, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions) => {
         const observabilityContext = resolveObservabilityContext(clientRuntime, handle, options)
         const writeStrategy = write.resolveWriteStrategy(handle, options)
@@ -36,7 +36,7 @@ export function createUpdateOne<T extends Entity>(
                 throw new Error(`Item with id ${id} not found`)
             }
 
-            const processed = await clientRuntime.dataProcessor.writeback(handle, fetched, options?.opContext)
+            const processed = await clientRuntime.transform.writeback(handle, fetched, options?.opContext)
             if (!processed) {
                 throw new Error(`Item with id ${id} not found`)
             }
@@ -52,7 +52,7 @@ export function createUpdateOne<T extends Entity>(
         const patched = { ...(next as any), id } as PartialWithId<T>
         const validObj = await write.prepareForUpdate<T>(handle, base, patched, options?.opContext)
 
-        const { ticket } = clientRuntime.mutation.api.beginWrite()
+        const { ticket } = clientRuntime.mutation.begin()
 
         const resultPromise = new Promise<T>((resolve, reject) => {
             if (hydrate) {
@@ -90,7 +90,7 @@ export function createUpdateOne<T extends Entity>(
 
         await Promise.all([
             resultPromise,
-            clientRuntime.mutation.api.awaitTicket(ticket, options)
+            clientRuntime.mutation.await(ticket, options)
         ])
 
         return resultPromise

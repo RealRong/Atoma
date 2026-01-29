@@ -6,7 +6,7 @@ import type {
     AtomaSchema,
     ClientPlugin,
 } from '#client/types'
-import { registerClientRuntime } from '../../../../internal/runtimeRegistry'
+import { registerClientRuntime } from '../../internal/runtimeRegistry'
 import { ChannelApis } from './infra/ChannelApis'
 import { DevtoolsRegistry, DEVTOOLS_REGISTRY_KEY } from './infra/DevtoolsRegistry'
 import { IoPipeline } from './infra/IoPipeline'
@@ -47,10 +47,10 @@ export function buildAtomaClient<
         }
     })
 
-    const clientKey = backend?.key ? String(backend.key) : clientRuntime.clientId
+    const clientKey = backend?.key ? String(backend.key) : clientRuntime.id
 
     const resolveStore = (<Name extends keyof Entities & string>(name: Name) => {
-        return clientRuntime.stores.resolveStore(String(name)) as any
+        return clientRuntime.stores.ensure(String(name)) as any
     })
 
     const stores = new Proxy(resolveStore as any, {

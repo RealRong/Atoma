@@ -1,9 +1,9 @@
 import { Atom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
-import type { MutationPipeline } from './mutation/MutationPipeline'
 import type { StoreHandle } from './store/internals/handleTypes'
 import type { DebugConfig, DebugEvent, Explain, ObservabilityContext } from '#observability'
-import type { EntityId, Meta, Operation, OperationResult, Query, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
+import type { EntityId, Meta, Operation, OperationResult, WriteAction, WriteItem, WriteOptions, WriteResultData } from '#protocol'
+import type { StoreCommit } from './mutation'
 
 /**
  * Minimal entity interface - all stored entities must have an id
@@ -427,9 +427,13 @@ export interface Persistence {
 /**
  * CoreRuntime：唯一上下文，承载跨 store 能力（ops/mutation/persistence/observability/resolveStore）
  */
-export interface RuntimeStores {
-    resolveStore: (name: StoreToken) => IStore<any> | undefined
-}
+export type StoreRegistry = Readonly<{
+    resolve: (name: StoreToken) => IStore<any> | undefined
+    ensure: (name: StoreToken) => IStore<any>
+    list: () => Iterable<IStore<any>>
+    onCreated: (listener: (store: IStore<any>) => void, options?: { replay?: boolean }) => () => void
+    resolveHandle: (name: StoreToken, tag?: string) => StoreHandle<any>
+}>
 
 export interface RuntimeObservability {
     createContext: (storeName: StoreToken, args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
@@ -442,7 +446,13 @@ export type RuntimeIo = Readonly<{
     write: <T extends Entity>(handle: StoreHandle<T>, args: { action: WriteAction; items: WriteItem[]; options?: WriteOptions }, context?: ObservabilityContext, signal?: AbortSignal) => Promise<WriteResultData>
 }>
 
-export type RuntimeStoreWrite = Readonly<{
+export type RuntimeTransform = Readonly<{
+    inbound: <T extends Entity>(handle: StoreHandle<T>, data: T, ctx?: OperationContext) => Promise<T | undefined>
+    writeback: <T extends Entity>(handle: StoreHandle<T>, data: T, ctx?: OperationContext) => Promise<T | undefined>
+    outbound: <T extends Entity>(handle: StoreHandle<T>, data: T, ctx?: OperationContext) => Promise<T | undefined>
+}>
+
+export type RuntimeWrite = Readonly<{
     resolveWriteStrategy: <T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions | undefined) => WriteStrategy | undefined
     allowImplicitFetchForWrite: (writeStrategy?: WriteStrategy) => boolean
     prepareForAdd: <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, opContext?: OperationContext) => Promise<PartialWithId<T>>
@@ -455,34 +465,34 @@ export type RuntimeStoreWrite = Readonly<{
     applyWriteback: <T extends Entity>(handle: StoreHandle<T>, writeback: PersistWriteback<T>) => Promise<void>
 }>
 
+export type RuntimeMutation = Readonly<{
+    begin: () => { ticket: WriteTicket; meta: WriteItemMeta }
+    await: (ticket: WriteTicket, options?: StoreOperationOptions) => Promise<void>
+    subscribeCommit: (listener: (commit: StoreCommit) => void) => () => void
+    ack: (idempotencyKey: string) => void
+    reject: (idempotencyKey: string, reason?: unknown) => void
+}>
+
+export type PersistHandler = <T extends Entity>(args: {
+    req: PersistRequest<T>
+    next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
+}) => Promise<PersistResult<T>>
+
+export type RuntimePersistence = Readonly<{
+    register: (key: WriteStrategy, handler: PersistHandler) => () => void
+    persist: <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
+}>
+
 export type CoreRuntime = Readonly<{
-    /**
-     * Stable client identity for namespacing internal store keys.
-     * - Not exposed as a user-facing concept; used to build `storeKey = clientId:storeName`.
-     */
-    clientId: string
-
-    /**
-     * Internal helper to derive a stable storeKey.
-     * - Keep as a function to avoid duplicating string formatting logic across modules.
-     */
-    toStoreKey: (storeName: StoreToken) => string
-
-    /**
-     * Internal handle registry keyed by storeKey.
-     * - This is the migration path away from `store object -> handle` WeakMap mapping.
-     */
-    handles: Map<string, StoreHandle<any>>
-
-    opsClient: OpsClientLike
+    id: string
+    now: () => number
+    stores: StoreRegistry
     io: RuntimeIo
-    mutation: MutationPipeline
-    storeWrite: RuntimeStoreWrite
-    dataProcessor: DataProcessor
-    stores: RuntimeStores
-    observability: RuntimeObservability
-    persistence: Persistence
-    jotaiStore: JotaiStore
+    write: RuntimeWrite
+    mutation: RuntimeMutation
+    persistence: RuntimePersistence
+    observe: RuntimeObservability
+    transform: RuntimeTransform
 }>
 
 export interface BelongsToConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {

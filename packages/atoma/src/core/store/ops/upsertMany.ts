@@ -8,7 +8,7 @@ export function createUpsertMany<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
-    const write = clientRuntime.storeWrite
+    const write = clientRuntime.write
 
     return async (
         items: Array<PartialWithId<T>>,
@@ -73,9 +73,9 @@ export function createUpsertMany<T extends Entity>(
                     }
 
                     let next = await write.runBeforeSave(handle.hooks, candidate as any, 'update')
-                    const processed = await clientRuntime.dataProcessor.inbound(handle, next as any, opContext)
+                    const processed = await clientRuntime.transform.inbound(handle, next as any, opContext)
                     if (!processed) {
-                        throw new Error('[Atoma] upsertMany: dataProcessor returned empty')
+                        throw new Error('[Atoma] upsertMany: transform returned empty')
                     }
                     validObj = processed as PartialWithId<T>
                 }
@@ -95,7 +95,7 @@ export function createUpsertMany<T extends Entity>(
             const validObj = entry.value
             const action = entry.action
 
-            const { ticket } = clientRuntime.mutation.api.beginWrite()
+            const { ticket } = clientRuntime.mutation.begin()
 
             const resultPromise = new Promise<T>((resolve, reject) => {
                 write.dispatch<T>({
@@ -127,7 +127,7 @@ export function createUpsertMany<T extends Entity>(
                     })()
                     : Promise.all([
                         resultPromise,
-                        clientRuntime.mutation.api.awaitTicket(ticket, options)
+                        clientRuntime.mutation.await(ticket, options)
                     ]).then(([value]) => value)
                 ).then((value) => {
                     results[index] = { index, ok: true, value }

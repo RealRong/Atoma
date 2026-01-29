@@ -3,6 +3,17 @@ import type { StoreToken } from '#core'
 import type { ObservabilityContext } from '#observability'
 import { Protocol } from '#protocol'
 import type {
+    ChangeBatch,
+    Cursor,
+    Operation,
+    OperationResult,
+    Query,
+    WriteAction,
+    WriteItem,
+    WriteOptions,
+    WriteResultData
+} from '#protocol'
+import type {
     ChannelApi,
     ChannelQueryResult,
     IoChannel,
@@ -28,15 +39,7 @@ export class ChannelApis {
         this.remote = this.buildRemoteApi()
     }
 
-    type Operation = import('#protocol').Operation
-    type OperationResult = import('#protocol').OperationResult
-    type QuerySpec = import('#protocol').Query
-    type WriteAction = import('#protocol').WriteAction
-    type WriteItem = import('#protocol').WriteItem
-    type WriteOptions = import('#protocol').WriteOptions
-    type WriteResultData = import('#protocol').WriteResultData
-    type ChangeBatch = import('#protocol').ChangeBatch
-    type Cursor = import('#protocol').Cursor
+
 
     private requireResultByOpId(results: OperationResult[], opId: string, missingMessage: string): OperationResult {
         for (const r of results) {
@@ -51,7 +54,7 @@ export class ChannelApis {
             ? ((result as any).error as any).message
             : `[${tag}] Operation failed`
         const err = new Error(message)
-        ;(err as any).error = (result as any).error
+            ; (err as any).error = (result as any).error
         return err
     }
 
@@ -88,7 +91,7 @@ export class ChannelApis {
     private queryChannel = async <T = unknown>(args2: {
         channel: IoChannel
         store: StoreToken
-        query: QuerySpec
+        query: Query
         context?: ObservabilityContext
         signal?: AbortSignal
     }): Promise<ChannelQueryResult<T>> => {

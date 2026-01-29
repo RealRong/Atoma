@@ -20,13 +20,15 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
     entry.runtime = runtime
 
     entry.stopStoreListener?.()
-    entry.stopStoreListener = runtime.stores.onStoreCreated((store) => {
+    entry.stopStoreListener = runtime.stores.onCreated((store) => {
         const name = String((store as any)?.name ?? '')
         if (!name) return
-
-        const storeKey = runtime.toStoreKey(name)
-        const handle = runtime.handles.get(storeKey)
-        if (!handle) return
+        let handle: any
+        try {
+            handle = runtime.stores.resolveHandle(name, `devtools.attachRuntime:${name}`)
+        } catch {
+            return
+        }
 
         if (!entry.storeProviders.has(name)) {
             const snapshot = () => {

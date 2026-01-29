@@ -75,8 +75,14 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
 
     const optionsForStoreQuery = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
 
-    const localEntities = useStoreQuery(store, optionsForStoreQuery)
-    const localIds = useStoreQuery(store, { ...(optionsForStoreQuery as any), result: 'ids' as const })
+    const localEntities = useStoreQuery(store, optionsForStoreQuery
+        ? { ...(optionsForStoreQuery as any), result: 'entities' as const }
+        : ({ result: 'entities' as const } as any)
+    )
+    const localIds = useStoreQuery(store, optionsForStoreQuery
+        ? { ...(optionsForStoreQuery as any), result: 'ids' as const }
+        : ({ result: 'ids' as const } as any)
+    )
 
     const remoteEnabled = fetchPolicy !== 'cache-only'
     const remoteBehavior = wantsTransientRemote ? ({ transient: true } as const) : ({ hydrate: true } as const)

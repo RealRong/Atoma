@@ -2,7 +2,6 @@ import type { Entity, StoreApi, StoreToken } from '#core'
 import type { EntityId } from '#protocol'
 import type { AtomaClient } from '#client/types'
 import { requireClientRuntime } from './runtimeRegistry'
-import { StoreHandleResolver } from './StoreHandleResolver'
 
 export type StoreSource<T extends Entity> = Readonly<{
     getSnapshot: () => ReadonlyMap<EntityId, T>
@@ -10,10 +9,11 @@ export type StoreSource<T extends Entity> = Readonly<{
 }>
 
 type RuntimeLike = {
-    toStoreKey: (name: StoreToken) => string
-    handles: Map<string, any>
-    stores: { resolveStore: (name: StoreToken) => StoreApi<any, any> }
-    dataProcessor: { writeback: (handle: any, item: any) => Promise<any> }
+    stores: {
+        ensure: (name: StoreToken) => StoreApi<any, any>
+        resolveHandle: (name: StoreToken, tag?: string) => any
+    }
+    transform: { writeback: (handle: any, item: any) => Promise<any> }
 }
 
 const toStoreName = (name: unknown) => String(name)
@@ -21,13 +21,13 @@ const toStoreName = (name: unknown) => String(name)
 function ensureHandle(client: AtomaClient<any, any>, storeName: StoreToken, tag: string) {
     const runtime = requireClientRuntime(client, tag) as RuntimeLike
     const name = toStoreName(storeName)
-    const handle = new StoreHandleResolver(runtime as any).resolve(name, tag)
+    const handle = runtime.stores.resolveHandle(name, tag)
     return { runtime, handle, name }
 }
 
 export function resolveStore(client: AtomaClient<any, any>, name: StoreToken): StoreApi<any, any> {
     const runtime = requireClientRuntime(client, 'resolveStore') as RuntimeLike
-    return runtime.stores.resolveStore(String(name))
+    return runtime.stores.ensure(String(name))
 }
 
 export function getStoreSource<T extends Entity>(client: AtomaClient<any, any>, storeName: StoreToken): StoreSource<T> {
@@ -63,7 +63,7 @@ export async function hydrateStore<T extends Entity>(client: AtomaClient<any, an
     if (!items.length) return
     const { runtime, handle } = ensureHandle(client, storeName, 'hydrateStore')
 
-    const processed = (await Promise.all(items.map(async (item) => runtime.dataProcessor.writeback(handle, item))))
+    const processed = (await Promise.all(items.map(async (item) => runtime.transform.writeback(handle, item))))
         .filter(Boolean) as T[]
 
     if (!processed.length) return

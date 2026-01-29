@@ -1,6 +1,6 @@
 import type { ObservabilityContext } from '#observability'
 import { Protocol, type Operation, type OperationResult, type Query, type QueryResultData, type WriteAction, type WriteItem, type WriteOptions, type WriteResultData } from '#protocol'
-import type { CoreRuntime, Entity, RuntimeIo } from '../types'
+import type { Entity, OpsClientLike, RuntimeIo, RuntimeTransform } from '../types'
 import type { StoreHandle } from '../store/internals/handleTypes'
 
 function requireSingleResult(results: OperationResult[], missingMessage: string): OperationResult {
@@ -30,14 +30,18 @@ function toProtocolValidationError(error: unknown, fallbackMessage: string): Err
     return err
 }
 
-export function createRuntimeIo(runtime: () => CoreRuntime, opts?: Readonly<{ now?: () => number }>): RuntimeIo {
-    const now = opts?.now ?? (() => Date.now())
+export function createRuntimeIo(deps: {
+    opsClient: OpsClientLike
+    transform: RuntimeTransform
+    now?: () => number
+}): RuntimeIo {
+    const now = deps.now ?? (() => Date.now())
 
-    const executeOps: RuntimeIo['executeOps'] = async (args) => {
-        const context = args.context
+    const executeOps: RuntimeIo['executeOps'] = async (input) => {
+        const context = input.context
         const traceId = (typeof context?.traceId === 'string' && context.traceId) ? context.traceId : undefined
         const opsWithTrace = Protocol.ops.build.withTraceMeta({
-            ops: args.ops,
+            ops: input.ops,
             traceId,
             ...(context ? { nextRequestId: context.requestId } : {})
         })
@@ -48,10 +52,10 @@ export function createRuntimeIo(runtime: () => CoreRuntime, opts?: Readonly<{ no
         })
         Protocol.ops.validate.assertOutgoingOps({ ops: opsWithTrace, meta })
 
-        const res = await runtime().opsClient.executeOps({
+        const res = await deps.opsClient.executeOps({
             ops: opsWithTrace,
             meta,
-            ...(args.signal ? { signal: args.signal } : {}),
+            ...(input.signal ? { signal: input.signal } : {}),
             ...(context ? { context } : {})
         } as any)
 
@@ -93,17 +97,17 @@ export function createRuntimeIo(runtime: () => CoreRuntime, opts?: Readonly<{ no
 
     const write: RuntimeIo['write'] = async <T extends Entity>(
         handle: StoreHandle<T>,
-        args: { action: WriteAction; items: WriteItem[]; options?: WriteOptions },
+        input: { action: WriteAction; items: WriteItem[]; options?: WriteOptions },
         context?: ObservabilityContext,
         signal?: AbortSignal
     ) => {
-        const processedItems = await Promise.all(args.items.map(async (item) => {
+        const processedItems = await Promise.all(input.items.map(async (item) => {
             if (!item || typeof item !== 'object' || !('value' in item)) return item
             const value = (item as any).value
             if (value === undefined) return item
-            const processed = await runtime().dataProcessor.outbound(handle, value as T)
+            const processed = await deps.transform.outbound(handle, value as T)
             if (processed === undefined) {
-                throw new Error('[Atoma] dataProcessor returned empty for outbound write')
+                throw new Error('[Atoma] transform returned empty for outbound write')
             }
             return { ...(item as any), value: processed } as WriteItem
         }))
@@ -112,9 +116,9 @@ export function createRuntimeIo(runtime: () => CoreRuntime, opts?: Readonly<{ no
             opId: handle.nextOpId('w'),
             write: {
                 resource: handle.storeName,
-                action: args.action,
+                action: input.action,
                 items: processedItems,
-                ...(args.options ? { options: args.options } : {})
+                ...(input.options ? { options: input.options } : {})
             }
         })
         const results = await executeOps({ ops: [op], context, ...(signal ? { signal } : {}) })

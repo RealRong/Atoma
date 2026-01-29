@@ -1,11 +1,11 @@
 import { atom } from 'jotai/vanilla'
-import type { CoreRuntime, Entity, IStore, StoreApi, StoreDataProcessor, StoreToken } from '#core'
+import type { Entity, IStore, StoreApi, StoreDataProcessor, StoreRegistry, StoreToken } from '#core'
 import type { EntityId } from '#protocol'
 import type { AtomaSchema } from '#client/types'
-import type { ClientRuntimeStoresApi } from '#client/types/runtime'
 import { StoreConfigResolver } from '#client/internal/runtime/StoreConfigResolver'
 import { createStoreHandle } from '#core/store/internals/storeHandleManager'
 import type { StoreHandle } from '#core/store/internals/handleTypes'
+import type { ClientRuntimeInternal } from '#client/internal/types'
 import {
     createAddMany,
     createAddOne,
@@ -38,7 +38,7 @@ type StoreEngineApi<T extends Entity = any> = IStore<T, any> & Readonly<{
     queryOne: (query: any) => Promise<any>
 }>
 
-export class ClientRuntimeStores implements ClientRuntimeStoresApi {
+export class ClientRuntimeStores implements StoreRegistry {
     private readonly engineByName = new Map<string, StoreEngine<any>>()
     private readonly facadeByName = new Map<string, StoreApi<any, any> & { name: string }>()
     private readonly created: Array<StoreApi<any, any> & { name: string }> = []
@@ -46,7 +46,7 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
     private readonly configResolver: StoreConfigResolver
 
     constructor(
-        private readonly runtime: CoreRuntime,
+        private readonly runtime: ClientRuntimeInternal,
         private readonly args: {
             schema: AtomaSchema<any>
             dataProcessor?: StoreDataProcessor<any>
@@ -118,7 +118,7 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
 
         const base = this.configResolver.resolve(name) as any
 
-        this.runtime.observability.registerStore?.({
+        this.runtime.observe.registerStore?.({
             storeName: name,
             debug: base.debug,
             debugSink: base.debugSink
@@ -182,9 +182,6 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
             queryOne
         }
 
-        // Register handle for storeKey-based resolution (new path).
-        this.runtime.handles.set(this.runtime.toStoreKey(name), handle)
-
         const engine: StoreEngine<any> = { handle, api }
         this.engineByName.set(name, engine)
 
@@ -194,16 +191,20 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
         return engine
     }
 
-    resolveStore = (name: StoreToken): IStore<any> => {
+    resolve = (name: StoreToken): IStore<any> | undefined => {
         const key = toStoreName(name)
-        // `resolveStore` is allowed to materialize the underlying handle/engine (used by core helpers).
+        return this.facadeByName.get(key)
+    }
+
+    ensure = (name: StoreToken): IStore<any> => {
+        const key = toStoreName(name)
         this.ensureEngine(key)
         return this.getFacade(key)
     }
 
-    listStores = () => this.facadeByName.values()
+    list = () => this.facadeByName.values()
 
-    onStoreCreated = (listener: StoreListener, options?: { replay?: boolean }) => {
+    onCreated = (listener: StoreListener, options?: { replay?: boolean }) => {
         if (options?.replay) {
             for (const store of this.created) {
                 try {
@@ -217,5 +218,18 @@ export class ClientRuntimeStores implements ClientRuntimeStoresApi {
         return () => {
             this.listeners.delete(listener)
         }
+    }
+
+    resolveHandle = (name: StoreToken, tag?: string): StoreHandle<any> => {
+        const key = toStoreName(name)
+        const existing = this.engineByName.get(key)
+        if (existing) return existing.handle
+
+        // Lazy creation for internal access.
+        this.ensureEngine(key)
+        const created = this.engineByName.get(key)
+        if (created) return created.handle
+
+        throw new Error(`[Atoma] ${tag || 'resolveHandle'}: 未找到 store handle（storeName=${key}）`)
     }
 }

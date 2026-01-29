@@ -6,7 +6,7 @@ export function createAddMany<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { hooks } = handle
-    const write = clientRuntime.storeWrite
+    const write = clientRuntime.write
     return async (items: Array<Partial<T>>, options?: StoreOperationOptions) => {
         const opContext = write.ensureActionId(options?.opContext)
         const writeStrategy = write.resolveWriteStrategy(handle, options)
@@ -16,7 +16,7 @@ export function createAddMany<T extends Entity>(
 
         const tickets = new Array(validItems.length)
         const resultPromises = validItems.map((validObj, idx) => {
-            const { ticket } = clientRuntime.mutation.api.beginWrite()
+            const { ticket } = clientRuntime.mutation.begin()
             tickets[idx] = ticket
 
             return new Promise<void>((resolve, reject) => {
@@ -54,7 +54,7 @@ export function createAddMany<T extends Entity>(
         }
 
         await Promise.all([
-            ...tickets.map(ticket => clientRuntime.mutation.api.awaitTicket(ticket, options)),
+            ...tickets.map(ticket => clientRuntime.mutation.await(ticket, options)),
             ...resultPromises
         ])
 

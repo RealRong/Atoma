@@ -61,7 +61,7 @@ export function createQuery<T extends Entity>(clientRuntime: CoreRuntime, handle
             const fetched = Array.isArray(data) ? data : []
             const remote: T[] = []
             for (let i = 0; i < fetched.length; i++) {
-                const processed = await clientRuntime.dataProcessor.writeback(handle, fetched[i] as T)
+                const processed = await clientRuntime.transform.writeback(handle, fetched[i] as T)
                 if (processed !== undefined) {
                     remote.push(processed)
                 }

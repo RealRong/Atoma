@@ -341,7 +341,10 @@ function projectStandard<TSource extends Entity>(
             return
         }
 
-        const projected = executeLocalQuery(matches as any, {\n            sort: sort as any,\n            page: { mode: 'offset', limit }\n        } as any).data
+        const projected = executeLocalQuery(matches as any, {
+            sort: sort as any,
+            page: { mode: 'offset', limit }
+        } as any).data
 
         ;(item as any)[relName] = shape.kind === 'hasOne'
             ? (projected[0] ?? null)

@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type { IndexDefinition, WhereOperator } from '../types'
+import type { FilterExpr, IndexDefinition } from '../types'
 import type { EntityId } from '#protocol'
 import type { CandidateResult, IndexStats } from './types'
 import { IndexManager } from './IndexManager'
@@ -11,8 +11,8 @@ export class StoreIndexes<T> {
         this.manager = new IndexManager<T>(defs)
     }
 
-    collectCandidates(where?: WhereOperator<T>): CandidateResult {
-        return this.manager.collectCandidates(where)
+    collectCandidates(filter?: FilterExpr): CandidateResult {
+        return this.manager.collectCandidates(filter)
     }
 
     getStats(field: string): IndexStats | undefined {

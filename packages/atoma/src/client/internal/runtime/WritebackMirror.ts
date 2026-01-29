@@ -3,7 +3,6 @@ import type { StoreHandle } from '#core/store/internals/handleTypes'
 import type { ObservabilityContext } from '#observability'
 import { Protocol } from '#protocol'
 import type { WriteItem, WriteResultData } from '#protocol'
-import { StoreHandleResolver } from '../../../internal/StoreHandleResolver'
 
 type MirrorOptions = {
     context?: ObservabilityContext
@@ -14,7 +13,6 @@ export class WritebackMirror {
 
     constructor(
         private readonly runtime: CoreRuntime,
-        private readonly handleResolver: StoreHandleResolver,
         opts?: Readonly<{ now?: () => number }>
     ) {
         this.now = opts?.now ?? (() => Date.now())
@@ -28,7 +26,7 @@ export class WritebackMirror {
         if (!upserts.length && !deletes.length && !versionUpdates.length) return
 
         const name = String(storeName)
-        const handle = this.handleResolver.resolve(name, `runtime.commitWriteback:${name}`)
+        const handle = this.runtime.stores.resolveHandle(name, `runtime.commitWriteback:${name}`)
         const snapshot = handle.jotaiStore.get(handle.atom) as ReadonlyMap<string, any>
 
         if (upserts.length) {
@@ -70,7 +68,7 @@ export class WritebackMirror {
             const id = (u as any)?.id
             if (typeof id !== 'string' || !id) continue
 
-            // Persist the post-writeback in-memory value (already processed via dataProcessor.writeback),
+            // Persist the post-writeback in-memory value (already processed via transform.writeback),
             // then let runtime.io apply outbound processing for durable storage.
             const value = snapshot.get(id)
             if (!value) continue

@@ -1,4 +1,14 @@
-import type { Entity, JotaiStore, OpsClientLike, Persistence, PersistRequest, PersistResult, RuntimeIo, StoreDataProcessor, WriteStrategy } from '#core'
+import type {
+    Entity,
+    JotaiStore,
+    OpsClientLike,
+    PersistRequest,
+    PersistResult,
+    RuntimeIo,
+    RuntimePersistence,
+    StoreDataProcessor,
+    WriteStrategy
+} from '#core'
 import { MutationPipeline } from '#core'
 import { executeLocalQuery } from '#core/query'
 import { executeWriteOps } from '#core/mutation/pipeline/WriteOps'
@@ -11,26 +21,23 @@ import type { ClientRuntimeInternal } from '#client/internal/types'
 import { DataProcessor } from '#core/store/internals/dataProcessor'
 import { ClientRuntimeObservability } from '#client/internal/runtime/ClientRuntimeObservability'
 import { ClientRuntimeStores } from '#client/internal/runtime/ClientRuntimeStores'
-import type { PersistHandler } from '#client/types/plugin'
+import type { PersistHandler } from '#core'
 import { ClientRuntimeInternalEngine } from '#client/internal/runtime/ClientRuntimeInternalEngine'
 import { Protocol } from '#protocol'
 import { StoreWriteCoordinator } from '#client/internal/runtime/StoreWriteCoordinator'
 
 export class ClientRuntime implements ClientRuntimeInternal {
-    readonly clientId: string
+    readonly id: string
+    readonly now: () => number
     readonly ownerClient?: () => unknown
-    readonly handles: Map<string, StoreHandle<any>>
-    readonly toStoreKey: (storeName: import('#core').StoreToken) => string
-    readonly opsClient: OpsClientLike
     readonly io: ClientRuntimeInternal['io']
-    readonly mutation: MutationPipeline
-    readonly storeWrite: ClientRuntimeInternal['storeWrite']
-    readonly dataProcessor: DataProcessor
+    readonly write: ClientRuntimeInternal['write']
+    readonly mutation: ClientRuntimeInternal['mutation']
+    readonly persistence: ClientRuntimeInternal['persistence']
+    readonly observe: ClientRuntimeInternal['observe']
+    readonly transform: ClientRuntimeInternal['transform']
     readonly jotaiStore: JotaiStore
     readonly stores: ClientRuntimeInternal['stores']
-    readonly observability: ClientRuntimeInternal['observability']
-    readonly persistence: Persistence
-    readonly persistenceRouter: PersistenceRouter
     readonly internal: ClientRuntimeInternal['internal']
 
     constructor(args: {
@@ -43,25 +50,33 @@ export class ClientRuntime implements ClientRuntimeInternal {
         mirrorWritebackToStore?: boolean
         localOnly?: boolean
         ownerClient?: () => unknown
+        now?: () => number
     }) {
         // Internal stable id for namespacing store handles within this runtime instance.
         // Note: Use protocol ids (uuid when available) to avoid collisions.
-        this.clientId = Protocol.ids.createOpId('client')
+        this.id = Protocol.ids.createOpId('client')
+        this.now = args.now ?? (() => Date.now())
         this.ownerClient = args.ownerClient
-        this.handles = new Map<string, StoreHandle<any>>()
-        this.toStoreKey = (storeName) => `${this.clientId}:${String(storeName)}`
 
-        this.opsClient = args.opsClient
         this.jotaiStore = createJotaiStore()
-        this.dataProcessor = new DataProcessor(() => this)
-        this.storeWrite = new StoreWriteCoordinator(this)
-        this.observability = new ClientRuntimeObservability()
+
+        this.observe = new ClientRuntimeObservability()
+        this.transform = new DataProcessor(() => this)
+
+        const mutationPipeline = new MutationPipeline(this)
+        this.mutation = mutationPipeline
+        this.write = new StoreWriteCoordinator(this, mutationPipeline.dispatch)
+
         this.io = args.localOnly
-            ? createLocalRuntimeIo(() => this as any)
-            : createRuntimeIo(() => this as any)
-        this.persistenceRouter = createClientRuntimePersistenceRouter(() => this, { localOnly: args.localOnly })
-        this.persistence = this.persistenceRouter
-        this.mutation = new MutationPipeline(this)
+            ? createLocalRuntimeIo()
+            : createRuntimeIo({
+                opsClient: args.opsClient,
+                transform: this.transform,
+                now: this.now
+            })
+
+        this.persistence = createClientRuntimePersistenceRouter(() => this, { localOnly: args.localOnly })
+
         this.stores = new ClientRuntimeStores(this, {
             schema: args.schema,
             dataProcessor: args.dataProcessor,
@@ -70,12 +85,13 @@ export class ClientRuntime implements ClientRuntimeInternal {
         })
 
         this.internal = new ClientRuntimeInternalEngine(this, {
-            mirrorWritebackToStore: args.mirrorWritebackToStore
+            mirrorWritebackToStore: args.mirrorWritebackToStore,
+            now: this.now
         })
     }
 }
 
-class PersistenceRouter implements Persistence {
+class PersistenceRouter implements RuntimePersistence {
     private handlers = new Map<WriteStrategy, PersistHandler>()
 
     constructor(
@@ -108,7 +124,7 @@ class PersistenceRouter implements Persistence {
 function createClientRuntimePersistenceRouter(
     runtime: () => ClientRuntimeInternal,
     opts?: { localOnly?: boolean }
-): PersistenceRouter {
+): RuntimePersistence {
     const persistDirect = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
         if (opts?.localOnly) {
             return { status: 'confirmed' }
@@ -128,7 +144,7 @@ function createClientRuntimePersistenceRouter(
     return new PersistenceRouter(persistDirect)
 }
 
-function createLocalRuntimeIo(_runtime: () => ClientRuntimeInternal) {
+function createLocalRuntimeIo(): RuntimeIo {
     const executeOps: RuntimeIo['executeOps'] = async () => {
         throw new Error('[Atoma] local-only 模式不支持 ops 执行')
     }

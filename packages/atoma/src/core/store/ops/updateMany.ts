@@ -11,7 +11,7 @@ export function createUpdateMany<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom, hooks } = handle
-    const write = clientRuntime.storeWrite
+    const write = clientRuntime.write
 
     return async (
         items: Array<{ id: EntityId; recipe: (draft: Draft<T>) => void }>,
@@ -72,7 +72,7 @@ export function createUpdateMany<T extends Entity>(
 
                 for (const fetched of data) {
                     if (!fetched) continue
-                    const processed = await clientRuntime.dataProcessor.writeback(handle, fetched as T, opContext)
+                    const processed = await clientRuntime.transform.writeback(handle, fetched as T, opContext)
                     if (!processed) continue
                     const id = (processed as any).id as EntityId
                     baseById.set(id, processed as any)
@@ -128,7 +128,7 @@ export function createUpdateMany<T extends Entity>(
             const id = entry.id
             const validObj = entry.value
 
-            const { ticket } = clientRuntime.mutation.api.beginWrite()
+            const { ticket } = clientRuntime.mutation.begin()
 
             const resultPromise = new Promise<T>((resolve, reject) => {
                 write.dispatch<T>({
@@ -156,7 +156,7 @@ export function createUpdateMany<T extends Entity>(
                     })()
                     : Promise.all([
                         resultPromise,
-                        clientRuntime.mutation.api.awaitTicket(ticket, options)
+                        clientRuntime.mutation.await(ticket, options)
                     ]).then(([value]) => value)
                 ).then((value) => {
                     results[index] = { index, ok: true, value }

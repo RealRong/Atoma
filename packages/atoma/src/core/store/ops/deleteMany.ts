@@ -9,7 +9,7 @@ export function createDeleteMany<T extends Entity>(
     handle: StoreHandle<T>
 ) {
     const { jotaiStore, atom } = handle
-    const write = clientRuntime.storeWrite
+    const write = clientRuntime.write
 
     return async (ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
         const opContext = write.ensureActionId(options?.opContext)
@@ -63,7 +63,7 @@ export function createDeleteMany<T extends Entity>(
 
                 for (const fetched of data) {
                     if (!fetched) continue
-                    const processed = await clientRuntime.dataProcessor.writeback(handle, fetched as T, opContext)
+                    const processed = await clientRuntime.transform.writeback(handle, fetched as T, opContext)
                     if (!processed) continue
                     const id = (processed as any).id as EntityId
                     hydratedIds.add(id)
@@ -107,7 +107,7 @@ export function createDeleteMany<T extends Entity>(
                 }
                 continue
             }
-            const { ticket } = clientRuntime.mutation.api.beginWrite()
+            const { ticket } = clientRuntime.mutation.begin()
 
             const resultPromise = new Promise<boolean>((resolve, reject) => {
                 write.dispatch<T>({
@@ -129,7 +129,7 @@ export function createDeleteMany<T extends Entity>(
                         return resultPromise
                     })()
                     : Promise.all([
-                        clientRuntime.mutation.api.awaitTicket(ticket, options),
+                        clientRuntime.mutation.await(ticket, options),
                         resultPromise
                     ]).then(([_awaited, value]) => value)
                 ).then((value) => {
