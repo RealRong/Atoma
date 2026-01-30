@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { EntityId } from '#protocol'
+import type { EntityId } from 'atoma-protocol'
 import { buildRestoreWriteItemsFromPatches, buildWriteIntentsFromPatches } from '../../packages/atoma/src/core/mutation/pipeline/WriteIntents'
 import { translateWriteIntentsToOps } from '../../packages/atoma/src/core/mutation/pipeline/WriteOps'
 

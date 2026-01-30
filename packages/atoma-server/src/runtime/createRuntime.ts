@@ -1,7 +1,7 @@
-import { Observability } from 'atoma/observability'
+import { Observability } from 'atoma-observability'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import { createNoopLogger } from '../logger'
-import type { ObservabilityContext } from 'atoma/observability'
+import type { ObservabilityContext } from 'atoma-observability'
 
 function createDefaultRequestId() {
     const cryptoAny = globalThis.crypto as any

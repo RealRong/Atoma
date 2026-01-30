@@ -1,6 +1,6 @@
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma/backend'
-import type { ChangeBatch, Operation, OperationResult, Query, QueryResultData, StandardError, WriteAction, WriteItem, WriteOptions, WriteResultData } from 'atoma/protocol'
-import { executeLocalQuery } from 'atoma/core'
+import type { ChangeBatch, Operation, OperationResult, Query, QueryResultData, StandardError, WriteAction, WriteItem, WriteOptions, WriteResultData } from 'atoma-protocol'
+import { executeLocalQuery } from 'atoma-core'
 
 type ResourceStore = Map<string, any>
 

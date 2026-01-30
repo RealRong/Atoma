@@ -8,7 +8,7 @@ export {
     hydrateStore
 } from './bindings'
 
-export { registerClientRuntime, getClientRuntime, requireClientRuntime } from './runtimeRegistry'
+export { registerClientRuntime, getClientRuntime, requireClientRuntime } from 'atoma-client'
 
 export type { StoreFacade } from './storeFacade'
 export { assertStoreFacade } from './storeFacade'

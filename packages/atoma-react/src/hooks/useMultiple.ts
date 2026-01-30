@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { Entity, RelationIncludeInput, StoreApi, WithRelations } from 'atoma/core'
+import type { Entity, RelationIncludeInput, StoreApi, WithRelations } from 'atoma-core'
 import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'

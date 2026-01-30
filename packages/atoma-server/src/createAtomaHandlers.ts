@@ -5,7 +5,7 @@ import { createTopLevelErrorFormatter } from './runtime/errors'
 import { readJsonBodyWithLimit } from './runtime/http'
 import { createOpsExecutor } from './ops/opsExecutor'
 import { createSubscribeExecutor } from './ops/subscribeExecutor'
-import { zod } from 'atoma/shared'
+import { zod } from 'atoma-shared'
 
 const { parseOrThrow, z } = zod
 

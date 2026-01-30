@@ -1,5 +1,5 @@
-import type { ClientPluginContext } from 'atoma/client'
-import type { Change, EntityId } from 'atoma/protocol'
+import type { ClientPluginContext } from 'atoma-client'
+import type { Change, EntityId } from 'atoma-protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync/types'
 
 function idempotencyKeyFromWriteItem(item: unknown): string | undefined {

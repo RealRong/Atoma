@@ -1,13 +1,13 @@
 import { byteLengthUtf8, throwError, toStandardError } from '../../error'
 import type { AtomaOpPlugin, AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerConfig, AtomaServerRoute } from '../../config'
 import type { ServerRuntime } from '../../runtime/createRuntime'
-import { Protocol } from 'atoma/protocol'
+import { Protocol } from 'atoma-protocol'
 import type {
     ChangesPullOp,
     OperationResult,
     QueryOp,
     WriteOp
-} from 'atoma/protocol'
+} from 'atoma-protocol'
 import type { IOrmAdapter } from '../../adapters/ports'
 import { clampQueryLimit, ensureProtocolVersion, normalizeOpsRequest, parseCursor } from './normalize'
 import { executeQueryOps } from './query'

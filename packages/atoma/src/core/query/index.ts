@@ -1,5 +1,0 @@
-export { executeLocalQuery } from './engine/local'
-export { normalizeQuery, normalizeSort } from './normalize'
-export { encodeCursorToken, decodeCursorToken } from './cursor'
-export { QueryMatcher, type QueryMatcherOptions } from './QueryMatcher'
-export { stableStringify } from '#shared'

@@ -7,7 +7,7 @@ import type {
     RelationIncludeInput,
     WithRelations,
     StoreApi
-} from 'atoma/core'
+} from 'atoma-core'
 import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'

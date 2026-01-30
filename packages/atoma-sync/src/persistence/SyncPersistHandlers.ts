@@ -1,6 +1,6 @@
-import type { ClientPluginContext } from 'atoma/client'
-import type { Entity, PersistRequest, PersistResult } from 'atoma/core'
-import type { WriteAction, WriteItem, WriteOptions } from 'atoma/protocol'
+import type { ClientPluginContext } from 'atoma-client'
+import type { Entity, PersistRequest, PersistResult } from 'atoma-core'
+import type { WriteAction, WriteItem, WriteOptions } from 'atoma-protocol'
 import type { OutboxStore, OutboxWrite } from '#sync/types'
 
 function mapTranslatedWriteOpsToOutboxWrites(writeOps: PersistRequest<any>['writeOps']): OutboxWrite[] {

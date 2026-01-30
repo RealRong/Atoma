@@ -1,5 +1,5 @@
-import type { ClientPluginContext } from 'atoma/client'
-import type { WriteItemResult, WriteResultData } from 'atoma/protocol'
+import type { ClientPluginContext } from 'atoma-client'
+import type { WriteItemResult, WriteResultData } from 'atoma-protocol'
 import type { SyncPushOutcome, SyncSubscribe, SyncTransport } from '#sync/types'
 
 export class RemoteTransport implements SyncTransport {

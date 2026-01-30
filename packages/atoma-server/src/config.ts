@@ -1,4 +1,4 @@
-import type { DebugConfig, DebugEvent } from 'atoma/observability'
+import type { DebugConfig, DebugEvent } from 'atoma-observability'
 import type { AtomaServerLogger } from './logger'
 import type { IOrmAdapter, ISyncAdapter } from './adapters/ports'
 

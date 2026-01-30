@@ -1,4 +1,4 @@
-import type { ClientPlugin, ClientPluginContext } from 'atoma/client'
+import type { ClientPlugin, ClientPluginContext } from 'atoma-client'
 import type { ClientMeta, HistoryProvider, SyncProvider } from './types'
 import { createClientInspector } from './createClientInspector'
 import { attachHistoryProvider, attachSyncProvider } from './runtimeAdapter'

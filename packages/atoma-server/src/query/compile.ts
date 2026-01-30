@@ -1,4 +1,4 @@
-import type { FilterExpr } from 'atoma/protocol'
+import type { FilterExpr } from 'atoma-protocol'
 
 type SqlFilter = { sql: string; params: Record<string, any> }
 

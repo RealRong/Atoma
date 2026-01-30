@@ -4,20 +4,14 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
     resolve: {
         alias: [
-            { find: /^#client$/, replacement: path.resolve(__dirname, 'packages/atoma/src/client/index.ts') },
-            { find: /^#client\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma/src/client/$1') },
+            { find: /^#client$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/index.ts') },
+            { find: /^#client\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/$1') },
 
-            { find: /^#core$/, replacement: path.resolve(__dirname, 'packages/atoma/src/core/index.ts') },
-            { find: /^#core\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma/src/core/$1') },
-
-            { find: /^#shared$/, replacement: path.resolve(__dirname, 'packages/atoma/src/shared/index.ts') },
-            { find: /^#shared\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma/src/shared/$1') },
-
-            { find: /^#observability$/, replacement: path.resolve(__dirname, 'packages/atoma/src/observability/index.ts') },
-            { find: /^#observability\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma/src/observability/$1') },
-
-            { find: /^#protocol$/, replacement: path.resolve(__dirname, 'packages/atoma/src/protocol/index.ts') },
-            { find: /^#protocol\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma/src/protocol/$1') },
+            { find: /^atoma-client$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/index.ts') },
+            { find: /^atoma-core$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/index.ts') },
+            { find: /^atoma-shared$/, replacement: path.resolve(__dirname, 'packages/atoma-shared/src/index.ts') },
+            { find: /^atoma-observability$/, replacement: path.resolve(__dirname, 'packages/atoma-observability/src/index.ts') },
+            { find: /^atoma-protocol$/, replacement: path.resolve(__dirname, 'packages/atoma-protocol/src/index.ts') },
 
             { find: /^atoma-sync$/, replacement: path.resolve(__dirname, 'packages/atoma-sync/src/index.ts') },
             { find: /^atoma-sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma-sync/src/$1') },

@@ -1,6 +1,6 @@
 import { useRef, useSyncExternalStore } from 'react'
-import type { Entity, StoreApi } from 'atoma/core'
-import type { EntityId } from 'atoma/protocol'
+import type { Entity, StoreApi } from 'atoma-core'
+import type { EntityId } from 'atoma-protocol'
 import { getStoreSource } from 'atoma/internal'
 import { requireStoreOwner } from './storeInternal'
 

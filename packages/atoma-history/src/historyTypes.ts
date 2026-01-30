@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type { OperationContext } from 'atoma/core'
+import type { OperationContext } from 'atoma-core'
 
 export type ChangeRecord = Readonly<{
     storeName: string

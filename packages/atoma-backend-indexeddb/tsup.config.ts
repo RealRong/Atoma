@@ -12,11 +12,11 @@ export default defineConfig({
     treeshake: true,
     external: [
         'atoma',
-        'atoma/client',
-        'atoma/core',
-        'atoma/shared',
-        'atoma/observability',
-        'atoma/protocol',
+        'atoma-client',
+        'atoma-core',
+        'atoma-shared',
+        'atoma-observability',
+        'atoma-protocol',
         'atoma/backend',
         'dexie'
     ]

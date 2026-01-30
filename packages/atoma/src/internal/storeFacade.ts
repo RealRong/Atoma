@@ -1,5 +1,5 @@
-import type { Entity, StoreApi } from '#core'
-import type { AtomaClient } from '#client/types'
+import type { Entity, StoreApi } from 'atoma-core'
+import type { AtomaClient } from 'atoma-client'
 
 export type StoreFacade<T extends Entity = any, Relations = any> =
     & StoreApi<T, Relations>
@@ -25,4 +25,3 @@ export function assertStoreFacade<T extends Entity, Relations>(
 
     return store as unknown as StoreFacade<T, Relations>
 }
-

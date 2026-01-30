@@ -1,4 +1,4 @@
-import type { ClientPlugin, ClientPluginContext, PluginCapableClient } from 'atoma/client'
+import type { ClientPlugin, ClientPluginContext, PluginCapableClient } from 'atoma-client'
 import type { SyncBackoffConfig, SyncClient, SyncEvent, SyncMode, SyncPhase, SyncRetryConfig, SyncRuntimeConfig, SyncSubscribe, SyncTransport } from '#sync/types'
 import { SyncEngine } from '#sync/engine/SyncEngine'
 import { createStores } from '#sync/storage'

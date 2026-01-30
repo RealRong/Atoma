@@ -1,5 +1,5 @@
 import type { Table } from 'dexie'
-import { executeLocalQuery } from 'atoma/core'
+import { executeLocalQuery } from 'atoma-core'
 import type {
     ChangeBatch,
     Operation,
@@ -11,9 +11,9 @@ import type {
     WriteItem,
     WriteOptions,
     WriteResultData
-} from 'atoma/protocol'
+} from 'atoma-protocol'
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma/backend'
-import { zod } from 'atoma/shared'
+import { zod } from 'atoma-shared'
 
 const { parseOrThrow, z } = zod
 

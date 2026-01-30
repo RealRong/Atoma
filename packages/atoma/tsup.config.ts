@@ -19,32 +19,22 @@ export default defineConfig({
     clean: true,
     treeshake: true,
     esbuildOptions(options) {
-        // Avoid `alias` here: tsup/esbuild may treat aliases as prefixes, which breaks `#client/...` resolution.
-        // Resolve both exact `#client` and subpaths `#client/*` (and other `#xxx`) via a small resolver.
+        // Avoid `alias` here: tsup/esbuild may treat aliases as prefixes, which breaks hash-import resolution.
+        // Resolve exact `#backend` and subpaths `#backend/*` via a small resolver.
         options.plugins = [
             ...(options.plugins ?? []),
             {
                 name: 'atoma-hash-alias-subpaths',
                 setup(build) {
                     const exact: Record<string, string> = {
-                        '#client': path.resolve(__dirname, 'src/client/index.ts'),
-                        '#core': path.resolve(__dirname, 'src/core/index.ts'),
-                        '#shared': path.resolve(__dirname, 'src/shared/index.ts'),
-                        '#observability': path.resolve(__dirname, 'src/observability/index.ts'),
-                        '#protocol': path.resolve(__dirname, 'src/protocol/index.ts'),
                         '#backend': path.resolve(__dirname, 'src/backend/index.ts'),
                     }
 
                     const map: Record<string, string> = {
-                        '#client/': path.resolve(__dirname, 'src/client/'),
-                        '#core/': path.resolve(__dirname, 'src/core/'),
-                        '#shared/': path.resolve(__dirname, 'src/shared/'),
-                        '#observability/': path.resolve(__dirname, 'src/observability/'),
-                        '#protocol/': path.resolve(__dirname, 'src/protocol/'),
                         '#backend/': path.resolve(__dirname, 'src/backend/'),
                     }
 
-                    build.onResolve({ filter: /^#(client|core|shared|observability|protocol|backend)(\/.*)?$/ }, (args) => {
+                    build.onResolve({ filter: /^#(backend)(\/.*)?$/ }, (args) => {
                         const direct = exact[args.path]
                         if (direct) return { path: direct }
 
@@ -60,6 +50,11 @@ export default defineConfig({
         ]
     },
     external: [
+        'atoma-client',
+        'atoma-core',
+        'atoma-shared',
+        'atoma-protocol',
+        'atoma-observability',
         'react',
         'jotai',
         'jotai/utils',

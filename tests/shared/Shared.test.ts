@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { stableStringify, entityId, immer, version, writeOptions } from '#shared'
+import { stableStringify, entityId, immer, version, writeOptions } from 'atoma-shared'
 
 describe('Shared', () => {
     it('stableStringify 对对象 key 做稳定排序', () => {

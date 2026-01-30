@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { Entity, WithRelations, RelationIncludeInput, StoreApi } from 'atoma/core'
+import type { Entity, WithRelations, RelationIncludeInput, StoreApi } from 'atoma-core'
 import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useStoreSelector } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'

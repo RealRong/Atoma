@@ -12,8 +12,6 @@
         "outDir": "dist"
     },
     "include": [
-        "src",
-        "vite.config.ts",
-        "tailwind.config.ts"
+        "src/index.ts"
     ]
 }

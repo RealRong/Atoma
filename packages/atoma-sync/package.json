@@ -21,6 +21,9 @@
     },
     "dependencies": {
         "atoma": "workspace:*",
+        "atoma-client": "workspace:*",
+        "atoma-core": "workspace:*",
+        "atoma-protocol": "workspace:*",
         "idb": "^8.0.3"
     }
 }

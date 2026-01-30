@@ -1,7 +1,7 @@
-import type { Entity, StoreApi, StoreToken } from '#core'
-import type { EntityId } from '#protocol'
-import type { AtomaClient } from '#client/types'
-import { requireClientRuntime } from './runtimeRegistry'
+import type { Entity, StoreApi, StoreToken } from 'atoma-core'
+import type { EntityId } from 'atoma-protocol'
+import type { AtomaClient } from 'atoma-client'
+import { requireClientRuntime } from 'atoma-client'
 
 export type StoreSource<T extends Entity> = Readonly<{
     getSnapshot: () => ReadonlyMap<EntityId, T>

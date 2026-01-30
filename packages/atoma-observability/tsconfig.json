@@ -1,0 +1,16 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "baseUrl": ".",
+        "noEmit": true,
+        "resolvePackageJsonImports": true,
+        "resolvePackageJsonExports": true,
+        "customConditions": ["source"],
+        "paths": {
+            "#observability": ["src/index.ts"],
+            "#observability/*": ["src/*"]
+        }
+    },
+    "include": ["src/**/*"],
+    "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

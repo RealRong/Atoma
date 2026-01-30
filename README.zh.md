@@ -2,7 +2,7 @@
 
 基于 Jotai + Immer 的原子化状态管理与通用持久化方案。
 
-[English README](./README.md) · [端到端架构](./ARCHITECTURE_END_TO_END.zh.md) 
+[English README](./README.md) · [分层架构重设计](./ARCHITECTURE_LAYERED_REDESIGN.zh.md) 
 
 ## 解决什么问题
 
@@ -26,16 +26,13 @@ Peer 依赖：
 ## 快速开始（client + React）
 
 ```ts
-import { createClient } from 'atoma'
+import { createClient } from 'atoma/client'
 import { useFindMany } from 'atoma-react'
 
 type User = { id: string; name: string; version?: number }
 
 const client = createClient<{ users: User }>({
-    store: {
-        type: 'http',
-        url: 'http://localhost:3000/api'
-    }
+    backend: 'http://localhost:3000/api'
 })
 
 export function Users() {
@@ -47,6 +44,12 @@ export function Users() {
 }
 ```
 
+## 客户端配置（新版）
+
+- `backend: string | { baseURL }` 是默认 HTTP 插件的显式预设语法。
+- `plugins: ClientPlugin[]` 是主要扩展面（io/persist/read/observe 处理器链）。
+- 插件仅在初始化时装配，**不再提供 `client.use`**。
+
 ## 协议（ops + sync）
 
 - Ops：`POST /ops`
@@ -56,7 +59,7 @@ export function Users() {
   - ops：`op.meta.traceId` / `op.meta.requestId`（op-scoped，支持 batch mixed trace）
   - subscribe（SSE）：URL query `traceId` / `requestId`（用于无 body 的 GET/SSE）
 
-以上都由 `#protocol`（`src/protocol/*`）统一定义，client 与 server 共享同一份 parse/compose/type。
+以上都由 `atoma-protocol` 包统一定义，client 与 server 共享同一份 parse/compose/type。
 
 ## Server
 
@@ -84,11 +87,9 @@ export async function POST(req: Request) {
 
 Express/Koa 的“宿主侧适配”参考：`demo/zero-config/src/server/index.ts`。
 
-## 文档与示例
+## 文档
 
-- 文档站：`docs/`
-- Demo：`demo/`
-- Zero-config demo：`demo/zero-config/`
+- 架构：`ARCHITECTURE_LAYERED_REDESIGN.zh.md`
 
 ## 开发与测试
 

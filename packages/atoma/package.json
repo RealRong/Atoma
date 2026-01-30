@@ -42,22 +42,6 @@
         }
     },
     "imports": {
-        "#core": {
-            "source": "./src/core/index.ts",
-            "default": "./dist/core/index.js"
-        },
-        "#shared": {
-            "source": "./src/shared/index.ts",
-            "default": "./dist/shared/index.js"
-        },
-        "#observability": {
-            "source": "./src/observability/index.ts",
-            "default": "./dist/observability/index.js"
-        },
-        "#protocol": {
-            "source": "./src/protocol/index.ts",
-            "default": "./dist/protocol/index.js"
-        },
         "#backend": {
             "source": "./src/backend/index.ts",
             "default": "./dist/backend/index.js"
@@ -73,6 +57,11 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
+        "atoma-client": "workspace:*",
+        "atoma-core": "workspace:*",
+        "atoma-shared": "workspace:*",
+        "atoma-protocol": "workspace:*",
+        "atoma-observability": "workspace:*",
         "lodash": "^4.17.21",
         "mitt": "^3.0.1",
         "p-limit": "^7.2.0",

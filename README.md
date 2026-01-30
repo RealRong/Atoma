@@ -2,7 +2,7 @@
 
 Atomic state management with universal persistence — built on Jotai and Immer.
 
-[中文 README](./README.zh.md) · [End-to-end architecture](./ARCHITECTURE_END_TO_END.zh.md) 
+[中文 README](./README.zh.md) · [Layered architecture redesign](./ARCHITECTURE_LAYERED_REDESIGN.zh.md) 
 
 ## Why Atoma
 
@@ -26,16 +26,13 @@ Peer deps:
 ## Quick start (client + React)
 
 ```ts
-import { createClient } from 'atoma'
+import { createClient } from 'atoma/client'
 import { useFindMany } from 'atoma-react'
 
 type User = { id: string; name: string; version?: number }
 
 const client = createClient<{ users: User }>({
-    store: {
-        type: 'http',
-        url: 'http://localhost:3000/api'
-    }
+    backend: 'http://localhost:3000/api'
 })
 
 export function Users() {
@@ -47,6 +44,12 @@ export function Users() {
 }
 ```
 
+## Client config (new)
+
+- `backend: string | { baseURL }` is a shorthand for installing the default HTTP plugin.
+- `plugins: ClientPlugin[]` is the primary extension surface (io/persist/read/observe handler chains).
+- Plugins are assembled **at initialization**; `client.use` is intentionally removed.
+
 ## Remote protocol (ops + sync)
 
 - Ops endpoint: `POST /ops`
@@ -56,7 +59,7 @@ export function Users() {
   - ops: `op.meta.traceId` / `op.meta.requestId` (op-scoped; supports mixed-trace batches)
   - subscribe (SSE): URL query `traceId` / `requestId` (for GET/SSE without JSON body)
 
-All of the above are defined by the shared `#protocol` module (`src/protocol/*`), used by both client and server.
+All of the above are defined by the shared `atoma-protocol` package, used by both client and server.
 
 ## Server (protocol core)
 
@@ -84,11 +87,9 @@ export async function POST(req: Request) {
 
 For Express/Koa, see the demo adapter pattern in `demo/zero-config/src/server/index.ts`.
 
-## Docs & demos
+## Docs
 
-- Docs site: `docs/`
-- Demo app: `demo/`
-- Zero-config demo: `demo/zero-config/`
+- Architecture: `ARCHITECTURE_LAYERED_REDESIGN.zh.md`
 
 ## Contributing
 

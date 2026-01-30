@@ -1,4 +1,3 @@
-export { createMemoryBackend } from './createMemoryBackend'
-export type { CreateMemoryBackendOptions } from './createMemoryBackend'
+export { createMemoryEndpoint } from './createMemoryEndpoint'
+export type { CreateMemoryEndpointOptions } from './createMemoryEndpoint'
 export { MemoryOpsClient } from './MemoryOpsClient'
-

@@ -1,16 +1,13 @@
-export { mountAtomaDevTools, unmountAtomaDevTools } from './mount'
-export type { MountAtomaDevToolsOptions, MountedAtomaDevTools } from './mount'
+import { ClientPlugin } from 'atoma-client'
 
-export { Devtools } from './runtime'
-export { devtoolsPlugin } from './runtime/plugin'
+class DisabledDevtoolsPlugin extends ClientPlugin {
+    readonly id = 'devtools:disabled'
 
-export type {
-    DevtoolsStoreSnapshot,
-    DevtoolsIndexManagerSnapshot,
-    DevtoolsSyncSnapshot,
-    DevtoolsHistorySnapshot,
-    DevtoolsClientSnapshot,
-    DevtoolsEvent,
-    DevtoolsClientInspector,
-    DevtoolsGlobalInspector,
-} from './runtime'
+    setup(): void {
+        throw new Error('[atoma-devtools] 已迁移到新的插件架构，此包尚未完成适配')
+    }
+}
+
+export function devtoolsPlugin(): ClientPlugin {
+    return new DisabledDevtoolsPlugin()
+}

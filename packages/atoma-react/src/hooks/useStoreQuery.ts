@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { Core } from 'atoma/core'
-import type { Entity, Query, StoreApi } from 'atoma/core'
+import { Core } from 'atoma-core'
+import type { Entity, Query, StoreApi } from 'atoma-core'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 import { getStoreIndexes, getStoreMatcher } from 'atoma/internal'
 import { requireStoreOwner } from './internal/storeInternal'

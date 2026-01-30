@@ -4,7 +4,7 @@ import type {
     Cursor,
     Meta,
     WriteItemResult,
-} from 'atoma/protocol'
+} from 'atoma-protocol'
 
 export type OutboxWrite = {
     resource: string
@@ -110,15 +110,15 @@ export interface CursorStore {
 
 export type SyncWriteAck = {
     resource: string
-    action: import('atoma/protocol').WriteAction
-    item: import('atoma/protocol').WriteItem
+    action: import('atoma-protocol').WriteAction
+    item: import('atoma-protocol').WriteItem
     result: Extract<WriteItemResult, { ok: true }>
 }
 
 export type SyncWriteReject = {
     resource: string
-    action: import('atoma/protocol').WriteAction
-    item: import('atoma/protocol').WriteItem
+    action: import('atoma-protocol').WriteAction
+    item: import('atoma-protocol').WriteItem
     result: Extract<WriteItemResult, { ok: false }>
 }
 

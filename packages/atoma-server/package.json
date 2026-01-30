@@ -29,7 +29,10 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma": "workspace:*"
+        "atoma": "workspace:*",
+        "atoma-shared": "workspace:*",
+        "atoma-protocol": "workspace:*",
+        "atoma-observability": "workspace:*"
     },
     "peerDependencies": {
         "@prisma/client": "^5.0.0",

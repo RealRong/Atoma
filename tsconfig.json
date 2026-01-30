@@ -27,17 +27,23 @@
       "atoma/client": [
         "packages/atoma/src/client/index.ts"
       ],
+      "atoma-client": [
+        "packages/atoma-client/src/index.ts"
+      ],
       "atoma/core": [
         "packages/atoma/src/core/index.ts"
       ],
-      "atoma/core/*": [
-        "packages/atoma/src/core/*"
+      "atoma-core": [
+        "packages/atoma-core/src/index.ts"
       ],
       "atoma/shared": [
         "packages/atoma/src/shared/index.ts"
       ],
-      "atoma/shared/*": [
-        "packages/atoma/src/shared/*"
+      "atoma-shared": [
+        "packages/atoma-shared/src/index.ts"
+      ],
+      "atoma-shared/*": [
+        "packages/atoma-shared/src/*"
       ],
       "atoma/observability": [
         "packages/atoma/src/observability/index.ts"
@@ -45,11 +51,20 @@
       "atoma/observability/*": [
         "packages/atoma/src/observability/*"
       ],
+      "atoma-observability": [
+        "packages/atoma-observability/src/index.ts"
+      ],
+      "atoma-observability/*": [
+        "packages/atoma-observability/src/*"
+      ],
       "atoma/protocol": [
         "packages/atoma/src/protocol/index.ts"
       ],
-      "atoma/protocol/*": [
-        "packages/atoma/src/protocol/*"
+      "atoma-protocol": [
+        "packages/atoma-protocol/src/index.ts"
+      ],
+      "atoma-protocol/*": [
+        "packages/atoma-protocol/src/*"
       ],
       "atoma/backend": [
         "packages/atoma/src/backend/index.ts"
@@ -57,41 +72,17 @@
       "atoma/backend/*": [
         "packages/atoma/src/backend/*"
       ],
-      "#client": [
-        "packages/atoma/src/client/index.ts"
-      ],
-      "#client/*": [
-        "packages/atoma/src/client/*"
-      ],
-      "#core": [
-        "packages/atoma/src/core/index.ts"
-      ],
-      "#core/*": [
-        "packages/atoma/src/core/*"
-      ],
-      "#shared": [
-        "packages/atoma/src/shared/index.ts"
-      ],
-      "#shared/*": [
-        "packages/atoma/src/shared/*"
-      ],
-      "#observability": [
-        "packages/atoma/src/observability/index.ts"
-      ],
-      "#observability/*": [
-        "packages/atoma/src/observability/*"
-      ],
-      "#protocol": [
-        "packages/atoma/src/protocol/index.ts"
-      ],
-      "#protocol/*": [
-        "packages/atoma/src/protocol/*"
-      ],
       "#backend": [
         "packages/atoma/src/backend/index.ts"
       ],
       "#backend/*": [
         "packages/atoma/src/backend/*"
+      ],
+      "#client": [
+        "packages/atoma-client/src/index.ts"
+      ],
+      "#client/*": [
+        "packages/atoma-client/src/*"
       ],
       "#sync/*": [
         "packages/atoma-sync/src/*"
@@ -105,7 +96,12 @@
     "jsx": "react-jsx"
   },
   "include": [
-    "packages/atoma/src/**/*"
+    "packages/atoma/src/**/*",
+    "packages/atoma-client/src/**/*",
+    "packages/atoma-core/src/**/*",
+    "packages/atoma-shared/src/**/*",
+    "packages/atoma-protocol/src/**/*",
+    "packages/atoma-observability/src/**/*"
   ],
   "exclude": [
     "node_modules",

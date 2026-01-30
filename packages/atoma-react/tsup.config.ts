@@ -13,11 +13,11 @@ export default defineConfig({
     external: [
         'react',
         'atoma',
-        'atoma/client',
-        'atoma/core',
-        'atoma/shared',
-        'atoma/observability',
-        'atoma/protocol',
+        'atoma-client',
+        'atoma-core',
+        'atoma-shared',
+        'atoma-observability',
+        'atoma-protocol',
         'atoma/backend',
     ]
 })

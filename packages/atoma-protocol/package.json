@@ -1,0 +1,25 @@
+{
+    "name": "atoma-protocol",
+    "version": "0.0.0",
+    "type": "module",
+    "description": "Atoma protocol types and ops utilities",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "source": "./src/index.ts"
+        }
+    },
+    "imports": {
+        "#protocol": "./src/index.ts",
+        "#protocol/*": "./src/*"
+    },
+    "scripts": {
+        "build": "tsup",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {}
+}

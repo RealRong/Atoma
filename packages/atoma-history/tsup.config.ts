@@ -43,11 +43,11 @@ export default defineConfig({
     },
     external: [
         'atoma',
-        'atoma/client',
-        'atoma/core',
-        'atoma/shared',
-        'atoma/observability',
-        'atoma/protocol',
+        'atoma-client',
+        'atoma-core',
+        'atoma-shared',
+        'atoma-observability',
+        'atoma-protocol',
         'atoma/backend',
     ]
 })

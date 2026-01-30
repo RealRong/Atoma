@@ -1,5 +1,5 @@
 import type { CursorStore } from '#sync/types'
-import type { Cursor } from 'atoma/protocol'
+import type { Cursor } from 'atoma-protocol'
 
 export { AbortError, isAbortError } from '#sync/internal/abort'
 export { sleepMs } from '#sync/internal/sleep'

@@ -1,4 +1,4 @@
-import type { ClientRuntime } from 'atoma/client'
+import type { ClientRuntime } from 'atoma-client'
 import type { ClientMeta, DevtoolsClientInspector, HistoryProvider, SyncProvider } from './types'
 import { inspectorForEntry } from './inspector'
 import { ensureEntry, removeEntryById } from './registry'

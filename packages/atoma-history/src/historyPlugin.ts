@@ -1,5 +1,5 @@
-import type { ClientPlugin } from 'atoma/client'
-import type { AtomaHistory } from 'atoma/client'
+import type { ClientPlugin } from 'atoma-client'
+import type { AtomaHistory } from 'atoma-client'
 import type { HistoryApplyArgs } from './HistoryManager'
 import { HistoryManager } from './HistoryManager'
 

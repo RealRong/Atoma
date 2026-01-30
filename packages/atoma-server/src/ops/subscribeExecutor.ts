@@ -2,7 +2,7 @@ import { throwError } from '../error'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import type { ServerRuntime } from '../runtime/createRuntime'
 import type { HandleResult } from '../runtime/http'
-import { Protocol } from 'atoma/protocol'
+import { Protocol } from 'atoma-protocol'
 
 function parseResourcesQuery(urlObj: URL): string[] | undefined {
     const values = urlObj.searchParams.getAll('resources')

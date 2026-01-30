@@ -1,6 +1,6 @@
 import { throwError } from '../../error'
-import { Protocol } from 'atoma/protocol'
-import type { Meta, Operation, OpsRequest, StandardErrorDetails } from 'atoma/protocol'
+import { Protocol } from 'atoma-protocol'
+import type { Meta, Operation, OpsRequest, StandardErrorDetails } from 'atoma-protocol'
 import type { Query } from '../../adapters/ports'
 
 type JsonObject = Record<string, unknown>

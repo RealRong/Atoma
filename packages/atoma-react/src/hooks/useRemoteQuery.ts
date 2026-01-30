@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Entity, PageInfo, Query, StoreApi } from 'atoma/core'
-import { Core } from 'atoma/core'
+import type { Entity, PageInfo, Query, StoreApi } from 'atoma-core'
+import { Core } from 'atoma-core'
 import { getStoreRuntimeKey, requireStoreOwner } from './internal/storeInternal'
 
 type RemoteState<T extends Entity> = Readonly<{
