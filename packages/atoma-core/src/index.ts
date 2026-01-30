@@ -39,7 +39,7 @@ export {
 
 export { executeLocalQuery } from './query'
 export { createRuntimeIo } from './runtime'
-export { DataProcessor } from './store/internals/dataProcessor'
+export { DataProcessor as RuntimeDataProcessor } from './store/internals/dataProcessor'
 export type { StoreHandle } from './store/internals/handleTypes'
 export { createStoreHandle } from './store/internals/storeHandleManager'
 export { StoreStateWriter } from './store/internals/StoreStateWriter'

@@ -5,11 +5,10 @@ export { EndpointRegistry } from './drivers/EndpointRegistry'
 export { PluginRegistry } from './plugins/PluginRegistry'
 export { HandlerChain } from './plugins/HandlerChain'
 export { RuntimeCore } from './runtime/RuntimeCore'
-export { ClientPlugin as PluginBase } from './plugins/ClientPlugin'
+export { ClientPlugin, ClientPlugin as PluginBase } from './plugins/ClientPlugin'
 export { registerClientRuntime, getClientRuntime, requireClientRuntime } from './internal/runtimeRegistry'
 
 export type {
-    ClientPlugin,
     PersistHandler,
     ReadHandler,
     ObserveHandler,
@@ -35,5 +34,6 @@ export type {
     ExecuteOpsInput,
     ExecuteOpsOutput,
     OpsClientLike,
-    HttpOpsClientConfig
 } from './backend/types'
+
+export type { HttpOpsClientConfig } from './backend/http/HttpOpsClient'

@@ -18,7 +18,7 @@ import type { EntityId } from 'atoma-protocol'
 import type { AtomaSchema } from '#client/types'
 import { Protocol } from 'atoma-protocol'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
-import { DataProcessor, MutationPipeline, createRuntimeIo } from 'atoma-core'
+import { MutationPipeline, RuntimeDataProcessor, createRuntimeIo } from 'atoma-core'
 import { createLocalRuntimeIo } from './io/RuntimeIoLocal'
 import { PersistenceRouter } from './persistence'
 import { ClientRuntimeObservability } from './ClientRuntimeObservability'
@@ -79,7 +79,7 @@ export class ClientRuntime implements ClientRuntimeInternal {
         this.observe = config.observe ?? new ClientRuntimeObservability()
 
         // Transform/DataProcessor (needs runtime reference)
-        this.transform = new DataProcessor(() => this)
+        this.transform = new RuntimeDataProcessor(() => this)
 
         // Mutation pipeline (needs runtime reference)
         const mutationPipeline = new MutationPipeline(this)

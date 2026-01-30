@@ -8,7 +8,7 @@ export class HandlerChain {
     }
 
     execute = async <TReq, TCtx, TRes>(req: TReq, ctx: TCtx): Promise<TRes> => {
-        const handlers = this.entries.map(entry => entry.handler) as Array<(
+        const handlers = this.entries.map(entry => entry.handler) as unknown as Array<(
             req: TReq,
             ctx: TCtx,
             next: () => Promise<TRes>

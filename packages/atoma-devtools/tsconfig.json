@@ -2,6 +2,9 @@
     "extends": "../../tsconfig.base.json",
     "compilerOptions": {
         "jsx": "react-jsx",
+        "resolvePackageJsonImports": true,
+        "resolvePackageJsonExports": true,
+        "customConditions": ["source"],
         "types": [
             "node",
             "vite/client"

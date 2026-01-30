@@ -7,7 +7,6 @@
             "atoma/client": ["src/client/index.ts"],
             "atoma/core": ["src/core/index.ts"],
             "atoma/shared": ["src/shared/index.ts"],
-            "atoma-client": ["../atoma-client/src/index.ts"],
             "atoma-core": ["../atoma-core/src/index.ts"],
             "atoma-shared": ["../atoma-shared/src/index.ts"],
             "atoma-shared/*": ["../atoma-shared/src/*"],
@@ -22,7 +21,9 @@
             "atoma/backend/*": ["src/backend/*"],
 
             "#backend": ["src/backend/index.ts"],
-            "#backend/*": ["src/backend/*"]
+            "#backend/*": ["src/backend/*"],
+            "#client": ["../atoma-client/src/index.ts"],
+            "#client/*": ["../atoma-client/src/*"]
         },
         "resolvePackageJsonImports": true,
         "customConditions": ["source"],
