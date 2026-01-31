@@ -1,10 +1,10 @@
 import { atom } from 'jotai/vanilla'
-import type { Entity, IStore, StoreApi, StoreDataProcessor, StoreRegistry, StoreToken } from 'atoma-core'
+import type { Entity, IStore, StoreApi, StoreDataProcessor, StoreToken } from 'atoma-core'
+import type { StoreHandle, StoreRegistry } from 'atoma-runtime'
 import type { EntityId } from 'atoma-protocol'
 import type { AtomaSchema } from '#client/types'
 import { StoreConfigResolver } from '#client/internal/runtime/StoreConfigResolver'
-import { createStoreHandle } from 'atoma-core'
-import type { StoreHandle } from 'atoma-core'
+import { createStoreHandle } from 'atoma-runtime'
 import type { ClientRuntimeInternal } from '#client/internal/types'
 import {
     createAddMany,
@@ -21,7 +21,7 @@ import {
     createUpdateOne,
     createUpsertMany,
     createUpsertOne
-} from 'atoma-core'
+} from 'atoma-runtime'
 
 type StoreListener = (store: StoreApi<any, any> & { name: string }) => void
 

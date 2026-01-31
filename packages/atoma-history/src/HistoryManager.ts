@@ -1,6 +1,6 @@
 import type { Patch } from 'immer'
 import type { OperationContext } from 'atoma-core'
-import { Core } from 'atoma-core'
+import { createActionId } from 'atoma-runtime'
 import type { ActionRecord, ChangeRecord, UndoStack } from './historyTypes'
 
 export type HistoryRecordArgs = Readonly<{
@@ -19,7 +19,6 @@ export type HistoryApplyArgs = Readonly<{
 
 export type HistoryApply = (args: HistoryApplyArgs) => Promise<void>
 
-const createActionId = () => Core.operation.createActionId()
 
 export class HistoryManager {
     private readonly history: InMemoryHistory

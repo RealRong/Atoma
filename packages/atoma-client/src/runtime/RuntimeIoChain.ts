@@ -1,6 +1,7 @@
 import type { ObservabilityContext } from 'atoma-observability'
 import { Protocol, type Operation, type OperationResult, type Query, type QueryResultData, type WriteAction, type WriteItem, type WriteOptions, type WriteResultData } from 'atoma-protocol'
-import type { Entity, RuntimeIo, RuntimeTransform, StoreHandle } from 'atoma-core'
+import type { Entity } from 'atoma-core'
+import type { RuntimeIo, RuntimeTransform, StoreHandle } from 'atoma-runtime'
 import type { HandlerChain } from '../plugins/HandlerChain'
 import type { IoContext, ReadContext, ReadRequest, QueryResult } from '../plugins/types'
 

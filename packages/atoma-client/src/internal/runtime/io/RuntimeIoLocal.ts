@@ -4,7 +4,8 @@
  * - Query operations use in-memory executeLocalQuery.
  * - Write/executeOps operations throw errors.
  */
-import type { Entity, RuntimeIo, StoreHandle } from 'atoma-core'
+import type { Entity } from 'atoma-core'
+import type { RuntimeIo, StoreHandle } from 'atoma-runtime'
 import type { Query } from 'atoma-protocol'
 import { executeLocalQuery } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'

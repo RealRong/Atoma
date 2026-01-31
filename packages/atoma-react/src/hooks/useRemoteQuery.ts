@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { stableStringify } from 'atoma-shared'
 import type { Entity, PageInfo, Query, StoreApi } from 'atoma-core'
-import { Core } from 'atoma-core'
 import { getStoreRuntimeKey, requireStoreOwner } from './internal/storeInternal'
 
 type RemoteState<T extends Entity> = Readonly<{
@@ -77,7 +77,7 @@ export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
     const runtime = getStoreRuntimeKey(args.store, 'useRemoteQuery')
 
     const key = useMemo(() => {
-        const optionsKey = Core.query.stableStringify(stripRuntimeOptions(args.options))
+        const optionsKey = stableStringify(stripRuntimeOptions(args.options))
         const modeKey = args.behavior.transient ? 'transient' : 'hydrate'
         return `${storeName}:${modeKey}:${optionsKey}`
     }, [storeName, args.behavior.transient, args.options])

@@ -3,7 +3,6 @@ import type { Draft, Patch } from 'immer'
 import type { StoreHandle } from './store/internals/handleTypes'
 import type { DebugConfig, DebugEvent, Explain, ObservabilityContext } from 'atoma-observability'
 import type { EntityId, Meta, Operation, OperationResult, WriteAction, WriteItem, WriteOptions, WriteResultData } from 'atoma-protocol'
-import type { StoreCommit } from './mutation'
 
 /**
  * Minimal entity interface - all stored entities must have an id
@@ -223,6 +222,13 @@ export type StoreDispatchEvent<T extends Entity> = {
             onSuccess?: () => void
         }
     )
+
+export type StoreCommit = Readonly<{
+    storeName: string
+    opContext: OperationContext
+    patches: Patch[]
+    inversePatches: Patch[]
+}>
 
 /**
  * Options for store operations

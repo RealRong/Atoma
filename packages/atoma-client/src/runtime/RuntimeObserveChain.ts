@@ -1,6 +1,7 @@
 import type { ObservabilityContext } from 'atoma-observability'
 import type { DebugConfig, DebugEvent } from 'atoma-observability'
-import type { RuntimeObservability, StoreToken } from 'atoma-core'
+import type { StoreToken } from 'atoma-core'
+import type { RuntimeObservability } from 'atoma-runtime'
 import type { HandlerEntry } from '../plugins/types'
 import type { ObserveContext, ObserveHandler, ObserveRequest } from '../plugins/types'
 

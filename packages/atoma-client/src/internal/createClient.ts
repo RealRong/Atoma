@@ -1,4 +1,5 @@
-import type { Entity, RuntimeIo, RuntimePersistence } from 'atoma-core'
+import type { Entity } from 'atoma-core'
+import type { RuntimeIo, RuntimePersistence } from 'atoma-runtime'
 import { ClientRuntime } from '#client/internal/runtime/ClientRuntime'
 import type { AtomaClient, AtomaSchema, CreateClientOptions } from '#client/types'
 import { registerClientRuntime } from './runtimeRegistry'

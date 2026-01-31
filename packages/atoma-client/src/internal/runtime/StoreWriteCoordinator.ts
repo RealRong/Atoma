@@ -1,17 +1,6 @@
-import type {
-    CoreRuntime,
-    Entity,
-    LifecycleHooks,
-    OperationContext,
-    PartialWithId,
-    PersistWriteback,
-    StoreDispatchEvent,
-    StoreHandle,
-    StoreOperationOptions,
-    WriteStrategy,
-    WriteTicket
-} from 'atoma-core'
-import { StoreStateWriter, StoreWriteUtils, createActionId } from 'atoma-core'
+import type { Entity, LifecycleHooks, OperationContext, PartialWithId, StoreOperationOptions, WriteStrategy } from 'atoma-core'
+import type { CoreRuntime, PersistWriteback, StoreDispatchEvent, StoreHandle, WriteTicket } from 'atoma-runtime'
+import { createActionId, StoreStateWriter, StoreWriteUtils } from 'atoma-runtime'
 
 export class StoreWriteCoordinator {
     constructor(

@@ -1,4 +1,5 @@
-import type { OperationContext, PersistWriteback } from 'atoma-core'
+import type { OperationContext } from 'atoma-core'
+import type { PersistWriteback } from 'atoma-runtime'
 import type { EntityId } from 'atoma-protocol'
 import type { Patch } from 'immer'
 import type { ClientRuntimeInternal } from '#client/internal/types'

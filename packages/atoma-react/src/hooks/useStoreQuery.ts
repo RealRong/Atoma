@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { Core } from 'atoma-core'
+import { executeLocalQuery } from 'atoma-core'
+import { stableStringify } from 'atoma-shared'
 import type { Entity, Query, StoreApi } from 'atoma-core'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 import { getStoreIndexes, getStoreMatcher } from 'atoma/internal'
@@ -32,7 +33,7 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
     const matcher = getStoreMatcher(client, storeName)
 
     const query = stripResult(options)
-    const queryKey = useMemo(() => Core.query.stableStringify(query), [query])
+    const queryKey = useMemo(() => stableStringify(query), [query])
 
     return useMemo(() => {
         const candidate = indexes?.collectCandidates(query?.filter as any)
@@ -61,7 +62,7 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
 
         const result = shouldSkipApplyQuery || !effectiveQuery
             ? source
-            : (Core.query.executeLocalQuery(source, effectiveQuery as Query<T>, matcher ? { matcher } : undefined).data as T[])
+            : (executeLocalQuery(source, effectiveQuery as Query<T>, matcher ? { matcher } : undefined).data as T[])
 
         return { ids: result.map(item => item.id) as Array<T['id']>, data: result }
     }, [map, indexes, matcher, queryKey])

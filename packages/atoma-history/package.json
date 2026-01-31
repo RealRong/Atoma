@@ -22,6 +22,7 @@
     "dependencies": {
         "atoma": "workspace:*",
         "atoma-client": "workspace:*",
-        "atoma-core": "workspace:*"
+        "atoma-core": "workspace:*",
+        "atoma-runtime": "workspace:*"
     }
 }

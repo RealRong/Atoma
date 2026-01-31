@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { Core } from 'atoma-core'
+import { executeLocalQuery } from 'atoma-core'
+import { stableStringify } from 'atoma-shared'
 import type { Entity, Query, StoreApi } from 'atoma-core'
 import { getStoreMatcher } from 'atoma/internal'
 import { requireStoreOwner } from './internal/storeInternal'
@@ -17,7 +18,7 @@ export function useLocalQuery<T extends Entity>(
     query?: Query<T>,
     store?: StoreApi<T, any>
 ): T[] {
-    const queryKey = useMemo(() => Core.query.stableStringify(query), [query])
+    const queryKey = useMemo(() => stableStringify(query), [query])
 
     const matcher = useMemo(() => {
         if (!store) return undefined
@@ -29,6 +30,6 @@ export function useLocalQuery<T extends Entity>(
         if (!data || !data.length) return []
         if (!query) return data
 
-        return Core.query.executeLocalQuery(data, query, matcher ? { matcher } : undefined).data as T[]
+        return executeLocalQuery(data, query, matcher ? { matcher } : undefined).data as T[]
     }, [data, queryKey, matcher])
 }

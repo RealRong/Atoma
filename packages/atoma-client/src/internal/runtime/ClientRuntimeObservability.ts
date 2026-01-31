@@ -1,6 +1,6 @@
 import { Observability } from 'atoma-observability'
 import type { DebugConfig, DebugEvent } from 'atoma-observability'
-import type { RuntimeObservability } from 'atoma-core'
+import type { RuntimeObservability } from 'atoma-runtime'
 
 const toStoreScope = (name?: string) => String(name || 'store')
 

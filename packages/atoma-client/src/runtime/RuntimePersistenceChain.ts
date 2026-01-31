@@ -1,4 +1,4 @@
-import type { RuntimePersistence } from 'atoma-core'
+import type { RuntimePersistence } from 'atoma-runtime'
 import type { HandlerChain } from '../plugins/HandlerChain'
 import type { PersistContext } from '../plugins/types'
 

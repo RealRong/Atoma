@@ -1,5 +1,5 @@
+import { belongsTo, hasMany, hasOne } from 'atoma-core'
 import type { StoreDataProcessor } from 'atoma-core'
-import { Core } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import type { AtomaSchema } from '#client/types'
 import type { ClientRuntimeInternal } from '#client/internal/types'
@@ -70,7 +70,7 @@ export class StoreConfigResolver {
             const to = (def as any).to
 
             if (type === 'belongsTo') {
-                relations[k] = Core.relations.belongsTo(String(to), {
+                relations[k] = belongsTo(String(to), {
                     foreignKey: (def as any).foreignKey,
                     primaryKey: (def as any).primaryKey,
                     options: (def as any).options
@@ -79,7 +79,7 @@ export class StoreConfigResolver {
             }
 
             if (type === 'hasMany') {
-                relations[k] = Core.relations.hasMany(String(to), {
+                relations[k] = hasMany(String(to), {
                     primaryKey: (def as any).primaryKey,
                     foreignKey: (def as any).foreignKey as any,
                     options: (def as any).options
@@ -88,7 +88,7 @@ export class StoreConfigResolver {
             }
 
             if (type === 'hasOne') {
-                relations[k] = Core.relations.hasOne(String(to), {
+                relations[k] = hasOne(String(to), {
                     primaryKey: (def as any).primaryKey,
                     foreignKey: (def as any).foreignKey as any,
                     options: (def as any).options

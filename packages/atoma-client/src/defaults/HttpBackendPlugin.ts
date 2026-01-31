@@ -1,6 +1,6 @@
 import { Protocol } from 'atoma-protocol'
-import type { PersistResult } from 'atoma-core'
-import { executeWriteOps } from 'atoma-core'
+import type { PersistResult } from 'atoma-runtime'
+import { executeWriteOps } from 'atoma-runtime'
 import { createHttpEndpoint } from '../backend/http/createHttpEndpoint'
 import { ClientPlugin } from '../plugins/ClientPlugin'
 import type { PluginContext, ReadRequest, Register } from '../plugins/types'

@@ -3,6 +3,5 @@ export {
     useAll,
     useQuery,
     useMany,
-    useFuzzySearch,
     useLocalQuery
 } from './hooks'

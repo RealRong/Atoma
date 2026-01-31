@@ -1,6 +1,7 @@
 import type { ObservabilityContext } from 'atoma-observability'
 import type { Query } from 'atoma-protocol'
-import type { CoreRuntime, PersistRequest, PersistResult, StoreToken } from 'atoma-core'
+import type { StoreToken } from 'atoma-core'
+import type { CoreRuntime, PersistRequest, PersistResult } from 'atoma-runtime'
 import type { OperationEnvelope, ResultEnvelope } from '../drivers/types'
 import type { EndpointRegistry } from '../drivers/EndpointRegistry'
 

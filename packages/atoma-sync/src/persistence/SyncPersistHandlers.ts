@@ -1,5 +1,6 @@
 import type { ClientPluginContext } from 'atoma-client'
-import type { Entity, PersistRequest, PersistResult } from 'atoma-core'
+import type { Entity } from 'atoma-core'
+import type { PersistRequest, PersistResult } from 'atoma-runtime'
 import type { WriteAction, WriteItem, WriteOptions } from 'atoma-protocol'
 import type { OutboxStore, OutboxWrite } from '#sync/types'
 

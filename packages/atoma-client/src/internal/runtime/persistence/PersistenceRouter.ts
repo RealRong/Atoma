@@ -3,17 +3,9 @@
  * - Supports registering custom handlers for different write strategies.
  * - Falls back to direct execution (executeWriteOps) when no handler matches.
  */
-import type {
-    CoreRuntime,
-    Entity,
-    PersistHandler,
-    PersistRequest,
-    PersistResult,
-    RuntimePersistence,
-    StoreHandle,
-    WriteStrategy
-} from 'atoma-core'
-import { executeWriteOps } from 'atoma-core'
+import type { Entity, WriteStrategy } from 'atoma-core'
+import type { CoreRuntime, PersistHandler, PersistRequest, PersistResult, RuntimePersistence, StoreHandle } from 'atoma-runtime'
+import { executeWriteOps } from 'atoma-runtime'
 
 export interface PersistenceRouterConfig {
     getRuntimeAndHandle: <T extends Entity>(req: PersistRequest<T>) => {

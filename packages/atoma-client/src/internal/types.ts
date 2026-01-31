@@ -1,4 +1,5 @@
-import type { JotaiStore, OperationContext, PersistWriteback } from 'atoma-core'
+import type { OperationContext } from 'atoma-core'
+import type { JotaiStore, PersistWriteback } from 'atoma-runtime'
 import type { EntityId } from 'atoma-protocol'
 import type { Patch } from 'immer'
 import type { ClientRuntime } from '#client/types'

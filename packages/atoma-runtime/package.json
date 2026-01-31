@@ -1,0 +1,30 @@
+{
+    "name": "atoma-runtime",
+    "version": "0.0.0",
+    "type": "module",
+    "description": "Atoma runtime pipeline",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "source": "./src/index.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsup",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "atoma-core": "workspace:*",
+        "atoma-shared": "workspace:*",
+        "atoma-protocol": "workspace:*",
+        "atoma-observability": "workspace:*"
+    },
+    "peerDependencies": {
+        "immer": "^9.0.0 || ^10.0.0",
+        "jotai": "^2.0.0"
+    }
+}

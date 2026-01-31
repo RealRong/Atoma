@@ -6,8 +6,6 @@
  * - react hooks 抽离为独立包：`atoma-react`
  */
 
-export { Core } from './core'
-
 export { Protocol } from './protocol'
 
 export { Observability } from './observability'
