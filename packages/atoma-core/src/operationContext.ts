@@ -1,4 +1,4 @@
-import type { OperationContext, OperationOrigin } from 'atoma-core'
+import type { OperationContext, OperationOrigin } from './types'
 
 const createFallbackId = () =>
     `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`

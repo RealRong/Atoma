@@ -1,6 +1,6 @@
 import type { Patch } from 'immer'
 import type { OperationContext } from 'atoma-core'
-import { createActionId } from 'atoma-runtime/operationContext'
+import { createActionId } from 'atoma-core'
 import type { ActionRecord, ChangeRecord, UndoStack } from './historyTypes'
 
 export type HistoryRecordArgs = Readonly<{

@@ -1,7 +1,7 @@
 import type { Entity, LifecycleHooks, OperationContext, PartialWithId, StoreOperationOptions } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
-import { normalizeOperationContext } from '../../operationContext'
-import { StoreWriteUtils } from '../../store/internals/StoreWriteUtils'
+import { normalizeOperationContext } from 'atoma-core'
+import { StoreWriteUtils } from 'atoma-core'
 import type { StoreHandle } from '../../types/runtimeTypes'
 import type { CoreRuntime } from '../../types/runtimeTypes'
 

@@ -1,4 +1,4 @@
-import type { Query } from 'atoma-core'
+import type { Query } from '../types'
 
 function collectFilterFields(filter: any, out: Set<string>) {
     if (!filter || typeof filter !== 'object') return

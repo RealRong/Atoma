@@ -1,6 +1,4 @@
 /**
- * Internal: default ID generator used by the store write pipeline.
- *
  * Default Snowflake-like ID generator (number-based, safe within JS number range)
  *
  * Layout (53 bits total to stay within Number safe integer):

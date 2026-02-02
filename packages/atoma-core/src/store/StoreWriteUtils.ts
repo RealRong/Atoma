@@ -1,6 +1,6 @@
-import { defaultSnowflakeGenerator } from './idGenerator'
-import type { Entity, PartialWithId } from 'atoma-core'
+import type { Entity, PartialWithId } from '../types'
 import type { EntityId } from 'atoma-protocol'
+import { defaultSnowflakeGenerator } from './idGenerator'
 
 export class StoreWriteUtils {
     static initBaseObject<T>(obj: Partial<T>, idGenerator?: () => EntityId): PartialWithId<T> {

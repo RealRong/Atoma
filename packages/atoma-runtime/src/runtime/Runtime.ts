@@ -7,12 +7,12 @@ import type { JotaiStore, StoreDataProcessor } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import { Protocol } from 'atoma-protocol'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
-import type { CoreRuntime, OpsClientLike, RuntimeIo, RuntimeObservability, RuntimePersistence, RuntimeRead, RuntimeTransform, RuntimeWrite } from '../types/runtimeTypes'
+import type { CoreRuntime, RuntimeIo, RuntimeObservability, RuntimePersistence, RuntimeRead, RuntimeTransform, RuntimeWrite } from '../types/runtimeTypes'
 import { DataProcessor } from './transform/DataProcessor'
 import { Stores } from '../store/Stores'
 import type { RuntimeSchema } from './schema'
-import { Observability } from './Observability'
-import { Io } from './Io'
+import { StoreObservability } from 'atoma-observability'
+import { LocalIo } from './Io'
 import { StrategyRegistry } from './StrategyRegistry'
 import { ReadFlow } from './read/ReadFlow'
 import { WriteFlow } from './write/WriteFlow'
@@ -22,7 +22,6 @@ import { WriteFlow } from './write/WriteFlow'
  */
 export interface RuntimeConfig {
     schema: RuntimeSchema
-    opsClient?: OpsClientLike
     io?: RuntimeIo
     dataProcessor?: StoreDataProcessor<any>
     defaults?: {
@@ -55,21 +54,15 @@ export class Runtime implements CoreRuntime {
 
         this.jotaiStore = createJotaiStore()
 
-        this.observe = config.observe ?? new Observability()
+        this.observe = config.observe ?? new StoreObservability()
         this.transform = new DataProcessor(() => this)
 
         if (config.io) {
             this.io = config.io
         } else if (config.localOnly) {
-            this.io = new Io({ mode: 'local' })
+            this.io = new LocalIo()
         } else {
-            const opsClient = config.opsClient
-            if (!opsClient) throw new Error('[Atoma] Runtime: opsClient 必填')
-            this.io = new Io({
-                mode: 'remote',
-                opsClient,
-                now: this.now
-            })
+            throw new Error('[Atoma] Runtime: io 必填（非 localOnly）')
         }
 
         this.persistence = config.persistence ?? new StrategyRegistry({

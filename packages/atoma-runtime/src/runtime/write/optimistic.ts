@@ -1,7 +1,7 @@
 import { applyPatches, type Patch } from 'immer'
 import type { Entity } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
-import { StoreWriteUtils } from '../../store/internals/StoreWriteUtils'
+import { StoreWriteUtils } from 'atoma-core'
 import type { WriteEvent } from './types'
 
 export function buildOptimisticState<T extends Entity>(args: {

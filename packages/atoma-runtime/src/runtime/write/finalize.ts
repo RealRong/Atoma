@@ -1,7 +1,6 @@
 import type { Entity } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import type { PersistAck, PersistResult } from '../../types/persistenceTypes'
-import { StoreStateWriter } from '../../store/internals/StoreStateWriter'
 import type { StoreHandle } from '../../types/runtimeTypes'
 import type { CoreRuntime } from '../../types/runtimeTypes'
 import type { WriteEvent } from './types'
@@ -11,7 +10,6 @@ export async function applyPersistAck<T extends Entity>(runtime: CoreRuntime, ha
     if (!ack) return undefined
 
     const normalized = await transformAck(runtime, handle, ack)
-    const stateWriter = new StoreStateWriter(handle)
 
     if (event.type === 'add' && normalized.created?.length) {
         const created = normalized.created[0] as T
@@ -22,7 +20,7 @@ export async function applyPersistAck<T extends Entity>(runtime: CoreRuntime, ha
         if (tempId && serverId && tempId !== serverId) {
             deletes.push(tempId)
         }
-        stateWriter.applyWriteback({
+        handle.applyWriteback({
             deletes,
             upserts: [created],
             versionUpdates: normalized.versionUpdates
@@ -30,7 +28,7 @@ export async function applyPersistAck<T extends Entity>(runtime: CoreRuntime, ha
         return normalized
     }
 
-    stateWriter.applyWriteback({
+    handle.applyWriteback({
         upserts: normalized.upserts,
         deletes: normalized.deletes,
         versionUpdates: normalized.versionUpdates

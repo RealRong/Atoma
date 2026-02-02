@@ -1,5 +1,5 @@
 import type { DebugConfig, DebugEvent, ObservabilityContext } from 'atoma-observability'
-import type { Meta, Operation, OperationResult } from 'atoma-protocol'
+import type { Operation, OperationResult } from 'atoma-protocol'
 import type {
     DataProcessorBaseContext,
     DataProcessorMode,
@@ -23,18 +23,6 @@ import type { Draft, Patch } from 'immer'
 import type { EntityId } from 'atoma-protocol'
 import type { StoreHandle } from './handleTypes'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from './persistenceTypes'
-
-export type OpsClientLike = {
-    executeOps: (input: {
-        ops: Operation[]
-        meta: Meta
-        signal?: AbortSignal
-        context?: ObservabilityContext
-    }) => Promise<{
-        results: OperationResult[]
-        status?: number
-    }>
-}
 
 export type DataProcessor = Readonly<{
     process: <T>(mode: DataProcessorMode, data: T, context: DataProcessorBaseContext<T> & { dataProcessor?: StoreDataProcessor<T> }) => Promise<T | undefined>
@@ -111,4 +99,4 @@ export type CoreRuntime = Readonly<{
     transform: RuntimeTransform
 }>
 
-export type { StoreHandle }
+export type { StoreHandle, StoreStateWriterApi }

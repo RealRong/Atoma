@@ -2,7 +2,6 @@ import { produce, type Draft, type Patch } from 'immer'
 import type { Draft as ImmerDraft } from 'immer'
 import type { Entity, OperationContext, PartialWithId, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
-import { StoreStateWriter } from '../../store/internals/StoreStateWriter'
 import type { CoreRuntime, RuntimeWrite, StoreHandle } from '../../types/runtimeTypes'
 import { applyPersistAck, resolveOutputFromAck } from './finalize'
 import { buildOptimisticState } from './optimistic'
@@ -188,7 +187,6 @@ export class WriteFlow implements RuntimeWrite {
         const runtime = this.runtime
         const { handle, opContext, event } = args
         const { jotaiStore, atom } = handle
-        const stateWriter = new StoreStateWriter(handle)
 
         const before = jotaiStore.get(atom) as Map<EntityId, T>
         const { optimisticState, changedIds, output } = buildOptimisticState({
@@ -197,7 +195,7 @@ export class WriteFlow implements RuntimeWrite {
         })
 
         if (optimisticState !== before && changedIds.size) {
-            stateWriter.commitMapUpdateDelta({
+            handle.commitMapUpdateDelta({
                 before,
                 after: optimisticState,
                 changedIds
@@ -231,7 +229,7 @@ export class WriteFlow implements RuntimeWrite {
             return resolvedOutput ?? output
         } catch (error) {
             if (optimisticState !== before && changedIds.size) {
-                stateWriter.commitMapUpdateDelta({
+                handle.commitMapUpdateDelta({
                     before: optimisticState,
                     after: before,
                     changedIds

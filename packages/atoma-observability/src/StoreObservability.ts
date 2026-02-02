@@ -1,6 +1,5 @@
-import { Observability as AtomaObservability } from 'atoma-observability'
-import type { DebugConfig, DebugEvent } from 'atoma-observability'
-import type { RuntimeObservability } from '../types/runtimeTypes'
+import { Observability as AtomaObservability } from './Observability'
+import type { DebugConfig, DebugEvent } from './types'
 
 const toStoreScope = (name?: string) => String(name || 'store')
 
@@ -10,7 +9,7 @@ export type StoreObservabilityConfig = {
     debugSink?: (e: DebugEvent) => void
 }
 
-export class Observability implements RuntimeObservability {
+export class StoreObservability {
     private observabilityConfigByStore = new Map<string, { debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }>()
     private observabilityByStore = new Map<string, ReturnType<typeof AtomaObservability.runtime.create>>()
 

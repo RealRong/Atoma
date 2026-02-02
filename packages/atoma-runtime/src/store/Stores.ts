@@ -4,24 +4,9 @@ import type { Entity, IStore, StoreApi, StoreDataProcessor, StoreToken } from 'a
 import type { StoreHandle, StoreRegistry } from '../types/runtimeTypes'
 import type { EntityId } from 'atoma-protocol'
 import { ConfigResolver } from './ConfigResolver'
+import { StoreStateWriter } from './StoreStateWriter'
 import type { CoreRuntime } from '../types/runtimeTypes'
 import type { RuntimeSchema } from '../runtime/schema'
-import {
-    createAddMany,
-    createAddOne,
-    createBatchGet,
-    createDeleteMany,
-    createDeleteOne,
-    createFetchAll,
-    createQuery,
-    createQueryOne,
-    createGetAll,
-    createGetMany,
-    createUpdateMany,
-    createUpdateOne,
-    createUpsertMany,
-    createUpsertOne
-} from './ops'
 
 type StoreListener = (store: StoreApi<any, any> & { name: string }) => void
 
@@ -144,8 +129,16 @@ export class Stores implements StoreRegistry {
             hooks: base.hooks,
             idGenerator: base.idGenerator,
             dataProcessor: base.dataProcessor,
+            stateWriter: null as any,
+            commitMapUpdate: null as any,
+            commitMapUpdateDelta: null as any,
+            applyWriteback: null as any,
             nextOpId
         }
+        handle.stateWriter = new StoreStateWriter(handle)
+        handle.commitMapUpdate = (params) => handle.stateWriter.commitMapUpdate(params)
+        handle.commitMapUpdateDelta = (params) => handle.stateWriter.commitMapUpdateDelta(params)
+        handle.applyWriteback = (args, options) => handle.stateWriter.applyWriteback(args, options)
 
         // Relations are lazy; cache compiled relation map per store handle.
         if (typeof base.relations === 'function') {
@@ -158,22 +151,23 @@ export class Stores implements StoreRegistry {
 
         // Stage-3 stateless store: build ops against handle, but never expose a "stateful store object" to users.
         // Write ops
-        const addOne = createAddOne<any>(this.runtime, handle)
-        const addMany = createAddMany<any>(this.runtime, handle)
-        const updateOne = createUpdateOne<any>(this.runtime, handle)
-        const updateMany = createUpdateMany<any>(this.runtime, handle)
-        const deleteOne = createDeleteOne<any>(this.runtime, handle)
-        const deleteMany = createDeleteMany<any>(this.runtime, handle)
-        const upsertOne = createUpsertOne<any>(this.runtime, handle)
-        const upsertMany = createUpsertMany<any>(this.runtime, handle)
+        const addOne = (item: any, options?: any) => this.runtime.write.addOne(handle, item, options)
+        const addMany = (items: any[], options?: any) => this.runtime.write.addMany(handle, items, options)
+        const updateOne = (id: any, recipe: any, options?: any) => this.runtime.write.updateOne(handle, id, recipe, options)
+        const updateMany = (items: any[], options?: any) => this.runtime.write.updateMany(handle, items, options)
+        const deleteOne = (id: any, options?: any) => this.runtime.write.deleteOne(handle, id, options)
+        const deleteMany = (ids: any[], options?: any) => this.runtime.write.deleteMany(handle, ids, options)
+        const upsertOne = (item: any, options?: any) => this.runtime.write.upsertOne(handle, item, options)
+        const upsertMany = (items: any[], options?: any) => this.runtime.write.upsertMany(handle, items, options)
 
         // Read ops
-        const getAll = createGetAll<any>(this.runtime, handle)
-        const getMany = createGetMany<any>(this.runtime, handle)
-        const { getOne, fetchOne } = createBatchGet(this.runtime as any, handle)
-        const fetchAll = createFetchAll<any>(this.runtime, handle)
-        const query = createQuery<any>(this.runtime, handle)
-        const queryOne = createQueryOne<any>(this.runtime, handle)
+        const getAll = (filter?: any, cacheFilter?: any, options?: any) => this.runtime.read.getAll(handle, filter, cacheFilter, options)
+        const getMany = (ids: any[], cache?: any, options?: any) => this.runtime.read.getMany(handle, ids, cache, options)
+        const getOne = (id: any, options?: any) => this.runtime.read.getOne(handle, id, options)
+        const fetchOne = (id: any, options?: any) => this.runtime.read.fetchOne(handle, id, options)
+        const fetchAll = () => this.runtime.read.fetchAll(handle)
+        const query = (query: any) => this.runtime.read.query(handle, query)
+        const queryOne = (query: any) => this.runtime.read.queryOne(handle, query)
 
         const api: StoreEngineApi<any> = {
             addOne,

@@ -3,7 +3,7 @@ import type { StoreIndexes, QueryMatcherOptions } from 'atoma-core'
 import type { Query, Entity } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import type { Explain } from 'atoma-observability'
-import { summarizeQuery } from './paramsSummary'
+import { summarizeQuery } from 'atoma-core'
 
 export function evaluateWithIndexes<T extends Entity>(params: {
     mapRef: Map<EntityId, T>

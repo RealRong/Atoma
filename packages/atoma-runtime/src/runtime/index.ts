@@ -1,2 +1,2 @@
-export { createRuntime } from './createRuntime'
+export { Runtime } from './Runtime'
 export type { RuntimeConfig } from './Runtime'

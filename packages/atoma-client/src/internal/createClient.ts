@@ -2,7 +2,7 @@ import type { DebugConfig, DebugEvent, ObservabilityContext } from 'atoma-observ
 import type { Entity, Query, StoreToken } from 'atoma-core'
 import { Protocol, type OperationResult } from 'atoma-protocol'
 import type { RuntimeIo, RuntimeObservability, StoreHandle } from 'atoma-runtime/types/runtimeTypes'
-import { createRuntime } from 'atoma-runtime'
+import { Runtime } from 'atoma-runtime'
 import type { AtomaClient, AtomaSchema, CreateClientOptions } from '#client/types'
 import { registerClientRuntime } from './runtimeRegistry'
 import { zod } from 'atoma-shared'
@@ -188,7 +188,7 @@ export function createClient<
     const pluginRegistry = new PluginRegistry()
 
     const schema = toSchema(args.schema as S)
-    const clientRuntime = createRuntime({
+    const clientRuntime = new Runtime({
         schema: schema as any,
         io: createStubIo(),
         ownerClient: () => client

@@ -3,12 +3,11 @@ import type { Explain } from 'atoma-observability'
 import type { Entity, Query, QueryOneResult, QueryResult, StoreReadOptions } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import { toErrorWithFallback as toError } from 'atoma-shared'
-import { StoreStateWriter } from '../../store/internals/StoreStateWriter'
-import { StoreWriteUtils } from '../../store/internals/StoreWriteUtils'
+import { StoreWriteUtils } from 'atoma-core'
 import type { CoreRuntime, RuntimeRead, StoreHandle } from '../../types/runtimeTypes'
-import { resolveCachePolicy } from './internals/cachePolicy'
+import { resolveCachePolicy } from 'atoma-core'
 import { evaluateWithIndexes } from './internals/localEvaluate'
-import { summarizeQuery } from './internals/paramsSummary'
+import { summarizeQuery } from 'atoma-core'
 
 export class ReadFlow implements RuntimeRead {
     private runtime: CoreRuntime
@@ -20,7 +19,6 @@ export class ReadFlow implements RuntimeRead {
     query = async <T extends Entity>(handle: StoreHandle<T>, input: Query<T>): Promise<QueryResult<T>> => {
         const runtime = this.runtime
         const { jotaiStore, atom, indexes, matcher } = handle
-        const stateWriter = new StoreStateWriter(handle)
 
         const explainEnabled = input?.explain === true
         const observabilityContext = runtime.observe.createContext(handle.storeName, {
@@ -102,7 +100,7 @@ export class ReadFlow implements RuntimeRead {
             }
 
             if (next && changedIds.size) {
-                stateWriter.commitMapUpdateDelta({
+                handle.commitMapUpdateDelta({
                     before: existingMap,
                     after: next,
                     changedIds
@@ -131,7 +129,6 @@ export class ReadFlow implements RuntimeRead {
     getMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, options?: StoreReadOptions): Promise<T[]> => {
         const runtime = this.runtime
         const { jotaiStore, atom } = handle
-        const stateWriter = new StoreStateWriter(handle)
 
         const beforeMap = jotaiStore.get(atom) as Map<EntityId, T>
         const out: Array<T | undefined> = new Array(ids.length)
@@ -189,7 +186,7 @@ export class ReadFlow implements RuntimeRead {
                             changedIds.add(id)
                         }
                     }
-                    stateWriter.commitMapUpdateDelta({ before, after, changedIds })
+                    handle.commitMapUpdateDelta({ before, after, changedIds })
                 }
             }
 
@@ -244,7 +241,6 @@ export class ReadFlow implements RuntimeRead {
     getAll = async <T extends Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions): Promise<T[]> => {
         const runtime = this.runtime
         const { jotaiStore, atom } = handle
-        const stateWriter = new StoreStateWriter(handle)
 
         const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
         const observabilityContext = runtime.observe.createContext(handle.storeName, {
@@ -295,7 +291,7 @@ export class ReadFlow implements RuntimeRead {
             }
         }
 
-        stateWriter.commitMapUpdateDelta({ before: existingMap, after: next, changedIds })
+        handle.commitMapUpdateDelta({ before: existingMap, after: next, changedIds })
 
         return arr
     }

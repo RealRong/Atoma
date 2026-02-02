@@ -6,6 +6,7 @@ export { PluginRegistry } from './plugins/PluginRegistry'
 export { HandlerChain } from './plugins/HandlerChain'
 export { ClientPlugin, ClientPlugin as PluginBase } from './plugins/ClientPlugin'
 export { registerClientRuntime, getClientRuntime, requireClientRuntime } from './internal/runtimeRegistry'
+export { RemoteIo } from './runtime/RemoteIo'
 
 export type {
     PersistHandler,
