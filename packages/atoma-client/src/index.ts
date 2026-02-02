@@ -1,5 +1,4 @@
 export { createClient } from './internal/createClient'
-export { presets } from './presets'
 export type { CreateClientOptions } from './types'
 export { EndpointRegistry } from './drivers/EndpointRegistry'
 export { PluginRegistry, HandlerChain, ClientPlugin, ClientPlugin as PluginBase } from './plugins'

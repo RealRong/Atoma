@@ -1,7 +1,9 @@
 import type { Types } from 'atoma-core'
 import type { InferRelationsFromSchema } from './relations'
 import type { AtomaSchema } from './schema'
-import type { PluginCapableClient } from './plugin'
+export interface PluginCapableClient {
+    dispose: () => void
+}
 
 export type AtomaStore<
     Entities extends Record<string, Types.Entity>,

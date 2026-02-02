@@ -98,3 +98,5 @@ export type PluginContext = Readonly<{
     endpoints: EndpointRegistry
     runtime: CoreRuntime
 }>
+
+export type ClientPluginContext = PluginContext

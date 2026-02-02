@@ -4,32 +4,13 @@ import { Runtime } from 'atoma-runtime'
 import type { AtomaClient, AtomaSchema, CreateClientOptions } from '#client/types'
 import { registerClientRuntime } from './runtimeRegistry'
 import { zod } from 'atoma-shared'
-import { CreateClientSchemas } from '#client/schemas'
+import { createClientBuildArgsSchema } from '#client/schemas/createClient'
 import { EndpointRegistry } from '../drivers/EndpointRegistry'
 import { ClientPlugin, HandlerChain, PluginRegistry, PluginRuntimeIo, PluginRuntimeObserve } from '../plugins'
 import type { PluginContext } from '../plugins'
 import { DefaultObservePlugin, HttpBackendPlugin, LocalBackendPlugin } from '../defaults'
 
 const { parseOrThrow } = zod
-
-function toSchema<E extends Record<string, Types.Entity>>(schema: AtomaSchema<E> | undefined): AtomaSchema<E> {
-    return (schema ?? {}) as AtomaSchema<E>
-}
-
-function toPlugins(input?: ReadonlyArray<ClientPlugin>): ClientPlugin[] {
-    return Array.isArray(input) ? [...input] : []
-}
-
-function createStubIo(): RuntimeIo {
-    return {
-        executeOps: async () => {
-            throw new Error('[Atoma] io not ready')
-        },
-        query: async () => {
-            throw new Error('[Atoma] io not ready')
-        }
-    }
-}
 
 /**
  * Creates an Atoma client instance.
@@ -41,18 +22,23 @@ export function createClient<
     const E extends Record<string, Types.Entity>,
     const S extends AtomaSchema<E> = AtomaSchema<E>
 >(opt: CreateClientOptions<E, S>): AtomaClient<E, S> {
-    const args = parseOrThrow(CreateClientSchemas.createClientBuildArgsSchema, opt, { prefix: '[Atoma] createClient: ' }) as any
+    const args = parseOrThrow(createClientBuildArgsSchema, opt, { prefix: '[Atoma] createClient: ' }) as any
 
     const client: any = {}
 
     const endpointRegistry = new EndpointRegistry()
     const pluginRegistry = new PluginRegistry()
 
-    const schema = toSchema(args.schema as S)
-    
     const clientRuntime = new Runtime({
-        schema: schema as any,
-        io: createStubIo(),
+        schema: ((args.schema ?? {}) as S) as any,
+        io: {
+            executeOps: async () => {
+                throw new Error('[Atoma] io not ready')
+            },
+            query: async () => {
+                throw new Error('[Atoma] io not ready')
+            }
+        } satisfies RuntimeIo,
         ownerClient: () => client
     }) as any
 
@@ -62,7 +48,7 @@ export function createClient<
         runtime: clientRuntime as any
     }
 
-    const plugins: ClientPlugin[] = [...toPlugins(args.plugins)]
+    const plugins: ClientPlugin[] = Array.isArray(args.plugins) ? [...args.plugins] : []
 
     const backend = args.backend
     let hasBackend = false

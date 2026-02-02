@@ -1,9 +1,8 @@
 export type { CreateClientOptions } from './options'
 
-export type { ClientRuntime } from './runtime'
+export type { CoreRuntime as ClientRuntime } from 'atoma-runtime'
 
 export type {
-    ClientPlugin,
     IoHandler,
     PersistHandler,
     ReadHandler,
@@ -14,6 +13,7 @@ export type {
     HandlerEntry,
     Register,
     PluginContext,
+    ClientPluginContext,
     IoContext,
     PersistContext,
     ReadContext,
@@ -21,8 +21,8 @@ export type {
     ReadRequest,
     QueryResult,
     ObserveRequest,
-    PluginCapableClient
-} from './plugin'
+    ClientPlugin
+} from '../plugins'
 
 export type {
     BelongsToSchema,
@@ -34,14 +34,11 @@ export type {
     RelationsSchema,
 } from './relations'
 
-export type {
-    AtomaClientContext,
-} from './store'
-
 export type { AtomaSchema, AtomaStoreSchema } from './schema'
 
 export type {
     AtomaClient,
     AtomaStore,
-    AtomaHistory
+    AtomaHistory,
+    PluginCapableClient
 } from './client'
