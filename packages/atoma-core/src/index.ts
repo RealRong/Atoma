@@ -1,4 +1,4 @@
-export { executeLocalQuery, buildQueryMatcherOptions, summarizeQuery, resolveCachePolicy } from './query'
+export { executeLocalQuery, buildQueryMatcherOptions, summarizeQuery, resolveCachePolicy, evaluateWithIndexes } from './query'
 export { belongsTo, hasMany, hasOne } from './relations/builders'
 export { compileRelationsMap } from './relations/compile'
 export { RelationResolver } from './relations/RelationResolver'
@@ -8,6 +8,7 @@ export { StoreWriteUtils, defaultSnowflakeGenerator, applyWritebackToMap } from 
 export type { StoreWritebackArgs, StoreWritebackOptions, StoreWritebackResult } from './store'
 export { createActionId, createOpContext, normalizeOperationContext } from './operationContext'
 export type { CreateOpContextArgs } from './operationContext'
+export type { RuntimeSchema, RuntimeStoreSchema } from './runtimeSchema'
 export type { QueryMatcherOptions } from './query/QueryMatcher'
 export type { CacheWriteDecision } from './query/cachePolicy'
 export * from './types'

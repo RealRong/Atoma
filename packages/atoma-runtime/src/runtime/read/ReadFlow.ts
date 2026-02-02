@@ -5,9 +5,7 @@ import type { EntityId } from 'atoma-protocol'
 import { toErrorWithFallback as toError } from 'atoma-shared'
 import { StoreWriteUtils } from 'atoma-core'
 import type { CoreRuntime, RuntimeRead, StoreHandle } from '../../types/runtimeTypes'
-import { resolveCachePolicy } from 'atoma-core'
-import { evaluateWithIndexes } from './internals/localEvaluate'
-import { summarizeQuery } from 'atoma-core'
+import { resolveCachePolicy, evaluateWithIndexes, summarizeQuery } from 'atoma-core'
 
 export class ReadFlow implements RuntimeRead {
     private runtime: CoreRuntime

@@ -1,4 +1,4 @@
-import type { Entity, StoreConfig } from 'atoma-core'
+import type { Entity, StoreConfig } from './types'
 
 export type RuntimeStoreSchema<T extends Entity = any> = {
     relations?: Record<string, any>

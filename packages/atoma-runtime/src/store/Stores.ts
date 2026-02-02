@@ -6,7 +6,7 @@ import type { EntityId } from 'atoma-protocol'
 import { ConfigResolver } from './ConfigResolver'
 import { StoreStateWriter } from './StoreStateWriter'
 import type { CoreRuntime } from '../types/runtimeTypes'
-import type { RuntimeSchema } from '../runtime/schema'
+import type { RuntimeSchema } from 'atoma-core'
 
 type StoreListener = (store: StoreApi<any, any> & { name: string }) => void
 

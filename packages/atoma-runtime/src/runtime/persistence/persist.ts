@@ -6,7 +6,7 @@ import type { Patch } from 'immer'
 import type { TranslatedWriteOp } from '../../types/persistenceTypes'
 import type { StoreHandle } from '../../types/runtimeTypes'
 import type { CoreRuntime } from '../../types/runtimeTypes'
-import type { WriteEvent } from './types'
+import type { WriteEvent } from '../write/types'
 
 export async function buildWriteOps<T extends Entity>(args: {
     runtime: CoreRuntime

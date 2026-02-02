@@ -22,7 +22,7 @@ import type {
 import type { Draft, Patch } from 'immer'
 import type { EntityId } from 'atoma-protocol'
 import type { StoreHandle } from './handleTypes'
-import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from './persistenceTypes'
+import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, TranslatedWriteOp, PersistAck } from './persistenceTypes'
 
 export type DataProcessor = Readonly<{
     process: <T>(mode: DataProcessorMode, data: T, context: DataProcessorBaseContext<T> & { dataProcessor?: StoreDataProcessor<T> }) => Promise<T | undefined>
@@ -84,6 +84,10 @@ export type RuntimePersistence = Readonly<{
     register: (key: WriteStrategy, descriptor: StrategyDescriptor) => () => void
     resolveWritePolicy: (key?: WriteStrategy) => WritePolicy
     persist: <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
+    executeWriteOps: <T extends Entity>(args: {
+        ops: Array<TranslatedWriteOp>
+        context?: ObservabilityContext
+    }) => Promise<{ ack?: PersistAck<T> }>
 }>
 
 export type CoreRuntime = Readonly<{

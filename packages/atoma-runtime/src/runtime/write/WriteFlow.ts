@@ -5,7 +5,7 @@ import type { EntityId } from 'atoma-protocol'
 import type { CoreRuntime, RuntimeWrite, StoreHandle } from '../../types/runtimeTypes'
 import { applyPersistAck, resolveOutputFromAck } from './finalize'
 import { buildOptimisticState } from './optimistic'
-import { buildWriteOps } from './persist'
+import { buildWriteOps } from '../persistence/persist'
 import { ensureActionId, prepareForAdd, prepareForUpdate, resolveBaseForWrite, runAfterSave, runBeforeSave } from './prepare'
 import type { WriteEvent } from './types'
 

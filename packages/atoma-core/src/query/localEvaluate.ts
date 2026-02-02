@@ -1,9 +1,10 @@
-import { executeLocalQuery } from 'atoma-core'
-import type { StoreIndexes, QueryMatcherOptions } from 'atoma-core'
-import type { Query, Entity } from 'atoma-core'
+import type { Query, Entity } from '../types'
+import type { StoreIndexes } from '../indexes/StoreIndexes'
+import type { QueryMatcherOptions } from './QueryMatcher'
 import type { EntityId } from 'atoma-protocol'
 import type { Explain } from 'atoma-observability'
-import { summarizeQuery } from 'atoma-core'
+import { executeLocalQuery } from './engine/local'
+import { summarizeQuery } from './summary'
 
 export function evaluateWithIndexes<T extends Entity>(params: {
     mapRef: Map<EntityId, T>

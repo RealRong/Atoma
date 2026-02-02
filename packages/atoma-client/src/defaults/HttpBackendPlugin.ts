@@ -1,6 +1,5 @@
 import { Protocol } from 'atoma-protocol'
 import type { PersistResult } from 'atoma-runtime/types/persistenceTypes'
-import { executeWriteOps } from 'atoma-runtime'
 import { createHttpEndpoint } from '../backend/http/createHttpEndpoint'
 import { ClientPlugin } from '../plugins/ClientPlugin'
 import type { PluginContext, ReadRequest, Register } from '../plugins/types'
@@ -29,9 +28,7 @@ export class HttpBackendPlugin extends ClientPlugin {
         }, { priority: 1000 })
 
         register('persist', async (req, _ctx, _next): Promise<PersistResult<any>> => {
-            const normalized = await executeWriteOps<any>({
-                runtime: ctx.runtime as any,
-                handle: req.handle,
+            const normalized = await ctx.runtime.persistence.executeWriteOps<any>({
                 ops: req.writeOps as any,
                 context: req.context
             })

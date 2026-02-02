@@ -2,28 +2,29 @@
  * StrategyRegistry: Routes persistence requests and resolves write policies by strategy.
  */
 import type { Entity, WriteStrategy } from 'atoma-core'
-import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from '../types/persistenceTypes'
-import type { CoreRuntime, RuntimePersistence, StoreHandle } from '../types/runtimeTypes'
-import { executeWriteOps } from './write/WriteOps'
+import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, PersistAck, TranslatedWriteOp } from '../types/persistenceTypes'
+import type { CoreRuntime, RuntimePersistence } from '../types/runtimeTypes'
+import type { ObservabilityContext } from 'atoma-observability'
+import type { OperationResult, StandardError, WriteAction, WriteItemResult, WriteResultData } from 'atoma-protocol'
+import { createWritebackCollector } from './persistence/ack'
 
 const DEFAULT_WRITE_POLICY: WritePolicy = {
     implicitFetch: true
 }
 
 export interface StrategyRegistryConfig {
-    getRuntimeAndHandle: <T extends Entity>(req: PersistRequest<T>) => {
-        runtime: CoreRuntime
-        handle: StoreHandle<T>
-    }
+    runtime: CoreRuntime
     localOnly?: boolean
 }
 
 export class StrategyRegistry implements RuntimePersistence {
     private readonly strategies = new Map<WriteStrategy, StrategyDescriptor>()
     private readonly config: StrategyRegistryConfig
+    private readonly runtime: CoreRuntime
 
     constructor(config: StrategyRegistryConfig) {
         this.config = config
+        this.runtime = config.runtime
     }
 
     register = (key: WriteStrategy, descriptor: StrategyDescriptor) => {
@@ -62,10 +63,7 @@ export class StrategyRegistry implements RuntimePersistence {
         if (this.config.localOnly) {
             return { status: 'confirmed' }
         }
-        const { runtime, handle } = this.config.getRuntimeAndHandle(req)
-        const normalized = await executeWriteOps<T>({
-            runtime,
-            handle: handle,
+        const normalized = await this.executeWriteOps<T>({
             ops: req.writeOps as any,
             context: req.context
         })
@@ -75,8 +73,62 @@ export class StrategyRegistry implements RuntimePersistence {
         }
     }
 
+    executeWriteOps = async <T extends Entity>(args: {
+        ops: Array<TranslatedWriteOp>
+        context?: ObservabilityContext
+    }): Promise<{ ack?: PersistAck<T> }> => {
+        if (!args.ops.length) return {}
+
+        const ops = args.ops.map(o => o.op)
+        const results = await this.runtime.io.executeOps({ ops, context: args.context })
+        const resultByOpId = new Map<string, OperationResult>()
+        results.forEach(r => resultByOpId.set(r.opId, r))
+
+        const writeback = createWritebackCollector<T>()
+
+        for (const entry of args.ops) {
+            const result = findOpResult(resultByOpId, entry.op.opId)
+            if (!result.ok) {
+                const err = new Error(`[Atoma] op failed: ${result.error.message || 'Operation failed'}`)
+                ;(err as { error?: unknown }).error = result.error
+                throw err
+            }
+
+            const data = result.data as WriteResultData
+            const itemRes = data.results?.[0]
+            if (!itemRes) throw new Error('[Atoma] missing write item result')
+            if (!itemRes.ok) throw toWriteItemError(entry.action, itemRes)
+
+            writeback.collect(entry, itemRes)
+        }
+
+        return writeback.result()
+    }
+
     private normalizeStrategy = (key?: WriteStrategy): WriteStrategy => {
         const normalized = (typeof key === 'string' && key) ? key : 'direct'
         return normalized
+    }
+}
+
+function toWriteItemError(action: WriteAction, result: WriteItemResult): Error {
+    if (result.ok) return new Error(`[Atoma] write(${action}) failed`)
+    const msg = result.error.message || 'Write failed'
+    const err = new Error(`[Atoma] write(${action}) failed: ${msg}`)
+    ;(err as { error?: unknown }).error = result.error
+    return err
+}
+
+function findOpResult(results: Map<string, OperationResult>, opId: string): OperationResult {
+    const found = results.get(opId)
+    if (found) return found
+    return {
+        opId,
+        ok: false,
+        error: {
+            code: 'INTERNAL',
+            message: 'Missing operation result',
+            kind: 'internal'
+        } as StandardError
     }
 }

@@ -2,7 +2,7 @@ import { compileRelationsMap } from 'atoma-core'
 import type { StoreDataProcessor } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import type { CoreRuntime } from '../types/runtimeTypes'
-import type { RuntimeSchema } from '../runtime/schema'
+import type { RuntimeSchema } from 'atoma-core'
 
 export class ConfigResolver {
     private readonly schema: RuntimeSchema

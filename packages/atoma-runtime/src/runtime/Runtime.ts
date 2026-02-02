@@ -10,7 +10,7 @@ import { createStore as createJotaiStore } from 'jotai/vanilla'
 import type { CoreRuntime, RuntimeIo, RuntimeObservability, RuntimePersistence, RuntimeRead, RuntimeTransform, RuntimeWrite } from '../types/runtimeTypes'
 import { DataProcessor } from './transform/DataProcessor'
 import { Stores } from '../store/Stores'
-import type { RuntimeSchema } from './schema'
+import type { RuntimeSchema } from 'atoma-core'
 import { StoreObservability } from 'atoma-observability'
 import { LocalIo } from './Io'
 import { StrategyRegistry } from './StrategyRegistry'
@@ -66,10 +66,7 @@ export class Runtime implements CoreRuntime {
         }
 
         this.persistence = config.persistence ?? new StrategyRegistry({
-            getRuntimeAndHandle: (req) => ({
-                runtime: this,
-                handle: req.handle
-            }),
+            runtime: this,
             localOnly: config.localOnly
         })
 
