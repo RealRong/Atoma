@@ -21,7 +21,8 @@ export type {
     ReadRequest,
     QueryResult,
     ObserveRequest,
-    ClientPlugin
+    ClientPlugin,
+    PluginInitResult
 } from '../plugins'
 
 export type {

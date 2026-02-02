@@ -1,8 +1,7 @@
 import { Query } from 'atoma-core'
 import type { Types } from 'atoma-core'
 import type { EntityId, Operation, OperationResult, QueryResultData } from 'atoma-protocol'
-import { ClientPlugin } from '../plugins'
-import type { IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from '../plugins'
+import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from '../plugins'
 
 const MISSING_TERMINAL = '[Atoma] HandlerChain: missing terminal handler'
 
@@ -36,10 +35,10 @@ function toUnsupportedOpsResults(ops: Operation[]): OperationResult[] {
     }))
 }
 
-export class LocalBackendPlugin extends ClientPlugin {
+export class LocalBackendPlugin implements ClientPlugin {
     readonly id = 'defaults:local-backend'
 
-    setup(ctx: PluginContext, register: Register) {
+    register(ctx: PluginContext, register: Register) {
         const ioHandler: IoHandler = async (req, _ctx, next) => {
             try {
                 return await next()

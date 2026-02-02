@@ -1,1 +1,1 @@
-export { RemoteTransport } from '#sync/transport/RemoteTransport'
+export { createOpsSyncDriver } from '#sync/transport/opsDriver'

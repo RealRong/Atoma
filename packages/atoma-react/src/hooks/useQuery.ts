@@ -116,7 +116,7 @@ export function useQuery<T extends Types.Entity, Relations = {}, const Include e
         })
     }
 
-    const fetchMore = (moreOptions: Query<T>) => {
+    const fetchMore = (moreOptions: Types.Query<T>) => {
         if (!remoteEnabled) {
             return Promise.resolve([] as any)
         }
@@ -151,7 +151,7 @@ export function useQuery<T extends Types.Entity, Relations = {}, const Include e
     )
 
     return {
-        data: relationsResult.data as unknown as (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]),
+        data: relationsResult.data as unknown as (keyof Include extends never ? T[] : Types.WithRelations<T, Relations, Include>[]),
         loading: loading || relationsResult.loading,
         isFetching,
         isStale,

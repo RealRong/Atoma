@@ -172,6 +172,8 @@ export interface SyncTransport {
     subscribe?: SyncSubscribe
 }
 
+export type SyncDriver = SyncTransport
+
 export type SyncPhase = 'push' | 'pull' | 'notify' | 'lifecycle'
 
 export type SyncEvent =

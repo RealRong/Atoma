@@ -1,9 +1,10 @@
-export { ClientPlugin } from './ClientPlugin'
 export { HandlerChain } from './HandlerChain'
 export { PluginRegistry } from './PluginRegistry'
 export { PluginRuntimeIo } from './PluginRuntimeIo'
 export { PluginRuntimeObserve } from './PluginRuntimeObserve'
 export type {
+    ClientPlugin,
+    PluginInitResult,
     HandlerEntry,
     HandlerMap,
     HandlerName,

@@ -1,7 +1,8 @@
 export { createClient } from './internal/createClient'
 export type { CreateClientOptions } from './types'
 export { EndpointRegistry } from './drivers/EndpointRegistry'
-export { PluginRegistry, HandlerChain, ClientPlugin, ClientPlugin as PluginBase } from './plugins'
+export { PluginRegistry, HandlerChain } from './plugins'
+export type { ClientPlugin } from './plugins'
 export { registerClientRuntime, getClientRuntime, requireClientRuntime } from './internal/runtimeRegistry'
 
 export type {
@@ -13,6 +14,8 @@ export type {
     HandlerEntry,
     Register,
     PluginContext,
+    ClientPluginContext,
+    PluginInitResult,
     PluginCapableClient,
     ClientRuntime,
     AtomaClient,

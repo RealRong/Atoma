@@ -1,4 +1,4 @@
-import type { ClientPluginContext } from 'atoma-client'
+import type { CoreRuntime } from 'atoma-runtime'
 import type { Types } from 'atoma-core'
 import type { PersistRequest, PersistResult } from 'atoma-runtime'
 import type { WriteAction, WriteItem, WriteOptions } from 'atoma-protocol'
@@ -52,7 +52,7 @@ export class SyncPersistHandlers {
     private readonly unregister: Array<() => void> = []
     private disposed = false
 
-    constructor(private readonly deps: { ctx: ClientPluginContext; outbox: OutboxStore }) {
+    constructor(private readonly deps: { runtime: CoreRuntime; outbox: OutboxStore }) {
         this.register()
     }
 
@@ -70,9 +70,9 @@ export class SyncPersistHandlers {
     }
 
     private register() {
-        const { ctx, outbox } = this.deps
+        const { runtime, outbox } = this.deps
 
-        this.unregister.push(ctx.persistence.register('queue', {
+        this.unregister.push(runtime.persistence.register('queue', {
             write: { implicitFetch: false },
             persist: async <T extends Types.Entity>(x: {
                 req: PersistRequest<T>
@@ -84,7 +84,7 @@ export class SyncPersistHandlers {
             }
         }))
 
-        this.unregister.push(ctx.persistence.register('local-first', {
+        this.unregister.push(runtime.persistence.register('local-first', {
             write: { implicitFetch: true },
             persist: async <T extends Types.Entity>(x: {
                 req: PersistRequest<T>

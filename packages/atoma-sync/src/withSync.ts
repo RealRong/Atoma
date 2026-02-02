@@ -1,14 +1,16 @@
-import type { ClientPlugin, ClientPluginContext, PluginCapableClient } from 'atoma-client'
-import type { SyncBackoffConfig, SyncClient, SyncEvent, SyncMode, SyncPhase, SyncRetryConfig, SyncRuntimeConfig, SyncSubscribe, SyncTransport } from '#sync/types'
+import type { ClientPlugin, ClientPluginContext } from 'atoma-client'
+import type { SyncBackoffConfig, SyncClient, SyncEvent, SyncMode, SyncPhase, SyncRetryConfig, SyncRuntimeConfig, SyncSubscribe, SyncTransport, SyncDriver } from '#sync/types'
 import { SyncEngine } from '#sync/engine/SyncEngine'
 import { createStores } from '#sync/storage'
 import { WritebackApplier } from '#sync/applier/WritebackApplier'
 import { SyncDevtools } from '#sync/devtools/SyncDevtools'
 import { SyncPersistHandlers } from '#sync/persistence/SyncPersistHandlers'
-import { RemoteTransport } from '#sync/transport/RemoteTransport'
+import { createOpsSyncDriver } from '#sync/transport'
 import { getOrCreateGlobalReplicaId } from '#sync/internal/replicaId'
 
-export type WithSyncOptions = Readonly<{
+const DEVTOOLS_REGISTRY_KEY = Symbol.for('atoma.devtools.registry')
+
+export type SyncPluginOptions = Readonly<{
     mode?: SyncMode
     resources?: string[]
 
@@ -24,9 +26,16 @@ export type WithSyncOptions = Readonly<{
     now?: () => number
     onError?: (error: Error, context: { phase: SyncPhase }) => void
     onEvent?: (event: SyncEvent) => void
+
+    /** Optional sync driver (advanced). */
+    driver?: SyncDriver
+    /** Prefer a specific endpoint id when building ops-based driver (advanced). */
+    endpointId?: string
+    /** Optional client namespace override for outbox keys. */
+    clientKey?: string
 }>
 
-export type WithSyncExtension = Readonly<{
+export type SyncExtension = Readonly<{
     sync: {
         start: (mode?: SyncMode) => void
         stop: () => void
@@ -38,38 +47,39 @@ export type WithSyncExtension = Readonly<{
     }
 }>
 
-export function withSync<TClient extends PluginCapableClient>(client: TClient, opts: WithSyncOptions): TClient & WithSyncExtension {
-    return client.use(syncPlugin(opts))
-}
-
-export function syncPlugin(opts: WithSyncOptions): ClientPlugin<WithSyncExtension> {
+export function syncPlugin(opts: SyncPluginOptions = {}): ClientPlugin<SyncExtension> {
     return {
-        name: 'sync',
-        setup: (ctx) => setupSyncPlugin(ctx, opts)
+        id: 'sync',
+        init: (ctx: ClientPluginContext) => setupSyncPlugin(ctx, opts)
     }
 }
 
-function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { extension: WithSyncExtension; dispose: () => void } {
+function setupSyncPlugin(ctx: ClientPluginContext, opts: SyncPluginOptions): { extension: SyncExtension; dispose: () => void } {
     const now = opts.now ?? (() => Date.now())
     const modeDefault: SyncMode = opts.mode ?? 'full'
     const resources = opts.resources
 
+    const runtime = ctx.runtime
+
     const replicaId = getOrCreateGlobalReplicaId({ now })
-    const clientKey = String(ctx.core.meta?.clientKey ?? 'default').trim() || 'default'
+    const clientKey = String(opts.clientKey ?? runtime.id ?? 'default').trim() || 'default'
     const namespace = `${clientKey}:${replicaId}`
     const keyOutbox = `atoma-sync:${namespace}:outbox`
     const keyCursor = `atoma-sync:${namespace}:cursor`
     const keyLock = `atoma-sync:${namespace}:lock`
 
-    // Outbox is always enabled. Users can control scheduling via `sync.start()`/`sync.push()`
-    // and lane config (e.g. `mode: 'pull-only'`), but the persistence model stays uniform.
     const stores = createStores({
         outboxKey: keyOutbox,
         cursorKey: keyCursor,
         now
     })
 
-    const transport: SyncTransport = new RemoteTransport(ctx)
+    const driver = opts.driver ?? createOpsSyncDriver({
+        executeOps: resolveExecuteOps(ctx, opts.endpointId),
+        now
+    })
+
+    const transport: SyncTransport = driver
     const remoteSubscribe: SyncSubscribe | undefined = transport.subscribe
 
     const devtools = new SyncDevtools({ now })
@@ -85,7 +95,7 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
     }
 
     const applier = new WritebackApplier({
-        ctx
+        runtime
     })
 
     const engineConfigForMode = (m: SyncMode): SyncRuntimeConfig => {
@@ -163,8 +173,7 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
         return engine
     }
 
-    // Register persist handlers for the outbox store views.
-    const persistHandlers = new SyncPersistHandlers({ ctx, outbox: stores.outbox })
+    const persistHandlers = new SyncPersistHandlers({ runtime, outbox: stores.outbox })
 
     const sync = {
         start: (m?: SyncMode) => {
@@ -195,12 +204,15 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
         }
     } as const
 
-    const extension: WithSyncExtension = { sync }
+    const extension: SyncExtension = { sync }
 
-    const unregisterDevtools = ctx.devtools.register('sync', {
+    const registry = (runtime as any)?.[DEVTOOLS_REGISTRY_KEY]
+    const unregisterDevtools = registry?.register?.('sync', {
         snapshot: devtools.snapshot,
         subscribe: devtools.subscribe
     })
+
+    const unregisterEndpoint = registerSyncEndpoint(ctx, driver, opts.endpointId)
 
     const dispose = () => {
         try {
@@ -211,7 +223,13 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
         engine = null
 
         try {
-            unregisterDevtools()
+            unregisterDevtools?.()
+        } catch {
+            // ignore
+        }
+
+        try {
+            unregisterEndpoint?.()
         } catch {
             // ignore
         }
@@ -219,7 +237,57 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: WithSyncOptions): { ext
         persistHandlers.dispose()
     }
 
-    ctx.onDispose(dispose)
-
     return { extension, dispose }
+}
+
+function resolveExecuteOps(ctx: ClientPluginContext, endpointId?: string) {
+    if (endpointId) {
+        const endpoint = ctx.endpoints.getById(endpointId)
+        if (!endpoint || typeof endpoint.driver.executeOps !== 'function') {
+            throw new Error(`[Sync] endpoint not found or missing executeOps: ${endpointId}`)
+        }
+        return (input: { ops: any[]; meta: any; signal?: AbortSignal }) => {
+            return endpoint.driver.executeOps(input as any) as any
+        }
+    }
+
+    const opsEndpoints = ctx.endpoints.getByRole('ops')
+    if (opsEndpoints.length && typeof opsEndpoints[0]?.driver?.executeOps === 'function') {
+        const driver = opsEndpoints[0]!.driver
+        return (input: { ops: any[]; meta: any; signal?: AbortSignal }) => {
+            return driver.executeOps(input as any) as any
+        }
+    }
+
+    return (input: { ops: any[]; meta: any; signal?: AbortSignal }) => {
+        return ctx.runtime.io.executeOps({
+            ops: input.ops as any,
+            ...(input.signal ? { signal: input.signal } : {})
+        }).then((results: any) => ({ results })) as any
+    }
+}
+
+function registerSyncEndpoint(ctx: ClientPluginContext, driver: SyncDriver, endpointId?: string) {
+    const id = (typeof endpointId === 'string' && endpointId.trim())
+        ? endpointId.trim()
+        : `sync:${ctx.clientId}`
+
+    if (ctx.endpoints.getById(id)) return undefined
+
+    const endpoint = {
+        id,
+        role: 'sync',
+        driver: {
+            executeOps: async () => {
+                throw new Error('[Sync] sync endpoint does not support executeOps')
+            },
+            sync: driver
+        }
+    } as any
+
+    try {
+        return ctx.endpoints.register(endpoint)
+    } catch {
+        return undefined
+    }
 }

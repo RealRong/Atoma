@@ -1,11 +1,10 @@
 import type { ObservabilityContext } from 'atoma-observability'
-import { ClientPlugin } from '../plugins'
-import type { ObserveHandler, PluginContext, Register } from '../plugins'
+import type { ClientPlugin, ObserveHandler, PluginContext, Register } from '../plugins'
 
-export class DefaultObservePlugin extends ClientPlugin {
+export class DefaultObservePlugin implements ClientPlugin {
     readonly id = 'defaults:observe'
 
-    setup(ctx: PluginContext, register: Register) {
+    register(ctx: PluginContext, register: Register) {
         const baseObserve = ctx.runtime.observe
         if (!baseObserve || typeof baseObserve.createContext !== 'function') {
             throw new Error('[Atoma] DefaultObservePlugin: runtime.observe 未就绪')

@@ -1,16 +1,70 @@
 import type { Types } from 'atoma-core'
-import type { RuntimeIo } from 'atoma-runtime'
+import type { PersistRequest, RuntimeIo } from 'atoma-runtime'
 import { Runtime } from 'atoma-runtime'
 import type { AtomaClient, AtomaSchema, CreateClientOptions } from '#client/types'
 import { registerClientRuntime } from './runtimeRegistry'
 import { zod } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
 import { EndpointRegistry } from '../drivers/EndpointRegistry'
-import { ClientPlugin, HandlerChain, PluginRegistry, PluginRuntimeIo, PluginRuntimeObserve } from '../plugins'
-import type { PluginContext } from '../plugins'
+import { HandlerChain, PluginRegistry, PluginRuntimeIo, PluginRuntimeObserve } from '../plugins'
+import type { ClientPlugin, PluginContext, PluginInitResult } from '../plugins'
 import { DefaultObservePlugin, HttpBackendPlugin, LocalBackendPlugin } from '../defaults'
 
 const { parseOrThrow } = zod
+
+const DEVTOOLS_REGISTRY_KEY = Symbol.for('atoma.devtools.registry')
+const DEVTOOLS_META_KEY = Symbol.for('atoma.devtools.meta')
+
+type DevtoolsRegistry = Readonly<{
+    get: (key: string) => any
+    register: (key: string, value: any) => () => void
+    subscribe: (fn: (e: { type: 'register' | 'unregister'; key: string }) => void) => () => void
+}>
+
+function ensureDevtoolsRegistry(runtime: any): DevtoolsRegistry {
+    const existing = runtime?.[DEVTOOLS_REGISTRY_KEY]
+    if (existing && typeof existing.get === 'function' && typeof existing.register === 'function') {
+        return existing as DevtoolsRegistry
+    }
+
+    const store = new Map<string, any>()
+    const subscribers = new Set<(e: { type: 'register' | 'unregister'; key: string }) => void>()
+
+    const registry: DevtoolsRegistry = {
+        get: (key) => store.get(String(key)),
+        register: (key, value) => {
+            const k = String(key)
+            store.set(k, value)
+            for (const sub of subscribers) {
+                try {
+                    sub({ type: 'register', key: k })
+                } catch {
+                    // ignore
+                }
+            }
+            return () => {
+                if (store.get(k) !== value) return
+                store.delete(k)
+                for (const sub of subscribers) {
+                    try {
+                        sub({ type: 'unregister', key: k })
+                    } catch {
+                        // ignore
+                    }
+                }
+            }
+        },
+        subscribe: (fn) => {
+            subscribers.add(fn)
+            return () => {
+                subscribers.delete(fn)
+            }
+        }
+    }
+
+    runtime[DEVTOOLS_REGISTRY_KEY] = registry
+    return registry
+}
 
 /**
  * Creates an Atoma client instance.
@@ -68,11 +122,18 @@ export function createClient<
 
     plugins.push(new DefaultObservePlugin())
 
+    ensureDevtoolsRegistry(clientRuntime)
+    ;(clientRuntime as any)[DEVTOOLS_META_KEY] = {
+        storeBackend: hasBackend
+            ? { role: 'remote', kind: 'http' }
+            : { role: 'local', kind: 'custom' }
+    }
+
     for (const plugin of plugins) {
-        if (!plugin || typeof plugin.setup !== 'function') {
-            throw new Error('[Atoma] createClient: plugin 必须提供 setup(ctx, register)')
+        if (!plugin) continue
+        if (typeof plugin.register === 'function') {
+            plugin.register(pluginContext, pluginRegistry.register)
         }
-        plugin.setup(pluginContext, pluginRegistry.register)
     }
 
     const ioEntries = pluginRegistry.list('io')
@@ -96,7 +157,7 @@ export function createClient<
     })
 
     clientRuntime.persistence.register('direct', {
-        persist: async ({ req }) => {
+        persist: async ({ req }: { req: PersistRequest<any> }) => {
             return await persistChain.execute(req, {
                 clientId: clientRuntime.id,
                 store: String(req.storeName)
@@ -110,11 +171,31 @@ export function createClient<
         base: clientRuntime.observe
     })
 
+    const pluginDisposers: Array<() => void> = []
+
+    for (const plugin of plugins) {
+        if (!plugin || typeof plugin.init !== 'function') continue
+        const result = plugin.init(pluginContext) as PluginInitResult<any> | void
+        if (result?.extension && typeof result.extension === 'object') {
+            Object.assign(client, result.extension)
+        }
+        if (typeof result?.dispose === 'function') {
+            pluginDisposers.push(result.dispose)
+        }
+    }
+
     client.stores = ((name: keyof E & string) => {
         return clientRuntime.stores.ensure(String(name)) as any
     }) as AtomaClient<E, S>['stores']
 
     client.dispose = () => {
+        for (let i = pluginDisposers.length - 1; i >= 0; i--) {
+            try {
+                pluginDisposers[i]()
+            } catch {
+                // ignore
+            }
+        }
         for (const endpoint of endpointRegistry.list()) {
             try {
                 endpoint.driver.dispose?.()

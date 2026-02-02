@@ -2,8 +2,7 @@ import { Protocol } from 'atoma-protocol'
 import type { PersistResult } from 'atoma-runtime'
 import { HttpOpsClient, type HttpOpsClientConfig } from '../backend/http/HttpOpsClient'
 import type { Driver, Endpoint } from '../drivers/types'
-import { ClientPlugin } from '../plugins'
-import type { PluginContext, ReadRequest, Register } from '../plugins'
+import type { ClientPlugin, PluginContext, ReadRequest, Register } from '../plugins'
 
 type CreateHttpEndpointOptions = Readonly<{
     baseURL: string
@@ -62,18 +61,17 @@ function createHttpEndpoint(options: CreateHttpEndpointOptions): Endpoint {
     }
 }
 
-export class HttpBackendPlugin extends ClientPlugin {
+export class HttpBackendPlugin implements ClientPlugin {
     readonly id: string
     private readonly baseURL: string
 
     constructor(args: { baseURL: string }) {
-        super()
         this.baseURL = String(args.baseURL ?? '').trim()
         if (!this.baseURL) throw new Error('[Atoma] HttpBackendPlugin: baseURL 必填')
         this.id = `http:${this.baseURL}`
     }
 
-    setup(ctx: PluginContext, register: Register) {
+    register(ctx: PluginContext, register: Register) {
         const endpoint = createHttpEndpoint({ baseURL: this.baseURL, role: 'ops' })
         ctx.endpoints.register(endpoint)
 

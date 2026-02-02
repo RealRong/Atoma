@@ -13,7 +13,7 @@ export type DevtoolsPluginOptions = Readonly<{
 
     /**
      * Override meta shown in devtools snapshot (rare).
-     * - Default uses `ctx.core.meta.storeBackend` (if present) or falls back to local/custom.
+     * - Default uses runtime meta (if present) or falls back to local/custom.
      */
     meta?: ClientMeta
 
@@ -25,27 +25,30 @@ export type DevtoolsPluginOptions = Readonly<{
 }>
 
 const DEVTOOLS_REGISTRY_KEY = Symbol.for('atoma.devtools.registry')
+const DEVTOOLS_META_KEY = Symbol.for('atoma.devtools.meta')
 
-function defaultMeta(ctx: ClientPluginContext): ClientMeta {
-    const storeBackend = ctx.core.meta?.storeBackend
-    if (storeBackend) {
-        const normalizeKind = (k: unknown): ClientMeta['storeBackend']['kind'] => {
-            const v = String(k ?? '').trim()
-            if (v === 'http' || v === 'indexeddb' || v === 'memory' || v === 'localServer' || v === 'custom') return v
-            return 'custom'
-        }
-        return {
-            storeBackend: {
-                role: storeBackend.role,
-                kind: normalizeKind(storeBackend.kind)
-            }
+function readRuntimeMeta(runtime: any): ClientMeta | undefined {
+    const meta = runtime?.[DEVTOOLS_META_KEY]
+    const storeBackend = meta?.storeBackend
+    if (!storeBackend) return
+    const normalizeKind = (k: unknown): ClientMeta['storeBackend']['kind'] => {
+        const v = String(k ?? '').trim()
+        if (v === 'http' || v === 'indexeddb' || v === 'memory' || v === 'localServer' || v === 'custom') return v
+        return 'custom'
+    }
+    return {
+        storeBackend: {
+            role: storeBackend.role === 'remote' ? 'remote' : 'local',
+            kind: normalizeKind(storeBackend.kind)
         }
     }
-    return { storeBackend: { role: 'local', kind: 'custom' } }
 }
 
-function getRegistry(ctx: ClientPluginContext): any | undefined {
-    const runtime: any = ctx.core.runtime as any
+function defaultMeta(runtime: any): ClientMeta {
+    return readRuntimeMeta(runtime) ?? { storeBackend: { role: 'local', kind: 'custom' } }
+}
+
+function getRegistry(runtime: any): any | undefined {
     return runtime ? runtime[DEVTOOLS_REGISTRY_KEY] : undefined
 }
 
@@ -64,10 +67,10 @@ function asSyncProvider(input: unknown): SyncProvider | undefined {
 
 export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugin {
     return {
-        name: 'atoma-devtools',
-        setup: (ctx) => {
-            const runtime = ctx.core.runtime
-            const registry = getRegistry(ctx)
+        id: 'atoma-devtools',
+        init: (ctx: ClientPluginContext) => {
+            const runtime = ctx.runtime as any
+            const registry = getRegistry(runtime)
 
             const historyDevtools = asHistoryProvider(registry?.get?.('history'))
             const syncDevtools = options.syncDevtools ?? asSyncProvider(registry?.get?.('sync'))
@@ -75,7 +78,7 @@ export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugi
             const inspector = createClientInspector({
                 runtime,
                 label: options.label,
-                meta: options.meta ?? defaultMeta(ctx),
+                meta: options.meta ?? defaultMeta(runtime),
                 ...(syncDevtools ? { syncDevtools } : {}),
                 ...(historyDevtools ? { historyDevtools } : {})
             })

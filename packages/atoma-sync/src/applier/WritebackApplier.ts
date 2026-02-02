@@ -1,16 +1,10 @@
-import type { ClientPluginContext } from 'atoma-client'
+import type { CoreRuntime } from 'atoma-runtime'
 import type { Change, EntityId } from 'atoma-protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync/types'
 
-function idempotencyKeyFromWriteItem(item: unknown): string | undefined {
-    const meta = (item as any)?.meta
-    const key = (meta && typeof meta === 'object') ? (meta as any).idempotencyKey : undefined
-    return (typeof key === 'string' && key) ? key : undefined
-}
-
 export class WritebackApplier implements SyncApplier {
     constructor(private readonly deps: {
-        ctx: ClientPluginContext
+        runtime: CoreRuntime
     }) {}
 
     applyPullChanges = async (changes: Change[]) => {
@@ -39,30 +33,34 @@ export class WritebackApplier implements SyncApplier {
             const uniqueUpsertKeys = Array.from(new Set(upsertEntityIds))
             const uniqueDeleteKeys = Array.from(new Set(deleteKeys))
 
-            const obs = this.deps.ctx.observability.createContext(resource as any)
+            const handle = this.deps.runtime.stores.resolveHandle(resource as any, 'sync.applyPullChanges')
+            const obs = this.deps.runtime.observe.createContext(resource as any)
 
-            const upserts = uniqueUpsertKeys.length
-                ? (await this.deps.ctx.transport.remote.query<any>({
-                    store: resource as any,
-                    query: {
+            const upsertsRaw = uniqueUpsertKeys.length
+                ? (await this.deps.runtime.io.query<any>(
+                    handle,
+                    {
                         filter: { op: 'in', field: 'id', values: uniqueUpsertKeys }
-                    },
-                    context: obs
-                })).data.filter((i: any): i is any => i !== undefined)
+                    } as any,
+                    obs
+                )).data.filter((i: any): i is any => i !== undefined)
                 : []
 
-            await this.deps.ctx.persistence.writeback(resource as any, {
+            const processed = await Promise.all(
+                upsertsRaw.map(item => this.deps.runtime.transform.writeback(handle, item as any))
+            )
+
+            const upserts = processed.filter((item): item is any => item !== undefined)
+
+            handle.applyWriteback({
                 upserts,
                 deletes: uniqueDeleteKeys
-            } as any, { context: obs })
+            } as any)
         }
     }
 
     applyWriteAck = async (ack: SyncWriteAck) => {
-        const key = idempotencyKeyFromWriteItem(ack.item)
-        if (key) {
-            this.deps.ctx.persistence.ack(key)
-        }
+        const handle = this.deps.runtime.stores.resolveHandle(ack.resource as any, 'sync.applyWriteAck')
 
         const upserts: any[] = []
         const deletes: EntityId[] = []
@@ -78,17 +76,18 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(serverData)
         }
 
-        const obs = this.deps.ctx.observability.createContext(ack.resource as any)
-        await this.deps.ctx.persistence.writeback(ack.resource as any, { upserts, deletes, versionUpdates } as any, { context: obs })
+        const processed = await Promise.all(
+            upserts.map(item => this.deps.runtime.transform.writeback(handle, item))
+        )
+        const normalized = processed.filter((item): item is any => item !== undefined)
+
+        handle.applyWriteback({ upserts: normalized, deletes, versionUpdates } as any)
     }
 
     applyWriteReject = async (
         reject: SyncWriteReject
     ) => {
-        const key = idempotencyKeyFromWriteItem(reject.item)
-        if (key) {
-            this.deps.ctx.persistence.reject(key, (reject.result as any)?.error ?? reject.result)
-        }
+        const handle = this.deps.runtime.stores.resolveHandle(reject.resource as any, 'sync.applyWriteReject')
 
         const upserts: any[] = []
         const deletes: EntityId[] = []
@@ -109,8 +108,12 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(current.value)
         }
 
-        const obs = this.deps.ctx.observability.createContext(reject.resource as any)
-        await this.deps.ctx.persistence.writeback(reject.resource as any, { upserts, deletes } as any, { context: obs })
+        const processed = await Promise.all(
+            upserts.map(item => this.deps.runtime.transform.writeback(handle, item))
+        )
+        const normalized = processed.filter((item): item is any => item !== undefined)
+
+        handle.applyWriteback({ upserts: normalized, deletes } as any)
     }
 
     applyWriteResults: SyncApplier['applyWriteResults'] = async (args) => {
