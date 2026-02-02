@@ -1,11 +1,10 @@
 import { Observability } from 'atoma-observability'
 import type { Explain } from 'atoma-observability'
-import type { Entity, Query, QueryOneResult, QueryResult, StoreReadOptions } from 'atoma-core'
+import { Query, Store } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import { toErrorWithFallback as toError } from 'atoma-shared'
-import { StoreWriteUtils } from 'atoma-core'
 import type { CoreRuntime, RuntimeRead, StoreHandle } from '../../types/runtimeTypes'
-import { resolveCachePolicy, evaluateWithIndexes, summarizeQuery } from 'atoma-core'
 
 export class ReadFlow implements RuntimeRead {
     private runtime: CoreRuntime
@@ -14,7 +13,7 @@ export class ReadFlow implements RuntimeRead {
         this.runtime = runtime
     }
 
-    query = async <T extends Entity>(handle: StoreHandle<T>, input: Query<T>): Promise<QueryResult<T>> => {
+    query = async <T extends Types.Entity>(handle: StoreHandle<T>, input: Types.Query<T>): Promise<Types.QueryResult<T>> => {
         const runtime = this.runtime
         const { jotaiStore, atom, indexes, matcher } = handle
 
@@ -34,14 +33,14 @@ export class ReadFlow implements RuntimeRead {
             return { ...out, explain: { ...explain, ...(extra || {}) } }
         }
 
-        emit('query:start', { params: summarizeQuery(input) })
+        emit('query:start', { params: Query.summarizeQuery(input) })
 
-        let localCache: { data: T[]; result: QueryResult<T> } | null = null
-        const getLocalResult = (): { data: T[]; result: QueryResult<T> } => {
+        let localCache: { data: T[]; result: Types.QueryResult<T> } | null = null
+        const getLocalResult = (): { data: T[]; result: Types.QueryResult<T> } => {
             if (localCache) return localCache
 
             const map = jotaiStore.get(atom) as Map<EntityId, T>
-            const localResult = evaluateWithIndexes({
+            const localResult = Query.evaluateWithIndexes({
                 mapRef: map,
                 query: input,
                 indexes,
@@ -72,7 +71,7 @@ export class ReadFlow implements RuntimeRead {
                 }
             }
 
-            const cachePolicy = resolveCachePolicy(input)
+            const cachePolicy = Query.resolveCachePolicy(input)
             if (cachePolicy.effectiveSkipStore) {
                 return withExplain(
                     { data: remote, ...(pageInfo ? { pageInfo: pageInfo as any } : {}) },
@@ -89,7 +88,7 @@ export class ReadFlow implements RuntimeRead {
                 const item = remote[i] as T
                 const id = (item as any).id as EntityId
                 const existing = existingMap.get(id)
-                const preserved = StoreWriteUtils.preserveReferenceShallow(existing, item)
+                const preserved = Store.StoreWriteUtils.preserveReferenceShallow(existing, item)
                 processed[i] = preserved
                 if (existing === preserved) continue
                 changedIds.add(id)
@@ -115,8 +114,8 @@ export class ReadFlow implements RuntimeRead {
         }
     }
 
-    queryOne = async <T extends Entity>(handle: StoreHandle<T>, input: Query<T>): Promise<QueryOneResult<T>> => {
-        const next: Query<T> = {
+    queryOne = async <T extends Types.Entity>(handle: StoreHandle<T>, input: Types.Query<T>): Promise<Types.QueryOneResult<T>> => {
+        const next: Types.Query<T> = {
             ...input,
             page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
         }
@@ -124,7 +123,7 @@ export class ReadFlow implements RuntimeRead {
         return { data: res.data[0], ...(res.explain ? { explain: res.explain } : {}) }
     }
 
-    getMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, options?: StoreReadOptions): Promise<T[]> => {
+    getMany = async <T extends Types.Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, options?: Types.StoreReadOptions): Promise<T[]> => {
         const runtime = this.runtime
         const { jotaiStore, atom } = handle
 
@@ -166,7 +165,7 @@ export class ReadFlow implements RuntimeRead {
                 const id = (processed as any).id as EntityId
 
                 const existing = before.get(id)
-                const preserved = StoreWriteUtils.preserveReferenceShallow(existing, processed)
+                const preserved = Store.StoreWriteUtils.preserveReferenceShallow(existing, processed)
 
                 fetchedById.set(id, preserved)
                 if (cache) {
@@ -175,7 +174,7 @@ export class ReadFlow implements RuntimeRead {
             }
 
             if (cache && itemsToCache.length) {
-                const after = StoreWriteUtils.bulkAdd(itemsToCache as any, before)
+                const after = Store.StoreWriteUtils.bulkAdd(itemsToCache as any, before)
                 if (after !== before) {
                     const changedIds = new Set<EntityId>()
                     for (const item of itemsToCache) {
@@ -198,7 +197,7 @@ export class ReadFlow implements RuntimeRead {
         return out.filter((i): i is T => i !== undefined)
     }
 
-    getOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreReadOptions): Promise<T | undefined> => {
+    getOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreReadOptions): Promise<T | undefined> => {
         const { jotaiStore, atom } = handle
         const cached = jotaiStore.get(atom).get(id)
         if (cached !== undefined) return cached
@@ -206,7 +205,7 @@ export class ReadFlow implements RuntimeRead {
         return items[0]
     }
 
-    fetchOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreReadOptions): Promise<T | undefined> => {
+    fetchOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreReadOptions): Promise<T | undefined> => {
         const runtime = this.runtime
         const observabilityContext = runtime.observe.createContext(handle.storeName, {
             explain: options?.explain === true
@@ -220,7 +219,7 @@ export class ReadFlow implements RuntimeRead {
         return await runtime.transform.writeback(handle, one as T)
     }
 
-    fetchAll = async <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions): Promise<T[]> => {
+    fetchAll = async <T extends Types.Entity>(handle: StoreHandle<T>, options?: Types.StoreReadOptions): Promise<T[]> => {
         const runtime = this.runtime
         const observabilityContext = runtime.observe.createContext(handle.storeName, {
             explain: options?.explain === true
@@ -236,7 +235,7 @@ export class ReadFlow implements RuntimeRead {
         return out
     }
 
-    getAll = async <T extends Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions): Promise<T[]> => {
+    getAll = async <T extends Types.Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: Types.StoreReadOptions): Promise<T[]> => {
         const runtime = this.runtime
         const { jotaiStore, atom } = handle
 
@@ -265,7 +264,7 @@ export class ReadFlow implements RuntimeRead {
             }
 
             const existing = existingMap.get(id)
-            const preserved = StoreWriteUtils.preserveReferenceShallow(existing, processed)
+            const preserved = Store.StoreWriteUtils.preserveReferenceShallow(existing, processed)
             itemsToCache.push(preserved as any)
             arr.push(preserved)
         }
@@ -275,9 +274,9 @@ export class ReadFlow implements RuntimeRead {
             if (!incomingIds.has(id)) toRemove.push(id)
         })
 
-        const withRemovals = StoreWriteUtils.bulkRemove(toRemove, existingMap)
+        const withRemovals = Store.StoreWriteUtils.bulkRemove(toRemove, existingMap)
         const next = itemsToCache.length
-            ? StoreWriteUtils.bulkAdd(itemsToCache as any, withRemovals)
+            ? Store.StoreWriteUtils.bulkAdd(itemsToCache as any, withRemovals)
             : withRemovals
 
         const changedIds = new Set<EntityId>(toRemove)

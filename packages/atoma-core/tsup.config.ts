@@ -13,7 +13,6 @@ export default defineConfig({
     external: [
         'atoma-shared',
         'atoma-protocol',
-        'atoma-observability',
         'jotai',
         'jotai/vanilla',
         'jotai/vanilla/utils',

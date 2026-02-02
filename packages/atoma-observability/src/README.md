@@ -38,7 +38,7 @@ If you want the long-term “optimal architecture” (no hidden carrier, explici
 ### 1) User enables debug via client schema (recommended)
 
 Atoma no longer exposes `Core.store.createStore(...)` as a user-facing API.
-Enable debug by putting `debug/debugSink` into the client schema, then access stores via `client.stores.*`.
+Enable debug by putting `debug/debugSink` into the client schema, then access stores via `client.stores('name')`.
 
 - If `debug.enabled` is false, **no emitter is created** and all callsites are effectively no-ops.
 - If `debug.sample` is `0` (default), the store will usually **avoid allocating a traceId**, keeping overhead near zero.
@@ -122,7 +122,7 @@ const client = createClient({
     backend: 'http://localhost:3000/api'
 })
 
-const store = client.stores.todos
+const store = client.stores('todos')
 const res = await store.query?.({
     filter: { op: 'eq', field: 'done', value: false },
     explain: true

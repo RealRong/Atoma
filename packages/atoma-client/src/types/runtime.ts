@@ -1,3 +1,3 @@
-import type { CoreRuntime } from 'atoma-runtime/types/runtimeTypes'
+import type { CoreRuntime } from 'atoma-runtime'
 
 export type ClientRuntime = CoreRuntime

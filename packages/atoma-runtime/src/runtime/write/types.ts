@@ -1,10 +1,10 @@
-import type { Entity, PartialWithId } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { Patch } from 'immer'
 
-export type WriteEvent<T extends Entity> =
-    | { type: 'add'; data: PartialWithId<T> }
-    | { type: 'update'; data: PartialWithId<T>; base: PartialWithId<T> }
-    | { type: 'upsert'; data: PartialWithId<T>; base?: PartialWithId<T>; upsert?: { mode?: 'strict' | 'loose'; merge?: boolean } }
-    | { type: 'remove'; data: PartialWithId<T>; base: PartialWithId<T> }
-    | { type: 'forceRemove'; data: PartialWithId<T>; base: PartialWithId<T> }
+export type WriteEvent<T extends Types.Entity> =
+    | { type: 'add'; data: Types.PartialWithId<T> }
+    | { type: 'update'; data: Types.PartialWithId<T>; base: Types.PartialWithId<T> }
+    | { type: 'upsert'; data: Types.PartialWithId<T>; base?: Types.PartialWithId<T>; upsert?: { mode?: 'strict' | 'loose'; merge?: boolean } }
+    | { type: 'remove'; data: Types.PartialWithId<T>; base: Types.PartialWithId<T> }
+    | { type: 'forceRemove'; data: Types.PartialWithId<T>; base: Types.PartialWithId<T> }
     | { type: 'patches'; patches: Patch[]; inversePatches: Patch[] }

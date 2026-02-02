@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { Entity, RelationIncludeInput, StoreApi, WithRelations } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'
@@ -10,15 +10,15 @@ interface UseMultipleOptions<T, Relations = {}> {
     limit?: number
     unique?: boolean
     selector?: (item: T) => any
-    include?: RelationIncludeInput<Relations>
+    include?: Types.RelationIncludeInput<Relations>
 }
 
-export function useMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreApi<T, Relations>,
+export function useMany<T extends Types.Entity, Relations = {}, const Include extends Types.RelationIncludeInput<Relations> = {}>(
+    store: Types.StoreApi<T, Relations>,
     ids: Array<T['id']> = [],
     options?: UseMultipleOptions<T, Relations> & { include?: Include }
-): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
-    type Result = keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]
+): (keyof Include extends never ? T[] : Types.WithRelations<T, Relations, Include>[]) {
+    type Result = keyof Include extends never ? T[] : Types.WithRelations<T, Relations, Include>[]
 
     const { limit, unique = true, selector, include } = options || {}
 

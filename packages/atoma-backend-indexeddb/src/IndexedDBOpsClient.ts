@@ -1,5 +1,5 @@
 import type { Table } from 'dexie'
-import { executeLocalQuery } from 'atoma-core'
+import { Query as CoreQuery } from 'atoma-core'
 import type {
     ChangeBatch,
     Operation,
@@ -199,7 +199,7 @@ export class IndexedDBOpsClient implements OpsClientLike {
         const table = this.config.tableForResource(resource)
         const raw = await table.toArray()
         const items = raw
-        const result = executeLocalQuery(items as any, query as any)
+        const result = CoreQuery.executeLocalQuery(items as any, query as any)
         return {
             data: result.data,
             ...(result.pageInfo ? { pageInfo: result.pageInfo } : {})

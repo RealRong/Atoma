@@ -1,7 +1,7 @@
 /**
  * StrategyRegistry: Routes persistence requests and resolves write policies by strategy.
  */
-import type { Entity, WriteStrategy } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, PersistAck, TranslatedWriteOp } from '../types/persistenceTypes'
 import type { CoreRuntime, RuntimePersistence } from '../types/runtimeTypes'
 import type { ObservabilityContext } from 'atoma-observability'
@@ -12,22 +12,15 @@ const DEFAULT_WRITE_POLICY: WritePolicy = {
     implicitFetch: true
 }
 
-export interface StrategyRegistryConfig {
-    runtime: CoreRuntime
-    localOnly?: boolean
-}
-
 export class StrategyRegistry implements RuntimePersistence {
-    private readonly strategies = new Map<WriteStrategy, StrategyDescriptor>()
-    private readonly config: StrategyRegistryConfig
+    private readonly strategies = new Map<Types.WriteStrategy, StrategyDescriptor>()
     private readonly runtime: CoreRuntime
 
-    constructor(config: StrategyRegistryConfig) {
-        this.config = config
-        this.runtime = config.runtime
+    constructor(runtime: CoreRuntime) {
+        this.runtime = runtime
     }
 
-    register = (key: WriteStrategy, descriptor: StrategyDescriptor) => {
+    register = (key: Types.WriteStrategy, descriptor: StrategyDescriptor) => {
         const k = String(key)
         if (!k) throw new Error('[Atoma] strategy.register: key 必填')
         if (this.strategies.has(k)) throw new Error(`[Atoma] strategy.register: key 已存在: ${k}`)
@@ -37,7 +30,7 @@ export class StrategyRegistry implements RuntimePersistence {
         }
     }
 
-    resolveWritePolicy = (key?: WriteStrategy): WritePolicy => {
+    resolveWritePolicy = (key?: Types.WriteStrategy): WritePolicy => {
         const k = this.normalizeStrategy(key)
         const policy = this.strategies.get(k)?.write
         if (!policy) return DEFAULT_WRITE_POLICY
@@ -47,22 +40,16 @@ export class StrategyRegistry implements RuntimePersistence {
         }
     }
 
-    persist = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
+    persist = async <T extends Types.Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
         const key = this.normalizeStrategy(req.writeStrategy)
         const handler = this.strategies.get(key)?.persist
-        if (handler) {
-            return await handler({ req, next: this.directPersist })
+        if (!handler) {
+            throw new Error(`[Atoma] strategy.persist: 未注册 writeStrategy="${String(key)}"`)
         }
-        if (key === 'direct') {
-            return await this.directPersist(req)
-        }
-        throw new Error(`[Atoma] strategy.persist: 未注册 writeStrategy="${String(key)}"`)
+        return await handler({ req, next: this.persistViaOps })
     }
 
-    private directPersist = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-        if (this.config.localOnly) {
-            return { status: 'confirmed' }
-        }
+    private persistViaOps = async <T extends Types.Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
         const normalized = await this.executeWriteOps<T>({
             ops: req.writeOps as any,
             context: req.context
@@ -73,7 +60,7 @@ export class StrategyRegistry implements RuntimePersistence {
         }
     }
 
-    executeWriteOps = async <T extends Entity>(args: {
+    executeWriteOps = async <T extends Types.Entity>(args: {
         ops: Array<TranslatedWriteOp>
         context?: ObservabilityContext
     }): Promise<{ ack?: PersistAck<T> }> => {
@@ -105,7 +92,7 @@ export class StrategyRegistry implements RuntimePersistence {
         return writeback.result()
     }
 
-    private normalizeStrategy = (key?: WriteStrategy): WriteStrategy => {
+    private normalizeStrategy = (key?: Types.WriteStrategy): Types.WriteStrategy => {
         const normalized = (typeof key === 'string' && key) ? key : 'direct'
         return normalized
     }

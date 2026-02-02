@@ -1,16 +1,16 @@
-import type { Entity, StoreApi } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import { assertStoreFacade } from 'atoma/internal'
 
-export function requireStoreOwner<T extends Entity, Relations>(
-    store: StoreApi<T, Relations>,
+export function requireStoreOwner<T extends Types.Entity, Relations>(
+    store: Types.StoreApi<T, Relations>,
     tag: string
 ) {
     const facade = assertStoreFacade(store, tag)
     return { client: facade.client, storeName: facade.name }
 }
 
-export function getStoreRuntimeKey<T extends Entity, Relations>(
-    store: StoreApi<T, Relations>,
+export function getStoreRuntimeKey<T extends Types.Entity, Relations>(
+    store: Types.StoreApi<T, Relations>,
     tag: string
 ): object {
     return requireStoreOwner(store, tag).client

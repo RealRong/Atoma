@@ -1,6 +1,6 @@
 import type { ClientPluginContext } from 'atoma-client'
-import type { Entity } from 'atoma-core'
-import type { PersistRequest, PersistResult } from 'atoma-runtime/types/persistenceTypes'
+import type { Types } from 'atoma-core'
+import type { PersistRequest, PersistResult } from 'atoma-runtime'
 import type { WriteAction, WriteItem, WriteOptions } from 'atoma-protocol'
 import type { OutboxStore, OutboxWrite } from '#sync/types'
 
@@ -74,7 +74,7 @@ export class SyncPersistHandlers {
 
         this.unregister.push(ctx.persistence.register('queue', {
             write: { implicitFetch: false },
-            persist: async <T extends Entity>(x: {
+            persist: async <T extends Types.Entity>(x: {
                 req: PersistRequest<T>
                 next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
             }) => {
@@ -86,7 +86,7 @@ export class SyncPersistHandlers {
 
         this.unregister.push(ctx.persistence.register('local-first', {
             write: { implicitFetch: true },
-            persist: async <T extends Entity>(x: {
+            persist: async <T extends Types.Entity>(x: {
                 req: PersistRequest<T>
                 next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
             }) => {

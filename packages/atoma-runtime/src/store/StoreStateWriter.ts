@@ -1,12 +1,12 @@
-import { applyWritebackToMap, type StoreWritebackArgs, StoreWriteUtils } from 'atoma-core'
-import type { Entity } from 'atoma-core'
+import { Store } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import type { StoreHandle } from '../types/runtimeTypes'
 import type { StoreStateWriterApi } from '../types/handleTypes'
 
 type ChangedIds = ReadonlyArray<EntityId> | ReadonlySet<EntityId>
 
-export class StoreStateWriter<T extends Entity> implements StoreStateWriterApi<T> {
+export class StoreStateWriter<T extends Types.Entity> implements StoreStateWriterApi<T> {
     constructor(private readonly handle: StoreHandle<T>) {}
 
     commitMapUpdate = (params: {
@@ -24,10 +24,10 @@ export class StoreStateWriter<T extends Entity> implements StoreStateWriterApi<T
         this.commitMapUpdateInternal(params)
     }
 
-    applyWriteback = (args: StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
+    applyWriteback = (args: Store.StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
         const before = this.handle.jotaiStore.get(this.handle.atom)
-        const preserve = options?.preserve ?? StoreWriteUtils.preserveReferenceShallow
-        const result = applyWritebackToMap(before, args, { preserve })
+        const preserve = options?.preserve ?? Store.StoreWriteUtils.preserveReferenceShallow
+        const result = Store.applyWritebackToMap(before, args, { preserve })
         if (!result) return
 
         this.commitMapUpdateDelta({

@@ -1,6 +1,6 @@
 import { produce, type Draft, type Patch } from 'immer'
 import type { Draft as ImmerDraft } from 'immer'
-import type { Entity, OperationContext, PartialWithId, StoreOperationOptions, UpsertWriteOptions, WriteManyResult } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import type { CoreRuntime, RuntimeWrite, StoreHandle } from '../../types/runtimeTypes'
 import { applyPersistAck, resolveOutputFromAck } from './finalize'
@@ -16,7 +16,7 @@ export class WriteFlow implements RuntimeWrite {
         this.runtime = runtime
     }
 
-    addOne = async <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {
+    addOne = async <T extends Types.Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: Types.StoreOperationOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
         const prepared = await prepareForAdd(runtime, handle, item, opContext)
@@ -32,7 +32,7 @@ export class WriteFlow implements RuntimeWrite {
         return result as T
     }
 
-    addMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]> => {
+    addMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: Types.StoreOperationOptions): Promise<T[]> => {
         const results: T[] = []
         for (const item of items) {
             results.push(await this.addOne(handle, item, options))
@@ -40,13 +40,13 @@ export class WriteFlow implements RuntimeWrite {
         return results
     }
 
-    updateOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, recipe: (draft: ImmerDraft<T>) => void, options?: StoreOperationOptions): Promise<T> => {
+    updateOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, recipe: (draft: ImmerDraft<T>) => void, options?: Types.StoreOperationOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
         const base = await resolveBaseForWrite(runtime, handle, id, options)
 
         const next = produce(base as any, (draft: Draft<T>) => recipe(draft)) as any
-        const patched = { ...(next as any), id } as PartialWithId<T>
+        const patched = { ...(next as any), id } as Types.PartialWithId<T>
         const prepared = await prepareForUpdate(runtime, handle, base, patched, opContext)
 
         const result = await this.executeWrite<T>({
@@ -60,8 +60,8 @@ export class WriteFlow implements RuntimeWrite {
         return result as T
     }
 
-    updateMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>, options?: StoreOperationOptions): Promise<WriteManyResult<T>> => {
-        const results: WriteManyResult<T> = new Array(items.length)
+    updateMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>, options?: Types.StoreOperationOptions): Promise<Types.WriteManyResult<T>> => {
+        const results: Types.WriteManyResult<T> = new Array(items.length)
 
         for (let index = 0; index < items.length; index++) {
             const entry = items[index]
@@ -76,11 +76,11 @@ export class WriteFlow implements RuntimeWrite {
         return results
     }
 
-    upsertOne = async <T extends Entity>(handle: StoreHandle<T>, item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T> => {
+    upsertOne = async <T extends Types.Entity>(handle: StoreHandle<T>, item: Types.PartialWithId<T>, options?: Types.StoreOperationOptions & Types.UpsertWriteOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
         const id = item.id
-        const base = handle.jotaiStore.get(handle.atom).get(id) as PartialWithId<T> | undefined
+        const base = handle.jotaiStore.get(handle.atom).get(id) as Types.PartialWithId<T> | undefined
         const merge = options?.merge !== false
 
         const prepared = await (async () => {
@@ -113,7 +113,7 @@ export class WriteFlow implements RuntimeWrite {
             if (!processed) {
                 throw new Error('[Atoma] upsertOne: transform returned empty')
             }
-            return processed as PartialWithId<T>
+            return processed as Types.PartialWithId<T>
         })()
 
         const result = await this.executeWrite<T>({
@@ -127,8 +127,8 @@ export class WriteFlow implements RuntimeWrite {
         return result as T
     }
 
-    upsertMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>> => {
-        const results: WriteManyResult<T> = new Array(items.length)
+    upsertMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<Types.PartialWithId<T>>, options?: Types.StoreOperationOptions & Types.UpsertWriteOptions): Promise<Types.WriteManyResult<T>> => {
+        const results: Types.WriteManyResult<T> = new Array(items.length)
         for (let index = 0; index < items.length; index++) {
             const entry = items[index]
             try {
@@ -141,7 +141,7 @@ export class WriteFlow implements RuntimeWrite {
         return results
     }
 
-    deleteOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<boolean> => {
+    deleteOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreOperationOptions): Promise<boolean> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
         const base = await resolveBaseForWrite(runtime, handle, id, options)
@@ -149,13 +149,13 @@ export class WriteFlow implements RuntimeWrite {
             handle,
             opContext,
             writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            event: { type: options?.force ? 'forceRemove' : 'remove', data: { id } as PartialWithId<T>, base }
+            event: { type: options?.force ? 'forceRemove' : 'remove', data: { id } as Types.PartialWithId<T>, base }
         })
         return true
     }
 
-    deleteMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
-        const results: WriteManyResult<boolean> = new Array(ids.length)
+    deleteMany = async <T extends Types.Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: Types.StoreOperationOptions): Promise<Types.WriteManyResult<boolean>> => {
+        const results: Types.WriteManyResult<boolean> = new Array(ids.length)
         for (let index = 0; index < ids.length; index++) {
             const id = ids[index]
             try {
@@ -168,7 +168,7 @@ export class WriteFlow implements RuntimeWrite {
         return results
     }
 
-    patches = async <T extends Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: StoreOperationOptions): Promise<void> => {
+    patches = async <T extends Types.Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: Types.StoreOperationOptions): Promise<void> => {
         const opContext = ensureActionId(options?.opContext)
         await this.executeWrite<T>({
             handle,
@@ -178,9 +178,9 @@ export class WriteFlow implements RuntimeWrite {
         })
     }
 
-    private executeWrite = async <T extends Entity>(args: {
+    private executeWrite = async <T extends Types.Entity>(args: {
         handle: StoreHandle<T>
-        opContext: OperationContext
+        opContext: Types.OperationContext
         writeStrategy?: string
         event: WriteEvent<T>
     }): Promise<T | void> => {

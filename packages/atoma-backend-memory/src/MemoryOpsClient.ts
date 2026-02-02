@@ -1,6 +1,6 @@
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma/backend'
 import type { ChangeBatch, Operation, OperationResult, Query, QueryResultData, StandardError, WriteAction, WriteItem, WriteOptions, WriteResultData } from 'atoma-protocol'
-import { executeLocalQuery } from 'atoma-core'
+import { Query as CoreQuery } from 'atoma-core'
 
 type ResourceStore = Map<string, any>
 
@@ -163,7 +163,7 @@ export class MemoryOpsClient implements OpsClientLike {
     private executeQuery(resource: string, query: Query): QueryResultData {
         const store = this.requireStore(resource)
         const items = Array.from(store.values())
-        const result = executeLocalQuery(items as any, query as any)
+        const result = CoreQuery.executeLocalQuery(items as any, query as any)
         return {
             data: result.data,
             ...(result.pageInfo ? { pageInfo: result.pageInfo } : {})

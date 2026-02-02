@@ -1,10 +1,10 @@
 import { applyPatches, type Patch } from 'immer'
-import type { Entity } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
-import { StoreWriteUtils } from 'atoma-core'
+import { Store } from 'atoma-core'
 import type { WriteEvent } from './types'
 
-export function buildOptimisticState<T extends Entity>(args: {
+export function buildOptimisticState<T extends Types.Entity>(args: {
     baseState: Map<EntityId, T>
     event: WriteEvent<T>
 }): { optimisticState: Map<EntityId, T>; changedIds: Set<EntityId>; output?: T | void } {
@@ -21,7 +21,7 @@ export function buildOptimisticState<T extends Entity>(args: {
 
     const upsert = (id: EntityId, value: T) => {
         const current = (next === baseState ? baseState : next).get(id)
-        const preserved = StoreWriteUtils.preserveReferenceShallow(current, value)
+        const preserved = Store.StoreWriteUtils.preserveReferenceShallow(current, value)
         if ((next === baseState ? baseState : next).has(id) && current === preserved) return
         ensureNext().set(id, preserved)
         changedIds.add(id)

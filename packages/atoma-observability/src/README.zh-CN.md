@@ -38,7 +38,7 @@
 ### 1）通过 client schema 开启 debug（推荐）
 
 Atoma 不再把 `Core.store.createStore(...)` 作为用户态入口。
-请把 `debug/debugSink` 配到 client schema 中，然后通过 `client.stores.*` 获取 store。
+请把 `debug/debugSink` 配到 client schema 中，然后通过 `client.stores('name')` 获取 store。
 
 - `debug.enabled` 关闭时：**不会创建 emitter**，所有埋点点位都会变成近似 0 成本的空操作。
 - `debug.sample` 默认为 `0`：store 通常会**避免分配 traceId**，降低默认开销。
@@ -122,7 +122,7 @@ const client = createClient({
     backend: 'http://localhost:3000/api'
 })
 
-const store = client.stores.todos
+const store = client.stores('todos')
 const res = await store.query?.({
     filter: { op: 'eq', field: 'done', value: false },
     explain: true

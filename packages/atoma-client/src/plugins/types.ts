@@ -1,8 +1,8 @@
 import type { ObservabilityContext } from 'atoma-observability'
 import type { Query } from 'atoma-protocol'
-import type { StoreToken } from 'atoma-core'
-import type { CoreRuntime } from 'atoma-runtime/types/runtimeTypes'
-import type { PersistRequest, PersistResult } from 'atoma-runtime/types/persistenceTypes'
+import type { Types } from 'atoma-core'
+import type { CoreRuntime } from 'atoma-runtime'
+import type { PersistRequest, PersistResult } from 'atoma-runtime'
 import type { OperationEnvelope, ResultEnvelope } from '../drivers/types'
 import type { EndpointRegistry } from '../drivers/EndpointRegistry'
 
@@ -31,7 +31,7 @@ export type ObserveContext = {
 export type ObserveNext = () => ObservabilityContext
 
 export type ReadRequest = Readonly<{
-    storeName: StoreToken
+    storeName: Types.StoreToken
     query: Query
     context?: ObservabilityContext
     signal?: AbortSignal
@@ -44,7 +44,7 @@ export type QueryResult = Readonly<{
 }>
 
 export type ObserveRequest = Readonly<{
-    storeName?: StoreToken
+    storeName?: Types.StoreToken
     traceId?: string
     explain?: boolean
 }>

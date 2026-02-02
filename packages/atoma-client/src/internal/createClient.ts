@@ -1,24 +1,18 @@
-import type { DebugConfig, DebugEvent, ObservabilityContext } from 'atoma-observability'
-import type { Entity, Query, StoreToken } from 'atoma-core'
-import { Protocol, type OperationResult } from 'atoma-protocol'
-import type { RuntimeIo, RuntimeObservability, StoreHandle } from 'atoma-runtime/types/runtimeTypes'
+import type { Types } from 'atoma-core'
+import type { RuntimeIo } from 'atoma-runtime'
 import { Runtime } from 'atoma-runtime'
 import type { AtomaClient, AtomaSchema, CreateClientOptions } from '#client/types'
 import { registerClientRuntime } from './runtimeRegistry'
 import { zod } from 'atoma-shared'
 import { CreateClientSchemas } from '#client/schemas'
 import { EndpointRegistry } from '../drivers/EndpointRegistry'
-import { PluginRegistry } from '../plugins/PluginRegistry'
-import { HandlerChain } from '../plugins/HandlerChain'
-import type { HandlerEntry, IoContext, ObserveContext, ObserveHandler, ObserveRequest, PluginContext, QueryResult, ReadContext, ReadRequest } from '../plugins/types'
-import { ClientPlugin } from '../plugins/ClientPlugin'
-import { HttpBackendPlugin } from '../defaults/HttpBackendPlugin'
-import { DefaultObservePlugin } from '../defaults/DefaultObservePlugin'
-import { LocalBackendPlugin } from '../defaults/LocalBackendPlugin'
+import { ClientPlugin, HandlerChain, PluginRegistry, PluginRuntimeIo, PluginRuntimeObserve } from '../plugins'
+import type { PluginContext } from '../plugins'
+import { DefaultObservePlugin, HttpBackendPlugin, LocalBackendPlugin } from '../defaults'
 
 const { parseOrThrow } = zod
 
-function toSchema<E extends Record<string, Entity>>(schema: AtomaSchema<E> | undefined): AtomaSchema<E> {
+function toSchema<E extends Record<string, Types.Entity>>(schema: AtomaSchema<E> | undefined): AtomaSchema<E> {
     return (schema ?? {}) as AtomaSchema<E>
 }
 
@@ -37,139 +31,6 @@ function createStubIo(): RuntimeIo {
     }
 }
 
-function requireSingleResult(results: OperationResult[], missingMessage: string): OperationResult {
-    const result = results[0]
-    if (!result) throw new Error(missingMessage)
-    return result
-}
-
-function toOpsError(result: OperationResult, tag: string): Error {
-    if ((result as any).ok) return new Error(`[${tag}] Operation failed`)
-    const message = ((result as any).error && typeof ((result as any).error as any).message === 'string')
-        ? ((result as any).error as any).message
-        : `[${tag}] Operation failed`
-    const err = new Error(message)
-    ;(err as any).error = (result as any).error
-    return err
-}
-
-function toProtocolValidationError(error: unknown, fallbackMessage: string): Error {
-    const standard = Protocol.error.wrap(error, {
-        code: 'INVALID_RESPONSE',
-        message: fallbackMessage,
-        kind: 'validation'
-    })
-    const err = new Error(`[Atoma] ${standard.message}`)
-    ;(err as any).error = standard
-    return err
-}
-
-class PluginRuntimeIo implements RuntimeIo {
-    private readonly ioChain: HandlerChain
-    private readonly readChain: HandlerChain
-    private readonly now: () => number
-    private readonly clientId: string
-
-    constructor(args: {
-        io: HandlerChain
-        read: HandlerChain
-        now?: () => number
-        clientId: string
-    }) {
-        this.ioChain = args.io
-        this.readChain = args.read
-        this.now = args.now ?? (() => Date.now())
-        this.clientId = args.clientId
-    }
-
-    executeOps: RuntimeIo['executeOps'] = async (input) => {
-        const context = input.context
-        const traceId = (typeof context?.traceId === 'string' && context.traceId) ? context.traceId : undefined
-        const opsWithTrace = Protocol.ops.build.withTraceMeta({
-            ops: input.ops,
-            traceId,
-            ...(context ? { nextRequestId: context.requestId } : {})
-        })
-        const meta = Protocol.ops.build.buildRequestMeta({
-            now: this.now,
-            traceId,
-            requestId: context ? context.requestId() : undefined
-        })
-        Protocol.ops.validate.assertOutgoingOps({ ops: opsWithTrace, meta })
-
-        const res = await this.ioChain.execute({
-            ops: opsWithTrace,
-            meta,
-            ...(input.signal ? { signal: input.signal } : {}),
-            ...(context ? { context } : {})
-        }, { clientId: this.clientId } as IoContext)
-
-        try {
-            return Protocol.ops.validate.assertOperationResults((res as any).results)
-        } catch (error) {
-            throw toProtocolValidationError(error, 'Invalid ops response')
-        }
-    }
-
-    query: RuntimeIo['query'] = async <T extends Entity>(
-        handle: StoreHandle<T>,
-        query: Query,
-        context?: ObservabilityContext,
-        signal?: AbortSignal
-    ): Promise<QueryResult> => {
-        const req: ReadRequest = {
-            storeName: handle.storeName,
-            query,
-            ...(context ? { context } : {}),
-            ...(signal ? { signal } : {})
-        }
-        const ctx: ReadContext = {
-            clientId: this.clientId,
-            store: String(handle.storeName)
-        }
-        return await this.readChain.execute(req, ctx)
-    }
-}
-
-class PluginRuntimeObserve implements RuntimeObservability {
-    private readonly handlers: ObserveHandler[]
-    private readonly clientId: string
-    private readonly base?: RuntimeObservability
-
-    constructor(args: {
-        entries: HandlerEntry[]
-        clientId: string
-        base?: RuntimeObservability
-    }) {
-        this.handlers = args.entries.map(entry => entry.handler as ObserveHandler)
-        this.clientId = args.clientId
-        this.base = args.base
-    }
-
-    createContext: RuntimeObservability['createContext'] = (storeName, ctxArgs) => {
-        const req: ObserveRequest = {
-            storeName,
-            ...(ctxArgs?.traceId ? { traceId: ctxArgs.traceId } : {}),
-            ...(ctxArgs?.explain !== undefined ? { explain: ctxArgs.explain } : {})
-        }
-        const ctx: ObserveContext = { clientId: this.clientId }
-
-        const run = (index: number): ObservabilityContext => {
-            const handler = this.handlers[index]
-            if (!handler) {
-                throw new Error('[Atoma] ObserveChain: missing terminal handler')
-            }
-            return handler(req, ctx, () => run(index + 1))
-        }
-
-        return run(0)
-    }
-
-    registerStore = (args: { storeName: StoreToken; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => {
-        this.base?.registerStore?.(args)
-    }
-}
-
 /**
  * Creates an Atoma client instance.
  *
@@ -177,7 +38,7 @@ class PluginRuntimeObserve implements RuntimeObservability {
  * It handles options validation, plugin assembly, and runtime wiring.
  */
 export function createClient<
-    const E extends Record<string, Entity>,
+    const E extends Record<string, Types.Entity>,
     const S extends AtomaSchema<E> = AtomaSchema<E>
 >(opt: CreateClientOptions<E, S>): AtomaClient<E, S> {
     const args = parseOrThrow(CreateClientSchemas.createClientBuildArgsSchema, opt, { prefix: '[Atoma] createClient: ' }) as any
@@ -188,6 +49,7 @@ export function createClient<
     const pluginRegistry = new PluginRegistry()
 
     const schema = toSchema(args.schema as S)
+    
     const clientRuntime = new Runtime({
         schema: schema as any,
         io: createStubIo(),
@@ -240,21 +102,13 @@ export function createClient<
     const persistChain = new HandlerChain(persistEntries)
     const readChain = new HandlerChain(readEntries)
 
-    const runtimeIo = new PluginRuntimeIo({
+    clientRuntime.io = new PluginRuntimeIo({
         io: ioChain,
         read: readChain,
         now: clientRuntime.now,
         clientId: clientRuntime.id
     })
 
-    const baseObserve = clientRuntime.observe
-    const runtimeObserve = new PluginRuntimeObserve({
-        entries: observeEntries,
-        clientId: clientRuntime.id,
-        base: baseObserve
-    })
-
-    clientRuntime.io = runtimeIo
     clientRuntime.persistence.register('direct', {
         persist: async ({ req }) => {
             return await persistChain.execute(req, {
@@ -263,27 +117,17 @@ export function createClient<
             } as any)
         }
     })
-    clientRuntime.observe = runtimeObserve
 
-    const resolveStore = (<Name extends keyof E & string>(name: Name) => {
-        return clientRuntime.stores.ensure(String(name)) as any
+    clientRuntime.observe = new PluginRuntimeObserve({
+        entries: observeEntries,
+        clientId: clientRuntime.id,
+        base: clientRuntime.observe
     })
 
-    const stores = new Proxy(resolveStore as any, {
-        get: (target, prop, receiver) => {
-            if (prop === 'then') return undefined
-            if (prop === Symbol.toStringTag) return 'AtomaStores'
-            if (typeof prop !== 'string' || prop in target) {
-                return Reflect.get(target, prop, receiver)
-            }
-            return resolveStore(prop as any)
-        },
-        apply: (_target, _thisArg, argArray) => {
-            return resolveStore(argArray[0] as any)
-        }
-    }) as unknown as AtomaClient<E, S>['stores']
+    client.stores = ((name: keyof E & string) => {
+        return clientRuntime.stores.ensure(String(name)) as any
+    }) as AtomaClient<E, S>['stores']
 
-    client.stores = stores
     client.dispose = () => {
         for (const endpoint of endpointRegistry.list()) {
             try {

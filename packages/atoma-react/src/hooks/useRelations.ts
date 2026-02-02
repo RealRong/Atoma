@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { collectRelationStoreTokens, projectRelationsBatch, RelationResolver } from 'atoma-core'
+import { Relations } from 'atoma-core'
 import { stableStringify } from 'atoma-shared'
-import type { Entity, IStore, RelationIncludeInput, StoreToken, WithRelations } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import { getStoreIndexes, getStoreSnapshotMap, getStoreSource } from 'atoma/internal'
 import { useShallowStableArray } from './useShallowStableArray'
@@ -9,32 +9,32 @@ import { requireStoreOwner } from './internal/storeInternal'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 
-export interface UseRelationsResult<T extends Entity> {
+export interface UseRelationsResult<T extends Types.Entity> {
     data: T[]
     loading: boolean
     error?: Error
     refetch: () => Promise<T[]>
 }
 
-export function useRelations<T extends Entity, Relations>(
+export function useRelations<T extends Types.Entity, Relations>(
     items: T[],
     include: undefined,
     relations: Relations | undefined,
-    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
+    resolveStore?: (name: Types.StoreToken) => Types.IStore<any, any> | undefined
 ): UseRelationsResult<T>
 
-export function useRelations<T extends Entity, Relations, const Include extends RelationIncludeInput<Relations>>(
+export function useRelations<T extends Types.Entity, Relations, const Include extends Types.RelationIncludeInput<Relations>>(
     items: T[],
     include: Include,
     relations: Relations | undefined,
-    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
-): UseRelationsResult<keyof Include extends never ? T : WithRelations<T, Relations, Include>>
+    resolveStore?: (name: Types.StoreToken) => Types.IStore<any, any> | undefined
+): UseRelationsResult<keyof Include extends never ? T : Types.WithRelations<T, Relations, Include>>
 
-export function useRelations<T extends Entity>(
+export function useRelations<T extends Types.Entity>(
     items: T[],
     include: Record<string, any> | undefined,
     relations: any | undefined,
-    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
+    resolveStore?: (name: Types.StoreToken) => Types.IStore<any, any> | undefined
 ): UseRelationsResult<any> {
     const effectiveInclude = include && typeof include === 'object' && Object.keys(include).length === 0
         ? undefined
@@ -78,7 +78,7 @@ export function useRelations<T extends Entity>(
         clearSnapshot()
     }, [includeKey, relations])
 
-    const getStoreMap = (storeToken: StoreToken) => {
+    const getStoreMap = (storeToken: Types.StoreToken) => {
         if (!resolveStore) return undefined
         const store = resolveStore(storeToken)
         if (!store) return undefined
@@ -92,7 +92,7 @@ export function useRelations<T extends Entity>(
     const project = (source: T[]): T[] => {
         if (!effectiveInclude || !relations || !resolveStore || source.length === 0) return source
 
-        const projectedLive = projectRelationsBatch(
+        const projectedLive = Relations.projectRelationsBatch(
             source,
             liveInclude,
             relations,
@@ -114,7 +114,7 @@ export function useRelations<T extends Entity>(
         clearSnapshot()
         if (!snapshotInclude || !snapshotNames.length || !relations || !resolveStore || source.length === 0) return
 
-        const projected = projectRelationsBatch(source, snapshotInclude, relations, getStoreMap) as any[]
+        const projected = Relations.projectRelationsBatch(source, snapshotInclude, relations, getStoreMap) as any[]
 
         const next = new Map<EntityId, Record<string, any>>()
         projected.forEach(item => {
@@ -144,7 +144,7 @@ export function useRelations<T extends Entity>(
 
         patchState({ loading: true, error: undefined })
         try {
-            await RelationResolver.prefetchBatch(
+            await Relations.RelationResolver.prefetchBatch(
                 stableItems,
                 effectiveInclude,
                 relations,
@@ -183,7 +183,7 @@ export function useRelations<T extends Entity>(
     useEffect(() => {
         if (!liveInclude || !relations || !resolveStore) return
 
-        const tokens = collectRelationStoreTokens(liveInclude, relations)
+        const tokens = Relations.collectRelationStoreTokens(liveInclude, relations)
         if (!tokens.length) return
 
         const unsubscribers: Array<() => void> = []

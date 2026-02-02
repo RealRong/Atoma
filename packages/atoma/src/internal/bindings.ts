@@ -1,36 +1,36 @@
-import type { Entity, StoreApi, StoreToken } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import type { AtomaClient } from 'atoma-client'
 import { requireClientRuntime } from 'atoma-client'
 
-export type StoreSource<T extends Entity> = Readonly<{
+export type StoreSource<T extends Types.Entity> = Readonly<{
     getSnapshot: () => ReadonlyMap<EntityId, T>
     subscribe: (listener: () => void) => () => void
 }>
 
 type RuntimeLike = {
     stores: {
-        ensure: (name: StoreToken) => StoreApi<any, any>
-        resolveHandle: (name: StoreToken, tag?: string) => any
+        ensure: (name: Types.StoreToken) => Types.StoreApi<any, any>
+        resolveHandle: (name: Types.StoreToken, tag?: string) => any
     }
     transform: { writeback: (handle: any, item: any) => Promise<any> }
 }
 
 const toStoreName = (name: unknown) => String(name)
 
-function ensureHandle(client: AtomaClient<any, any>, storeName: StoreToken, tag: string) {
+function ensureHandle(client: AtomaClient<any, any>, storeName: Types.StoreToken, tag: string) {
     const runtime = requireClientRuntime(client, tag) as RuntimeLike
     const name = toStoreName(storeName)
     const handle = runtime.stores.resolveHandle(name, tag)
     return { runtime, handle, name }
 }
 
-export function resolveStore(client: AtomaClient<any, any>, name: StoreToken): StoreApi<any, any> {
+export function resolveStore(client: AtomaClient<any, any>, name: Types.StoreToken): Types.StoreApi<any, any> {
     const runtime = requireClientRuntime(client, 'resolveStore') as RuntimeLike
     return runtime.stores.ensure(String(name))
 }
 
-export function getStoreSource<T extends Entity>(client: AtomaClient<any, any>, storeName: StoreToken): StoreSource<T> {
+export function getStoreSource<T extends Types.Entity>(client: AtomaClient<any, any>, storeName: Types.StoreToken): StoreSource<T> {
     const { handle } = ensureHandle(client, storeName, 'getStoreSource')
 
     const getSnapshot = () => handle.jotaiStore.get(handle.atom) as ReadonlyMap<EntityId, T>
@@ -43,23 +43,23 @@ export function getStoreSource<T extends Entity>(client: AtomaClient<any, any>, 
     return { getSnapshot, subscribe }
 }
 
-export function getStoreSnapshotMap<T extends Entity>(client: AtomaClient<any, any>, storeName: StoreToken): ReadonlyMap<EntityId, T> {
+export function getStoreSnapshotMap<T extends Types.Entity>(client: AtomaClient<any, any>, storeName: Types.StoreToken): ReadonlyMap<EntityId, T> {
     return getStoreSource<T>(client, storeName).getSnapshot()
 }
 
-export function getStoreIndexes(client: AtomaClient<any, any>, storeName: StoreToken): any {
+export function getStoreIndexes(client: AtomaClient<any, any>, storeName: Types.StoreToken): any {
     return ensureHandle(client, storeName, 'getStoreIndexes').handle.indexes
 }
 
-export function getStoreMatcher(client: AtomaClient<any, any>, storeName: StoreToken): any | undefined {
+export function getStoreMatcher(client: AtomaClient<any, any>, storeName: Types.StoreToken): any | undefined {
     return ensureHandle(client, storeName, 'getStoreMatcher').handle.matcher
 }
 
-export function getStoreRelations(client: AtomaClient<any, any>, storeName: StoreToken): any | undefined {
+export function getStoreRelations(client: AtomaClient<any, any>, storeName: Types.StoreToken): any | undefined {
     return ensureHandle(client, storeName, 'getStoreRelations').handle.relations?.()
 }
 
-export async function hydrateStore<T extends Entity>(client: AtomaClient<any, any>, storeName: StoreToken, items: T[]): Promise<void> {
+export async function hydrateStore<T extends Types.Entity>(client: AtomaClient<any, any>, storeName: Types.StoreToken, items: T[]): Promise<void> {
     if (!items.length) return
     const { runtime, handle } = ensureHandle(client, storeName, 'hydrateStore')
 

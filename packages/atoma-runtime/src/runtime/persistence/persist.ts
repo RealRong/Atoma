@@ -1,4 +1,4 @@
-import type { Entity, OperationContext } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { EntityId, WriteAction, WriteItem, WriteItemMeta, WriteOptions } from 'atoma-protocol'
 import { Protocol } from 'atoma-protocol'
 import { entityId as entityIdUtils, immer as immerUtils, version } from 'atoma-shared'
@@ -8,12 +8,12 @@ import type { StoreHandle } from '../../types/runtimeTypes'
 import type { CoreRuntime } from '../../types/runtimeTypes'
 import type { WriteEvent } from '../write/types'
 
-export async function buildWriteOps<T extends Entity>(args: {
+export async function buildWriteOps<T extends Types.Entity>(args: {
     runtime: CoreRuntime
     handle: StoreHandle<T>
     event: WriteEvent<T>
     optimisticState: Map<EntityId, T>
-    opContext: OperationContext
+    opContext: Types.OperationContext
 }): Promise<TranslatedWriteOp[]> {
     const { runtime, handle, event, optimisticState, opContext } = args
     const meta = buildWriteItemMeta(runtime)
@@ -95,7 +95,7 @@ function buildUpsertOptions(upsert?: { mode?: 'strict' | 'loose'; merge?: boolea
     return Object.keys(out).length ? out : undefined
 }
 
-async function ensureOutbound<T extends Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, value: T, opContext?: OperationContext): Promise<T> {
+async function ensureOutbound<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, value: T, opContext?: Types.OperationContext): Promise<T> {
     const processed = await runtime.transform.outbound(handle, value, opContext)
     if (processed === undefined) {
         throw new Error('[Atoma] transform returned empty for outbound write')
@@ -103,7 +103,7 @@ async function ensureOutbound<T extends Entity>(runtime: CoreRuntime, handle: St
     return processed
 }
 
-function buildWriteOp<T extends Entity>(handle: StoreHandle<T>, action: WriteAction, item: WriteItem, extra?: { options?: WriteOptions; intent?: 'created' }): TranslatedWriteOp {
+function buildWriteOp<T extends Types.Entity>(handle: StoreHandle<T>, action: WriteAction, item: WriteItem, extra?: { options?: WriteOptions; intent?: 'created' }): TranslatedWriteOp {
     const op = Protocol.ops.build.buildWriteOp({
         opId: handle.nextOpId('w'),
         write: {
@@ -133,7 +133,7 @@ function buildWriteItemMeta(runtime: CoreRuntime): WriteItemMeta {
     })
 }
 
-function buildRestoreWriteItemsFromPatches<T extends Entity>(args: {
+function buildRestoreWriteItemsFromPatches<T extends Types.Entity>(args: {
     nextState: Map<EntityId, T>
     patches: Patch[]
     inversePatches: Patch[]

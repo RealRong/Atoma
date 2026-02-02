@@ -1,13 +1,5 @@
 import { useMemo } from 'react'
-import type {
-    Entity,
-    FetchPolicy,
-    PageInfo,
-    Query,
-    RelationIncludeInput,
-    WithRelations,
-    StoreApi
-} from 'atoma-core'
+import type { Types } from 'atoma-core'
 import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'
@@ -21,30 +13,30 @@ type UseQueryStatus = {
     isFetching: boolean
     isStale: boolean
     error?: Error
-    pageInfo?: PageInfo
+    pageInfo?: Types.PageInfo
 }
 
 type UseQueryEntitiesResult<
-    T extends Entity,
+    T extends Types.Entity,
     Relations = {},
-    Include extends RelationIncludeInput<Relations> = {}
+    Include extends Types.RelationIncludeInput<Relations> = {}
 > = UseQueryStatus & {
-    data: keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]
+    data: keyof Include extends never ? T[] : Types.WithRelations<T, Relations, Include>[]
     refetch: () => Promise<T[]>
-    fetchMore: (options: Query<T>) => Promise<T[]>
+    fetchMore: (options: Types.Query<T>) => Promise<T[]>
 }
 
-type UseQueryIdsResult<T extends Entity> = UseQueryStatus & {
+type UseQueryIdsResult<T extends Types.Entity> = UseQueryStatus & {
     data: Array<T['id']>
     refetch: () => Promise<Array<T['id']>>
-    fetchMore: (options: Query<T>) => Promise<Array<T['id']>>
+    fetchMore: (options: Types.Query<T>) => Promise<Array<T['id']>>
 }
 
-type UseQueryOptions<T extends Entity, Relations, Include extends RelationIncludeInput<Relations>> =
-    & Omit<Query<T>, 'include'>
+type UseQueryOptions<T extends Types.Entity, Relations, Include extends Types.RelationIncludeInput<Relations>> =
+    & Omit<Types.Query<T>, 'include'>
     & {
-        include?: RelationIncludeInput<Relations> & Include
-        fetchPolicy?: FetchPolicy
+        include?: Types.RelationIncludeInput<Relations> & Include
+        fetchPolicy?: Types.FetchPolicy
         result?: UseQueryResultMode
     }
 
@@ -54,26 +46,26 @@ const stripRuntimeOptions = (options?: any) => {
     return rest
 }
 
-export function useQuery<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreApi<T, Relations>,
+export function useQuery<T extends Types.Entity, Relations = {}, const Include extends Types.RelationIncludeInput<Relations> = {}>(
+    store: Types.StoreApi<T, Relations>,
     options?: UseQueryOptions<T, Relations, Include> & { result?: 'entities' }
 ): UseQueryEntitiesResult<T, Relations, Include>
 
-export function useQuery<T extends Entity, Relations = {}>(
-    store: StoreApi<T, Relations>,
+export function useQuery<T extends Types.Entity, Relations = {}>(
+    store: Types.StoreApi<T, Relations>,
     options: UseQueryOptions<T, Relations, any> & { include?: never; result: 'ids' }
 ): UseQueryIdsResult<T>
 
-export function useQuery<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreApi<T, Relations>,
+export function useQuery<T extends Types.Entity, Relations = {}, const Include extends Types.RelationIncludeInput<Relations> = {}>(
+    store: Types.StoreApi<T, Relations>,
     options?: UseQueryOptions<T, Relations, Include>
 ): UseQueryEntitiesResult<T, Relations, Include> | UseQueryIdsResult<T> {
-    const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'cache-and-network'
+    const fetchPolicy: Types.FetchPolicy = options?.fetchPolicy || 'cache-and-network'
     const resultMode: UseQueryResultMode = (options as any)?.result || 'entities'
 
     const wantsTransientRemote = Boolean(options?.select?.length)
 
-    const optionsForStoreQuery = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
+    const optionsForStoreQuery = useMemo(() => stripRuntimeOptions(options) as Types.Query<T> | undefined, [options])
 
     const localEntities = useStoreQuery(store, optionsForStoreQuery
         ? { ...(optionsForStoreQuery as any), result: 'entities' as const }
@@ -87,7 +79,7 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
     const remoteEnabled = fetchPolicy !== 'cache-only'
     const remoteBehavior = wantsTransientRemote ? ({ transient: true } as const) : ({ hydrate: true } as const)
 
-    const optionsForRemote = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
+    const optionsForRemote = useMemo(() => stripRuntimeOptions(options) as Types.Query<T> | undefined, [options])
 
     const remote = useRemoteQuery<T, Relations>({
         store,

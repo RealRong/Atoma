@@ -1,8 +1,8 @@
 import { Protocol } from 'atoma-protocol'
-import type { PersistResult } from 'atoma-runtime/types/persistenceTypes'
+import type { PersistResult } from 'atoma-runtime'
 import { createHttpEndpoint } from '../backend/http/createHttpEndpoint'
-import { ClientPlugin } from '../plugins/ClientPlugin'
-import type { PluginContext, ReadRequest, Register } from '../plugins/types'
+import { ClientPlugin } from '../plugins'
+import type { PluginContext, ReadRequest, Register } from '../plugins'
 
 export class HttpBackendPlugin extends ClientPlugin {
     readonly id: string

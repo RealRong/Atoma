@@ -1,13 +1,13 @@
 import type { EntityId, WriteItemResult } from 'atoma-protocol'
-import type { Entity } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { PersistAck, TranslatedWriteOp } from '../../types/persistenceTypes'
 
-export type WritebackCollector<T extends Entity> = Readonly<{
+export type WritebackCollector<T extends Types.Entity> = Readonly<{
     collect: (entry: TranslatedWriteOp, itemRes: WriteItemResult) => void
     result: () => { ack?: PersistAck<T> }
 }>
 
-export function createWritebackCollector<T extends Entity>(): WritebackCollector<T> {
+export function createWritebackCollector<T extends Types.Entity>(): WritebackCollector<T> {
     const created: T[] = []
     const upserts: T[] = []
     const versionUpdates: Array<{ key: EntityId; version: number }> = []

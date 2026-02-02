@@ -1,4 +1,6 @@
 import { ClientPlugin } from 'atoma-client'
+export { HistoryManager } from './HistoryManager'
+export type { ActionRecord, ChangeRecord, HistoryChange, PatchMetadata, UndoStack } from './historyTypes'
 
 class DisabledHistoryPlugin extends ClientPlugin {
     readonly id = 'history:disabled'

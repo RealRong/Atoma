@@ -11,7 +11,7 @@
         "packages/*"
     ],
     "scripts": {
-        "build": "pnpm --filter atoma-shared run build && pnpm --filter atoma-protocol run build && pnpm --filter atoma-observability run build && pnpm --filter atoma-runtime run build && pnpm --filter atoma-core run build && pnpm --filter atoma-client run build && pnpm --filter atoma run build && pnpm --filter atoma-backend run build && pnpm --filter atoma-backend-memory run build && pnpm --filter atoma-backend-indexeddb run build && pnpm --filter atoma-sync run build && pnpm --filter atoma-react run build && pnpm --filter atoma-server run build && pnpm --filter atoma-devtools run build",
+        "build": "pnpm --filter atoma-shared run build && pnpm --filter atoma-protocol run build && pnpm --filter atoma-observability run build && pnpm --filter atoma-core run build && pnpm --filter atoma-runtime run build && pnpm --filter atoma-client run build && pnpm --filter atoma run build && pnpm --filter atoma-backend run build && pnpm --filter atoma-backend-memory run build && pnpm --filter atoma-backend-indexeddb run build && pnpm --filter atoma-sync run build && pnpm --filter atoma-react run build && pnpm --filter atoma-server run build && pnpm --filter atoma-devtools run build",
         "dev:lib": "pnpm --filter atoma run dev:lib",
         "demo:web": "vite --config demo/web/vite.config.ts",
         "demo:server": "pnpm --filter atoma-demo-server run dev",

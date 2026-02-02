@@ -1,20 +1,20 @@
 import type { Patch } from 'immer'
-import type { OperationContext } from 'atoma-core'
-import { createActionId } from 'atoma-core'
+import type { Types } from 'atoma-core'
+import { Operation } from 'atoma-core'
 import type { ActionRecord, ChangeRecord, UndoStack } from './historyTypes'
 
 export type HistoryRecordArgs = Readonly<{
     storeName: string
     patches: Patch[]
     inversePatches: Patch[]
-    opContext: OperationContext
+    opContext: Types.OperationContext
 }>
 
 export type HistoryApplyArgs = Readonly<{
     storeName: string
     patches: Patch[]
     inversePatches: Patch[]
-    opContext: OperationContext
+    opContext: Types.OperationContext
 }>
 
 export type HistoryApply = (args: HistoryApplyArgs) => Promise<void>
@@ -48,11 +48,11 @@ export class HistoryManager {
         return this.history.canRedo(scope)
     }
 
-    beginAction(args: { scope: string; label?: string; origin?: OperationContext['origin'] }): OperationContext {
+    beginAction(args: { scope: string; label?: string; origin?: Types.OperationContext['origin'] }): Types.OperationContext {
         return {
             scope: String(args.scope || 'default'),
             origin: args.origin ?? 'user',
-            actionId: createActionId(),
+            actionId: Operation.createActionId(),
             label: args.label,
             timestamp: Date.now()
         }
@@ -62,10 +62,10 @@ export class HistoryManager {
         const action = this.history.popUndo(args.scope)
         if (!action) return false
 
-        const opContext: OperationContext = {
+        const opContext: Types.OperationContext = {
             scope: String(args.scope || 'default'),
             origin: 'history',
-            actionId: createActionId(),
+            actionId: Operation.createActionId(),
             label: action.label
         }
 
@@ -91,10 +91,10 @@ export class HistoryManager {
         const action = this.history.popRedo(args.scope)
         if (!action) return false
 
-        const opContext: OperationContext = {
+        const opContext: Types.OperationContext = {
             scope: String(args.scope || 'default'),
             origin: 'history',
-            actionId: createActionId(),
+            actionId: Operation.createActionId(),
             label: action.label
         }
 

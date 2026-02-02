@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { Entity, WithRelations, RelationIncludeInput, StoreApi } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useStoreSelector } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
@@ -9,12 +9,12 @@ import { requireStoreOwner } from './internal/storeInternal'
  * React hook to subscribe to a single entity by ID
  * Uses store selector for fine-grained updates - only re-renders when this specific item changes
  */
-export function useOne<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreApi<T, Relations>,
+export function useOne<T extends Types.Entity, Relations = {}, const Include extends Types.RelationIncludeInput<Relations> = {}>(
+    store: Types.StoreApi<T, Relations>,
     id?: T['id'],
-    options?: { include?: RelationIncludeInput<Relations> & Include }
-): (keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined) {
-    type Result = keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined
+    options?: { include?: Types.RelationIncludeInput<Relations> & Include }
+): (keyof Include extends never ? T | undefined : Types.WithRelations<T, Relations, Include> | undefined) {
+    type Result = keyof Include extends never ? T | undefined : Types.WithRelations<T, Relations, Include> | undefined
 
     const base = useStoreSelector(
         store,

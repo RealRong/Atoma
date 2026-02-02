@@ -1,23 +1,22 @@
 import { atom } from 'jotai/vanilla'
-import { StoreIndexes, buildQueryMatcherOptions } from 'atoma-core'
-import type { Entity, IStore, StoreApi, StoreDataProcessor, StoreToken } from 'atoma-core'
+import { Indexes, Query } from 'atoma-core'
+import type { Runtime as CoreRuntimeTypes, Types } from 'atoma-core'
 import type { StoreHandle, StoreRegistry } from '../types/runtimeTypes'
 import type { EntityId } from 'atoma-protocol'
 import { ConfigResolver } from './ConfigResolver'
 import { StoreStateWriter } from './StoreStateWriter'
 import type { CoreRuntime } from '../types/runtimeTypes'
-import type { RuntimeSchema } from 'atoma-core'
 
-type StoreListener = (store: StoreApi<any, any> & { name: string }) => void
+type StoreListener = (store: Types.StoreApi<any, any> & { name: string }) => void
 
 const toStoreName = (name: unknown) => String(name)
 
-type StoreEngine<T extends Entity = any> = Readonly<{
+type StoreEngine<T extends Types.Entity = any> = Readonly<{
     handle: StoreHandle<T>
     api: StoreEngineApi<T>
 }>
 
-type StoreEngineApi<T extends Entity = any> = IStore<T, any> & Readonly<{
+type StoreEngineApi<T extends Types.Entity = any> = Types.IStore<T, any> & Readonly<{
     fetchAll: () => Promise<T[]>
     query: (query: any) => Promise<any>
     queryOne: (query: any) => Promise<any>
@@ -25,16 +24,16 @@ type StoreEngineApi<T extends Entity = any> = IStore<T, any> & Readonly<{
 
 export class Stores implements StoreRegistry {
     private readonly engineByName = new Map<string, StoreEngine<any>>()
-    private readonly facadeByName = new Map<string, StoreApi<any, any> & { name: string }>()
-    private readonly created: Array<StoreApi<any, any> & { name: string }> = []
+    private readonly facadeByName = new Map<string, Types.StoreApi<any, any> & { name: string }>()
+    private readonly created: Array<Types.StoreApi<any, any> & { name: string }> = []
     private readonly listeners = new Set<StoreListener>()
     private readonly configResolver: ConfigResolver
 
     constructor(
         private readonly runtime: CoreRuntime,
         private readonly args: {
-            schema: RuntimeSchema
-            dataProcessor?: StoreDataProcessor<any>
+            schema: CoreRuntimeTypes.RuntimeSchema
+            dataProcessor?: Types.StoreDataProcessor<any>
             defaults?: {
                 idGenerator?: () => EntityId
             }
@@ -49,7 +48,7 @@ export class Stores implements StoreRegistry {
         })
     }
 
-    private notifyCreated = (store: StoreApi<any, any> & { name: string }) => {
+    private notifyCreated = (store: Types.StoreApi<any, any> & { name: string }) => {
         this.created.push(store)
         for (const listener of this.listeners) {
             try {
@@ -60,7 +59,7 @@ export class Stores implements StoreRegistry {
         }
     }
 
-    private getFacade = (storeName: string): StoreApi<any, any> & { name: string } => {
+    private getFacade = (storeName: string): Types.StoreApi<any, any> & { name: string } => {
         const key = toStoreName(storeName)
         const existing = this.facadeByName.get(key)
         if (existing) return existing
@@ -110,8 +109,8 @@ export class Stores implements StoreRegistry {
         })
 
         const objectMapAtom = atom(new Map<EntityId, any>())
-        const indexes = base.indexes && base.indexes.length ? new StoreIndexes<any>(base.indexes) : null
-        const matcher = buildQueryMatcherOptions(base.indexes)
+        const indexes = base.indexes && base.indexes.length ? new Indexes.StoreIndexes<any>(base.indexes) : null
+        const matcher = Query.buildQueryMatcherOptions(base.indexes)
 
         let opSeq = 0
         const nextOpId = (prefix: 'q' | 'w') => {
@@ -196,12 +195,12 @@ export class Stores implements StoreRegistry {
         return engine
     }
 
-    resolve = (name: StoreToken): IStore<any> | undefined => {
+    resolve = (name: Types.StoreToken): Types.IStore<any> | undefined => {
         const key = toStoreName(name)
         return this.facadeByName.get(key)
     }
 
-    ensure = (name: StoreToken): IStore<any> => {
+    ensure = (name: Types.StoreToken): Types.IStore<any> => {
         const key = toStoreName(name)
         this.ensureEngine(key)
         return this.getFacade(key)
@@ -225,7 +224,7 @@ export class Stores implements StoreRegistry {
         }
     }
 
-    resolveHandle = (name: StoreToken, tag?: string): StoreHandle<any> => {
+    resolveHandle = (name: Types.StoreToken, tag?: string): StoreHandle<any> => {
         const key = toStoreName(name)
         const existing = this.engineByName.get(key)
         if (existing) return existing.handle

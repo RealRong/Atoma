@@ -1,9 +1,9 @@
-import type { Entity } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { AtomaSchema } from './schema'
-import type { ClientPlugin } from '../plugins/ClientPlugin'
+import type { ClientPlugin } from '../plugins'
 
 export type CreateClientOptions<
-    Entities extends Record<string, Entity>,
+    Entities extends Record<string, Types.Entity>,
     Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
 > = Readonly<{
     /** Domain schema (indexes/relations/validators/etc). */

@@ -1,17 +1,7 @@
-import type {
-    DataProcessorContext,
-    DataProcessorMode,
-    DataProcessorStage,
-    DataProcessorStageFn,
-    DataProcessorValidate,
-    Entity,
-    OperationContext,
-    SchemaValidator,
-    StoreDataProcessor
-} from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { CoreRuntime, StoreHandle } from '../../types/runtimeTypes'
 
-const STAGE_ORDER: DataProcessorStage[] = [
+const STAGE_ORDER: Types.DataProcessorStage[] = [
     'deserialize',
     'normalize',
     'transform',
@@ -29,7 +19,7 @@ const hasValidatorShape = (value: unknown): boolean => {
         || typeof v.validate === 'function'
 }
 
-async function applySchemaValidator<T>(item: T, schema: SchemaValidator<T>): Promise<T> {
+async function applySchemaValidator<T>(item: T, schema: Types.SchemaValidator<T>): Promise<T> {
     try {
         if ((schema as any).safeParse) {
             const result = (schema as any).safeParse(item)
@@ -64,23 +54,23 @@ async function applySchemaValidator<T>(item: T, schema: SchemaValidator<T>): Pro
 
 async function runValidateStage<T>(
     value: T,
-    validator: DataProcessorValidate<T>,
-    context: DataProcessorContext<T>
+    validator: Types.DataProcessorValidate<T>,
+    context: Types.DataProcessorContext<T>
 ): Promise<T | undefined> {
     if (hasValidatorShape(validator)) {
-        return await applySchemaValidator(value, validator as SchemaValidator<T>)
+        return await applySchemaValidator(value, validator as Types.SchemaValidator<T>)
     }
     if (typeof validator === 'function') {
-        return await (validator as DataProcessorStageFn<T>)(value, context)
+        return await (validator as Types.DataProcessorStageFn<T>)(value, context)
     }
     throw new Error('[Atoma] dataProcessor.validate must be a function or schema validator')
 }
 
 async function runStage<T>(
-    stage: DataProcessorStage,
-    handler: DataProcessorStageFn<T>,
+    stage: Types.DataProcessorStage,
+    handler: Types.DataProcessorStageFn<T>,
     value: T,
-    context: DataProcessorContext<T>
+    context: Types.DataProcessorContext<T>
 ): Promise<T | undefined> {
     if (typeof handler !== 'function') {
         throw new Error(`[Atoma] dataProcessor.${stage} must be a function`)
@@ -95,12 +85,12 @@ export class DataProcessor {
         this.getRuntime = getRuntime
     }
 
-    async process<T>(mode: DataProcessorMode, data: T, context: {
+    async process<T>(mode: Types.DataProcessorMode, data: T, context: {
         storeName: string
         runtime: CoreRuntime
-        opContext?: OperationContext
+        opContext?: Types.OperationContext
         adapter?: unknown
-        dataProcessor?: StoreDataProcessor<T>
+        dataProcessor?: Types.StoreDataProcessor<T>
     }): Promise<T | undefined> {
         const pipeline = context.dataProcessor
         if (!pipeline) return data
@@ -111,7 +101,7 @@ export class DataProcessor {
             const handler = pipeline[stage]
             if (!handler) continue
 
-            const stageContext: DataProcessorContext<T> = {
+            const stageContext: Types.DataProcessorContext<T> = {
                 storeName: context.storeName,
                 runtime: context.runtime,
                 opContext: context.opContext,
@@ -121,17 +111,17 @@ export class DataProcessor {
             }
 
             current = stage === 'validate'
-                ? await runValidateStage(current, handler as DataProcessorValidate<T>, stageContext)
-                : await runStage(stage, handler as DataProcessorStageFn<T>, current, stageContext)
+                ? await runValidateStage(current, handler as Types.DataProcessorValidate<T>, stageContext)
+                : await runStage(stage, handler as Types.DataProcessorStageFn<T>, current, stageContext)
         }
 
         return current
     }
 
-    async inbound<T extends Entity>(
+    async inbound<T extends Types.Entity>(
         handle: StoreHandle<T>,
         data: T,
-        opContext?: OperationContext
+        opContext?: Types.OperationContext
     ): Promise<T | undefined> {
         const runtime = this.getRuntime()
         return this.process('inbound', data, {
@@ -142,10 +132,10 @@ export class DataProcessor {
         })
     }
 
-    async writeback<T extends Entity>(
+    async writeback<T extends Types.Entity>(
         handle: StoreHandle<T>,
         data: T,
-        opContext?: OperationContext
+        opContext?: Types.OperationContext
     ): Promise<T | undefined> {
         const runtime = this.getRuntime()
         return this.process('writeback', data, {
@@ -156,10 +146,10 @@ export class DataProcessor {
         })
     }
 
-    async outbound<T extends Entity>(
+    async outbound<T extends Types.Entity>(
         handle: StoreHandle<T>,
         data: T,
-        opContext?: OperationContext
+        opContext?: Types.OperationContext
     ): Promise<T | undefined> {
         const runtime = this.getRuntime()
         return this.process('outbound', data, {

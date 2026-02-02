@@ -17,9 +17,9 @@ export type {
     ReadRequest,
     QueryResult,
     ObserveRequest
-} from '../plugins/types'
+} from '../plugins'
 
-export { ClientPlugin } from '../plugins/ClientPlugin'
+export { ClientPlugin } from '../plugins'
 
 export interface PluginCapableClient {
     dispose: () => void

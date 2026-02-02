@@ -2,7 +2,6 @@ import type { Query, Entity } from '../types'
 import type { StoreIndexes } from '../indexes/StoreIndexes'
 import type { QueryMatcherOptions } from './QueryMatcher'
 import type { EntityId } from 'atoma-protocol'
-import type { Explain } from 'atoma-observability'
 import { executeLocalQuery } from './engine/local'
 import { summarizeQuery } from './summary'
 
@@ -12,7 +11,7 @@ export function evaluateWithIndexes<T extends Entity>(params: {
     indexes: StoreIndexes<T> | null
     matcher?: QueryMatcherOptions
     emit: (type: string, payload: any) => void
-    explain?: Explain
+    explain?: Record<string, any>
 }): { data: T[]; pageInfo?: any } {
     const { mapRef, query, indexes, matcher, emit, explain } = params
 

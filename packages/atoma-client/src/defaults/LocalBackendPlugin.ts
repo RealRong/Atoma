@@ -1,8 +1,8 @@
-import type { Entity } from 'atoma-core'
-import { executeLocalQuery } from 'atoma-core'
+import { Query } from 'atoma-core'
+import type { Types } from 'atoma-core'
 import type { EntityId, Operation, OperationResult, QueryResultData } from 'atoma-protocol'
-import { ClientPlugin } from '../plugins/ClientPlugin'
-import type { IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from '../plugins/types'
+import { ClientPlugin } from '../plugins'
+import type { IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from '../plugins'
 
 const MISSING_TERMINAL = '[Atoma] HandlerChain: missing terminal handler'
 
@@ -15,13 +15,13 @@ const isMissingTerminal = (error: unknown): boolean => {
     return false
 }
 
-async function queryLocal<T extends Entity>(ctx: PluginContext, storeName: string, query: any): Promise<QueryResultData> {
+async function queryLocal<T extends Types.Entity>(ctx: PluginContext, storeName: string, query: any): Promise<QueryResultData> {
     const handle = ctx.runtime.stores.resolveHandle(storeName, 'LocalBackendPlugin.query')
     const map = handle.jotaiStore.get(handle.atom) as Map<EntityId, T>
     const items = Array.from(map.values()) as T[]
     const outbound = await Promise.all(items.map(item => ctx.runtime.transform.outbound(handle, item)))
     const normalized = outbound.filter(item => item !== undefined) as T[]
-    return executeLocalQuery(normalized as any, query as any, { matcher: handle.matcher })
+    return Query.executeLocalQuery(normalized as any, query as any, { matcher: handle.matcher })
 }
 
 function toUnsupportedOpsResults(ops: Operation[]): OperationResult[] {

@@ -1,14 +1,13 @@
 import type { PrimitiveAtom } from 'jotai/vanilla'
-import type { Entity, JotaiStore, StoreConfig, StoreWritebackArgs, WriteStrategy } from 'atoma-core'
+import type { Indexes, Query, Store, Types } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
-import type { QueryMatcherOptions, StoreIndexes } from 'atoma-core'
 
 type ChangedIds = ReadonlyArray<EntityId> | ReadonlySet<EntityId>
 
-export type StoreStateWriterApi<T extends Entity = any> = {
+export type StoreStateWriterApi<T extends Types.Entity = any> = {
     commitMapUpdate: (params: { before: Map<EntityId, T>; after: Map<EntityId, T> }) => void
     commitMapUpdateDelta: (params: { before: Map<EntityId, T>; after: Map<EntityId, T>; changedIds: ChangedIds }) => void
-    applyWriteback: (args: StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => void
+    applyWriteback: (args: Store.StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => void
 }
 
 /**
@@ -16,18 +15,18 @@ export type StoreStateWriterApi<T extends Entity = any> = {
  * - Internal store operations use it alongside CoreRuntime for cross-store abilities.
  * - Internal layers access atom/jotaiStore/indexes without bloating public store API.
  */
-export type StoreHandle<T extends Entity = any> = {
+export type StoreHandle<T extends Types.Entity = any> = {
     atom: PrimitiveAtom<Map<EntityId, T>>
-    jotaiStore: JotaiStore
-    matcher?: QueryMatcherOptions
+    jotaiStore: Types.JotaiStore
+    matcher?: Query.QueryMatcherOptions
     storeName: string
     /** Store-level default write strategy (from schema). Can be overridden per operation via StoreOperationOptions.writeStrategy. */
-    defaultWriteStrategy?: WriteStrategy
+    defaultWriteStrategy?: Types.WriteStrategy
     relations?: () => any | undefined
-    indexes: StoreIndexes<T> | null
-    hooks: StoreConfig<T>['hooks']
-    idGenerator: StoreConfig<T>['idGenerator']
-    dataProcessor: StoreConfig<T>['dataProcessor']
+    indexes: Indexes.StoreIndexes<T> | null
+    hooks: Types.StoreConfig<T>['hooks']
+    idGenerator: Types.StoreConfig<T>['idGenerator']
+    dataProcessor: Types.StoreConfig<T>['dataProcessor']
     stateWriter: StoreStateWriterApi<T>
     commitMapUpdate: StoreStateWriterApi<T>['commitMapUpdate']
     commitMapUpdateDelta: StoreStateWriterApi<T>['commitMapUpdateDelta']

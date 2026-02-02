@@ -1,11 +1,29 @@
 import type { Patch } from 'immer'
-import type { OperationContext } from 'atoma-core'
+import type { Atom } from 'jotai/vanilla'
+import type { Types } from 'atoma-core'
+
+export interface PatchMetadata {
+    atom: Atom<any>
+    databaseName?: string
+    timestamp: number
+    baseVersion?: number
+    etag?: string
+    traceId?: string
+}
+
+export interface HistoryChange {
+    patches: Patch[]
+    inversePatches: Patch[]
+    atom: Atom<any>
+    databaseName?: string
+    timestamp: number
+}
 
 export type ChangeRecord = Readonly<{
     storeName: string
     patches: Patch[]
     inversePatches: Patch[]
-    ctx: OperationContext
+    ctx: Types.OperationContext
 }>
 
 export type ActionRecord = {

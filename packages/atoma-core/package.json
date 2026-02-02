@@ -19,8 +19,7 @@
     },
     "dependencies": {
         "atoma-shared": "workspace:*",
-        "atoma-protocol": "workspace:*",
-        "atoma-observability": "workspace:*"
+        "atoma-protocol": "workspace:*"
     },
     "peerDependencies": {
         "immer": "^9.0.0 || ^10.0.0",

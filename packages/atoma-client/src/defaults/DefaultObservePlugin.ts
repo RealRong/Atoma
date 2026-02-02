@@ -1,6 +1,6 @@
 import type { ObservabilityContext } from 'atoma-observability'
-import { ClientPlugin } from '../plugins/ClientPlugin'
-import type { ObserveHandler, PluginContext, Register } from '../plugins/types'
+import { ClientPlugin } from '../plugins'
+import type { ObserveHandler, PluginContext, Register } from '../plugins'
 
 export class DefaultObservePlugin extends ClientPlugin {
     readonly id = 'defaults:observe'
