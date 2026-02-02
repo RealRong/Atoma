@@ -12,7 +12,6 @@ export default defineConfig({
     treeshake: true,
     external: [
         'atoma-core',
-        'atoma-core/internal',
         'atoma-shared',
         'atoma-protocol',
         'atoma-observability',

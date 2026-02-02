@@ -1,5 +1,5 @@
-import { defaultSnowflakeGenerator } from 'atoma-core/internal'
-import type { Entity, PartialWithId } from 'atoma-core/internal'
+import { defaultSnowflakeGenerator } from './idGenerator'
+import type { Entity, PartialWithId } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 
 export class StoreWriteUtils {

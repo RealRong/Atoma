@@ -4,7 +4,6 @@ export type { CreateClientOptions } from './types'
 export { EndpointRegistry } from './drivers/EndpointRegistry'
 export { PluginRegistry } from './plugins/PluginRegistry'
 export { HandlerChain } from './plugins/HandlerChain'
-export { RuntimeCore } from './runtime/RuntimeCore'
 export { ClientPlugin, ClientPlugin as PluginBase } from './plugins/ClientPlugin'
 export { registerClientRuntime, getClientRuntime, requireClientRuntime } from './internal/runtimeRegistry'
 

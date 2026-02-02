@@ -1,8 +1,7 @@
 import { Atom } from 'jotai/vanilla'
 import type { Draft, Patch } from 'immer'
-import type { StoreHandle } from './store/internals/handleTypes'
-import type { DebugConfig, DebugEvent, Explain, ObservabilityContext } from 'atoma-observability'
-import type { EntityId, Meta, Operation, OperationResult, WriteAction, WriteItem, WriteOptions, WriteResultData } from 'atoma-protocol'
+import type { Explain } from 'atoma-observability'
+import type { EntityId } from 'atoma-protocol'
 
 /**
  * Minimal entity interface - all stored entities must have an id
@@ -73,35 +72,6 @@ export type DeleteItem = {
 /**
  * Writeback payload for applying remote changes to memory/durable stores.
  */
-export type PersistWriteback<T extends Entity> = Readonly<{
-    upserts?: T[]
-    deletes?: EntityId[]
-    versionUpdates?: Array<{ key: EntityId; version: number }>
-}>
-
-/**
- * Persist ack (server authoritative response for a write batch).
- * - Used to override local state with server versions/data when available.
- */
-export type PersistAck<T extends Entity> = Readonly<{
-    created?: T[]
-    upserts?: T[]
-    deletes?: EntityId[]
-    versionUpdates?: Array<{ key: EntityId; version: number }>
-}>
-
-export type OpsClientLike = {
-    executeOps: (input: {
-        ops: Operation[]
-        meta: Meta
-        signal?: AbortSignal
-        context?: ObservabilityContext
-    }) => Promise<{
-        results: OperationResult[]
-        status?: number
-    }>
-}
-
 /**
  * Metadata passed with patch operations
  */
@@ -138,97 +108,6 @@ export type OperationContext = Readonly<{
 export type WriteConfirmation = 'optimistic' | 'strict'
 
 export type WriteTimeoutBehavior = 'reject' | 'resolve-enqueued'
-
-/**
- * WriteItemMeta（每个 write item 的 meta，会发到服务端）
- * - 只放“跨重试仍稳定”的字段（idempotencyKey/clientTimeMs）
- */
-export type WriteItemMeta = {
-    idempotencyKey: string
-    clientTimeMs: number
-}
-
-/**
- * 内部票据（每次写入调用一张）
- * - 只存在于内存
- * - 用于统一 await 语义（enqueued/confirmed）
- */
-export type WriteTicket = {
-    idempotencyKey: string
-    clientTimeMs: number
-    enqueued: Promise<void>
-    confirmed: Promise<void>
-    settle: (stage: 'enqueued' | 'confirmed', error?: unknown) => void
-}
-
-/**
- * Dispatch event for queue processing
- */
-export type StoreDispatchEvent<T extends Entity> = {
-    handle: StoreHandle<T>
-    opContext?: OperationContext
-    onFail?: (error?: Error) => void  // Accept error object for rejection
-    ticket?: WriteTicket
-    /**
-     * 内部：显式写入策略（默认 undefined）。
-     * - core 不关心策略的语义，只负责把它透传给 `CoreRuntime.persistence.persist`
-     * - 例如 client 层可用 'direct' / 'queue' / 'local-first' 等实现策略选择
-     */
-    writeStrategy?: WriteStrategy
-} & (
-        | {
-            type: 'add'
-            data: PartialWithId<T>
-            onSuccess?: (o: T) => void
-        }
-        | {
-            type: 'upsert'
-            data: PartialWithId<T>
-            upsert?: UpsertWriteOptions
-            onSuccess?: (o: T) => void
-        }
-        | {
-            type: 'update'
-            data: PartialWithId<T>
-            onSuccess?: (o: T) => void
-        }
-        | {
-            type: 'remove'
-            data: PartialWithId<T>
-            onSuccess?: () => void
-        }
-        | {
-            type: 'forceRemove'
-            data: PartialWithId<T>
-            onSuccess?: () => void
-        }
-        | {
-            type: 'hydrate'
-            data: PartialWithId<T>
-        }
-        | {
-            type: 'hydrateMany'
-            items: Array<PartialWithId<T>>
-        }
-        | {
-            /**
-             * Patch-based mutation (用于 history undo/redo 或其他高级场景)
-             * - 语义：不会逐条把 patches 应用到后端，而是按受影响 id 做 restore/replace（bulkUpsert merge=false + 版本化 bulkDelete）
-             * - 具体“如何持久化”（立即执行/延迟入队/本地优先）由 `CoreRuntime.persistence.persist` 决定
-             */
-            type: 'patches'
-            patches: Patch[]
-            inversePatches: Patch[]
-            onSuccess?: () => void
-        }
-    )
-
-export type StoreCommit = Readonly<{
-    storeName: string
-    opContext: OperationContext
-    patches: Patch[]
-    inversePatches: Patch[]
-}>
 
 /**
  * Options for store operations
@@ -306,7 +185,7 @@ export type DataProcessorStage = 'deserialize' | 'normalize' | 'transform' | 'va
 
 export type DataProcessorBaseContext<T> = Readonly<{
     storeName: string
-    runtime: CoreRuntime
+    runtime: unknown
     opContext?: OperationContext
     adapter?: unknown
 }>
@@ -327,13 +206,6 @@ export type StoreDataProcessor<T> = Readonly<{
     validate?: DataProcessorValidate<T>
     sanitize?: DataProcessorStageFn<T>
     serialize?: DataProcessorStageFn<T>
-}>
-
-export type DataProcessor = Readonly<{
-    process: <T>(mode: DataProcessorMode, data: T, context: DataProcessorBaseContext<T> & { dataProcessor?: StoreDataProcessor<T> }) => Promise<T | undefined>
-    inbound: <T extends Entity>(handle: StoreHandle<T>, data: T, opContext?: OperationContext) => Promise<T | undefined>
-    writeback: <T extends Entity>(handle: StoreHandle<T>, data: T, opContext?: OperationContext) => Promise<T | undefined>
-    outbound: <T extends Entity>(handle: StoreHandle<T>, data: T, opContext?: OperationContext) => Promise<T | undefined>
 }>
 
 export interface LifecycleHooks<T> {
@@ -401,105 +273,6 @@ export type StoreToken = string
  * - 用于 store view / 上层 wiring 选择不同的写入策略实现（例如 direct / queue / local-first）
  */
 export type WriteStrategy = string
-
-export type PersistStatus = 'confirmed' | 'enqueued'
-
-export type TranslatedWriteOp = Readonly<{
-    op: Operation
-    action: 'create' | 'update' | 'upsert' | 'delete'
-    entityId?: EntityId
-    intent?: 'created'
-    requireCreatedData?: boolean
-}>
-
-export type PersistRequest<T extends Entity> = Readonly<{
-    storeName: StoreToken
-    writeStrategy?: WriteStrategy
-    handle: StoreHandle<T>
-    writeOps: Array<TranslatedWriteOp>
-    signal?: AbortSignal
-    context?: ObservabilityContext
-}>
-
-export type PersistResult<T extends Entity> = Readonly<{
-    status: PersistStatus
-    ack?: PersistAck<T>
-}>
-
-export interface Persistence {
-    persist: <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
-}
-
-/**
- * CoreRuntime：唯一上下文，承载跨 store 能力（ops/mutation/persistence/observability/resolveStore）
- */
-export type StoreRegistry = Readonly<{
-    resolve: (name: StoreToken) => IStore<any> | undefined
-    ensure: (name: StoreToken) => IStore<any>
-    list: () => Iterable<IStore<any>>
-    onCreated: (listener: (store: IStore<any>) => void, options?: { replay?: boolean }) => () => void
-    resolveHandle: (name: StoreToken, tag?: string) => StoreHandle<any>
-}>
-
-export interface RuntimeObservability {
-    createContext: (storeName: StoreToken, args?: { traceId?: string; explain?: boolean }) => ObservabilityContext
-    registerStore?: (args: { storeName: StoreToken; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => void
-}
-
-export type RuntimeIo = Readonly<{
-    executeOps: (args: { ops: Operation[]; signal?: AbortSignal; context?: ObservabilityContext }) => Promise<OperationResult[]>
-    query: <T extends Entity>(handle: StoreHandle<T>, query: Query, context?: ObservabilityContext, signal?: AbortSignal) => Promise<{ data: unknown[]; pageInfo?: any; explain?: any }>
-    write: <T extends Entity>(handle: StoreHandle<T>, args: { action: WriteAction; items: WriteItem[]; options?: WriteOptions }, context?: ObservabilityContext, signal?: AbortSignal) => Promise<WriteResultData>
-}>
-
-export type RuntimeTransform = Readonly<{
-    inbound: <T extends Entity>(handle: StoreHandle<T>, data: T, ctx?: OperationContext) => Promise<T | undefined>
-    writeback: <T extends Entity>(handle: StoreHandle<T>, data: T, ctx?: OperationContext) => Promise<T | undefined>
-    outbound: <T extends Entity>(handle: StoreHandle<T>, data: T, ctx?: OperationContext) => Promise<T | undefined>
-}>
-
-export type RuntimeWrite = Readonly<{
-    resolveWriteStrategy: <T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions | undefined) => WriteStrategy | undefined
-    allowImplicitFetchForWrite: (writeStrategy?: WriteStrategy) => boolean
-    prepareForAdd: <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, opContext?: OperationContext) => Promise<PartialWithId<T>>
-    prepareForUpdate: <T extends Entity>(handle: StoreHandle<T>, base: PartialWithId<T>, patch: PartialWithId<T>, opContext?: OperationContext) => Promise<PartialWithId<T>>
-    runBeforeSave: <T>(hooks: LifecycleHooks<T> | undefined, item: PartialWithId<T>, action: 'add' | 'update') => Promise<PartialWithId<T>>
-    runAfterSave: <T>(hooks: LifecycleHooks<T> | undefined, item: PartialWithId<T>, action: 'add' | 'update') => Promise<void>
-    ensureActionId: (opContext: OperationContext | undefined) => OperationContext | undefined
-    ignoreTicketRejections: (ticket: WriteTicket) => void
-    dispatch: <T extends Entity>(event: StoreDispatchEvent<T>) => void
-    applyWriteback: <T extends Entity>(handle: StoreHandle<T>, writeback: PersistWriteback<T>) => Promise<void>
-}>
-
-export type RuntimeMutation = Readonly<{
-    begin: () => { ticket: WriteTicket; meta: WriteItemMeta }
-    await: (ticket: WriteTicket, options?: StoreOperationOptions) => Promise<void>
-    subscribeCommit: (listener: (commit: StoreCommit) => void) => () => void
-    ack: (idempotencyKey: string) => void
-    reject: (idempotencyKey: string, reason?: unknown) => void
-}>
-
-export type PersistHandler = <T extends Entity>(args: {
-    req: PersistRequest<T>
-    next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
-}) => Promise<PersistResult<T>>
-
-export type RuntimePersistence = Readonly<{
-    register: (key: WriteStrategy, handler: PersistHandler) => () => void
-    persist: <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
-}>
-
-export type CoreRuntime = Readonly<{
-    id: string
-    now: () => number
-    stores: StoreRegistry
-    io: RuntimeIo
-    write: RuntimeWrite
-    mutation: RuntimeMutation
-    persistence: RuntimePersistence
-    observe: RuntimeObservability
-    transform: RuntimeTransform
-}>
 
 export interface BelongsToConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
     type: 'belongsTo'

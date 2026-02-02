@@ -1,5 +1,0 @@
-export * from './types'
-export type { StoreHandle } from './store/internals/handleTypes'
-export { StoreIndexes } from './indexes/StoreIndexes'
-export type { QueryMatcherOptions } from './query/QueryMatcher'
-export { defaultSnowflakeGenerator } from './store/internals/idGenerator'

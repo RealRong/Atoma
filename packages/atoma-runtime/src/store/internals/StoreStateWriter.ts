@@ -1,6 +1,6 @@
-import type { Entity } from 'atoma-core/internal'
+import type { Entity } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
-import type { StoreHandle } from 'atoma-core/internal'
+import type { StoreHandle } from '../../types/runtimeTypes'
 import { StoreWriteUtils } from './StoreWriteUtils'
 
 type ChangedIds = ReadonlyArray<EntityId> | ReadonlySet<EntityId>

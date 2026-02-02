@@ -1,6 +1,6 @@
 import type { ClientPluginContext } from 'atoma-client'
 import type { Entity } from 'atoma-core'
-import type { PersistRequest, PersistResult } from 'atoma-runtime'
+import type { PersistRequest, PersistResult } from 'atoma-runtime/types/persistenceTypes'
 import type { WriteAction, WriteItem, WriteOptions } from 'atoma-protocol'
 import type { OutboxStore, OutboxWrite } from '#sync/types'
 
@@ -72,26 +72,32 @@ export class SyncPersistHandlers {
     private register() {
         const { ctx, outbox } = this.deps
 
-        this.unregister.push(ctx.persistence.register('queue', async <T extends Entity>(x: {
-            req: PersistRequest<T>
-            next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
-        }) => {
-            const writes = mapTranslatedWriteOpsToOutboxWrites(x.req.writeOps)
-            if (writes.length) await outbox.enqueueWrites({ writes })
-            return { status: 'enqueued' } as PersistResult<T>
+        this.unregister.push(ctx.persistence.register('queue', {
+            write: { implicitFetch: false },
+            persist: async <T extends Entity>(x: {
+                req: PersistRequest<T>
+                next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
+            }) => {
+                const writes = mapTranslatedWriteOpsToOutboxWrites(x.req.writeOps)
+                if (writes.length) await outbox.enqueueWrites({ writes })
+                return { status: 'enqueued' } as PersistResult<T>
+            }
         }))
 
-        this.unregister.push(ctx.persistence.register('local-first', async <T extends Entity>(x: {
-            req: PersistRequest<T>
-            next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
-        }) => {
-            const direct = await x.next(x.req)
-            const writes = mapTranslatedWriteOpsToOutboxWrites(x.req.writeOps)
-            if (writes.length) await outbox.enqueueWrites({ writes })
-            return {
-                status: 'enqueued',
-                ...(direct.ack ? { ack: direct.ack } : {})
-            } as PersistResult<T>
+        this.unregister.push(ctx.persistence.register('local-first', {
+            write: { implicitFetch: true },
+            persist: async <T extends Entity>(x: {
+                req: PersistRequest<T>
+                next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
+            }) => {
+                const direct = await x.next(x.req)
+                const writes = mapTranslatedWriteOpsToOutboxWrites(x.req.writeOps)
+                if (writes.length) await outbox.enqueueWrites({ writes })
+                return {
+                    status: 'enqueued',
+                    ...(direct.ack ? { ack: direct.ack } : {})
+                } as PersistResult<T>
+            }
         }))
     }
 }
