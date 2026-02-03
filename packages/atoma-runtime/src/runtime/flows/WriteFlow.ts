@@ -587,6 +587,7 @@ export class WriteFlow implements RuntimeWrite {
                     storeName: String(handle.storeName),
                     writeStrategy: args.writeStrategy,
                     handle,
+                    opContext,
                     writeOps
                 })
 

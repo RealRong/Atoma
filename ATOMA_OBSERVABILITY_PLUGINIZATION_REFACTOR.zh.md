@@ -206,6 +206,7 @@ export type PluginContext = Readonly<{
 ### 6.2 主要实现点
 - 在 `ctx.hooks.register(...)` 中订阅 read/write/storeCreated。
 - 内部维护 per-store ObservabilityRuntime（原 StoreObservability 逻辑可复用）。
+- 通过 persist handler 使用 `opContext.actionId` 生成 traceId，并写入 `op.meta`（仅插件侧）。
 - 提供扩展 API：
   - `client.observe.createContext(...)`
   - 可选：`client.observe.trace(fn)`（由插件实现）
@@ -257,6 +258,7 @@ export function observabilityPlugin(): ClientPlugin<{ observe: ObserveApi }> {
 ### atoma-types
 - `src/runtime/runtimeTypes.ts`：移除 `RuntimeObservability` 与相关字段。
 - `src/runtime/hooks.ts`：新增 hooks 类型与 Registry。
+- `src/runtime/persistenceTypes.ts`：`PersistRequest` 增加 `opContext`（供插件使用）。
 - `src/client/plugins/types.ts`：`PluginContext` 增加 `hooks`。
 - `src/client/plugins/types.ts`：移除 `ObserveHandler`/`ObserveContext` 等 observe handler 类型。
 - `src/core/query.ts`：移除 `explain` 字段（如存在）。

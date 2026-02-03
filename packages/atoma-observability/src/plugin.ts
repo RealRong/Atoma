@@ -1,4 +1,6 @@
 import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
+import type { Operation } from 'atoma-types/protocol'
+import type { PersistRequest } from 'atoma-types/runtime'
 import type { ObservabilityContext } from 'atoma-types/observability'
 import { StoreObservability } from './StoreObservability'
 
@@ -7,6 +9,10 @@ export type ObservabilityPluginOptions = Readonly<{
      * Customize event type names (optional).
      */
     eventPrefix?: string
+    /**
+     * Inject traceId/requestId into ops meta (default: true).
+     */
+    injectTraceMeta?: boolean
 }>
 
 export type ObservabilityExtension = Readonly<{
@@ -17,43 +23,114 @@ export type ObservabilityExtension = Readonly<{
 
 type WriteContextEntry = {
     ctx: ObservabilityContext
-    count: number
     storeName: string
 }
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+const applyTraceMeta = (op: Operation, traceId?: string, requestId?: string) => {
+    if (!traceId && !requestId) return
+    const baseMeta = isPlainObject((op as any).meta) ? ((op as any).meta as Record<string, unknown>) : undefined
+    const nextMeta: Record<string, unknown> = baseMeta ? { ...baseMeta } : { v: 1 }
+
+    if (typeof nextMeta.v !== 'number') nextMeta.v = 1
+
+    const existingTraceId = (typeof nextMeta.traceId === 'string' && nextMeta.traceId) ? nextMeta.traceId : undefined
+    const existingRequestId = (typeof nextMeta.requestId === 'string' && nextMeta.requestId) ? nextMeta.requestId : undefined
+
+    if (!existingTraceId && traceId) nextMeta.traceId = traceId
+    if (!existingRequestId && requestId) nextMeta.requestId = requestId
+
+    ;(op as any).meta = nextMeta
+}
+
 export function observabilityPlugin(options: ObservabilityPluginOptions = {}): ClientPlugin<ObservabilityExtension> {
+    const storeObs = new StoreObservability()
+    const prefix = String(options.eventPrefix ?? 'obs')
+    const injectTraceMeta = options.injectTraceMeta !== false
+
+    const readContextByQuery = new WeakMap<object, ObservabilityContext>()
+    const writeContextByAction = new Map<string, WriteContextEntry>()
+
+    const getWriteContext = (storeName: string, actionId?: string): WriteContextEntry => {
+        const key = String(actionId ?? 'unknown')
+        const existing = writeContextByAction.get(key)
+        if (existing) return existing
+        const ctxInstance = storeObs.createContext(storeName, { traceId: actionId })
+        const created: WriteContextEntry = { ctx: ctxInstance, storeName }
+        writeContextByAction.set(key, created)
+        return created
+    }
+
+    const releaseWriteContext = (actionId?: string) => {
+        const key = String(actionId ?? 'unknown')
+        if (!writeContextByAction.has(key)) return
+        writeContextByAction.delete(key)
+    }
+
+    const attachWriteTraceMeta = (req: PersistRequest<any>) => {
+        if (!injectTraceMeta) return
+        const actionId = req.opContext?.actionId
+        if (!actionId) return
+        const entry = writeContextByAction.get(String(actionId))
+        const ctxInstance = entry?.ctx ?? storeObs.createContext(String(req.storeName), { traceId: actionId })
+        const traceId = ctxInstance.traceId
+        if (!traceId) return
+        const requestId = ctxInstance.requestId()
+        for (const item of req.writeOps) {
+            applyTraceMeta(item.op as Operation, traceId, requestId)
+        }
+    }
+
+    const attachReadTraceMeta = (ops: Operation[]) => {
+        if (!injectTraceMeta) return
+        if (!Array.isArray(ops) || ops.length === 0) return
+
+        const requestIdByTrace = new Map<string, string>()
+
+        for (const op of ops) {
+            if (!op || typeof op !== 'object') continue
+            if (op.kind !== 'query') continue
+
+            const meta = isPlainObject((op as any).meta) ? ((op as any).meta as Record<string, unknown>) : undefined
+            const existingTraceId = (typeof meta?.traceId === 'string' && meta.traceId) ? meta.traceId : undefined
+            if (existingTraceId) continue
+
+            const query = (op as any)?.query?.query
+            if (!query || typeof query !== 'object') continue
+
+            const ctxInstance = readContextByQuery.get(query as object)
+            if (!ctxInstance || !ctxInstance.traceId) continue
+
+            const traceId = ctxInstance.traceId
+            let requestId = requestIdByTrace.get(traceId)
+            if (!requestId) {
+                requestId = ctxInstance.requestId()
+                requestIdByTrace.set(traceId, requestId)
+            }
+
+            applyTraceMeta(op as Operation, traceId, requestId)
+        }
+    }
+
     return {
         id: 'atoma-observability',
+        register: (_ctx: ClientPluginContext, register) => {
+            if (!injectTraceMeta) return
+
+            register('io', async (req, _ctx, next) => {
+                attachReadTraceMeta(req.ops as Operation[])
+                return await next()
+            }, { priority: 100 })
+
+            register('persist', async (req, _ctx, next) => {
+                attachWriteTraceMeta(req as PersistRequest<any>)
+                return await next()
+            }, { priority: 100 })
+        },
         init: (ctx: ClientPluginContext) => {
-            const storeObs = new StoreObservability()
-            const prefix = String(options.eventPrefix ?? 'obs')
-
-            const readContextByQuery = new WeakMap<object, ObservabilityContext>()
-            const writeContextByAction = new Map<string, WriteContextEntry>()
-
-            const getWriteContext = (storeName: string, actionId?: string): WriteContextEntry => {
-                const key = String(actionId ?? 'unknown')
-                const existing = writeContextByAction.get(key)
-                if (existing) {
-                    existing.count += 1
-                    return existing
-                }
-                const ctxInstance = storeObs.createContext(storeName, { traceId: actionId })
-                const created: WriteContextEntry = { ctx: ctxInstance, count: 1, storeName }
-                writeContextByAction.set(key, created)
-                return created
-            }
-
-            const releaseWriteContext = (actionId?: string) => {
-                const key = String(actionId ?? 'unknown')
-                const entry = writeContextByAction.get(key)
-                if (!entry) return
-                entry.count -= 1
-                if (entry.count <= 0) {
-                    writeContextByAction.delete(key)
-                }
-            }
-
             const stop = ctx.hooks.register({
                 store: {
                     onCreated: ({ storeName, debug, debugSink }) => {

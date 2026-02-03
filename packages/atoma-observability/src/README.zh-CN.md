@@ -24,6 +24,7 @@ Core/Runtime 不再感知 observability。需要 trace/debug 时，请显式安�
 - `write.onStart/onPatches/onCommitted/onFailed`
 
 随后由 `StoreObservability` 发出 debug 事件（默认前缀 `obs:*`）。
+当启用 `injectTraceMeta`（默认开启）时，插件还会把 `traceId/requestId` 写入 `op.meta`。
 
 ## 用法（客户端）
 
@@ -38,7 +39,7 @@ const client = createClient({
             debugSink: (e: any) => console.log(e)
         }
     },
-    plugins: [observabilityPlugin()]
+    plugins: [observabilityPlugin({ injectTraceMeta: true })]
 })
 ```
 
@@ -46,6 +47,7 @@ const client = createClient({
 
 - `query.explain` 已不再属于 core API。如需 explain 类诊断，请在插件层自行实现（例如按 trace 缓存事件并生成摘要）。
 - 插件默认使用 `actionId` 作为写入 traceId，读请求使用每次 query 的上下文；也可通过插件扩展自行创建 context。
+- 即使服务端暂时不消费 `op.meta.traceId/requestId`，端侧仍可用于关联调试事件与后续升级。
 
 ## 延伸阅读
 

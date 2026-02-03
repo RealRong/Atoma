@@ -36,6 +36,7 @@ export type PersistRequest<T extends Types.Entity> = Readonly<{
     storeName: Types.StoreToken
     writeStrategy?: Types.WriteStrategy
     handle: StoreHandle<T>
+    opContext?: Types.OperationContext
     writeOps: Array<TranslatedWriteOp>
     signal?: AbortSignal
 }>
