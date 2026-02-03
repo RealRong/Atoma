@@ -5,7 +5,7 @@ import type * as Types from 'atoma-types/core'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, PersistAck, TranslatedWriteOp } from 'atoma-types/runtime'
 import type { CoreRuntime, RuntimePersistence } from 'atoma-types/runtime'
 import type { OperationResult, StandardError, WriteAction, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
-import { createWritebackCollector } from './persistence/ack'
+import { createWritebackCollector } from '../persistence'
 
 const DEFAULT_WRITE_POLICY: WritePolicy = {
     implicitFetch: true

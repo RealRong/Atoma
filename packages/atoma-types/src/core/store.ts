@@ -35,6 +35,22 @@ export type DeleteItem = {
     baseVersion: number
 }
 
+export type WriteIntentOptions = Readonly<{
+    merge?: boolean
+    upsert?: {
+        mode?: 'strict' | 'loose'
+    }
+}>
+
+export type WriteIntent<T = any> = Readonly<{
+    action: 'create' | 'update' | 'upsert' | 'delete'
+    entityId?: EntityId
+    value?: T
+    baseVersion?: number
+    options?: WriteIntentOptions
+    intent?: 'created'
+}>
+
 /**
  * 写入确认语义（只影响 `await store.addOne/updateOne/delete...` 何时完成）
  * - optimistic：等待 enqueued（持久化层已接管：例如已提交、已入队、已持久化到本地等）

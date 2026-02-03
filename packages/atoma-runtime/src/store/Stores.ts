@@ -1,8 +1,7 @@
 import { atom } from 'jotai/vanilla'
 import { Indexes, Query } from 'atoma-core'
-import type { Runtime as CoreRuntimeTypes } from 'atoma-core'
 import type * as Types from 'atoma-types/core'
-import type { StoreHandle, StoreRegistry } from 'atoma-types/runtime'
+import type { RuntimeSchema, StoreHandle, StoreRegistry } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/protocol'
 import { ConfigResolver } from './ConfigResolver'
 import { StoreStateWriter } from './StoreStateWriter'
@@ -33,7 +32,7 @@ export class Stores implements StoreRegistry {
     constructor(
         private readonly runtime: CoreRuntime,
         private readonly args: {
-            schema: CoreRuntimeTypes.RuntimeSchema
+            schema: RuntimeSchema
             dataProcessor?: Types.StoreDataProcessor<any>
             defaults?: {
                 idGenerator?: () => EntityId

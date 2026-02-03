@@ -1,11 +1,10 @@
 import { Relations } from 'atoma-core'
-import type { Runtime as CoreRuntimeTypes } from 'atoma-core'
 import type * as Types from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CoreRuntime } from 'atoma-types/runtime'
+import type { CoreRuntime, RuntimeSchema } from 'atoma-types/runtime'
 
 export class ConfigResolver {
-    private readonly schema: CoreRuntimeTypes.RuntimeSchema
+    private readonly schema: RuntimeSchema
     private readonly runtime: CoreRuntime
     private readonly defaults?: {
         idGenerator?: () => EntityId
@@ -13,7 +12,7 @@ export class ConfigResolver {
     private readonly dataProcessor?: Types.StoreDataProcessor<any>
 
     constructor(args: {
-        schema: CoreRuntimeTypes.RuntimeSchema
+        schema: RuntimeSchema
         runtime: CoreRuntime
         defaults?: {
             idGenerator?: () => EntityId

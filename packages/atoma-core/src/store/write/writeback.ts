@@ -1,7 +1,7 @@
 import type { Entity } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { StoreWritebackArgs, StoreWritebackResult, StoreWritebackOptions } from 'atoma-types/core'
-import { StoreWriteUtils } from './StoreWriteUtils'
+import { StoreWriteUtils } from './utils'
 
 class StoreMapEditor<T extends Entity> {
     private after: Map<EntityId, T> | null = null

@@ -4,9 +4,9 @@ import type * as Types from 'atoma-types/core'
 import { Store } from 'atoma-core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, RuntimeWrite, StoreHandle } from 'atoma-types/runtime'
-import { applyPersistAck, resolveOutputFromAck } from './finalize'
-import { buildWriteOps } from '../persistence/persist'
-import { ensureActionId, prepareForAdd, prepareForUpdate, resolveBaseForWrite, runAfterSave, runBeforeSave } from './prepare'
+import { applyPersistAck, resolveOutputFromAck } from './write/finalize'
+import { buildWriteOps } from '../persistence'
+import { ensureActionId, prepareForAdd, prepareForUpdate, resolveBaseForWrite, runAfterSave, runBeforeSave } from './write/prepare'
 import type { Store as StoreTypes } from 'atoma-core'
 
 export class WriteFlow implements RuntimeWrite {

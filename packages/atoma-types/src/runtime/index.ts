@@ -11,6 +11,7 @@ export type {
     StoreStateWriterApi,
     DataProcessor
 } from './runtimeTypes'
+export type { RuntimeSchema, RuntimeStoreSchema } from './schema'
 
 export type {
     PersistAck,

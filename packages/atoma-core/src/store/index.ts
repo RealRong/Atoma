@@ -1,13 +1,10 @@
-export { StoreWriteUtils } from './StoreWriteUtils'
+export { StoreWriteUtils } from './write/utils'
 export { defaultSnowflakeGenerator } from './idGenerator'
-export { applyWritebackToMap } from './writeback'
-export { buildOptimisticState, collectChangedIdsFromPatches } from './optimistic'
-export { type WriteEvent } from './writeEvents'
+export { applyWritebackToMap } from './write/writeback'
+export { buildOptimisticState, collectChangedIdsFromPatches } from './write/optimistic'
+export { type WriteEvent } from './write/events'
 export {
-    buildWriteOpSpecs,
-    buildWriteOperation,
-    buildWriteItemMeta,
+    buildWriteIntents,
     buildUpsertOptions,
-    buildRestoreWriteItemsFromPatches,
-    type WriteOpSpec
-} from './writeOps'
+    buildRestoreWriteItemsFromPatches
+} from './write/ops'

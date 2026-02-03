@@ -1,0 +1,1 @@
+export { StrategyRegistry } from './StrategyRegistry'
