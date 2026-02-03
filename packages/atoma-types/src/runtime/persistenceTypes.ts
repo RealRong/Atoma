@@ -38,7 +38,6 @@ export type PersistRequest<T extends Types.Entity> = Readonly<{
     handle: StoreHandle<T>
     writeOps: Array<TranslatedWriteOp>
     signal?: AbortSignal
-    context?: Types.ObservabilityContext
 }>
 
 export type PersistResult<T extends Types.Entity> = Readonly<{

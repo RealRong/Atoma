@@ -1,7 +1,6 @@
 export type {
     CoreRuntime,
     RuntimeIo,
-    RuntimeObservability,
     RuntimePersistence,
     RuntimeRead,
     RuntimeTransform,

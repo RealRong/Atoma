@@ -14,24 +14,9 @@ export class ReadFlow implements RuntimeRead {
     query = async <T extends Types.Entity>(handle: StoreHandle<T>, input: Types.Query<T>): Promise<Types.QueryResult<T>> => {
         const runtime = this.runtime
         const { jotaiStore, atom, indexes, matcher } = handle
+        const hooks = runtime.hooks
 
-        const explainEnabled = input?.explain === true
-        const observabilityContext = runtime.observe.createContext(handle.storeName, {
-            explain: input?.explain === true
-        })
-
-        const explain: Types.Explain | undefined = explainEnabled
-            ? { schemaVersion: 1, traceId: observabilityContext.traceId || createTraceId() }
-            : undefined
-
-        const emit = (type: string, payload: any) => observabilityContext.emit(type as any, payload)
-
-        const withExplain = (out: any, extra?: any) => {
-            if (!explainEnabled) return out
-            return { ...out, explain: { ...explain, ...(extra || {}) } }
-        }
-
-        emit('query:start', { params: Query.summarizeQuery(input) })
+        hooks.emit.readStart({ handle, query: input })
 
         let localCache: { data: T[]; result: Types.QueryResult<T> } | null = null
         const getLocalResult = (): { data: T[]; result: Types.QueryResult<T> } => {
@@ -42,22 +27,17 @@ export class ReadFlow implements RuntimeRead {
                 mapRef: map,
                 query: input,
                 indexes,
-                matcher,
-                emit,
-                explain
+                matcher
             })
 
-            const result = withExplain({ data: localResult.data, ...(localResult.pageInfo ? { pageInfo: localResult.pageInfo } : {}) })
+            const result = { data: localResult.data, ...(localResult.pageInfo ? { pageInfo: localResult.pageInfo } : {}) }
             localCache = { data: localResult.data, result }
             return localCache
         }
 
-        const shouldEagerEvaluateLocal = (explainEnabled || observabilityContext.active)
-        if (shouldEagerEvaluateLocal) getLocalResult()
-
         try {
             const startedAt = Date.now()
-            const { data, pageInfo } = await runtime.io.query(handle, input, observabilityContext)
+            const { data, pageInfo } = await runtime.io.query(handle, input)
             const durationMs = Date.now() - startedAt
 
             const fetched = Array.isArray(data) ? data : []
@@ -71,10 +51,9 @@ export class ReadFlow implements RuntimeRead {
 
             const cachePolicy = Query.resolveCachePolicy(input)
             if (cachePolicy.effectiveSkipStore) {
-                return withExplain(
-                    { data: remote, ...(pageInfo ? { pageInfo: pageInfo as any } : {}) },
-                    { dataSource: { ok: true, durationMs } }
-                )
+                const result = { data: remote, ...(pageInfo ? { pageInfo: pageInfo as any } : {}) }
+                hooks.emit.readFinish({ handle, query: input, result, durationMs })
+                return result
             }
 
             const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
@@ -102,13 +81,14 @@ export class ReadFlow implements RuntimeRead {
                 })
             }
 
-            return withExplain(
-                { data: processed, ...(pageInfo ? { pageInfo: pageInfo as any } : {}) },
-                { dataSource: { ok: true, durationMs } }
-            )
+            const result = { data: processed, ...(pageInfo ? { pageInfo: pageInfo as any } : {}) }
+            hooks.emit.readFinish({ handle, query: input, result, durationMs })
+            return result
         } catch (error) {
             void toError(error, '[Atoma] query failed')
-            return getLocalResult().result
+            const fallback = getLocalResult().result
+            hooks.emit.readFinish({ handle, query: input, result: fallback })
+            return fallback
         }
     }
 
@@ -118,7 +98,7 @@ export class ReadFlow implements RuntimeRead {
             page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
         }
         const res = await this.query(handle, next)
-        return { data: res.data[0], ...(res.explain ? { explain: res.explain } : {}) }
+        return { data: res.data[0] }
     }
 
     getMany = async <T extends Types.Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, options?: Types.StoreReadOptions): Promise<T[]> => {
@@ -145,12 +125,9 @@ export class ReadFlow implements RuntimeRead {
         }
 
         if (missingUnique.length) {
-            const observabilityContext = runtime.observe.createContext(handle.storeName, {
-                explain: options?.explain === true
-            })
             const { data } = await runtime.io.query(handle, {
                 filter: { op: 'in', field: 'id', values: missingUnique }
-            }, observabilityContext)
+            })
 
             const before = jotaiStore.get(atom) as Map<EntityId, T>
             const fetchedById = new Map<EntityId, T>()
@@ -205,13 +182,10 @@ export class ReadFlow implements RuntimeRead {
 
     fetchOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreReadOptions): Promise<T | undefined> => {
         const runtime = this.runtime
-        const observabilityContext = runtime.observe.createContext(handle.storeName, {
-            explain: options?.explain === true
-        })
         const { data } = await runtime.io.query(handle, {
             filter: { op: 'eq', field: 'id', value: id },
             page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
-        }, observabilityContext)
+        })
         const one = data[0]
         if (one === undefined) return undefined
         return await runtime.transform.writeback(handle, one as T)
@@ -219,10 +193,7 @@ export class ReadFlow implements RuntimeRead {
 
     fetchAll = async <T extends Types.Entity>(handle: StoreHandle<T>, options?: Types.StoreReadOptions): Promise<T[]> => {
         const runtime = this.runtime
-        const observabilityContext = runtime.observe.createContext(handle.storeName, {
-            explain: options?.explain === true
-        })
-        const { data } = await runtime.io.query(handle, {}, observabilityContext)
+        const { data } = await runtime.io.query(handle, {})
         const out: T[] = []
         for (let i = 0; i < data.length; i++) {
             const processed = await runtime.transform.writeback(handle, data[i] as T)
@@ -238,11 +209,7 @@ export class ReadFlow implements RuntimeRead {
         const { jotaiStore, atom } = handle
 
         const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
-        const observabilityContext = runtime.observe.createContext(handle.storeName, {
-            explain: options?.explain === true
-        })
-
-        const { data } = await runtime.io.query(handle, {}, observabilityContext)
+        const { data } = await runtime.io.query(handle, {})
         const fetched = Array.isArray(data) ? data : []
         const arr: T[] = []
         const itemsToCache: Array<T> = []
@@ -290,8 +257,4 @@ export class ReadFlow implements RuntimeRead {
 
         return arr
     }
-}
-
-function createTraceId(): string {
-    return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 }

@@ -13,7 +13,7 @@ export type DataProcessor = Readonly<{
 }>
 
 /**
- * CoreRuntime：唯一上下文，承载跨 store 能力（read/write/persistence/observability/resolveStore）
+ * CoreRuntime：唯一上下文，承载跨 store 能力（read/write/persistence/resolveStore）
  */
 export type StoreRegistry = Readonly<{
     resolve: (name: Types.StoreToken) => Types.IStore<any> | undefined
@@ -23,14 +23,9 @@ export type StoreRegistry = Readonly<{
     resolveHandle: (name: Types.StoreToken, tag?: string) => StoreHandle<any>
 }>
 
-export interface RuntimeObservability {
-    createContext: (storeName: Types.StoreToken, args?: { traceId?: string; explain?: boolean }) => Types.ObservabilityContext
-    registerStore?: (args: { storeName: Types.StoreToken; debug?: Types.DebugConfig; debugSink?: (e: Types.DebugEvent) => void }) => void
-}
-
 export type RuntimeIo = Readonly<{
-    executeOps: (args: { ops: Operation[]; signal?: AbortSignal; context?: Types.ObservabilityContext }) => Promise<OperationResult[]>
-    query: <T extends Types.Entity>(handle: StoreHandle<T>, query: Types.Query, context?: Types.ObservabilityContext, signal?: AbortSignal) => Promise<{ data: unknown[]; pageInfo?: any; explain?: any }>
+    executeOps: (args: { ops: Operation[]; signal?: AbortSignal }) => Promise<OperationResult[]>
+    query: <T extends Types.Entity>(handle: StoreHandle<T>, query: Types.Query, signal?: AbortSignal) => Promise<{ data: unknown[]; pageInfo?: any }>
 }>
 
 export type RuntimeTransform = Readonly<{
@@ -68,7 +63,6 @@ export type RuntimePersistence = Readonly<{
     persist: <T extends Types.Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
     executeWriteOps: <T extends Types.Entity>(args: {
         ops: Array<TranslatedWriteOp>
-        context?: Types.ObservabilityContext
     }) => Promise<{ ack?: PersistAck<T> }>
 }>
 
@@ -82,7 +76,6 @@ export type CoreRuntime = Readonly<{
     read: RuntimeRead
     write: RuntimeWrite
     persistence: RuntimePersistence
-    observe: RuntimeObservability
     transform: RuntimeTransform
 }>
 

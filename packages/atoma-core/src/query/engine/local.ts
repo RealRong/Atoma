@@ -203,10 +203,10 @@ export function evaluateWithIndexes<T extends Entity>(params: {
     query: Query<T>
     indexes: StoreIndexes<T> | null
     matcher?: QueryMatcherOptions
-    emit: (type: string, payload: any) => void
-    explain?: Record<string, any>
+    emit?: (type: string, payload: any) => void
 }): { data: T[]; pageInfo?: any } {
-    const { mapRef, query, indexes, matcher, emit, explain } = params
+    const { mapRef, query, indexes, matcher } = params
+    const emit = params.emit ?? (() => {})
 
     const paramsSummary = summarizeQuery(query)
     const candidateRes = indexes ? indexes.collectCandidates(query?.filter as any) : { kind: 'unsupported' as const }
@@ -220,19 +220,8 @@ export function evaluateWithIndexes<T extends Entity>(params: {
         plan
     })
 
-    if (explain) {
-        ;(explain as any).index = {
-            kind: candidateRes.kind,
-            ...(candidateRes.kind === 'candidates' ? { exactness: candidateRes.exactness, candidates: candidateRes.ids.size } : {}),
-            ...(plan ? { lastQueryPlan: plan } : {})
-        }
-    }
-
     if (candidateRes.kind === 'empty') {
         emit('query:finalize', { inputCount: 0, outputCount: 0, params: paramsSummary })
-        if (explain) {
-            ;(explain as any).finalize = { inputCount: 0, outputCount: 0, paramsSummary }
-        }
         return { data: [] }
     }
 
@@ -258,9 +247,6 @@ export function evaluateWithIndexes<T extends Entity>(params: {
     const out = executeLocalQuery(source as any, effectiveQuery as any, { preSorted: false, matcher })
 
     emit('query:finalize', { inputCount: source.length, outputCount: out.data.length, params: paramsSummary })
-    if (explain) {
-        ;(explain as any).finalize = { inputCount: source.length, outputCount: out.data.length, paramsSummary }
-    }
 
     return out as any
 }

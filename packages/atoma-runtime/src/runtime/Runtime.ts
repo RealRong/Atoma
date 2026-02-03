@@ -1,13 +1,13 @@
 /**
  * Runtime: Unified entrypoint for read/write flows.
- * - Owns all subsystems (io, persistence, observe, transform, stores).
+ * - Owns all subsystems (io, persistence, transform, stores).
  * - Exposes runtime.read/runtime.write as the only flow entrypoints.
  */
 import type { JotaiStore, StoreDataProcessor } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
-import type { CoreRuntime, RuntimeHookRegistry, RuntimeIo, RuntimeObservability, RuntimePersistence, RuntimeRead, RuntimeSchema, RuntimeTransform, RuntimeWrite } from 'atoma-types/runtime'
+import type { CoreRuntime, RuntimeHookRegistry, RuntimeIo, RuntimePersistence, RuntimeRead, RuntimeSchema, RuntimeTransform, RuntimeWrite } from 'atoma-types/runtime'
 import { DataProcessor } from './transform'
 import { Stores } from '../store'
 import { HookRegistry, StrategyRegistry } from './registry'
@@ -24,7 +24,6 @@ export interface RuntimeConfig {
         idGenerator?: () => EntityId
     }
     persistence?: RuntimePersistence
-    observe: RuntimeObservability
     ownerClient?: () => unknown
     now?: () => number
     hooks?: RuntimeHookRegistry
@@ -37,7 +36,6 @@ export class Runtime implements CoreRuntime {
     readonly jotaiStore: JotaiStore
     io: RuntimeIo
     readonly persistence: RuntimePersistence
-    readonly observe: RuntimeObservability
     readonly transform: RuntimeTransform
     readonly stores: CoreRuntime['stores']
     readonly read: RuntimeRead
@@ -51,7 +49,6 @@ export class Runtime implements CoreRuntime {
 
         this.jotaiStore = createJotaiStore()
 
-        this.observe = config.observe
         this.io = config.io
         this.transform = new DataProcessor(() => this)
         this.persistence = config.persistence ?? new StrategyRegistry(this)

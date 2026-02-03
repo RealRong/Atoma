@@ -23,25 +23,18 @@ export class PluginRuntimeIo implements RuntimeIo {
     }
 
     executeOps: RuntimeIo['executeOps'] = async (input) => {
-        const context = input.context
-        const traceId = (typeof context?.traceId === 'string' && context.traceId) ? context.traceId : undefined
         const opsWithTrace = Protocol.ops.build.withTraceMeta({
-            ops: input.ops,
-            traceId,
-            ...(context ? { nextRequestId: context.requestId } : {})
+            ops: input.ops
         })
         const meta = Protocol.ops.build.buildRequestMeta({
-            now: this.now,
-            traceId,
-            requestId: context ? context.requestId() : undefined
+            now: this.now
         })
         Protocol.ops.validate.assertOutgoingOps({ ops: opsWithTrace, meta })
 
         const res = await this.ioChain.execute({
             ops: opsWithTrace,
             meta,
-            ...(input.signal ? { signal: input.signal } : {}),
-            ...(context ? { context } : {})
+            ...(input.signal ? { signal: input.signal } : {})
         }, { clientId: this.clientId } as IoContext)
 
         try {
@@ -54,13 +47,11 @@ export class PluginRuntimeIo implements RuntimeIo {
     query: RuntimeIo['query'] = async <T extends Types.Entity>(
         handle: StoreHandle<T>,
         query: Types.Query,
-        context?: Types.ObservabilityContext,
         signal?: AbortSignal
     ): Promise<QueryResult> => {
         const req: ReadRequest = {
             storeName: handle.storeName,
             query,
-            ...(context ? { context } : {}),
             ...(signal ? { signal } : {})
         }
         const ctx: ReadContext = {

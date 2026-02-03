@@ -67,8 +67,7 @@ export class StrategyRegistry implements RuntimePersistence {
 
     private persistViaOps = async <T extends Types.Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
         const normalized = await this.executeWriteOps<T>({
-            ops: req.writeOps as any,
-            context: req.context
+            ops: req.writeOps as any
         })
         return {
             status: 'confirmed',
@@ -78,12 +77,11 @@ export class StrategyRegistry implements RuntimePersistence {
 
     executeWriteOps = async <T extends Types.Entity>(args: {
         ops: Array<TranslatedWriteOp>
-        context?: Types.ObservabilityContext
     }): Promise<{ ack?: PersistAck<T> }> => {
         if (!args.ops.length) return {}
 
         const ops = args.ops.map(o => o.op)
-        const results = await this.runtime.io.executeOps({ ops, context: args.context })
+        const results = await this.runtime.io.executeOps({ ops })
         const resultByOpId = new Map<string, OperationResult>()
         results.forEach(r => resultByOpId.set(r.opId, r))
 

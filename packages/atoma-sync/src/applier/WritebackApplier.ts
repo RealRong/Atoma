@@ -34,15 +34,13 @@ export class WritebackApplier implements SyncApplier {
             const uniqueDeleteKeys = Array.from(new Set(deleteKeys))
 
             const handle = this.deps.runtime.stores.resolveHandle(resource as any, 'sync.applyPullChanges')
-            const obs = this.deps.runtime.observe.createContext(resource as any)
 
             const upsertsRaw = uniqueUpsertKeys.length
                 ? (await this.deps.runtime.io.query<any>(
                     handle,
                     {
                         filter: { op: 'in', field: 'id', values: uniqueUpsertKeys }
-                    } as any,
-                    obs
+                    } as any
                 )).data.filter((i: any): i is any => i !== undefined)
                 : []
 

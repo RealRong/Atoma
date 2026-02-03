@@ -1,4 +1,3 @@
-import type * as Types from 'atoma-types/core'
 import type { Envelope, Meta, Operation } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
 import type { OpsResponseData } from 'atoma-types/protocol'
@@ -11,7 +10,6 @@ export type ExecuteOpsArgs = {
     ops: Operation[]
     meta: Meta
     extraHeaders?: Record<string, string>
-    context?: Types.ObservabilityContext
     signal?: AbortSignal
 }
 
@@ -61,7 +59,6 @@ export function createOpsHttpTransport(deps: {
                 ops: args.ops
             } satisfies { meta: Meta; ops: Operation[] },
             extraHeaders: args.extraHeaders,
-            context: args.context,
             signal: args.signal
         })
 

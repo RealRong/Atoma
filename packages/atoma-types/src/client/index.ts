@@ -6,8 +6,6 @@ export type {
     IoHandler,
     PersistHandler,
     ReadHandler,
-    ObserveHandler,
-    ObserveNext,
     HandlerMap,
     HandlerName,
     HandlerEntry,
@@ -17,10 +15,8 @@ export type {
     IoContext,
     PersistContext,
     ReadContext,
-    ObserveContext,
     ReadRequest,
     QueryResult,
-    ObserveRequest,
     ClientPlugin,
     PluginInitResult
 } from './plugins'

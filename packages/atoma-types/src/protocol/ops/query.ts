@@ -24,7 +24,6 @@ export type Query = {
     page?: PageSpec
     select?: string[]
     include?: Record<string, Query>
-    explain?: boolean
 }
 
 export type PageInfo = {

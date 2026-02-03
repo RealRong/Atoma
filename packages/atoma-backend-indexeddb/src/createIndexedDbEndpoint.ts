@@ -25,8 +25,7 @@ export function createIndexedDbEndpoint(options: CreateIndexedDbEndpointOptions)
             return await opsClient.executeOps({
                 ops: req.ops,
                 meta: req.meta,
-                ...(req.signal ? { signal: req.signal } : {}),
-                ...(req.context ? { context: req.context } : {})
+                ...(req.signal ? { signal: req.signal } : {})
             })
         }
     }

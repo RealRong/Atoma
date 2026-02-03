@@ -1,14 +1,13 @@
 import type * as Types from 'atoma-types/core'
 import type { PersistRequest, RuntimeIo } from 'atoma-types/runtime'
 import { Runtime } from 'atoma-runtime'
-import { StoreObservability } from 'atoma-observability'
 import type { AtomaClient, AtomaSchema, CreateClientOptions, ClientPlugin, PluginContext, PluginInitResult } from 'atoma-types/client'
 import { registerClientRuntime } from './runtimeRegistry'
 import { zod } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
 import { EndpointRegistry } from '../drivers/EndpointRegistry'
-import { CapabilitiesRegistry, HandlerChain, PluginRegistry, PluginRuntimeIo, PluginRuntimeObserve } from '../plugins'
-import { DefaultObservePlugin, HttpBackendPlugin, LocalBackendPlugin } from '../defaults'
+import { CapabilitiesRegistry, HandlerChain, PluginRegistry, PluginRuntimeIo } from '../plugins'
+import { HttpBackendPlugin, LocalBackendPlugin } from '../defaults'
 import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry } from 'atoma-types/devtools'
 
 const { parseOrThrow } = zod
@@ -86,7 +85,6 @@ export function createClient<
                 throw new Error('[Atoma] io not ready')
             }
         } satisfies RuntimeIo,
-        observe: new StoreObservability(),
         ownerClient: () => client
     }) as any
 
@@ -116,8 +114,6 @@ export function createClient<
         plugins.push(new LocalBackendPlugin())
     }
 
-    plugins.push(new DefaultObservePlugin())
-
     ensureDevtoolsRegistry(capabilities)
     capabilities.register(DEVTOOLS_META_KEY, {
         storeBackend: hasBackend
@@ -135,11 +131,9 @@ export function createClient<
     const ioEntries = pluginRegistry.list('io')
     const persistEntries = pluginRegistry.list('persist')
     const readEntries = pluginRegistry.list('read')
-    const observeEntries = pluginRegistry.list('observe')
     if (!ioEntries.length) throw new Error('[Atoma] io handler missing')
     if (!persistEntries.length) throw new Error('[Atoma] persist handler missing')
     if (!readEntries.length) throw new Error('[Atoma] read handler missing')
-    if (!observeEntries.length) throw new Error('[Atoma] observe handler missing')
 
     const ioChain = new HandlerChain(ioEntries)
     const persistChain = new HandlerChain(persistEntries)
@@ -161,12 +155,6 @@ export function createClient<
         }
     })
     clientRuntime.persistence.setDefaultStrategy('direct')
-
-    clientRuntime.observe = new PluginRuntimeObserve({
-        entries: observeEntries,
-        clientId: clientRuntime.id,
-        base: clientRuntime.observe
-    })
 
     const pluginDisposers: Array<() => void> = []
 

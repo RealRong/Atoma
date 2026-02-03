@@ -219,10 +219,5 @@ export function assertQuery(value: unknown, ctx: { opId: string; resource: strin
         })
     }
 
-    const explain = (obj as any).explain
-    if (explain !== undefined && typeof explain !== 'boolean') {
-        throw invalid('INVALID_EXPLAIN', 'Invalid explain', detailsFor('explain'))
-    }
-
     return obj as Query
 }

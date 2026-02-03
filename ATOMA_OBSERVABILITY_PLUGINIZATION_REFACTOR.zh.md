@@ -50,7 +50,7 @@
 ### 插件层（Observability Plugin）
 - 使用 hooks 收集读写/存储事件。
 - 在 io/persist handler 中注入 trace/requestId（如果需要）。
-- 提供独立 API（如 `client.observe.query(...)`）实现 explain/debug。
+- 提供独立 API（可选，如 `client.observe.createContext(...)` / `client.observe.query(...)`）实现 trace/debug（explain 由插件扩展决定）。
 
 ---
 
@@ -192,24 +192,24 @@ export type PluginContext = Readonly<{
 
 ### Step 6：迁移 explain 能力（插件化）
 - 从 `Types.Query` 和 `QueryResult` 中移除 `explain`。
-- 由 observability 插件提供 `client.observe.query(...)` 或 `client.queryWithExplain(...)`。
+- explain 如需支持，由 observability 插件扩展提供（可选）。
 
 ---
 
 ## 六、观测插件（官方）实现草案
 
 ### 6.1 目标能力
-- 为读写流程创建 trace/requestId
+- 为读写流程创建 trace/requestId（插件内维护）
 - 发出 DebugEvent（调试事件）
-- 提供 explain（本地索引评估 + 后端耗时）
+- explain 迁移为插件层能力（本次仅落地 hooks + 事件流，explain 可后续补）
 
 ### 6.2 主要实现点
 - 在 `ctx.hooks.register(...)` 中订阅 read/write/storeCreated。
 - 内部维护 per-store ObservabilityRuntime（原 StoreObservability 逻辑可复用）。
-- 注册 io handler：对 ops 注入 traceId/requestId（op.meta）。
 - 提供扩展 API：
-  - `client.observe.query(storeName, query, { explain: true })`
-  - `client.observe.trace(fn)` 或 `client.observe.createContext()`
+  - `client.observe.createContext(...)`
+  - 可选：`client.observe.trace(fn)`（由插件实现）
+  - 可选：注册 io handler 注入 traceId/requestId（op.meta）
 
 ### 6.3 示例伪代码
 
@@ -238,8 +238,8 @@ export function observabilityPlugin(): ClientPlugin<{ observe: ObserveApi }> {
             return {
                 extension: {
                     observe: {
-                        query: async (storeName, query, opts) => {
-                            // 生成 trace/explain，调用 runtime.read
+                        createContext: (storeName, args) => {
+                            return storeObs.createContext(String(storeName), args)
                         }
                     }
                 },
@@ -287,7 +287,7 @@ export function observabilityPlugin(): ClientPlugin<{ observe: ObserveApi }> {
 ## 八、迁移与验收
 
 ### 迁移要点
-- explain 从 core 移除后，相关 API 改到 `client.observe.*`。
+- explain 从 core 移除后，如需诊断能力，改由插件扩展提供。
 - 旧 `query.explain` 不再生效。
 - 依赖 `ObservabilityContext` 的协议/handler 全部删除。
 
@@ -295,12 +295,11 @@ export function observabilityPlugin(): ClientPlugin<{ observe: ObserveApi }> {
 - 不加载 observability 插件时：核心读写正常，无 trace/explain/debug。
 - 加载 observability 插件时：
   - debug 事件仍能产出
-  - traceId/requestId 能被注入到 ops meta
-  - explain 能通过插件 API 获取
+  - traceId/requestId 可由插件注入 ops meta（可选）
+  - explain 如需支持，由插件扩展实现
 
 ---
 
 ## 九、与历史插件的衔接顺序
 
 建议先完成 `ATOMA_HISTORY_PLUGIN_ADAPTATION_AND_MODEL_REVIEW.zh.md` 中的插件化 hooks 方案，确保 hooks 体系落地后，再执行本文的 observability 完全解耦改造。
-

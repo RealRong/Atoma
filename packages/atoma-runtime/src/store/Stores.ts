@@ -102,12 +102,6 @@ export class Stores implements StoreRegistry {
 
         const base = this.configResolver.resolve(name)
 
-        this.runtime.observe.registerStore?.({
-            storeName: name,
-            debug: base.debug,
-            debugSink: base.debugSink
-        })
-
         const objectMapAtom = atom(new Map<EntityId, any>())
         const indexes = base.indexes && base.indexes.length ? new Indexes.StoreIndexes<any>(base.indexes) : null
         const matcher = Query.buildQueryMatcherOptions(base.indexes)

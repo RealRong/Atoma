@@ -118,7 +118,6 @@ export type OpsResponseData = {
 export type QueryResultData = {
     data: unknown[]
     pageInfo?: PageInfo
-    explain?: any
 }
 
 export type WriteItemResult =

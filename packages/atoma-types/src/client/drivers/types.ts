@@ -1,11 +1,9 @@
-import type * as Types from '../../core'
 import type { Meta, Operation, OperationResult } from '../../protocol'
 
 export type OperationEnvelope = Readonly<{
     target?: string
     ops: Operation[]
     meta: Meta
-    context?: Types.ObservabilityContext
     signal?: AbortSignal
 }>
 

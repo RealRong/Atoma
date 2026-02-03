@@ -6,7 +6,6 @@ export type NormalizedQuery = {
     page?: PageSpec
     select?: string[]
     include?: Record<string, Query>
-    explain?: boolean
 }
 
 export function normalizeQuery(input: Query): NormalizedQuery {
@@ -16,8 +15,7 @@ export function normalizeQuery(input: Query): NormalizedQuery {
         sort,
         ...(input.page ? { page: input.page } : {}),
         ...(input.select ? { select: normalizeSelect(input.select) } : {}),
-        ...(input.include ? { include: input.include } : {}),
-        ...(typeof input.explain === 'boolean' ? { explain: input.explain } : {})
+        ...(input.include ? { include: input.include } : {})
     }
 }
 

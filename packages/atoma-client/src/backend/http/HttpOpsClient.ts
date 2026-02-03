@@ -102,7 +102,7 @@ export class HttpOpsClient extends OpsClient {
      */
     async executeOps(input: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
         if (this.batchEngine) {
-            const results = await this.batchEngine.enqueueOps(input.ops, input.context)
+            const results = await this.batchEngine.enqueueOps(input.ops)
             return {
                 results,
                 status: 200
@@ -115,7 +115,7 @@ export class HttpOpsClient extends OpsClient {
      * Direct HTTP execution (bypasses BatchEngine).
      * Used internally by BatchEngine.
      */
-    private async _executeOpsDirectly({ ops, meta, context, signal }: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
+    private async _executeOpsDirectly({ ops, meta, signal }: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
         const requestMeta = this.normalizeRequestMeta(meta)
         Protocol.ops.validate.assertOutgoingOps({ ops, meta: requestMeta })
         const res = await this.transport.executeOps({
@@ -123,7 +123,6 @@ export class HttpOpsClient extends OpsClient {
             opsPath: this.opsPath,
             ops,
             meta: requestMeta,
-            context,
             signal
         })
 

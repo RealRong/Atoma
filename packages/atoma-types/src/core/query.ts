@@ -6,5 +6,5 @@ export type PageInfo = import('../protocol').PageInfo
 
 export type FetchPolicy = 'cache-only' | 'network-only' | 'cache-and-network'
 
-export type QueryResult<T, TExplain = unknown> = { data: T[]; pageInfo?: PageInfo; explain?: TExplain }
-export type QueryOneResult<T, TExplain = unknown> = { data?: T; explain?: TExplain }
+export type QueryResult<T> = { data: T[]; pageInfo?: PageInfo }
+export type QueryOneResult<T> = { data?: T }

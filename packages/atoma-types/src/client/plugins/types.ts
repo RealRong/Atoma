@@ -22,29 +22,15 @@ export type ReadContext = {
     store: string
 }
 
-export type ObserveContext = {
-    clientId: string
-}
-
-export type ObserveNext = () => Types.ObservabilityContext
-
 export type ReadRequest = Readonly<{
     storeName: Types.StoreToken
     query: Query
-    context?: Types.ObservabilityContext
     signal?: AbortSignal
 }>
 
 export type QueryResult = Readonly<{
     data: unknown[]
     pageInfo?: any
-    explain?: any
-}>
-
-export type ObserveRequest = Readonly<{
-    storeName?: Types.StoreToken
-    traceId?: string
-    explain?: boolean
 }>
 
 export type IoHandler = (
@@ -65,17 +51,10 @@ export type ReadHandler = (
     next: Next<QueryResult>
 ) => Promise<QueryResult>
 
-export type ObserveHandler = (
-    req: ObserveRequest,
-    ctx: ObserveContext,
-    next: ObserveNext
-) => Types.ObservabilityContext
-
 export type HandlerMap = {
     io: IoHandler
     persist: PersistHandler
     read: ReadHandler
-    observe: ObserveHandler
 }
 
 export type HandlerName = keyof HandlerMap

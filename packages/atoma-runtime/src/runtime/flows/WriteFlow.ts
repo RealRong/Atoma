@@ -587,8 +587,7 @@ export class WriteFlow implements RuntimeWrite {
                     storeName: String(handle.storeName),
                     writeStrategy: args.writeStrategy,
                     handle,
-                    writeOps,
-                    context: runtime.observe.createContext(handle.storeName)
+                    writeOps
                 })
 
                 const primaryIntent = intents.length === 1 ? intents[0] : undefined

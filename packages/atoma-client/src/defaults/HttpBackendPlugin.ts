@@ -48,8 +48,7 @@ function createHttpEndpoint(options: CreateHttpEndpointOptions): Endpoint {
             return await opsClient.executeOps({
                 ops: req.ops,
                 meta: req.meta,
-                ...(req.signal ? { signal: req.signal } : {}),
-                ...(req.context ? { context: req.context } : {})
+                ...(req.signal ? { signal: req.signal } : {})
             })
         }
     }
@@ -85,8 +84,7 @@ export class HttpBackendPlugin implements ClientPlugin {
 
         register('persist', async (req, _ctx, _next): Promise<PersistResult<any>> => {
             const normalized = await ctx.runtime.persistence.executeWriteOps<any>({
-                ops: req.writeOps as any,
-                context: req.context
+                ops: req.writeOps as any
             })
             return {
                 status: 'confirmed',
@@ -104,7 +102,6 @@ export class HttpBackendPlugin implements ClientPlugin {
         })
         const results = await ctx.runtime.io.executeOps({
             ops: [op],
-            ...(req.context ? { context: req.context } : {}),
             ...(req.signal ? { signal: req.signal } : {})
         })
         const result = results[0]
@@ -118,8 +115,7 @@ export class HttpBackendPlugin implements ClientPlugin {
         const data = Protocol.ops.validate.assertQueryResultData((result as any).data)
         return {
             data: Array.isArray((data as any)?.data) ? ((data as any).data as unknown[]) : [],
-            pageInfo: (data as any)?.pageInfo,
-            ...(data && (data as any).explain !== undefined ? { explain: (data as any).explain } : {})
+            pageInfo: (data as any)?.pageInfo
         }
     }
 }

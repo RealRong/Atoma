@@ -1,5 +1,7 @@
 export { Observability } from './Observability'
 export { StoreObservability } from './StoreObservability'
+export { observabilityPlugin } from './plugin'
+export type { ObservabilityExtension, ObservabilityPluginOptions } from './plugin'
 export type { RequestSequencer } from './trace'
 export type { ObservabilityRuntime, ObservabilityRuntimeApi, ObservabilityRuntimeCreateArgs, ObservabilityCreateContextArgs } from './runtime'
 export type { StoreObservabilityConfig } from './StoreObservability'

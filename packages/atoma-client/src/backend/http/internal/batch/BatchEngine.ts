@@ -1,6 +1,3 @@
-import { Observability } from 'atoma-observability'
-import type * as Types from 'atoma-types/core'
-import type { AtomaDebugEventMap, DebugEmitMeta } from 'atoma-types/observability'
 import { Protocol } from 'atoma-protocol'
 import type { Meta, Operation, OperationResult, QueryOp, WriteOp } from 'atoma-types/protocol'
 import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client'
@@ -15,7 +12,6 @@ type Deferred<T> = {
 
 type OpsTask = {
     op: Operation
-    ctx?: Types.ObservabilityContext
     deferred: Deferred<OperationResult>
 }
 
@@ -25,7 +21,6 @@ type BatchEngineConfigLike = {
     maxOpsPerRequest?: number
 }
 
-type DataSourceEventType = 'datasource:request' | 'datasource:response'
 
 // ============================================================================
 // Utils
@@ -51,13 +46,6 @@ function clampInt(v: number, min: number, max: number) {
 function normalizePositiveInt(value: unknown) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
     return Math.floor(value)
-}
-
-function getErrorStatus(error: unknown): number | undefined {
-    if (!error) return undefined
-    if (typeof error !== 'object' && typeof error !== 'function') return undefined
-    const status = Reflect.get(error, 'status')
-    return typeof status === 'number' ? status : undefined
 }
 
 function createCoalescedScheduler(args: {
@@ -159,99 +147,6 @@ function normalizeMaxOpsPerRequest(config: BatchEngineConfigLike) {
 }
 
 // ============================================================================
-// Adapter Events
-// ============================================================================
-
-function emitDataSourceEvent<M extends { ctx?: Types.ObservabilityContext }, TType extends DataSourceEventType>(args: {
-    targets: M[]
-    type: TType
-    payloadFor: (m: M) => AtomaDebugEventMap[TType]
-    meta?: DebugEmitMeta
-}) {
-    const { targets, type, payloadFor, meta } = args
-    if (!targets.length) return
-
-    targets.forEach(m => {
-        try {
-            m.ctx?.emit(type, payloadFor(m), meta)
-        } catch {
-            // ignore
-        }
-    })
-}
-
-type TraceState = {
-    mixedTrace: boolean
-}
-
-function normalizeTraceId(traceId: unknown) {
-    return typeof traceId === 'string' && traceId ? traceId : undefined
-}
-
-function buildTraceState(items: Array<{ ctx?: Types.ObservabilityContext }>): TraceState {
-    const distinct = new Set<string>()
-    let hasMissing = false
-
-    items.forEach(t => {
-        const id = normalizeTraceId(t.ctx?.traceId)
-        if (id) distinct.add(id)
-        else hasMissing = true
-    })
-
-    const mixedTrace = distinct.size > 1 || (hasMissing && distinct.size > 0)
-    return { mixedTrace }
-}
-
-function buildOpsLaneRequestContext(tasks: Array<{ ctx?: Types.ObservabilityContext }>) {
-    const traceState = buildTraceState(tasks)
-
-    const byCtx = new Map<Types.ObservabilityContext, { opCount: number }>()
-    tasks.forEach(t => {
-        const ctx = t.ctx
-        if (!ctx) return
-        const cur = byCtx.get(ctx) ?? { opCount: 0 }
-        cur.opCount++
-        byCtx.set(ctx, cur)
-    })
-
-    const ctxTargets = Array.from(byCtx.entries()).map(([ctx, meta]) => ({
-        ctx,
-        opCount: meta.opCount,
-        taskCount: meta.opCount
-    }))
-    const shouldEmitDataSourceEvents = ctxTargets.some(t => t.ctx.active)
-
-    return {
-        mixedTrace: traceState.mixedTrace,
-        ctxTargets,
-        shouldEmitDataSourceEvents
-    }
-}
-
-function withOpTraceMeta(op: Operation, ctx?: Types.ObservabilityContext): Operation {
-    if (!ctx) return op
-
-    const traceId = normalizeTraceId(ctx.traceId)
-    const requestId = traceId ? normalizeTraceId(ctx.requestId()) : undefined
-    if (!traceId && !requestId) return op
-
-    const baseMeta = (op as any)?.meta
-    const meta = (baseMeta && typeof baseMeta === 'object' && !Array.isArray(baseMeta))
-        ? baseMeta
-        : undefined
-
-    return {
-        ...(op as any),
-        meta: {
-            v: 1,
-            ...(meta ? meta : {}),
-            ...(traceId ? { traceId } : {}),
-            ...(requestId ? { requestId } : {})
-        }
-    } as any
-}
-
-// ============================================================================
 // Ops Batch Execute
 // ============================================================================
 
@@ -290,79 +185,24 @@ async function executeOpsTasksBatch(args: {
     executeFn: (input: { ops: Operation[]; meta: Meta; signal?: AbortSignal }) => Promise<{ results: OperationResult[]; status?: number }>
     controller?: AbortController
 }) {
-    const requestContext = buildOpsLaneRequestContext(args.tasks)
-    const opsWithTrace = args.tasks.map(t => withOpTraceMeta(t.op, t.ctx))
-
     const payload: OpsRequest = {
         meta: {
             v: 1,
             clientTimeMs: Date.now()
         },
-        ops: opsWithTrace
+        ops: args.tasks.map(t => t.op)
     }
 
-    const payloadBytes = requestContext.shouldEmitDataSourceEvents
-        ? Observability.utf8.byteLength(JSON.stringify(payload))
-        : undefined
-
-    emitDataSourceEvent({
-        targets: requestContext.ctxTargets,
-        type: 'datasource:request',
-        payloadFor: t => ({
-            lane: args.lane,
-            method: 'POST',
-            endpoint: args.endpoint,
-            attempt: 1,
-            payloadBytes,
-            opCount: t.opCount,
-            taskCount: t.taskCount,
-            totalOpCount: args.tasks.length,
-            mixedTrace: requestContext.mixedTrace
-        })
-    })
-
-    let startedAt: number | undefined
     try {
-        startedAt = Date.now()
         const res = await args.executeFn({
             ops: payload.ops,
             meta: payload.meta,
             signal: args.controller?.signal
         })
-        const durationMs = Date.now() - startedAt
-
-        emitDataSourceEvent({
-            targets: requestContext.ctxTargets,
-            type: 'datasource:response',
-            payloadFor: t => ({
-                lane: args.lane,
-                ok: true,
-                status: res.status,
-                durationMs,
-                opCount: t.opCount,
-                taskCount: t.taskCount,
-                totalOpCount: args.tasks.length,
-                mixedTrace: requestContext.mixedTrace
-            })
-        })
 
         const resultMap = mapOpsResults(res.results)
-        return opsWithTrace.map((op) => resultMap.get(op.opId) ?? missingResult(op.opId))
+        return payload.ops.map((op) => resultMap.get(op.opId) ?? missingResult(op.opId))
     } catch (error: unknown) {
-        emitDataSourceEvent({
-            targets: requestContext.ctxTargets,
-            type: 'datasource:response',
-            payloadFor: t => ({
-                lane: args.lane,
-                ok: false,
-                status: getErrorStatus(error),
-                durationMs: typeof startedAt === 'number' ? (Date.now() - startedAt) : undefined,
-                opCount: t.opCount,
-                taskCount: t.taskCount,
-                totalOpCount: args.tasks.length,
-                mixedTrace: requestContext.mixedTrace
-            })
-        })
         throw error
     }
 }
@@ -404,10 +244,7 @@ class QueryLane {
         })
     }
 
-    enqueue(
-        op: QueryOp,
-        internalContext?: Types.ObservabilityContext
-    ): Promise<OperationResult> {
+    enqueue(op: QueryOp): Promise<OperationResult> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -433,7 +270,6 @@ class QueryLane {
 
             this.queryQueue.push({
                 op,
-                ctx: internalContext,
                 deferred: { resolve, reject }
             })
 
@@ -549,10 +385,7 @@ class WriteLane {
         })
     }
 
-    enqueue(
-        op: WriteOp,
-        internalContext?: Types.ObservabilityContext
-    ): Promise<OperationResult> {
+    enqueue(op: WriteOp): Promise<OperationResult> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -564,7 +397,6 @@ class WriteLane {
             }
             this.writeQueue.push({
                 op,
-                ctx: internalContext,
                 deferred: { resolve, reject }
             })
             this.signal()
@@ -657,7 +489,7 @@ function takeBatch(queue: OpsTask[], maxOps: number) {
 // ============================================================================
 
 export interface BatchEngineConfig {
-    /** Ops endpoint (for observability payloads only). */
+    /** Ops endpoint path override. */
     endpoint?: string
     /** 
      * Direct execution function (no batching).
@@ -764,29 +596,23 @@ export class BatchEngine {
         })
     }
 
-    enqueueOp(
-        op: Operation,
-        internalContext?: Types.ObservabilityContext
-    ): Promise<OperationResult> {
+    enqueueOp(op: Operation): Promise<OperationResult> {
         if (!op || typeof op !== 'object' || typeof (op as any).opId !== 'string' || !(op as any).opId) {
             return Promise.reject(new Error('[BatchEngine] opId is required'))
         }
         if (op.kind === 'query') {
-            return this.queryLane.enqueue(op, internalContext)
+            return this.queryLane.enqueue(op)
         }
         if (op.kind === 'write') {
             const writeOp = op as WriteOp
             this.validateWriteBatchSize(writeOp)
-            return this.writeLane.enqueue(writeOp, internalContext)
+            return this.writeLane.enqueue(writeOp)
         }
         return Promise.reject(new Error(`[BatchEngine] Unsupported op kind: ${op.kind}`))
     }
 
-    async enqueueOps(
-        ops: Operation[],
-        internalContext?: Types.ObservabilityContext
-    ): Promise<OperationResult[]> {
-        return Promise.all(ops.map(op => this.enqueueOp(op, internalContext)))
+    async enqueueOps(ops: Operation[]): Promise<OperationResult[]> {
+        return Promise.all(ops.map(op => this.enqueueOp(op)))
     }
 
     dispose() {
