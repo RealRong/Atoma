@@ -49,6 +49,7 @@ export default defineConfig({
         'atoma-shared',
         'atoma-observability',
         'atoma-protocol',
+        'atoma-types',
         'atoma/backend',
     ]
 })

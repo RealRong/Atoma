@@ -1,6 +1,1 @@
-export type EntityId = string
-
-export type Cursor = string
-
-export type Version = number
-
+export type { EntityId, Cursor, Version } from 'atoma-types/protocol'

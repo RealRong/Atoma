@@ -1,4 +1,4 @@
-import type { NotifyMessage, SyncEvent, SyncPhase, SyncTransport } from '#sync/types'
+import type { NotifyMessage, SyncEvent, SyncPhase, SyncSubscribeTransport } from '#sync/types'
 import { AbortError, computeBackoffDelayMs, resolveRetryBackoff, sleepMs, toError } from '#sync/internal'
 import type { RetryBackoff } from '#sync/internal/backoff'
 
@@ -17,7 +17,7 @@ export class NotifyLane {
     private readonly retry: RetryBackoff
 
     constructor(private readonly deps: {
-        transport: SyncTransport
+        subscribeTransport?: SyncSubscribeTransport
         resources?: string[]
         reconnectDelayMs: number
         retry?: { maxAttempts?: number }
@@ -144,7 +144,7 @@ export class NotifyLane {
     }
 
     private async openOnce() {
-        const subscribe = this.deps.transport.subscribe
+        const subscribe = this.deps.subscribeTransport?.subscribe
         if (!subscribe) return
 
         this.subscription = subscribe({
@@ -180,4 +180,3 @@ export class NotifyLane {
         this.subscription = undefined
     }
 }
-

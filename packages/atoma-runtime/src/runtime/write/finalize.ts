@@ -3,9 +3,9 @@ import type { EntityId } from 'atoma-protocol'
 import type { PersistAck, PersistResult } from '../../types/persistenceTypes'
 import type { StoreHandle } from '../../types/runtimeTypes'
 import type { CoreRuntime } from '../../types/runtimeTypes'
-import type { WriteEvent } from './types'
+import type { Store as StoreTypes } from 'atoma-core'
 
-export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, event: WriteEvent<T>, persistResult: PersistResult<T>): Promise<PersistAck<T> | undefined> {
+export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, event: StoreTypes.WriteEvent<T>, persistResult: PersistResult<T>): Promise<PersistAck<T> | undefined> {
     const ack = persistResult.ack
     if (!ack) return undefined
 
@@ -37,7 +37,7 @@ export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRunti
     return normalized
 }
 
-export function resolveOutputFromAck<T extends Types.Entity>(event: WriteEvent<T>, ack: PersistAck<T> | undefined, fallback?: T): T | undefined {
+export function resolveOutputFromAck<T extends Types.Entity>(event: StoreTypes.WriteEvent<T>, ack: PersistAck<T> | undefined, fallback?: T): T | undefined {
     if (!ack) return fallback
 
     if (event.type === 'add' && ack.created?.length) {

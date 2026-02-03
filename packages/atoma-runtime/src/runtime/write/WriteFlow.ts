@@ -1,13 +1,13 @@
 import { produce, type Draft, type Patch } from 'immer'
 import type { Draft as ImmerDraft } from 'immer'
 import type { Types } from 'atoma-core'
+import { Store } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
 import type { CoreRuntime, RuntimeWrite, StoreHandle } from '../../types/runtimeTypes'
 import { applyPersistAck, resolveOutputFromAck } from './finalize'
-import { buildOptimisticState } from './optimistic'
 import { buildWriteOps } from '../persistence/persist'
 import { ensureActionId, prepareForAdd, prepareForUpdate, resolveBaseForWrite, runAfterSave, runBeforeSave } from './prepare'
-import type { WriteEvent } from './types'
+import type { Store as StoreTypes } from 'atoma-core'
 
 export class WriteFlow implements RuntimeWrite {
     private runtime: CoreRuntime
@@ -182,14 +182,14 @@ export class WriteFlow implements RuntimeWrite {
         handle: StoreHandle<T>
         opContext: Types.OperationContext
         writeStrategy?: string
-        event: WriteEvent<T>
+        event: StoreTypes.WriteEvent<T>
     }): Promise<T | void> => {
         const runtime = this.runtime
         const { handle, opContext, event } = args
         const { jotaiStore, atom } = handle
 
         const before = jotaiStore.get(atom) as Map<EntityId, T>
-        const { optimisticState, changedIds, output } = buildOptimisticState({
+        const { optimisticState, changedIds, output } = Store.buildOptimisticState({
             baseState: before,
             event
         })

@@ -1,4 +1,4 @@
-import type { ObservabilityContext } from 'atoma-observability'
+import type { Types } from 'atoma-core'
 import { Observability } from 'atoma-observability'
 import type { Envelope } from 'atoma-protocol'
 import { Protocol } from 'atoma-protocol'
@@ -25,7 +25,7 @@ export type ExecuteJsonArgs = {
     method: string
     body?: unknown
     extraHeaders?: Record<string, string>
-    context?: ObservabilityContext
+    context?: Types.ObservabilityContext
     signal?: AbortSignal
 }
 
@@ -44,7 +44,7 @@ async function resolveRequestHeaders(
 }
 
 async function withRequestTelemetry<T>(
-    ctx: ObservabilityContext | undefined,
+    ctx: Types.ObservabilityContext | undefined,
     request: Omit<DataSourceRequestEvent, 'attempt'> & { attempt?: number },
     run: (args: { startedAt: number }) => Promise<{ result: T; response?: Response; itemCount?: number }>
 ): Promise<T> {

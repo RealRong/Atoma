@@ -3,6 +3,8 @@ export type { CreateClientOptions } from './types'
 export { EndpointRegistry } from './drivers/EndpointRegistry'
 export { PluginRegistry, HandlerChain } from './plugins'
 export type { ClientPlugin } from './plugins'
+export { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY } from './devtools/protocol'
+export type { DevtoolsMeta, DevtoolsRegistry } from './devtools/protocol'
 export { registerClientRuntime, getClientRuntime, requireClientRuntime } from './internal/runtimeRegistry'
 
 export type {

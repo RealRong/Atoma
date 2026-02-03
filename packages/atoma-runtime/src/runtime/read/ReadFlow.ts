@@ -1,5 +1,3 @@
-import { Observability } from 'atoma-observability'
-import type { Explain } from 'atoma-observability'
 import { Query, Store } from 'atoma-core'
 import type { Types } from 'atoma-core'
 import type { EntityId } from 'atoma-protocol'
@@ -22,8 +20,8 @@ export class ReadFlow implements RuntimeRead {
             explain: input?.explain === true
         })
 
-        const explain: Explain | undefined = explainEnabled
-            ? { schemaVersion: 1, traceId: observabilityContext.traceId || Observability.trace.createId() }
+        const explain: Types.Explain | undefined = explainEnabled
+            ? { schemaVersion: 1, traceId: observabilityContext.traceId || createTraceId() }
             : undefined
 
         const emit = (type: string, payload: any) => observabilityContext.emit(type as any, payload)
@@ -292,4 +290,8 @@ export class ReadFlow implements RuntimeRead {
 
         return arr
     }
+}
+
+function createTraceId(): string {
+    return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 }

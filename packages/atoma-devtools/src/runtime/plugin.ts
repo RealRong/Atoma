@@ -1,5 +1,6 @@
 import type { ClientPlugin, ClientPluginContext } from 'atoma-client'
-import type { ClientMeta, HistoryProvider, SyncProvider } from './types'
+import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry, type DevtoolsMeta } from 'atoma-client'
+import type { HistoryProvider, SyncProvider } from './types'
 import { createClientInspector } from './createClientInspector'
 import { attachHistoryProvider, attachSyncProvider } from './runtimeAdapter'
 import { getEntryById } from './registry'
@@ -15,7 +16,7 @@ export type DevtoolsPluginOptions = Readonly<{
      * Override meta shown in devtools snapshot (rare).
      * - Default uses runtime meta (if present) or falls back to local/custom.
      */
-    meta?: ClientMeta
+    meta?: DevtoolsMeta
 
     /**
      * Optional sync devtools provider.
@@ -24,14 +25,11 @@ export type DevtoolsPluginOptions = Readonly<{
     syncDevtools?: SyncProvider
 }>
 
-const DEVTOOLS_REGISTRY_KEY = Symbol.for('atoma.devtools.registry')
-const DEVTOOLS_META_KEY = Symbol.for('atoma.devtools.meta')
-
-function readRuntimeMeta(runtime: any): ClientMeta | undefined {
-    const meta = runtime?.[DEVTOOLS_META_KEY]
+function readRuntimeMeta(ctx: ClientPluginContext): DevtoolsMeta | undefined {
+    const meta = ctx.capabilities.get<DevtoolsMeta>(DEVTOOLS_META_KEY)
     const storeBackend = meta?.storeBackend
     if (!storeBackend) return
-    const normalizeKind = (k: unknown): ClientMeta['storeBackend']['kind'] => {
+    const normalizeKind = (k: unknown): DevtoolsMeta['storeBackend']['kind'] => {
         const v = String(k ?? '').trim()
         if (v === 'http' || v === 'indexeddb' || v === 'memory' || v === 'localServer' || v === 'custom') return v
         return 'custom'
@@ -44,12 +42,53 @@ function readRuntimeMeta(runtime: any): ClientMeta | undefined {
     }
 }
 
-function defaultMeta(runtime: any): ClientMeta {
-    return readRuntimeMeta(runtime) ?? { storeBackend: { role: 'local', kind: 'custom' } }
+function defaultMeta(ctx: ClientPluginContext): DevtoolsMeta {
+    return readRuntimeMeta(ctx) ?? { storeBackend: { role: 'local', kind: 'custom' } }
 }
 
-function getRegistry(runtime: any): any | undefined {
-    return runtime ? runtime[DEVTOOLS_REGISTRY_KEY] : undefined
+function ensureRegistry(ctx: ClientPluginContext): DevtoolsRegistry {
+    const existing = ctx.capabilities.get<DevtoolsRegistry>(DEVTOOLS_REGISTRY_KEY)
+    if (existing && typeof existing.get === 'function' && typeof existing.register === 'function') {
+        return existing
+    }
+
+    const store = new Map<string, any>()
+    const subscribers = new Set<(e: { type: 'register' | 'unregister'; key: string }) => void>()
+
+    const registry: DevtoolsRegistry = {
+        get: (key) => store.get(String(key)),
+        register: (key, value) => {
+            const k = String(key)
+            store.set(k, value)
+            for (const sub of subscribers) {
+                try {
+                    sub({ type: 'register', key: k })
+                } catch {
+                    // ignore
+                }
+            }
+            return () => {
+                if (store.get(k) !== value) return
+                store.delete(k)
+                for (const sub of subscribers) {
+                    try {
+                        sub({ type: 'unregister', key: k })
+                    } catch {
+                        // ignore
+                    }
+                }
+            }
+        },
+        subscribe: (fn) => {
+            subscribers.add(fn)
+            return () => {
+                subscribers.delete(fn)
+            }
+        }
+    }
+
+    ctx.capabilities.register(DEVTOOLS_REGISTRY_KEY, registry)
+    return registry
 }
 
 function asHistoryProvider(input: unknown): HistoryProvider | undefined {
@@ -70,7 +109,7 @@ export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugi
         id: 'atoma-devtools',
         init: (ctx: ClientPluginContext) => {
             const runtime = ctx.runtime as any
-            const registry = getRegistry(runtime)
+            const registry = ensureRegistry(ctx)
 
             const historyDevtools = asHistoryProvider(registry?.get?.('history'))
             const syncDevtools = options.syncDevtools ?? asSyncProvider(registry?.get?.('sync'))
@@ -78,7 +117,7 @@ export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugi
             const inspector = createClientInspector({
                 runtime,
                 label: options.label,
-                meta: options.meta ?? defaultMeta(runtime),
+                meta: options.meta ?? defaultMeta(ctx),
                 ...(syncDevtools ? { syncDevtools } : {}),
                 ...(historyDevtools ? { historyDevtools } : {})
             })

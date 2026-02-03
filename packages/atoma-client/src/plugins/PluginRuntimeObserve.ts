@@ -1,4 +1,3 @@
-import type { DebugConfig, DebugEvent, ObservabilityContext } from 'atoma-observability'
 import type { Types } from 'atoma-core'
 import type { RuntimeObservability } from 'atoma-runtime'
 import type { HandlerEntry, ObserveContext, ObserveHandler, ObserveRequest } from './types'
@@ -26,7 +25,7 @@ export class PluginRuntimeObserve implements RuntimeObservability {
         }
         const ctx: ObserveContext = { clientId: this.clientId }
 
-        const run = (index: number): ObservabilityContext => {
+        const run = (index: number): Types.ObservabilityContext => {
             const handler = this.handlers[index]
             if (!handler) {
                 throw new Error('[Atoma] ObserveChain: missing terminal handler')
@@ -37,7 +36,7 @@ export class PluginRuntimeObserve implements RuntimeObservability {
         return run(0)
     }
 
-    registerStore = (args: { storeName: Types.StoreToken; debug?: DebugConfig; debugSink?: (e: DebugEvent) => void }) => {
+    registerStore = (args: { storeName: Types.StoreToken; debug?: Types.DebugConfig; debugSink?: (e: Types.DebugEvent) => void }) => {
         this.base?.registerStore?.(args)
     }
 }

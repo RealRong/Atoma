@@ -1,14 +1,14 @@
 import type { ClientPlugin, ClientPluginContext } from 'atoma-client'
-import type { SyncBackoffConfig, SyncClient, SyncEvent, SyncMode, SyncPhase, SyncRetryConfig, SyncRuntimeConfig, SyncSubscribe, SyncTransport, SyncDriver } from '#sync/types'
+import { DEVTOOLS_REGISTRY_KEY } from 'atoma-client'
+import type { SyncBackoffConfig, SyncClient, SyncEvent, SyncMode, SyncPhase, SyncRetryConfig, SyncRuntimeConfig, SyncTransport, SyncDriver, SyncSubscribeDriver } from '#sync/types'
 import { SyncEngine } from '#sync/engine/SyncEngine'
 import { createStores } from '#sync/storage'
 import { WritebackApplier } from '#sync/applier/WritebackApplier'
 import { SyncDevtools } from '#sync/devtools/SyncDevtools'
 import { SyncPersistHandlers } from '#sync/persistence/SyncPersistHandlers'
 import { createOpsSyncDriver } from '#sync/transport'
+import { registerSyncDriver, registerSyncSubscribeDriver } from '#sync/capabilities'
 import { getOrCreateGlobalReplicaId } from '#sync/internal/replicaId'
-
-const DEVTOOLS_REGISTRY_KEY = Symbol.for('atoma.devtools.registry')
 
 export type SyncPluginOptions = Readonly<{
     mode?: SyncMode
@@ -29,6 +29,8 @@ export type SyncPluginOptions = Readonly<{
 
     /** Optional sync driver (advanced). */
     driver?: SyncDriver
+    /** Optional subscribe driver (advanced). */
+    subscribeDriver?: SyncSubscribeDriver
     /** Prefer a specific endpoint id when building ops-based driver (advanced). */
     endpointId?: string
     /** Optional client namespace override for outbox keys. */
@@ -80,9 +82,13 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: SyncPluginOptions): { e
     })
 
     const transport: SyncTransport = driver
-    const remoteSubscribe: SyncSubscribe | undefined = transport.subscribe
+    const subscribeTransport = opts.subscribeDriver
 
     const devtools = new SyncDevtools({ now })
+    const unregisterCapability = registerSyncDriver(ctx, driver)
+    const unregisterSubscribeCapability = subscribeTransport
+        ? registerSyncSubscribeDriver(ctx, subscribeTransport)
+        : undefined
 
     const onEvent = (e: any) => {
         devtools.onEvent(e)
@@ -145,7 +151,7 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: SyncPluginOptions): { e
             },
 
             subscribe: {
-                enabled: Boolean(remoteSubscribe) && subscribeEnabled && subscribeEnabledByUser,
+                enabled: Boolean(subscribeTransport) && subscribeEnabled && subscribeEnabledByUser,
                 reconnectDelayMs,
                 retry,
                 backoff
@@ -158,7 +164,8 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: SyncPluginOptions): { e
 
             now,
             onEvent,
-            onError
+            onError,
+            ...(subscribeTransport ? { subscribeTransport } : {})
         }
     }
 
@@ -206,13 +213,11 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: SyncPluginOptions): { e
 
     const extension: SyncExtension = { sync }
 
-    const registry = (runtime as any)?.[DEVTOOLS_REGISTRY_KEY]
+    const registry = ctx.capabilities.get<any>(DEVTOOLS_REGISTRY_KEY)
     const unregisterDevtools = registry?.register?.('sync', {
         snapshot: devtools.snapshot,
         subscribe: devtools.subscribe
     })
-
-    const unregisterEndpoint = registerSyncEndpoint(ctx, driver, opts.endpointId)
 
     const dispose = () => {
         try {
@@ -228,13 +233,17 @@ function setupSyncPlugin(ctx: ClientPluginContext, opts: SyncPluginOptions): { e
             // ignore
         }
 
+        persistHandlers.dispose()
         try {
-            unregisterEndpoint?.()
+            unregisterCapability?.()
         } catch {
             // ignore
         }
-
-        persistHandlers.dispose()
+        try {
+            unregisterSubscribeCapability?.()
+        } catch {
+            // ignore
+        }
     }
 
     return { extension, dispose }
@@ -264,30 +273,5 @@ function resolveExecuteOps(ctx: ClientPluginContext, endpointId?: string) {
             ops: input.ops as any,
             ...(input.signal ? { signal: input.signal } : {})
         }).then((results: any) => ({ results })) as any
-    }
-}
-
-function registerSyncEndpoint(ctx: ClientPluginContext, driver: SyncDriver, endpointId?: string) {
-    const id = (typeof endpointId === 'string' && endpointId.trim())
-        ? endpointId.trim()
-        : `sync:${ctx.clientId}`
-
-    if (ctx.endpoints.getById(id)) return undefined
-
-    const endpoint = {
-        id,
-        role: 'sync',
-        driver: {
-            executeOps: async () => {
-                throw new Error('[Sync] sync endpoint does not support executeOps')
-            },
-            sync: driver
-        }
-    } as any
-
-    try {
-        return ctx.endpoints.register(endpoint)
-    } catch {
-        return undefined
     }
 }

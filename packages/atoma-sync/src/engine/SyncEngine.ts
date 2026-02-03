@@ -13,7 +13,8 @@ import type {
     SyncEvent,
     SyncPhase,
     SyncRuntimeConfig,
-    SyncTransport
+    SyncTransport,
+    SyncSubscribeTransport
 } from '#sync/types'
 
 type EngineState = 'idle' | 'starting' | 'running' | 'disposed'
@@ -25,6 +26,7 @@ export class SyncEngine implements SyncClient {
 
     private readonly config: SyncRuntimeConfig
     private readonly transport: SyncTransport
+    private readonly subscribeTransport?: SyncSubscribeTransport
     private readonly outbox: OutboxStore
     private readonly cursor: CursorStore
     private readonly applier: SyncApplier
@@ -43,6 +45,7 @@ export class SyncEngine implements SyncClient {
         this.config = config
 
         this.transport = this.config.transport
+        this.subscribeTransport = this.config.subscribeTransport
         this.outbox = this.config.outbox
         this.cursor = this.config.cursor
         this.applier = this.config.applier
@@ -78,7 +81,7 @@ export class SyncEngine implements SyncClient {
         })
 
         this.notifyLane = new NotifyLane({
-            transport: this.transport,
+            subscribeTransport: this.subscribeTransport,
             resources: this.config.pull.resources,
             reconnectDelayMs: this.config.subscribe.reconnectDelayMs,
             retry: this.config.subscribe.retry,

@@ -1,7 +1,6 @@
-export type NotifyMessage = {
-    resources?: string[]
-    traceId?: string
-}
+import type { NotifyMessage } from 'atoma-types/protocol'
+
+export type { NotifyMessage } from 'atoma-types/protocol'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)

@@ -12,6 +12,7 @@ export default defineConfig({
     treeshake: true,
     external: [
         'atoma-shared',
+        'atoma-types',
         'atoma-protocol',
         'jotai',
         'jotai/vanilla',

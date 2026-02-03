@@ -1,22 +1,9 @@
 import type { Entity } from '../types'
-import type { EntityId } from 'atoma-protocol'
+import type { EntityId } from 'atoma-types/protocol'
+import type { StoreWritebackArgs, StoreWritebackResult, StoreWritebackOptions } from 'atoma-types/core'
 import { StoreWriteUtils } from './StoreWriteUtils'
 
-export type StoreWritebackArgs<T extends Entity> = Readonly<{
-    upserts?: T[]
-    deletes?: EntityId[]
-    versionUpdates?: Array<{ key: EntityId; version: number }>
-}>
-
-export type StoreWritebackResult<T extends Entity> = Readonly<{
-    before: Map<EntityId, T>
-    after: Map<EntityId, T>
-    changedIds: Set<EntityId>
-}>
-
-export type StoreWritebackOptions<T extends Entity> = Readonly<{
-    preserve?: (existing: T, incoming: T) => T
-}>
+export type { StoreWritebackArgs, StoreWritebackResult, StoreWritebackOptions } from 'atoma-types/core'
 
 class StoreMapEditor<T extends Entity> {
     private after: Map<EntityId, T> | null = null

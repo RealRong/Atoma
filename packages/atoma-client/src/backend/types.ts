@@ -1,22 +1,7 @@
-import type { ObservabilityContext } from 'atoma-observability'
-import type { Meta, Operation, OperationResult } from 'atoma-protocol'
+import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma-types/client'
 
-export type ExecuteOpsInput = {
-    ops: Operation[]
-    meta: Meta
-    signal?: AbortSignal
-    context?: ObservabilityContext
-}
-
-export type ExecuteOpsOutput = {
-    results: OperationResult[]
-    status?: number
-}
+export type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma-types/client'
 
 export abstract class OpsClient {
     abstract executeOps(input: ExecuteOpsInput): Promise<ExecuteOpsOutput>
 }
-
-export type OpsClientLike = Readonly<{
-    executeOps: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
-}>

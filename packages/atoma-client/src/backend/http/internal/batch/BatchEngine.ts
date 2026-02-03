@@ -1,5 +1,6 @@
 import { Observability } from 'atoma-observability'
-import type { AtomaDebugEventMap, DebugEmitMeta, ObservabilityContext } from 'atoma-observability'
+import type { Types } from 'atoma-core'
+import type { AtomaDebugEventMap, DebugEmitMeta } from 'atoma-observability'
 import { Protocol, type Meta, type Operation, type OperationResult, type QueryOp, type WriteOp } from 'atoma-protocol'
 import type { ExecuteOpsInput, ExecuteOpsOutput } from '../../../types'
 import { zod } from 'atoma-shared'
@@ -13,7 +14,7 @@ type Deferred<T> = {
 
 type OpsTask = {
     op: Operation
-    ctx?: ObservabilityContext
+    ctx?: Types.ObservabilityContext
     deferred: Deferred<OperationResult>
 }
 
@@ -160,7 +161,7 @@ function normalizeMaxOpsPerRequest(config: BatchEngineConfigLike) {
 // Adapter Events
 // ============================================================================
 
-function emitDataSourceEvent<M extends { ctx?: ObservabilityContext }, TType extends DataSourceEventType>(args: {
+function emitDataSourceEvent<M extends { ctx?: Types.ObservabilityContext }, TType extends DataSourceEventType>(args: {
     targets: M[]
     type: TType
     payloadFor: (m: M) => AtomaDebugEventMap[TType]
@@ -186,7 +187,7 @@ function normalizeTraceId(traceId: unknown) {
     return typeof traceId === 'string' && traceId ? traceId : undefined
 }
 
-function buildTraceState(items: Array<{ ctx?: ObservabilityContext }>): TraceState {
+function buildTraceState(items: Array<{ ctx?: Types.ObservabilityContext }>): TraceState {
     const distinct = new Set<string>()
     let hasMissing = false
 
@@ -200,10 +201,10 @@ function buildTraceState(items: Array<{ ctx?: ObservabilityContext }>): TraceSta
     return { mixedTrace }
 }
 
-function buildOpsLaneRequestContext(tasks: Array<{ ctx?: ObservabilityContext }>) {
+function buildOpsLaneRequestContext(tasks: Array<{ ctx?: Types.ObservabilityContext }>) {
     const traceState = buildTraceState(tasks)
 
-    const byCtx = new Map<ObservabilityContext, { opCount: number }>()
+    const byCtx = new Map<Types.ObservabilityContext, { opCount: number }>()
     tasks.forEach(t => {
         const ctx = t.ctx
         if (!ctx) return
@@ -226,7 +227,7 @@ function buildOpsLaneRequestContext(tasks: Array<{ ctx?: ObservabilityContext }>
     }
 }
 
-function withOpTraceMeta(op: Operation, ctx?: ObservabilityContext): Operation {
+function withOpTraceMeta(op: Operation, ctx?: Types.ObservabilityContext): Operation {
     if (!ctx) return op
 
     const traceId = normalizeTraceId(ctx.traceId)
@@ -404,7 +405,7 @@ class QueryLane {
 
     enqueue(
         op: QueryOp,
-        internalContext?: ObservabilityContext
+        internalContext?: Types.ObservabilityContext
     ): Promise<OperationResult> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
@@ -549,7 +550,7 @@ class WriteLane {
 
     enqueue(
         op: WriteOp,
-        internalContext?: ObservabilityContext
+        internalContext?: Types.ObservabilityContext
     ): Promise<OperationResult> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
@@ -764,7 +765,7 @@ export class BatchEngine {
 
     enqueueOp(
         op: Operation,
-        internalContext?: ObservabilityContext
+        internalContext?: Types.ObservabilityContext
     ): Promise<OperationResult> {
         if (!op || typeof op !== 'object' || typeof (op as any).opId !== 'string' || !(op as any).opId) {
             return Promise.reject(new Error('[BatchEngine] opId is required'))
@@ -782,7 +783,7 @@ export class BatchEngine {
 
     async enqueueOps(
         ops: Operation[],
-        internalContext?: ObservabilityContext
+        internalContext?: Types.ObservabilityContext
     ): Promise<OperationResult[]> {
         return Promise.all(ops.map(op => this.enqueueOp(op, internalContext)))
     }

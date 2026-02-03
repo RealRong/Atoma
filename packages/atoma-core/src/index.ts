@@ -1,4 +1,4 @@
-export * as Types from './types'
+export type * as Types from 'atoma-types/core'
 export * as Store from './store'
 export * as Query from './query'
 export * as Relations from './relations'

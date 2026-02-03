@@ -1,0 +1,59 @@
+{
+    "name": "atoma-types",
+    "version": "0.0.0",
+    "type": "module",
+    "description": "Atoma shared type exports",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "source": "./src/index.ts"
+        },
+        "./core": {
+            "types": "./dist/core.d.ts",
+            "import": "./dist/core.js",
+            "source": "./src/core/index.ts"
+        },
+        "./runtime": {
+            "types": "./dist/runtime.d.ts",
+            "import": "./dist/runtime.js",
+            "source": "./src/runtime/index.ts"
+        },
+        "./client": {
+            "types": "./dist/client.d.ts",
+            "import": "./dist/client.js",
+            "source": "./src/client/index.ts"
+        },
+        "./protocol": {
+            "types": "./dist/protocol.d.ts",
+            "import": "./dist/protocol.js",
+            "source": "./src/protocol/index.ts"
+        },
+        "./observability": {
+            "types": "./dist/observability.d.ts",
+            "import": "./dist/observability.js",
+            "source": "./src/observability/index.ts"
+        },
+        "./sync": {
+            "types": "./dist/sync.d.ts",
+            "import": "./dist/sync.js",
+            "source": "./src/sync/index.ts"
+        },
+        "./devtools": {
+            "types": "./dist/devtools.d.ts",
+            "import": "./dist/devtools.js",
+            "source": "./src/devtools/index.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsup",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "immer": "^10.1.1",
+        "jotai": "^2.12.1"
+    }
+}

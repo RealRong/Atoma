@@ -10,7 +10,6 @@ import { createStore as createJotaiStore } from 'jotai/vanilla'
 import type { CoreRuntime, RuntimeIo, RuntimeObservability, RuntimePersistence, RuntimeRead, RuntimeTransform, RuntimeWrite } from '../types/runtimeTypes'
 import { DataProcessor } from './transform/DataProcessor'
 import { Stores } from '../store/Stores'
-import { StoreObservability } from 'atoma-observability'
 import { StrategyRegistry } from './StrategyRegistry'
 import { ReadFlow } from './read/ReadFlow'
 import { WriteFlow } from './write/WriteFlow'
@@ -51,7 +50,7 @@ export class Runtime implements CoreRuntime {
 
         this.jotaiStore = createJotaiStore()
 
-        this.observe = config.observe ?? new StoreObservability()
+        this.observe = config.observe ?? createNoopObservability()
         this.transform = new DataProcessor(() => this)
 
         if (config.io) {
@@ -72,4 +71,20 @@ export class Runtime implements CoreRuntime {
         this.read = new ReadFlow(this)
         this.write = new WriteFlow(this)
     }
+}
+
+function createNoopObservability(): RuntimeObservability {
+    const createContext = (_storeName: Types.StoreToken, args?: { traceId?: string }): Types.ObservabilityContext => {
+        const traceId = typeof args?.traceId === 'string' && args.traceId ? args.traceId : undefined
+        const ctx: Types.ObservabilityContext = {
+            active: false,
+            traceId,
+            requestId: () => undefined,
+            emit: (_type, _payload, _meta) => {},
+            with: () => ctx
+        }
+        return ctx
+    }
+
+    return { createContext }
 }

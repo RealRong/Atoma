@@ -4,7 +4,6 @@
 import type { Types } from 'atoma-core'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, PersistAck, TranslatedWriteOp } from '../types/persistenceTypes'
 import type { CoreRuntime, RuntimePersistence } from '../types/runtimeTypes'
-import type { ObservabilityContext } from 'atoma-observability'
 import type { OperationResult, StandardError, WriteAction, WriteItemResult, WriteResultData } from 'atoma-protocol'
 import { createWritebackCollector } from './persistence/ack'
 
@@ -15,6 +14,7 @@ const DEFAULT_WRITE_POLICY: WritePolicy = {
 export class StrategyRegistry implements RuntimePersistence {
     private readonly strategies = new Map<Types.WriteStrategy, StrategyDescriptor>()
     private readonly runtime: CoreRuntime
+    private defaultStrategy?: Types.WriteStrategy
 
     constructor(runtime: CoreRuntime) {
         this.runtime = runtime
@@ -30,8 +30,23 @@ export class StrategyRegistry implements RuntimePersistence {
         }
     }
 
+    setDefaultStrategy = (key: Types.WriteStrategy) => {
+        const k = String(key)
+        if (!k) throw new Error('[Atoma] strategy.setDefaultStrategy: key 必填')
+        const previous = this.defaultStrategy
+        this.defaultStrategy = k
+        return () => {
+            if (this.defaultStrategy === k) {
+                this.defaultStrategy = previous
+            }
+        }
+    }
+
     resolveWritePolicy = (key?: Types.WriteStrategy): WritePolicy => {
-        const k = this.normalizeStrategy(key)
+        const k = (typeof key === 'string' && key) ? key : this.defaultStrategy
+        if (!k) {
+            throw new Error('[Atoma] strategy.resolveWritePolicy: 未设置默认 writeStrategy')
+        }
         const policy = this.strategies.get(k)?.write
         if (!policy) return DEFAULT_WRITE_POLICY
         return {
@@ -62,7 +77,7 @@ export class StrategyRegistry implements RuntimePersistence {
 
     executeWriteOps = async <T extends Types.Entity>(args: {
         ops: Array<TranslatedWriteOp>
-        context?: ObservabilityContext
+        context?: Types.ObservabilityContext
     }): Promise<{ ack?: PersistAck<T> }> => {
         if (!args.ops.length) return {}
 
@@ -93,7 +108,10 @@ export class StrategyRegistry implements RuntimePersistence {
     }
 
     private normalizeStrategy = (key?: Types.WriteStrategy): Types.WriteStrategy => {
-        const normalized = (typeof key === 'string' && key) ? key : 'direct'
+        const normalized = (typeof key === 'string' && key) ? key : this.defaultStrategy
+        if (!normalized) {
+            throw new Error('[Atoma] strategy.persist: 未设置默认 writeStrategy')
+        }
         return normalized
     }
 }

@@ -93,9 +93,7 @@ export type DevtoolsGlobalInspector = {
     }
 }
 
-export type ClientMeta = {
-    storeBackend: { role: 'local' | 'remote'; kind: 'http' | 'indexeddb' | 'memory' | 'localServer' | 'custom' }
-}
+export type ClientMeta = import('atoma-client').DevtoolsMeta
 
 export type SyncProvider = {
     snapshot: () => DevtoolsSyncSnapshot

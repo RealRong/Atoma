@@ -21,5 +21,7 @@
         "build": "tsup",
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
-    "dependencies": {}
+    "dependencies": {
+        "atoma-types": "workspace:*"
+    }
 }

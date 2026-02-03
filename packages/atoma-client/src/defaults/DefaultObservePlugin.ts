@@ -1,4 +1,4 @@
-import type { ObservabilityContext } from 'atoma-observability'
+import type { Types } from 'atoma-core'
 import type { ClientPlugin, ObserveHandler, PluginContext, Register } from '../plugins'
 
 export class DefaultObservePlugin implements ClientPlugin {
@@ -10,7 +10,7 @@ export class DefaultObservePlugin implements ClientPlugin {
             throw new Error('[Atoma] DefaultObservePlugin: runtime.observe 未就绪')
         }
 
-        const handler: ObserveHandler = (req, _ctx, _next): ObservabilityContext => {
+        const handler: ObserveHandler = (req, _ctx, _next): Types.ObservabilityContext => {
             return baseObserve.createContext(req.storeName ?? 'store', {
                 ...(req.traceId ? { traceId: req.traceId } : {}),
                 ...(req.explain !== undefined ? { explain: req.explain } : {})

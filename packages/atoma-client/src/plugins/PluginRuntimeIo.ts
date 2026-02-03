@@ -1,4 +1,3 @@
-import type { ObservabilityContext } from 'atoma-observability'
 import { Protocol } from 'atoma-protocol'
 import type { Types } from 'atoma-core'
 import type { RuntimeIo, StoreHandle } from 'atoma-runtime'
@@ -55,7 +54,7 @@ export class PluginRuntimeIo implements RuntimeIo {
     query: RuntimeIo['query'] = async <T extends Types.Entity>(
         handle: StoreHandle<T>,
         query: Types.Query,
-        context?: ObservabilityContext,
+        context?: Types.ObservabilityContext,
         signal?: AbortSignal
     ): Promise<QueryResult> => {
         const req: ReadRequest = {

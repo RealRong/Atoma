@@ -1,30 +1,23 @@
 import type { Types } from 'atoma-core'
 import type { PersistRequest, RuntimeIo } from 'atoma-runtime'
 import { Runtime } from 'atoma-runtime'
+import { StoreObservability } from 'atoma-observability'
 import type { AtomaClient, AtomaSchema, CreateClientOptions } from '#client/types'
 import { registerClientRuntime } from './runtimeRegistry'
 import { zod } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
 import { EndpointRegistry } from '../drivers/EndpointRegistry'
-import { HandlerChain, PluginRegistry, PluginRuntimeIo, PluginRuntimeObserve } from '../plugins'
+import { CapabilitiesRegistry, HandlerChain, PluginRegistry, PluginRuntimeIo, PluginRuntimeObserve } from '../plugins'
 import type { ClientPlugin, PluginContext, PluginInitResult } from '../plugins'
 import { DefaultObservePlugin, HttpBackendPlugin, LocalBackendPlugin } from '../defaults'
+import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry } from '../devtools/protocol'
 
 const { parseOrThrow } = zod
 
-const DEVTOOLS_REGISTRY_KEY = Symbol.for('atoma.devtools.registry')
-const DEVTOOLS_META_KEY = Symbol.for('atoma.devtools.meta')
-
-type DevtoolsRegistry = Readonly<{
-    get: (key: string) => any
-    register: (key: string, value: any) => () => void
-    subscribe: (fn: (e: { type: 'register' | 'unregister'; key: string }) => void) => () => void
-}>
-
-function ensureDevtoolsRegistry(runtime: any): DevtoolsRegistry {
-    const existing = runtime?.[DEVTOOLS_REGISTRY_KEY]
+function ensureDevtoolsRegistry(capabilities: CapabilitiesRegistry): DevtoolsRegistry {
+    const existing = capabilities.get<DevtoolsRegistry>(DEVTOOLS_REGISTRY_KEY)
     if (existing && typeof existing.get === 'function' && typeof existing.register === 'function') {
-        return existing as DevtoolsRegistry
+        return existing
     }
 
     const store = new Map<string, any>()
@@ -62,7 +55,7 @@ function ensureDevtoolsRegistry(runtime: any): DevtoolsRegistry {
         }
     }
 
-    runtime[DEVTOOLS_REGISTRY_KEY] = registry
+    capabilities.register(DEVTOOLS_REGISTRY_KEY, registry)
     return registry
 }
 
@@ -82,6 +75,7 @@ export function createClient<
 
     const endpointRegistry = new EndpointRegistry()
     const pluginRegistry = new PluginRegistry()
+    const capabilities = new CapabilitiesRegistry()
 
     const clientRuntime = new Runtime({
         schema: ((args.schema ?? {}) as S) as any,
@@ -93,12 +87,14 @@ export function createClient<
                 throw new Error('[Atoma] io not ready')
             }
         } satisfies RuntimeIo,
+        observe: new StoreObservability(),
         ownerClient: () => client
     }) as any
 
     const pluginContext: PluginContext = {
         clientId: clientRuntime.id,
         endpoints: endpointRegistry,
+        capabilities,
         runtime: clientRuntime as any
     }
 
@@ -122,12 +118,12 @@ export function createClient<
 
     plugins.push(new DefaultObservePlugin())
 
-    ensureDevtoolsRegistry(clientRuntime)
-    ;(clientRuntime as any)[DEVTOOLS_META_KEY] = {
+    ensureDevtoolsRegistry(capabilities)
+    capabilities.register(DEVTOOLS_META_KEY, {
         storeBackend: hasBackend
             ? { role: 'remote', kind: 'http' }
             : { role: 'local', kind: 'custom' }
-    }
+    })
 
     for (const plugin of plugins) {
         if (!plugin) continue
@@ -164,6 +160,7 @@ export function createClient<
             } as any)
         }
     })
+    clientRuntime.persistence.setDefaultStrategy('direct')
 
     clientRuntime.observe = new PluginRuntimeObserve({
         entries: observeEntries,

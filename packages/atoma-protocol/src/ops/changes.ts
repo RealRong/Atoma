@@ -1,17 +1,1 @@
-import type { Cursor, EntityId, Version } from '../core/scalars'
-
-export type ChangeKind = 'upsert' | 'delete'
-
-export type Change = {
-    resource: string
-    entityId: EntityId
-    kind: ChangeKind
-    version: Version
-    changedAtMs: number
-}
-
-export type ChangeBatch = {
-    nextCursor: Cursor
-    changes: Change[]
-}
-
+export type { ChangeKind, Change, ChangeBatch } from 'atoma-types/protocol'
