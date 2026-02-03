@@ -1,13 +1,167 @@
 import { produce, type Draft, type Patch } from 'immer'
 import type { Draft as ImmerDraft } from 'immer'
 import type * as Types from 'atoma-types/core'
-import { Store } from 'atoma-core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, RuntimeWrite, StoreHandle } from 'atoma-types/runtime'
-import { applyPersistAck, resolveOutputFromAck } from './write/finalize'
-import { buildWriteOps } from '../persistence'
+import { version } from 'atoma-shared'
+import { applyPersistAck } from './write/finalize'
+import { buildWriteIntentsFromPatches, buildWriteOps } from '../persistence'
 import { ensureActionId, prepareForAdd, prepareForUpdate, resolveBaseForWrite, runAfterSave, runBeforeSave } from './write/prepare'
-import type { Store as StoreTypes } from 'atoma-core'
+import { applyIntentsOptimistically } from './write/optimistic'
+
+function buildUpsertIntentOptions(options?: Types.UpsertWriteOptions): Types.WriteIntentOptions | undefined {
+    if (!options) return undefined
+    const out: Types.WriteIntentOptions = {}
+    if (typeof options.merge === 'boolean') out.merge = options.merge
+    if (options.mode === 'strict' || options.mode === 'loose') out.upsert = { mode: options.mode }
+    return Object.keys(out).length ? out : undefined
+}
+
+function resolveOutputFromAck<T extends Types.Entity>(intent: Types.WriteIntent<T> | undefined, ack: Types.PersistAck<T> | undefined, fallback?: T): T | undefined {
+    if (!ack) return fallback
+    if (!intent) return fallback
+
+    if (intent.action === 'create' && ack.created?.length) {
+        return ack.created[0] as T
+    }
+
+    if ((intent.action === 'update' || intent.action === 'upsert') && ack.upserts?.length) {
+        const id = intent.entityId as EntityId | undefined
+        if (!id) return ack.upserts[0] as T
+        const matched = ack.upserts.find(item => (item as any)?.id === id)
+        return (matched ?? ack.upserts[0]) as T
+    }
+
+    return fallback
+}
+
+async function prepareAddIntent<T extends Types.Entity>(args: {
+    runtime: CoreRuntime
+    handle: StoreHandle<T>
+    item: Partial<T>
+    opContext: Types.OperationContext
+}): Promise<{ intent: Types.WriteIntent<T>; output: T }> {
+    const prepared = await prepareForAdd(args.runtime, args.handle, args.item, args.opContext)
+    return {
+        intent: {
+            action: 'create',
+            entityId: prepared.id as EntityId,
+            value: prepared as T,
+            intent: 'created'
+        },
+        output: prepared as T
+    }
+}
+
+async function prepareUpdateIntent<T extends Types.Entity>(args: {
+    runtime: CoreRuntime
+    handle: StoreHandle<T>
+    id: EntityId
+    recipe: (draft: Draft<T>) => void
+    opContext: Types.OperationContext
+    options?: Types.StoreOperationOptions
+}): Promise<{ intent: Types.WriteIntent<T>; output: T }> {
+    const base = await resolveBaseForWrite(args.runtime, args.handle, args.id, args.options)
+    const next = produce(base as any, (draft: Draft<T>) => args.recipe(draft)) as any
+    const patched = { ...(next as any), id: args.id } as Types.PartialWithId<T>
+    const prepared = await prepareForUpdate(args.runtime, args.handle, base, patched, args.opContext)
+    const baseVersion = version.requireBaseVersion(args.id, base as any)
+    return {
+        intent: {
+            action: 'update',
+            entityId: args.id,
+            baseVersion,
+            value: prepared as T
+        },
+        output: prepared as T
+    }
+}
+
+async function prepareUpsertIntent<T extends Types.Entity>(args: {
+    runtime: CoreRuntime
+    handle: StoreHandle<T>
+    item: Types.PartialWithId<T>
+    opContext: Types.OperationContext
+    options?: Types.StoreOperationOptions & Types.UpsertWriteOptions
+}): Promise<{ intent: Types.WriteIntent<T>; output: T; afterSaveAction: 'add' | 'update' }> {
+    const id = args.item.id
+    const base = args.handle.jotaiStore.get(args.handle.atom).get(id) as Types.PartialWithId<T> | undefined
+    const merge = args.options?.merge !== false
+
+    const prepared = await (async () => {
+        if (!base) {
+            return await prepareForAdd(args.runtime, args.handle, args.item as any, args.opContext)
+        }
+
+        if (merge) {
+            return await prepareForUpdate(args.runtime, args.handle, base, args.item, args.opContext)
+        }
+
+        const now = Date.now()
+        const createdAt = (base as any).createdAt ?? now
+        const candidate: any = {
+            ...(args.item as any),
+            id,
+            createdAt,
+            updatedAt: now
+        }
+
+        if (candidate.version === undefined && typeof (base as any).version === 'number') {
+            candidate.version = (base as any).version
+        }
+        if (candidate._etag === undefined && typeof (base as any)._etag === 'string') {
+            candidate._etag = (base as any)._etag
+        }
+
+        let next = await runBeforeSave(args.handle.hooks, candidate as any, 'update')
+        const processed = await args.runtime.transform.inbound(args.handle, next as any, args.opContext)
+        if (!processed) {
+            throw new Error('[Atoma] upsertOne: transform returned empty')
+        }
+        return processed as Types.PartialWithId<T>
+    })()
+
+    const baseVersion = version.resolvePositiveVersion(prepared as any)
+    const intentOptions = buildUpsertIntentOptions(args.options)
+    const intent: Types.WriteIntent<T> = {
+        action: 'upsert',
+        entityId: id,
+        ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+        value: prepared as T,
+        ...(intentOptions ? { options: intentOptions } : {})
+    }
+    return {
+        intent,
+        output: prepared as T,
+        afterSaveAction: base ? 'update' : 'add'
+    }
+}
+
+async function prepareDeleteIntent<T extends Types.Entity>(args: {
+    runtime: CoreRuntime
+    handle: StoreHandle<T>
+    id: EntityId
+    opContext: Types.OperationContext
+    options?: Types.StoreOperationOptions
+}): Promise<Types.WriteIntent<T>> {
+    const base = await resolveBaseForWrite(args.runtime, args.handle, args.id, args.options)
+    const baseVersion = version.requireBaseVersion(args.id, base as any)
+    if (args.options?.force) {
+        return {
+            action: 'delete',
+            entityId: args.id,
+            baseVersion
+        }
+    }
+    return {
+        action: 'update',
+        entityId: args.id,
+        baseVersion,
+        value: Object.assign({}, base, { deleted: true, deletedAt: Date.now() }) as T
+    }
+}
+
+ 
 
 export class WriteFlow implements RuntimeWrite {
     private runtime: CoreRuntime
@@ -19,17 +173,17 @@ export class WriteFlow implements RuntimeWrite {
     addOne = async <T extends Types.Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: Types.StoreOperationOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
-        const prepared = await prepareForAdd(runtime, handle, item, opContext)
+        const { intent, output } = await prepareAddIntent({ runtime, handle, item, opContext })
 
         const result = await this.executeWrite<T>({
             handle,
             opContext,
             writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            event: { type: 'add', data: prepared }
+            intents: [intent]
         })
 
-        await runAfterSave(handle.hooks, prepared, 'add')
-        return result as T
+        await runAfterSave(handle.hooks, output as any, 'add')
+        return (result ?? output) as T
     }
 
     addMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: Types.StoreOperationOptions): Promise<T[]> => {
@@ -43,21 +197,24 @@ export class WriteFlow implements RuntimeWrite {
     updateOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, recipe: (draft: ImmerDraft<T>) => void, options?: Types.StoreOperationOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
-        const base = await resolveBaseForWrite(runtime, handle, id, options)
-
-        const next = produce(base as any, (draft: Draft<T>) => recipe(draft)) as any
-        const patched = { ...(next as any), id } as Types.PartialWithId<T>
-        const prepared = await prepareForUpdate(runtime, handle, base, patched, opContext)
+        const { intent, output } = await prepareUpdateIntent({
+            runtime,
+            handle,
+            id,
+            recipe: recipe as any,
+            opContext,
+            options
+        })
 
         const result = await this.executeWrite<T>({
             handle,
             opContext,
             writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            event: { type: 'update', data: prepared, base }
+            intents: [intent]
         })
 
-        await runAfterSave(handle.hooks, prepared, 'update')
-        return result as T
+        await runAfterSave(handle.hooks, output as any, 'update')
+        return (result ?? output) as T
     }
 
     updateMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>, options?: Types.StoreOperationOptions): Promise<Types.WriteManyResult<T>> => {
@@ -79,52 +236,23 @@ export class WriteFlow implements RuntimeWrite {
     upsertOne = async <T extends Types.Entity>(handle: StoreHandle<T>, item: Types.PartialWithId<T>, options?: Types.StoreOperationOptions & Types.UpsertWriteOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
-        const id = item.id
-        const base = handle.jotaiStore.get(handle.atom).get(id) as Types.PartialWithId<T> | undefined
-        const merge = options?.merge !== false
-
-        const prepared = await (async () => {
-            if (!base) {
-                return await prepareForAdd(runtime, handle, item as any, opContext)
-            }
-
-            if (merge) {
-                return await prepareForUpdate(runtime, handle, base, item, opContext)
-            }
-
-            const now = Date.now()
-            const createdAt = (base as any).createdAt ?? now
-            const candidate: any = {
-                ...(item as any),
-                id,
-                createdAt,
-                updatedAt: now
-            }
-
-            if (candidate.version === undefined && typeof (base as any).version === 'number') {
-                candidate.version = (base as any).version
-            }
-            if (candidate._etag === undefined && typeof (base as any)._etag === 'string') {
-                candidate._etag = (base as any)._etag
-            }
-
-            let next = await runBeforeSave(handle.hooks, candidate as any, 'update')
-            const processed = await runtime.transform.inbound(handle, next as any, opContext)
-            if (!processed) {
-                throw new Error('[Atoma] upsertOne: transform returned empty')
-            }
-            return processed as Types.PartialWithId<T>
-        })()
+        const { intent, output, afterSaveAction } = await prepareUpsertIntent({
+            runtime,
+            handle,
+            item,
+            opContext,
+            options
+        })
 
         const result = await this.executeWrite<T>({
             handle,
             opContext,
             writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            event: { type: 'upsert', data: prepared, base, upsert: { mode: options?.mode, merge: options?.merge } }
+            intents: [intent]
         })
 
-        await runAfterSave(handle.hooks, prepared, base ? 'update' : 'add')
-        return result as T
+        await runAfterSave(handle.hooks, output as any, afterSaveAction)
+        return (result ?? output) as T
     }
 
     upsertMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<Types.PartialWithId<T>>, options?: Types.StoreOperationOptions & Types.UpsertWriteOptions): Promise<Types.WriteManyResult<T>> => {
@@ -144,12 +272,19 @@ export class WriteFlow implements RuntimeWrite {
     deleteOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreOperationOptions): Promise<boolean> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
-        const base = await resolveBaseForWrite(runtime, handle, id, options)
+        const intent = await prepareDeleteIntent({
+            runtime,
+            handle,
+            id,
+            opContext,
+            options
+        })
+
         await this.executeWrite<T>({
             handle,
             opContext,
             writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            event: { type: options?.force ? 'forceRemove' : 'remove', data: { id } as Types.PartialWithId<T>, base }
+            intents: [intent]
         })
         return true
     }
@@ -170,11 +305,17 @@ export class WriteFlow implements RuntimeWrite {
 
     patches = async <T extends Types.Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: Types.StoreOperationOptions): Promise<void> => {
         const opContext = ensureActionId(options?.opContext)
+        const before = handle.jotaiStore.get(handle.atom) as Map<EntityId, T>
+        const intents = buildWriteIntentsFromPatches({
+            baseState: before,
+            patches,
+            inversePatches
+        })
         await this.executeWrite<T>({
             handle,
             opContext,
             writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            event: { type: 'patches', patches, inversePatches }
+            intents
         })
     }
 
@@ -182,17 +323,41 @@ export class WriteFlow implements RuntimeWrite {
         handle: StoreHandle<T>
         opContext: Types.OperationContext
         writeStrategy?: string
-        event: StoreTypes.WriteEvent<T>
+        intents?: Array<Types.WriteIntent<T>>
     }): Promise<T | void> => {
-        const runtime = this.runtime
-        const { handle, opContext, event } = args
-        const { jotaiStore, atom } = handle
-
-        const before = jotaiStore.get(atom) as Map<EntityId, T>
-        const { optimisticState, changedIds, output } = Store.buildOptimisticState({
-            baseState: before,
-            event
+        const intents = this.makeIntents(args)
+        const optimistic = this.applyOptimistic({
+            handle: args.handle,
+            intents,
+            writeStrategy: args.writeStrategy
         })
+        return await this.persistAndFinalize({
+            handle: args.handle,
+            intents,
+            opContext: args.opContext,
+            writeStrategy: args.writeStrategy,
+            ...optimistic
+        })
+    }
+
+    private makeIntents<T extends Types.Entity>(args: { intents?: Array<Types.WriteIntent<T>> }): Array<Types.WriteIntent<T>> {
+        return args.intents ?? []
+    }
+
+    private applyOptimistic<T extends Types.Entity>(args: {
+        handle: StoreHandle<T>
+        intents: Array<Types.WriteIntent<T>>
+        writeStrategy?: string
+    }): { before: Map<EntityId, T>; optimisticState: Map<EntityId, T>; changedIds: Set<EntityId> } {
+        const { handle, intents, writeStrategy } = args
+        const { jotaiStore, atom } = handle
+        const before = jotaiStore.get(atom) as Map<EntityId, T>
+        const writePolicy = this.runtime.persistence.resolveWritePolicy(writeStrategy)
+        const shouldOptimistic = writePolicy.optimistic !== false
+        const optimistic = (shouldOptimistic && intents.length)
+            ? applyIntentsOptimistically(before, intents)
+            : { optimisticState: before, changedIds: new Set<EntityId>() }
+        const { optimisticState, changedIds } = optimistic
 
         if (optimisticState !== before && changedIds.size) {
             handle.stateWriter.commitMapUpdateDelta({
@@ -202,40 +367,59 @@ export class WriteFlow implements RuntimeWrite {
             })
         }
 
-        const writeOps = await buildWriteOps({
-            runtime,
-            handle,
-            event,
-            optimisticState,
-            opContext
-        })
+        return { before, optimisticState, changedIds }
+    }
 
-        if (!writeOps.length) {
-            return output
-        }
+    private persistAndFinalize<T extends Types.Entity>(args: {
+        handle: StoreHandle<T>
+        intents: Array<Types.WriteIntent<T>>
+        opContext: Types.OperationContext
+        writeStrategy?: string
+        before: Map<EntityId, T>
+        optimisticState: Map<EntityId, T>
+        changedIds: Set<EntityId>
+    }): Promise<T | void> {
+        const runtime = this.runtime
+        const { handle, intents, opContext } = args
 
-        try {
-            const persistResult = await runtime.persistence.persist({
-                storeName: String(handle.storeName),
-                writeStrategy: args.writeStrategy,
+        return (async () => {
+            const writeOps = await buildWriteOps({
+                runtime,
                 handle,
-                writeOps,
-                context: runtime.observe.createContext(handle.storeName)
+                intents,
+                opContext
             })
 
-            const normalizedAck = await applyPersistAck(runtime, handle, event, persistResult)
-            const resolvedOutput = resolveOutputFromAck(event, normalizedAck, output as T | undefined)
-
-            return resolvedOutput ?? output
-        } catch (error) {
-            if (optimisticState !== before && changedIds.size) {
-                handle.stateWriter.commitMapUpdateDelta({
-                    before: optimisticState,
-                    after: before,
-                    changedIds
-                })
+            if (!writeOps.length) {
+                const primary = intents.length === 1 ? intents[0] : undefined
+                if (primary && primary.action !== 'delete') {
+                    return primary.value as T
+                }
+                return undefined
             }
-            throw error
-        }
+
+            try {
+                const persistResult = await runtime.persistence.persist({
+                    storeName: String(handle.storeName),
+                    writeStrategy: args.writeStrategy,
+                    handle,
+                    writeOps,
+                    context: runtime.observe.createContext(handle.storeName)
+                })
+
+                const primaryIntent = intents.length === 1 ? intents[0] : undefined
+                const normalizedAck = await applyPersistAck(runtime, handle, primaryIntent, persistResult)
+                return resolveOutputFromAck(primaryIntent, normalizedAck, primaryIntent?.value as T | undefined)
+            } catch (error) {
+                if (args.optimisticState !== args.before && args.changedIds.size) {
+                    handle.stateWriter.commitMapUpdateDelta({
+                        before: args.optimisticState,
+                        after: args.before,
+                        changedIds: args.changedIds
+                    })
+                }
+                throw error
+            }
+        })()
     }
 }

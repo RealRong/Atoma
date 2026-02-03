@@ -8,7 +8,8 @@ import type { OperationResult, StandardError, WriteAction, WriteItemResult, Writ
 import { createWritebackCollector } from '../persistence'
 
 const DEFAULT_WRITE_POLICY: WritePolicy = {
-    implicitFetch: true
+    implicitFetch: true,
+    optimistic: true
 }
 
 export class StrategyRegistry implements RuntimePersistence {

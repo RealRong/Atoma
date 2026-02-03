@@ -1,40 +1,37 @@
 import type * as Types from 'atoma-types/core'
-import { Store } from 'atoma-core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { TranslatedWriteOp } from 'atoma-types/runtime'
 import type { StoreHandle } from 'atoma-types/runtime'
 import type { CoreRuntime } from 'atoma-types/runtime'
-import type { Store as StoreTypes } from 'atoma-core'
 import { entityId as entityIdUtils, immer as immerUtils, version } from 'atoma-shared'
-import type { Patch } from 'immer'
+import { applyPatches, type Patch } from 'immer'
 import { buildWriteItem, buildWriteItemMeta, buildWriteOperation, buildWriteOptions } from './opsBuilder'
 
 export async function buildWriteOps<T extends Types.Entity>(args: {
     runtime: CoreRuntime
     handle: StoreHandle<T>
-    event: StoreTypes.WriteEvent<T>
-    optimisticState: Map<EntityId, T>
+    intents: Array<Types.WriteIntent<T>>
     opContext: Types.OperationContext
 }): Promise<TranslatedWriteOp[]> {
-    const { runtime, handle, event, optimisticState, opContext } = args
-    const intents = event.type === 'patches'
-        ? await buildWriteIntentsFromPatches({
-            optimisticState,
-            patches: event.patches,
-            inversePatches: event.inversePatches,
-            prepareValue: async (value, ctx) => runtime.transform.outbound(handle, value, ctx),
-            opContext
-        })
-        : await Store.buildWriteIntents({
-            event,
-            optimisticState,
-            opContext,
-            prepareValue: async (value, ctx) => {
-                return await runtime.transform.outbound(handle, value, ctx)
-            }
-        })
+    const { runtime, handle, intents, opContext } = args
+    if (!intents.length) return []
 
-    return intents.map(intent => {
+    const normalized = await Promise.all(intents.map(async intent => {
+        if (intent.action === 'delete') return intent
+        if (intent.value === undefined) {
+            throw new Error(`[Atoma] write intent missing value for ${intent.action}`)
+        }
+        const outbound = await runtime.transform.outbound(handle, intent.value as T, opContext)
+        if (outbound === undefined) {
+            throw new Error('[Atoma] transform returned empty for outbound write')
+        }
+        return {
+            ...intent,
+            value: outbound
+        } as Types.WriteIntent<T>
+    }))
+
+    return normalized.map(intent => {
         const meta = buildWriteItemMeta({ now: runtime.now })
         const item = buildWriteItem(intent, meta)
         const op = buildWriteOperation({
@@ -53,13 +50,12 @@ export async function buildWriteOps<T extends Types.Entity>(args: {
     })
 }
 
-async function buildWriteIntentsFromPatches<T extends Types.Entity>(args: {
-    optimisticState: Map<EntityId, T>
+export function buildWriteIntentsFromPatches<T extends Types.Entity>(args: {
+    baseState: Map<EntityId, T>
     patches: Patch[]
     inversePatches: Patch[]
-    prepareValue: (value: T, ctx?: Types.OperationContext) => Promise<T | undefined>
-    opContext?: Types.OperationContext
-}): Promise<Types.WriteIntent<T>[]> {
+}): Types.WriteIntent<T>[] {
+    const optimisticState = applyPatches(args.baseState, args.patches) as Map<EntityId, T>
     const touchedIds = new Set<EntityId>()
     args.patches.forEach(p => {
         const root = p.path?.[0]
@@ -74,18 +70,14 @@ async function buildWriteIntentsFromPatches<T extends Types.Entity>(args: {
 
     const intents: Types.WriteIntent<T>[] = []
     for (const id of touchedIds.values()) {
-        const next = args.optimisticState.get(id)
+        const next = optimisticState.get(id)
         if (next) {
             const baseVersion = version.resolvePositiveVersion(next)
-            const outbound = await args.prepareValue(next, args.opContext)
-            if (outbound === undefined) {
-                throw new Error('[Atoma] transform returned empty for outbound write')
-            }
             intents.push({
                 action: 'upsert',
                 entityId: id,
                 ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
-                value: outbound,
+                value: next,
                 options: { merge: false, upsert: { mode: 'loose' } }
             })
             continue

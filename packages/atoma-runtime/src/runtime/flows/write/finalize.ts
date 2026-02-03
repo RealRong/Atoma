@@ -3,18 +3,17 @@ import type { EntityId } from 'atoma-types/protocol'
 import type { PersistAck, PersistResult } from 'atoma-types/runtime'
 import type { StoreHandle } from 'atoma-types/runtime'
 import type { CoreRuntime } from 'atoma-types/runtime'
-import type { Store as StoreTypes } from 'atoma-core'
 
-export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, event: StoreTypes.WriteEvent<T>, persistResult: PersistResult<T>): Promise<PersistAck<T> | undefined> {
+export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, intent: Types.WriteIntent<T> | undefined, persistResult: PersistResult<T>): Promise<PersistAck<T> | undefined> {
     const ack = persistResult.ack
     if (!ack) return undefined
 
     const normalized = await transformAck(runtime, handle, ack)
 
-    if (event.type === 'add' && normalized.created?.length) {
+    if (intent?.action === 'create' && normalized.created?.length) {
         const created = normalized.created[0] as T
         const serverId = (created as any)?.id as EntityId
-        const tempId = (event.data as any)?.id as EntityId
+        const tempId = intent.entityId as EntityId
 
         const deletes: EntityId[] = []
         if (tempId && serverId && tempId !== serverId) {
@@ -35,23 +34,6 @@ export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRunti
     })
 
     return normalized
-}
-
-export function resolveOutputFromAck<T extends Types.Entity>(event: StoreTypes.WriteEvent<T>, ack: PersistAck<T> | undefined, fallback?: T): T | undefined {
-    if (!ack) return fallback
-
-    if (event.type === 'add' && ack.created?.length) {
-        return ack.created[0] as T
-    }
-
-    if ((event.type === 'update' || event.type === 'upsert') && ack.upserts?.length) {
-        const id = (event.data as any)?.id as EntityId | undefined
-        if (!id) return ack.upserts[0] as T
-        const matched = ack.upserts.find(item => (item as any)?.id === id)
-        return (matched ?? ack.upserts[0]) as T
-    }
-
-    return fallback
 }
 
 async function transformAck<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, ack: PersistAck<T>): Promise<PersistAck<T>> {

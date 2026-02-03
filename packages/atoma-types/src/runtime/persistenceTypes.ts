@@ -53,6 +53,7 @@ export type PersistHandler = <T extends Types.Entity>(args: {
 
 export type WritePolicy = Readonly<{
     implicitFetch?: boolean
+    optimistic?: boolean
 }>
 
 export type StrategyDescriptor = Readonly<{

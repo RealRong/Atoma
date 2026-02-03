@@ -1,2 +1,2 @@
 export { createWritebackCollector } from './ack'
-export { buildWriteOps } from './persist'
+export { buildWriteIntentsFromPatches, buildWriteOps } from './persist'
