@@ -1,4 +1,4 @@
-import type { Cursor } from 'atoma-protocol'
+import type { Cursor } from 'atoma-types/protocol'
 
 function parseNumericCursor(value: string): bigint | null {
     if (!value.match(/^(0|[1-9][0-9]*)$/)) return null

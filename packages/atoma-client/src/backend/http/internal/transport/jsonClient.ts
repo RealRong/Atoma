@@ -1,6 +1,6 @@
-import type { Types } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
 import { Observability } from 'atoma-observability'
-import type { Envelope } from 'atoma-protocol'
+import type { Envelope } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
 type DataSourceRequestEvent = {
     method: string

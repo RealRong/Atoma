@@ -1,9 +1,9 @@
 import { produce, type Draft, type Patch } from 'immer'
 import type { Draft as ImmerDraft } from 'immer'
-import type { Types } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
 import { Store } from 'atoma-core'
-import type { EntityId } from 'atoma-protocol'
-import type { CoreRuntime, RuntimeWrite, StoreHandle } from '../../types/runtimeTypes'
+import type { EntityId } from 'atoma-types/protocol'
+import type { CoreRuntime, RuntimeWrite, StoreHandle } from 'atoma-types/runtime'
 import { applyPersistAck, resolveOutputFromAck } from './finalize'
 import { buildWriteOps } from '../persistence/persist'
 import { ensureActionId, prepareForAdd, prepareForUpdate, resolveBaseForWrite, runAfterSave, runBeforeSave } from './prepare'
@@ -195,7 +195,7 @@ export class WriteFlow implements RuntimeWrite {
         })
 
         if (optimisticState !== before && changedIds.size) {
-            handle.commitMapUpdateDelta({
+            handle.stateWriter.commitMapUpdateDelta({
                 before,
                 after: optimisticState,
                 changedIds
@@ -229,7 +229,7 @@ export class WriteFlow implements RuntimeWrite {
             return resolvedOutput ?? output
         } catch (error) {
             if (optimisticState !== before && changedIds.size) {
-                handle.commitMapUpdateDelta({
+                handle.stateWriter.commitMapUpdateDelta({
                     before: optimisticState,
                     after: before,
                     changedIds

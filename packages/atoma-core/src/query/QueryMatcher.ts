@@ -3,8 +3,6 @@ import { levenshteinDistance } from '../indexes/utils'
 import type { FilterExpr } from 'atoma-types/protocol'
 import type { TextOperator, MatchDefaults, FuzzyDefaults, FieldMatcherOptions, QueryMatcherOptions } from 'atoma-types/core'
 
-export type { TextOperator, MatchDefaults, FuzzyDefaults, FieldMatcherOptions, QueryMatcherOptions } from 'atoma-types/core'
-
 const normalizeString = (value: any) => {
     if (value === undefined || value === null) return ''
     return String(value).toLowerCase()

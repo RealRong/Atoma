@@ -1,8 +1,8 @@
 import { Protocol } from 'atoma-protocol'
-import type { Types } from 'atoma-core'
-import type { RuntimeIo, StoreHandle } from 'atoma-runtime'
+import type * as Types from 'atoma-types/core'
+import type { RuntimeIo, StoreHandle } from 'atoma-types/runtime'
 import type { HandlerChain } from './HandlerChain'
-import type { IoContext, QueryResult, ReadContext, ReadRequest } from './types'
+import type { IoContext, QueryResult, ReadContext, ReadRequest } from 'atoma-types/client'
 
 export class PluginRuntimeIo implements RuntimeIo {
     private readonly ioChain: HandlerChain

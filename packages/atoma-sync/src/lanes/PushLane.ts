@@ -1,6 +1,6 @@
 import { AbortError, computeBackoffDelayMs, resolveRetryBackoff, RetryableSyncError, sleepMs, toError } from '#sync/internal'
 import type { RetryBackoff } from '#sync/internal/backoff'
-import type { OutboxStore, SyncApplier, SyncEvent, SyncOutboxItem, SyncPhase, SyncPushOutcome, SyncTransport, SyncWriteAck, SyncWriteReject } from '#sync/types'
+import type { OutboxStore, SyncApplier, SyncEvent, SyncOutboxItem, SyncPhase, SyncPushOutcome, SyncTransport, SyncWriteAck, SyncWriteReject } from 'atoma-types/sync'
 
 export class PushLane {
     private disposed = false

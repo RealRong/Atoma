@@ -1,8 +1,8 @@
 import { Query, Store } from 'atoma-core'
-import type { Types } from 'atoma-core'
-import type { EntityId } from 'atoma-protocol'
+import type * as Types from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
 import { toErrorWithFallback as toError } from 'atoma-shared'
-import type { CoreRuntime, RuntimeRead, StoreHandle } from '../../types/runtimeTypes'
+import type { CoreRuntime, RuntimeRead, StoreHandle } from 'atoma-types/runtime'
 
 export class ReadFlow implements RuntimeRead {
     private runtime: CoreRuntime
@@ -95,7 +95,7 @@ export class ReadFlow implements RuntimeRead {
             }
 
             if (next && changedIds.size) {
-                handle.commitMapUpdateDelta({
+                handle.stateWriter.commitMapUpdateDelta({
                     before: existingMap,
                     after: next,
                     changedIds
@@ -181,7 +181,7 @@ export class ReadFlow implements RuntimeRead {
                             changedIds.add(id)
                         }
                     }
-                    handle.commitMapUpdateDelta({ before, after, changedIds })
+                    handle.stateWriter.commitMapUpdateDelta({ before, after, changedIds })
                 }
             }
 
@@ -286,7 +286,7 @@ export class ReadFlow implements RuntimeRead {
             }
         }
 
-        handle.commitMapUpdateDelta({ before: existingMap, after: next, changedIds })
+        handle.stateWriter.commitMapUpdateDelta({ before: existingMap, after: next, changedIds })
 
         return arr
     }

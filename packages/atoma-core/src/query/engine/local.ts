@@ -1,7 +1,8 @@
-import type { PageInfo, Query, SortRule } from 'atoma-protocol'
+import type { PageInfo, Query, SortRule } from 'atoma-types/protocol'
 import { decodeCursorToken, encodeCursorToken } from '../cursor'
 import { normalizeQuery } from '../normalize'
-import { QueryMatcher, QueryMatcherOptions } from '../QueryMatcher'
+import { QueryMatcher } from '../QueryMatcher'
+import type { QueryMatcherOptions } from 'atoma-types/core'
 
 type ExecuteOptions = {
     preSorted?: boolean

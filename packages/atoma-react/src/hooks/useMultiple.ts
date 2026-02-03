@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { Types } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
 import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'

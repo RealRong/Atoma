@@ -1,6 +1,6 @@
-import { IndexDefinition } from '../../types'
-import type { EntityId } from 'atoma-protocol'
-import { CandidateResult, IndexStats } from '../types'
+import type { IndexDefinition } from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
+import type { CandidateResult, IndexStats } from 'atoma-types/core'
 
 export interface IIndex<T> {
     readonly type: string

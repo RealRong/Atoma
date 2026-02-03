@@ -1,10 +1,10 @@
 /**
  * StrategyRegistry: Routes persistence requests and resolves write policies by strategy.
  */
-import type { Types } from 'atoma-core'
-import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, PersistAck, TranslatedWriteOp } from '../types/persistenceTypes'
-import type { CoreRuntime, RuntimePersistence } from '../types/runtimeTypes'
-import type { OperationResult, StandardError, WriteAction, WriteItemResult, WriteResultData } from 'atoma-protocol'
+import type * as Types from 'atoma-types/core'
+import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, PersistAck, TranslatedWriteOp } from 'atoma-types/runtime'
+import type { CoreRuntime, RuntimePersistence } from 'atoma-types/runtime'
+import type { OperationResult, StandardError, WriteAction, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
 import { createWritebackCollector } from './persistence/ack'
 
 const DEFAULT_WRITE_POLICY: WritePolicy = {

@@ -1,4 +1,4 @@
-import type { ErrorKind, StandardError, StandardErrorDetails } from './types'
+import type { ErrorKind, StandardError, StandardErrorDetails } from 'atoma-types/protocol'
 
 export function createError(args: {
     code: string
@@ -86,4 +86,3 @@ export function wrap(error: unknown, fallback: { code: string; message: string; 
         details: fallback.details
     })
 }
-

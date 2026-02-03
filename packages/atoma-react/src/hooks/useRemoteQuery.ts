@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { stableStringify } from 'atoma-shared'
-import type { Types } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
 import { getStoreRuntimeKey, requireStoreOwner } from './internal/storeInternal'
 
 type RemoteState<T extends Types.Entity> = Readonly<{

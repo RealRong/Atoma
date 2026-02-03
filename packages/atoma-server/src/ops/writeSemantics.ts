@@ -1,7 +1,8 @@
-import type { ChangeKind } from 'atoma-protocol'
+import type { ChangeKind } from 'atoma-types/protocol'
 import { errorStatus, throwError, toStandardError } from '../error'
-import type { AtomaChange, IOrmAdapter, ISyncAdapter, StandardError as StandardErrorType } from '../adapters/ports'
-import type { WriteOptions } from 'atoma-protocol'
+import type { StandardError as StandardErrorType } from 'atoma-types/protocol'
+import type { AtomaChange, IOrmAdapter, ISyncAdapter } from '../adapters/ports'
+import type { WriteOptions } from 'atoma-types/protocol'
 import type { AtomaServerLogger } from '../logger'
 
 export type WriteChangeSummary = {

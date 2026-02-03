@@ -1,4 +1,4 @@
-import type { Endpoint } from './types'
+import type { Endpoint } from 'atoma-types/client'
 
 export class EndpointRegistry {
     private readonly endpoints = new Map<string, Endpoint>()

@@ -1,5 +1,6 @@
-import { Protocol, type Meta, type Operation, type OperationResult, type WriteItemResult, type WriteResultData } from 'atoma-protocol'
-import type { SyncDriver, SyncOutboxItem, SyncPushOutcome } from '#sync/types'
+import { Protocol } from 'atoma-protocol'
+import type { Meta, Operation, OperationResult, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
+import type { SyncDriver, SyncOutboxItem, SyncPushOutcome } from 'atoma-types/sync'
 
 type ExecuteOps = (input: {
     ops: Operation[]

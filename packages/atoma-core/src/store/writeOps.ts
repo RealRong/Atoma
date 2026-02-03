@@ -1,5 +1,5 @@
-import type { Entity, OperationContext } from '../types'
-import type { EntityId, Operation, WriteAction, WriteItem, WriteItemMeta, WriteOptions } from 'atoma-protocol'
+import type { Entity, OperationContext } from 'atoma-types/core'
+import type { EntityId, Operation, WriteAction, WriteItem, WriteItemMeta, WriteOptions } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
 import { entityId as entityIdUtils, immer as immerUtils, version } from 'atoma-shared'
 import type { Patch } from 'immer'

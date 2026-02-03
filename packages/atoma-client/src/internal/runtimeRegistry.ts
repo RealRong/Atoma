@@ -1,4 +1,4 @@
-import type { AtomaClient } from '#client/types'
+import type { AtomaClient } from 'atoma-types/client'
 
 const runtimeByClient = new WeakMap<object, unknown>()
 

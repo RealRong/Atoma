@@ -1,8 +1,8 @@
-import type { Types } from 'atoma-core'
-import type { EntityId } from 'atoma-protocol'
-import type { PersistAck, PersistResult } from '../../types/persistenceTypes'
-import type { StoreHandle } from '../../types/runtimeTypes'
-import type { CoreRuntime } from '../../types/runtimeTypes'
+import type * as Types from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
+import type { PersistAck, PersistResult } from 'atoma-types/runtime'
+import type { StoreHandle } from 'atoma-types/runtime'
+import type { CoreRuntime } from 'atoma-types/runtime'
 import type { Store as StoreTypes } from 'atoma-core'
 
 export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, event: StoreTypes.WriteEvent<T>, persistResult: PersistResult<T>): Promise<PersistAck<T> | undefined> {
@@ -20,7 +20,7 @@ export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRunti
         if (tempId && serverId && tempId !== serverId) {
             deletes.push(tempId)
         }
-        handle.applyWriteback({
+        handle.stateWriter.applyWriteback({
             deletes,
             upserts: [created],
             versionUpdates: normalized.versionUpdates
@@ -28,7 +28,7 @@ export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRunti
         return normalized
     }
 
-    handle.applyWriteback({
+    handle.stateWriter.applyWriteback({
         upserts: normalized.upserts,
         deletes: normalized.deletes,
         versionUpdates: normalized.versionUpdates

@@ -1,5 +1,5 @@
 import { Observability as AtomaObservability } from './Observability'
-import type { DebugConfig, DebugEvent } from './types'
+import type { DebugConfig, DebugEvent } from 'atoma-types/observability'
 
 const toStoreScope = (name?: string) => String(name || 'store')
 

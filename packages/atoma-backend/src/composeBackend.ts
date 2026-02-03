@@ -1,4 +1,4 @@
-import type { Endpoint } from 'atoma-client'
+import type { Endpoint } from 'atoma-types/client'
 import { EndpointRegistry } from 'atoma-client'
 
 export type ComposeBackendOptions = Readonly<{

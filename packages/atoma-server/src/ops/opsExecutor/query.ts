@@ -1,7 +1,7 @@
 import { toStandardError } from '../../error'
 import type { AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerPluginRuntime, AtomaServerRoute } from '../../config'
 import { Protocol } from 'atoma-protocol'
-import type { OperationResult, QueryOp, QueryResultData } from 'atoma-protocol'
+import type { OperationResult, QueryOp, QueryResultData } from 'atoma-types/protocol'
 import type { IOrmAdapter, QueryResult } from '../../adapters/ports'
 
 type TraceMeta = { traceId?: string; requestId?: string; opId: string }

@@ -11,40 +11,10 @@
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js"
         },
-        "./client": {
-            "types": "./dist/client/index.d.ts",
-            "import": "./dist/client/index.js"
-        },
-        "./core": {
-            "types": "./dist/core/index.d.ts",
-            "import": "./dist/core/index.js"
-        },
-        "./shared": {
-            "types": "./dist/shared/index.d.ts",
-            "import": "./dist/shared/index.js"
-        },
-        "./observability": {
-            "types": "./dist/observability/index.d.ts",
-            "import": "./dist/observability/index.js"
-        },
-        "./protocol": {
-            "types": "./dist/protocol/index.d.ts",
-            "import": "./dist/protocol/index.js"
-        },
-        "./backend": {
-            "types": "./dist/backend/index.d.ts",
-            "import": "./dist/backend/index.js"
-        },
         "./internal": {
             "types": "./dist/internal/index.d.ts",
             "import": "./dist/internal/index.js",
             "source": "./src/internal/index.ts"
-        }
-    },
-    "imports": {
-        "#backend": {
-            "source": "./src/backend/index.ts",
-            "default": "./dist/backend/index.js"
         }
     },
     "files": [

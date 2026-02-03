@@ -1,5 +1,5 @@
-import type { Types } from 'atoma-core'
-import type { CoreRuntime, StoreHandle } from '../../types/runtimeTypes'
+import type * as Types from 'atoma-types/core'
+import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
 
 const STAGE_ORDER: Types.DataProcessorStage[] = [
     'deserialize',

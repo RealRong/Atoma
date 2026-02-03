@@ -10,6 +10,4 @@ export const envelope = {
     }
 } as const
 
-export type { EnvelopeOk, EnvelopeErr, Envelope } from './types'
 export { parseEnvelope } from './envelope'
-

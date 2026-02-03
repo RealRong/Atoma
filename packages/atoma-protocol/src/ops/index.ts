@@ -35,22 +35,3 @@ export const ops = {
         assertWriteResultData
     }
 } as const
-
-export type {
-    OperationKind,
-    Operation,
-    QueryOp,
-    WriteOp,
-    WriteAction,
-    WriteItem,
-    WriteItemMeta,
-    WriteOptions,
-    ChangesPullOp,
-    OperationResult,
-    OpsRequest,
-    OpsResponseData,
-    QueryResultData,
-    WriteItemResult,
-    WriteResultData,
-    ChangesPullResultData
-} from './types'

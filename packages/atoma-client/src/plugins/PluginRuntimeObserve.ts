@@ -1,6 +1,6 @@
-import type { Types } from 'atoma-core'
-import type { RuntimeObservability } from 'atoma-runtime'
-import type { HandlerEntry, ObserveContext, ObserveHandler, ObserveRequest } from './types'
+import type * as Types from 'atoma-types/core'
+import type { RuntimeObservability } from 'atoma-types/runtime'
+import type { HandlerEntry, ObserveContext, ObserveHandler, ObserveRequest } from 'atoma-types/client'
 
 export class PluginRuntimeObserve implements RuntimeObservability {
     private readonly handlers: ObserveHandler[]

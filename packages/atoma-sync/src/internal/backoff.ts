@@ -1,4 +1,4 @@
-import type { SyncBackoffConfig, SyncRetryConfig } from '#sync/types'
+import type { SyncBackoffConfig, SyncRetryConfig } from 'atoma-types/sync'
 
 export type RetryBackoff = Readonly<{
     maxAttempts: number

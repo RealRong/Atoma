@@ -1,4 +1,4 @@
-import type { NotifyMessage, SyncEvent, SyncPhase, SyncSubscribeTransport } from '#sync/types'
+import type { NotifyMessage, SyncEvent, SyncPhase, SyncSubscribeTransport } from 'atoma-types/sync'
 import { AbortError, computeBackoffDelayMs, resolveRetryBackoff, sleepMs, toError } from '#sync/internal'
 import type { RetryBackoff } from '#sync/internal/backoff'
 

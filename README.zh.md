@@ -26,7 +26,7 @@ Peer 依赖：
 ## 快速开始（client + React）
 
 ```ts
-import { createClient } from 'atoma/client'
+import { createClient } from 'atoma-client'
 import { useFindMany } from 'atoma-react'
 
 type User = { id: string; name: string; version?: number }

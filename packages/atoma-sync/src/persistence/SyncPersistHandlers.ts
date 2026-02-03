@@ -1,8 +1,8 @@
-import type { CoreRuntime } from 'atoma-runtime'
-import type { Types } from 'atoma-core'
-import type { PersistRequest, PersistResult } from 'atoma-runtime'
-import type { WriteAction, WriteItem, WriteOptions } from 'atoma-protocol'
-import type { OutboxStore, OutboxWrite } from '#sync/types'
+import type { CoreRuntime } from 'atoma-types/runtime'
+import type * as Types from 'atoma-types/core'
+import type { PersistRequest, PersistResult } from 'atoma-types/runtime'
+import type { WriteAction, WriteItem, WriteOptions } from 'atoma-types/protocol'
+import type { OutboxStore, OutboxWrite } from 'atoma-types/sync'
 
 function mapTranslatedWriteOpsToOutboxWrites(writeOps: PersistRequest<any>['writeOps']): OutboxWrite[] {
     const out: OutboxWrite[] = []

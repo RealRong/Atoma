@@ -1,7 +1,7 @@
 export { executeLocalQuery } from './engine/local'
 export { normalizeQuery, normalizeSort } from './normalize'
 export { encodeCursorToken, decodeCursorToken } from './cursor'
-export { QueryMatcher, type QueryMatcherOptions } from './QueryMatcher'
+export { QueryMatcher } from './QueryMatcher'
 export { buildQueryMatcherOptions } from './matcherOptions'
 export { summarizeQuery } from './summary'
 export { resolveCachePolicy, type CacheWriteDecision } from './cachePolicy'

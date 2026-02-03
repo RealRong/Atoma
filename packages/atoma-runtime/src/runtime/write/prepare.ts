@@ -1,8 +1,8 @@
-import type { Types } from 'atoma-core'
-import type { EntityId } from 'atoma-protocol'
+import type * as Types from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
 import { Operation, Store } from 'atoma-core'
-import type { StoreHandle } from '../../types/runtimeTypes'
-import type { CoreRuntime } from '../../types/runtimeTypes'
+import type { StoreHandle } from 'atoma-types/runtime'
+import type { CoreRuntime } from 'atoma-types/runtime'
 
 export function ensureActionId(opContext?: Types.OperationContext): Types.OperationContext {
     return Operation.normalizeOperationContext(opContext)

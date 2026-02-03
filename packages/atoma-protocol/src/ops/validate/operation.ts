@@ -1,5 +1,4 @@
-import type { Operation, OperationKind, QueryOp, WriteAction, WriteOp, ChangesPullOp } from '../types'
-import type { Meta } from '../../core/meta'
+import type { Operation, OperationKind, QueryOp, WriteAction, WriteOp, ChangesPullOp, Meta } from 'atoma-types/protocol'
 import { assertFiniteNumber, assertNonEmptyString, invalid, isObject, makeValidationDetails, requireObject, requireString, readString } from './common'
 import { assertOpMeta } from './meta'
 import { assertQuery } from './query'

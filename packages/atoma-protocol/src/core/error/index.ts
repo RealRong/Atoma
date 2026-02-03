@@ -8,6 +8,3 @@ export const error = {
     wrap: errorFns.wrap,
     inferKindFromCode: errorFns.inferKindFromCode
 } as const
-
-export type { ErrorKind, StandardErrorDetails, StandardError } from './types'
-

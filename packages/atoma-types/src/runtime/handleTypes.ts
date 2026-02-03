@@ -28,9 +28,6 @@ export type StoreHandle<T extends Types.Entity = any> = {
     idGenerator: Types.StoreConfig<T>['idGenerator']
     dataProcessor: Types.StoreConfig<T>['dataProcessor']
     stateWriter: StoreStateWriterApi<T>
-    commitMapUpdate: StoreStateWriterApi<T>['commitMapUpdate']
-    commitMapUpdateDelta: StoreStateWriterApi<T>['commitMapUpdateDelta']
-    applyWriteback: StoreStateWriterApi<T>['applyWriteback']
 
     /** 内部：生成本 store 的 opId */
     nextOpId: (prefix: 'q' | 'w') => string

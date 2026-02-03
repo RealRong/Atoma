@@ -1,4 +1,4 @@
-import type { Meta } from 'atoma-protocol'
+import type { Meta } from 'atoma-types/protocol'
 import { AbortError, toError } from '#sync/internal'
 import { runPeriodic } from '#sync/internal/periodic'
 import { NotifyLane } from '#sync/lanes/NotifyLane'
@@ -15,7 +15,7 @@ import type {
     SyncRuntimeConfig,
     SyncTransport,
     SyncSubscribeTransport
-} from '#sync/types'
+} from 'atoma-types/sync'
 
 type EngineState = 'idle' | 'starting' | 'running' | 'disposed'
 

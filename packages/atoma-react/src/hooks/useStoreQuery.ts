@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Query } from 'atoma-core'
 import { stableStringify } from 'atoma-shared'
-import type { Types } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 import { getStoreIndexes, getStoreMatcher } from 'atoma/internal'
 import { requireStoreOwner } from './internal/storeInternal'

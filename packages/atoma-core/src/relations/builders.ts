@@ -1,4 +1,4 @@
-import type { BelongsToConfig, Entity, HasManyConfig, HasOneConfig, KeySelector, RelationIncludeOptions, RelationMap, InferIncludeType, VariantsConfig, VariantBranch } from '../types'
+import type { BelongsToConfig, Entity, HasManyConfig, HasOneConfig, KeySelector, RelationIncludeOptions, RelationMap, InferIncludeType, VariantsConfig, VariantBranch } from 'atoma-types/core'
 
 type IncludeForRelations<Relations extends RelationMap<any>> =
     Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>

@@ -1,4 +1,4 @@
-import type { ClientPlugin } from 'atoma-client'
+import type { ClientPlugin } from 'atoma-types/client'
 export { HistoryManager } from './HistoryManager'
 export type { ActionRecord, ChangeRecord, HistoryChange, PatchMetadata, UndoStack } from './historyTypes'
 

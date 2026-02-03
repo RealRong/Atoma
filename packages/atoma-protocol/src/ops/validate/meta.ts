@@ -1,4 +1,4 @@
-import type { Meta } from '../../core/meta'
+import type { Meta } from 'atoma-types/protocol'
 import { assertFiniteNumber, invalid, isObject, makeValidationDetails, readNumber, readString, requireObject } from './common'
 
 export function assertMeta(value: unknown): Meta {

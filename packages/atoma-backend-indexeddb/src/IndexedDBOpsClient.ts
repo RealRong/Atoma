@@ -11,8 +11,8 @@ import type {
     WriteItem,
     WriteOptions,
     WriteResultData
-} from 'atoma-protocol'
-import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma/backend'
+} from 'atoma-types/protocol'
+import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma-types/client'
 import { zod } from 'atoma-shared'
 
 const { parseOrThrow, z } = zod

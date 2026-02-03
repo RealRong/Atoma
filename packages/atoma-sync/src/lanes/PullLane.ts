@@ -1,5 +1,5 @@
-import type { CursorStore, SyncApplier, SyncEvent, SyncPhase, SyncTransport } from '#sync/types'
-import type { ChangeBatch, Cursor, Meta } from 'atoma-protocol'
+import type { CursorStore, SyncApplier, SyncEvent, SyncPhase, SyncTransport } from 'atoma-types/sync'
+import type { ChangeBatch, Cursor, Meta } from 'atoma-types/protocol'
 import { AbortError, computeBackoffDelayMs, readCursorOrInitial, resolveRetryBackoff, RetryableSyncError, sleepMs, toError } from '#sync/internal'
 import { createSingleflight } from '#sync/internal/singleflight'
 import type { RetryBackoff } from '#sync/internal/backoff'

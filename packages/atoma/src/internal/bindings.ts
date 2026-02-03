@@ -1,6 +1,6 @@
-import type { Types } from 'atoma-core'
-import type { EntityId } from 'atoma-protocol'
-import type { AtomaClient } from 'atoma-client'
+import type * as Types from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
+import type { AtomaClient } from 'atoma-types/client'
 import { requireClientRuntime } from 'atoma-client'
 
 export type StoreSource<T extends Types.Entity> = Readonly<{

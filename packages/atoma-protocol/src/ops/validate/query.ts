@@ -1,4 +1,4 @@
-import type { FilterExpr, PageSpec, Query, SortRule } from '../query'
+import type { FilterExpr, PageSpec, Query, SortRule } from 'atoma-types/protocol'
 import { assertFiniteNumber, invalid, isObject, isPlainObject, makeValidationDetails, requireArray, requireObject, requireString } from './common'
 
 function isNonEmptyString(value: unknown): value is string {

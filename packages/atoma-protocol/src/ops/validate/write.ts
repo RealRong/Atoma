@@ -1,4 +1,4 @@
-import type { WriteAction, WriteItem } from '../types'
+import type { WriteAction, WriteItem } from 'atoma-types/protocol'
 import { assertFiniteNumber, assertNonEmptyString, assertPositiveVersion, invalid, isObject, makeValidationDetails } from './common'
 
 type WriteItemCtx = {

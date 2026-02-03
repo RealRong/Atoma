@@ -1,4 +1,4 @@
-import type { HandlerEntry, HandlerMap, HandlerName } from './types'
+import type { HandlerEntry, HandlerMap, HandlerName } from 'atoma-types/client'
 
 type StoredEntry = {
     handler: HandlerEntry['handler']

@@ -1,7 +1,7 @@
 import { Query } from 'atoma-core'
-import type { Types } from 'atoma-core'
-import type { EntityId, Operation, OperationResult, QueryResultData } from 'atoma-protocol'
-import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from '../plugins'
+import type * as Types from 'atoma-types/core'
+import type { EntityId, Operation, OperationResult, QueryResultData } from 'atoma-types/protocol'
+import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client'
 
 const MISSING_TERMINAL = '[Atoma] HandlerChain: missing terminal handler'
 

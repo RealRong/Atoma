@@ -1,4 +1,4 @@
-import type { Driver, Endpoint } from 'atoma/backend'
+import type { Driver, Endpoint } from 'atoma-types/client'
 import { MemoryOpsClient } from './MemoryOpsClient'
 
 export type CreateMemoryEndpointOptions = Readonly<{

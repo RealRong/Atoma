@@ -1,6 +1,6 @@
 import { openDB } from 'idb'
 import type { IDBPDatabase } from 'idb'
-import type { OutboxStore, OutboxWrite, SyncOutboxEvents, SyncOutboxItem, SyncOutboxStats } from '#sync/types'
+import type { OutboxStore, OutboxWrite, SyncOutboxEvents, SyncOutboxItem, SyncOutboxStats } from 'atoma-types/sync'
 
 type OutboxStatus = 'pending' | 'in_flight'
 

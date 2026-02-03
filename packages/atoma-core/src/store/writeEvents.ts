@@ -1,4 +1,4 @@
-import type { Entity, PartialWithId } from '../types'
+import type { Entity, PartialWithId } from 'atoma-types/core'
 import type { Patch } from 'immer'
 
 export type WriteEvent<T extends Entity> =

@@ -1,7 +1,8 @@
 import { Relations } from 'atoma-core'
-import type { Runtime as CoreRuntimeTypes, Types } from 'atoma-core'
-import type { EntityId } from 'atoma-protocol'
-import type { CoreRuntime } from '../types/runtimeTypes'
+import type { Runtime as CoreRuntimeTypes } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
+import type { CoreRuntime } from 'atoma-types/runtime'
 
 export class ConfigResolver {
     private readonly schema: CoreRuntimeTypes.RuntimeSchema

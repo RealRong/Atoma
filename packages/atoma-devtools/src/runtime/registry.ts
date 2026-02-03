@@ -1,4 +1,4 @@
-import type { ClientRuntime } from 'atoma-client'
+import type { ClientRuntime } from 'atoma-types/client'
 import type {
     ClientMeta,
     DevtoolsEvent,

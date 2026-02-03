@@ -10,15 +10,13 @@ import {
 import { createError, isAtomaError, throwError } from '../../error'
 import { compileFilterToSql } from '../../query/compile'
 
+import type { Query, SortRule, WriteOptions } from 'atoma-types/protocol'
 import type {
     IOrmAdapter,
     OrmAdapterOptions,
-    Query,
     QueryResult,
     QueryResultMany,
-    QueryResultOne,
-    SortRule,
-    WriteOptions
+    QueryResultOne
 } from '../ports'
 
 function normalizeOptionalLimit(value: unknown): number | undefined {

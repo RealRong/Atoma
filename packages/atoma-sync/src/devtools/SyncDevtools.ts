@@ -1,4 +1,4 @@
-import type { SyncEvent, SyncOutboxStats, SyncPhase } from '#sync/types'
+import type { SyncEvent, SyncOutboxStats, SyncPhase } from 'atoma-types/sync'
 
 type DevtoolsSubscriber = (e: any) => void
 

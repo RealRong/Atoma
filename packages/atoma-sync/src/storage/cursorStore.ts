@@ -1,6 +1,6 @@
 import { createKVStore } from '#sync/internal/kvStore'
 import { defaultCompareCursor } from '#sync/policies/cursorGuard'
-import type { CursorStore } from '#sync/types'
+import type { CursorStore } from 'atoma-types/sync'
 
 export class DefaultCursorStore implements CursorStore {
     private readonly kv = createKVStore()

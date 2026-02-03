@@ -5,8 +5,8 @@ import {
     RelationConfig,
     RelationMap,
     VariantsConfig
-} from '../types'
-import type { EntityId } from 'atoma-protocol'
+} from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
 import { getValueByPath } from './utils'
 
 export interface ResolveBatchOptions {

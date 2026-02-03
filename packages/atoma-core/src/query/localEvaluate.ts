@@ -1,7 +1,7 @@
-import type { Query, Entity } from '../types'
+import type { Query, Entity } from 'atoma-types/core'
 import type { StoreIndexes } from '../indexes/StoreIndexes'
-import type { QueryMatcherOptions } from './QueryMatcher'
-import type { EntityId } from 'atoma-protocol'
+import type { QueryMatcherOptions } from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
 import { executeLocalQuery } from './engine/local'
 import { summarizeQuery } from './summary'
 

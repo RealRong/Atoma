@@ -1,11 +1,12 @@
 import { atom } from 'jotai/vanilla'
 import { Indexes, Query } from 'atoma-core'
-import type { Runtime as CoreRuntimeTypes, Types } from 'atoma-core'
-import type { StoreHandle, StoreRegistry } from '../types/runtimeTypes'
-import type { EntityId } from 'atoma-protocol'
+import type { Runtime as CoreRuntimeTypes } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
+import type { StoreHandle, StoreRegistry } from 'atoma-types/runtime'
+import type { EntityId } from 'atoma-types/protocol'
 import { ConfigResolver } from './ConfigResolver'
 import { StoreStateWriter } from './StoreStateWriter'
-import type { CoreRuntime } from '../types/runtimeTypes'
+import type { CoreRuntime } from 'atoma-types/runtime'
 
 type StoreListener = (store: Types.StoreApi<any, any> & { name: string }) => void
 
@@ -129,15 +130,9 @@ export class Stores implements StoreRegistry {
             idGenerator: base.idGenerator,
             dataProcessor: base.dataProcessor,
             stateWriter: null as any,
-            commitMapUpdate: null as any,
-            commitMapUpdateDelta: null as any,
-            applyWriteback: null as any,
             nextOpId
         }
         handle.stateWriter = new StoreStateWriter(handle)
-        handle.commitMapUpdate = (params) => handle.stateWriter.commitMapUpdate(params)
-        handle.commitMapUpdateDelta = (params) => handle.stateWriter.commitMapUpdateDelta(params)
-        handle.applyWriteback = (args, options) => handle.stateWriter.applyWriteback(args, options)
 
         // Relations are lazy; cache compiled relation map per store handle.
         if (typeof base.relations === 'function') {

@@ -1,4 +1,4 @@
-import type { EntityId } from 'atoma-protocol'
+import type { EntityId } from 'atoma-types/protocol'
 
 /**
  * 从对象提取点路径字段值

@@ -1,4 +1,4 @@
-import type { CursorStore, OutboxStore } from '#sync/types'
+import type { CursorStore, OutboxStore } from 'atoma-types/sync'
 import { DefaultOutboxStore } from '#sync/storage/outboxStore'
 import { DefaultCursorStore } from '#sync/storage/cursorStore'
 

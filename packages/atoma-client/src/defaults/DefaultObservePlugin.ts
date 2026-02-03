@@ -1,5 +1,5 @@
-import type { Types } from 'atoma-core'
-import type { ClientPlugin, ObserveHandler, PluginContext, Register } from '../plugins'
+import type * as Types from 'atoma-types/core'
+import type { ClientPlugin, ObserveHandler, PluginContext, Register } from 'atoma-types/client'
 
 export class DefaultObservePlugin implements ClientPlugin {
     readonly id = 'defaults:observe'

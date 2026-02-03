@@ -3,11 +3,12 @@
  * - Owns all subsystems (io, persistence, observe, transform, stores).
  * - Exposes runtime.read/runtime.write as the only flow entrypoints.
  */
-import type { Runtime as CoreRuntimeTypes, Types } from 'atoma-core'
-import type { EntityId } from 'atoma-protocol'
+import type { Runtime as CoreRuntimeTypes } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
-import type { CoreRuntime, RuntimeIo, RuntimeObservability, RuntimePersistence, RuntimeRead, RuntimeTransform, RuntimeWrite } from '../types/runtimeTypes'
+import type { CoreRuntime, RuntimeIo, RuntimeObservability, RuntimePersistence, RuntimeRead, RuntimeTransform, RuntimeWrite } from 'atoma-types/runtime'
 import { DataProcessor } from './transform/DataProcessor'
 import { Stores } from '../store/Stores'
 import { StrategyRegistry } from './StrategyRegistry'

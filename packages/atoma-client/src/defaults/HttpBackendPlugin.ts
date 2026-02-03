@@ -1,8 +1,8 @@
 import { Protocol } from 'atoma-protocol'
-import type { PersistResult } from 'atoma-runtime'
+import type { PersistResult } from 'atoma-types/runtime'
 import { HttpOpsClient, type HttpOpsClientConfig } from '../backend/http/HttpOpsClient'
-import type { Driver, Endpoint } from '../drivers/types'
-import type { ClientPlugin, PluginContext, ReadRequest, Register } from '../plugins'
+import type { Driver, Endpoint } from 'atoma-types/client'
+import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client'
 
 type CreateHttpEndpointOptions = Readonly<{
     baseURL: string

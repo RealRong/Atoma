@@ -14,22 +14,14 @@ export type {
 export type { AtomaServerLogger } from './logger'
 
 export { AtomaError, createError, throwError } from './error'
-export type { ErrorKind, AtomaErrorDetails } from './error'
+export type { AtomaErrorDetails } from './error'
 
 export type {
     IOrmAdapter,
-    CursorToken,
-    FilterExpr,
-    PageInfo,
-    PageSpec,
-    Query,
-    SortRule,
     QueryResult,
     QueryResultOne,
     QueryResultMany,
-    WriteOptions,
-    OrmAdapterOptions,
-    StandardError
+    OrmAdapterOptions
 } from './adapters/ports'
 
 export { AtomaPrismaAdapter } from './adapters/prisma'
@@ -37,4 +29,4 @@ export type { PrismaAdapterOptions } from './adapters/prisma'
 export { AtomaTypeormAdapter } from './adapters/typeorm'
 export type { TypeormAdapterOptions } from './adapters/typeorm'
 
-export type { ISyncAdapter, AtomaChange, ChangeKind, IdempotencyResult } from './adapters/ports'
+export type { ISyncAdapter, AtomaChange, IdempotencyResult } from './adapters/ports'

@@ -1,7 +1,4 @@
-import type { Cursor } from '../core/scalars'
-import type { Meta } from '../core/meta'
-import type { Query } from './query'
-import type { ChangesPullOp, Operation, QueryOp, WriteOp } from './types'
+import type { Cursor, Meta, Query, ChangesPullOp, Operation, QueryOp, WriteOp } from 'atoma-types/protocol'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value)

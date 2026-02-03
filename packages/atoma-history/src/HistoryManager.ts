@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type { Types } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
 import { Operation } from 'atoma-core'
 import type { ActionRecord, ChangeRecord, UndoStack } from './historyTypes'
 

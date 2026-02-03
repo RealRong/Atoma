@@ -1,4 +1,4 @@
-import type { Query } from '../types'
+import type { Query } from 'atoma-types/core'
 
 export type CacheWriteDecision =
     | { effectiveSkipStore: true; reason: 'select' }

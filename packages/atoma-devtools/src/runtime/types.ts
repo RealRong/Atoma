@@ -93,7 +93,7 @@ export type DevtoolsGlobalInspector = {
     }
 }
 
-export type ClientMeta = import('atoma-client').DevtoolsMeta
+export type ClientMeta = import('atoma-types/devtools').DevtoolsMeta
 
 export type SyncProvider = {
     snapshot: () => DevtoolsSyncSnapshot

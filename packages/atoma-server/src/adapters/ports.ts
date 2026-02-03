@@ -1,5 +1,5 @@
 import type { AtomaError } from '../error'
-import type { ChangeKind, CursorToken, FilterExpr, PageInfo, PageSpec, Query, SortRule, WriteOptions } from 'atoma-protocol'
+import type { ChangeKind, PageInfo, Query, SortRule, WriteOptions } from 'atoma-types/protocol'
 
 export interface QueryResult<T = any> {
     data: T[]
@@ -104,7 +104,3 @@ export interface ISyncAdapter {
     pullChanges: (cursor: number, limit: number) => Promise<AtomaChange[]>
     waitForChanges: (cursor: number, timeoutMs: number) => Promise<AtomaChange[]>
 }
-
-export type { ChangeKind } from 'atoma-protocol'
-export type { CursorToken, FilterExpr, PageInfo, PageSpec, Query, SortRule, WriteOptions } from 'atoma-protocol'
-export type { StandardError } from 'atoma-protocol'

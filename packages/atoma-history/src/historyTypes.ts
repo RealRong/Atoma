@@ -1,6 +1,6 @@
 import type { Patch } from 'immer'
 import type { Atom } from 'jotai/vanilla'
-import type { Types } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
 
 export interface PatchMetadata {
     atom: Atom<any>

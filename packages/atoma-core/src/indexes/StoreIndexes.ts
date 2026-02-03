@@ -1,7 +1,7 @@
 import type { Patch } from 'immer'
-import type { FilterExpr, IndexDefinition } from '../types'
-import type { EntityId } from 'atoma-protocol'
-import type { CandidateResult, IndexStats } from './types'
+import type { FilterExpr, IndexDefinition } from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
+import type { CandidateResult, IndexStats } from 'atoma-types/core'
 import { IndexManager } from './IndexManager'
 
 export class StoreIndexes<T> {

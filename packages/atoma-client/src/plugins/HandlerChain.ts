@@ -1,4 +1,4 @@
-import type { HandlerEntry } from './types'
+import type { HandlerEntry } from 'atoma-types/client'
 
 export class HandlerChain {
     private readonly entries: HandlerEntry[]

@@ -1,4 +1,4 @@
-import type { StandardError } from '../../core/error'
+import type { StandardError } from 'atoma-types/protocol'
 import { create as createStandardError } from '../../core/error/error'
 
 export type JsonObject = Record<string, unknown>

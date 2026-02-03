@@ -1,4 +1,4 @@
-import type { Types } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
 import { assertStoreFacade } from 'atoma/internal'
 
 export function requireStoreOwner<T extends Types.Entity, Relations>(

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { Types } from 'atoma-core'
+import type * as Types from 'atoma-types/core'
 import { getStoreRelations, resolveStore } from 'atoma/internal'
 import { useStoreSelector } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'

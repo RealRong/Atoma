@@ -1,6 +1,6 @@
 import { applyPatches, type Patch } from 'immer'
-import type { Entity } from '../types'
-import type { EntityId } from 'atoma-protocol'
+import type { Entity } from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
 import { StoreWriteUtils } from './StoreWriteUtils'
 import type { WriteEvent } from './writeEvents'
 

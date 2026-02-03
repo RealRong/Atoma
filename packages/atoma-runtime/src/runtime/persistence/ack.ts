@@ -1,6 +1,6 @@
-import type { EntityId, WriteItemResult } from 'atoma-protocol'
-import type { Types } from 'atoma-core'
-import type { PersistAck, TranslatedWriteOp } from '../../types/persistenceTypes'
+import type { EntityId, WriteItemResult } from 'atoma-types/protocol'
+import type * as Types from 'atoma-types/core'
+import type { PersistAck, TranslatedWriteOp } from 'atoma-types/runtime'
 
 export type WritebackCollector<T extends Types.Entity> = Readonly<{
     collect: (entry: TranslatedWriteOp, itemRes: WriteItemResult) => void

@@ -1,5 +1,5 @@
 import { ids } from '../ids'
-import type { WriteItemMeta } from './types'
+import type { WriteItemMeta } from 'atoma-types/protocol'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value)

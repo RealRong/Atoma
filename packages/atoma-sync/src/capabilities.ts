@@ -1,5 +1,5 @@
-import type { ClientPluginContext } from 'atoma-client'
-import type { SyncDriver, SyncSubscribeDriver } from '#sync/types'
+import type { ClientPluginContext } from 'atoma-types/client'
+import type { SyncDriver, SyncSubscribeDriver } from 'atoma-types/sync'
 
 export const SYNC_DRIVER_CAPABILITY_KEY = 'sync.driver'
 export const SYNC_SUBSCRIBE_CAPABILITY_KEY = 'sync.subscribe'

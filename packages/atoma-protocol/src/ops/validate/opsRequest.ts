@@ -1,5 +1,4 @@
-import type { Meta } from '../../core/meta'
-import type { Operation } from '../types'
+import type { Meta, Operation } from 'atoma-types/protocol'
 import { makeValidationDetails, requireArray, requireObject } from './common'
 import { assertMeta } from './meta'
 import { assertOperation } from './operation'

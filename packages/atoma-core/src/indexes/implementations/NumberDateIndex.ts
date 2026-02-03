@@ -1,8 +1,8 @@
-import { IndexDefinition, IndexType } from '../../types'
-import type { EntityId } from 'atoma-protocol'
+import type { IndexDefinition, IndexType } from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
 import { binarySearchLeft, binarySearchRight } from '../utils'
 import { normalizeNumber } from '../validators'
-import { CandidateResult, IndexStats } from '../types'
+import type { CandidateResult, IndexStats } from 'atoma-types/core'
 import { IIndex } from '../base/IIndex'
 
 export class NumberDateIndex<T> implements IIndex<T> {

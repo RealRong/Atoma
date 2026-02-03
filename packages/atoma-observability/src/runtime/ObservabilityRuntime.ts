@@ -1,5 +1,4 @@
-import type { DebugConfig, DebugEvent, ObservabilityContext } from '../types'
-import type { DebugEmitMeta } from '../types'
+import type { DebugConfig, DebugEvent, ObservabilityContext, DebugEmitMeta } from 'atoma-types/observability'
 import { isSampled } from '../sampling'
 import { createId, requestId } from '../trace'
 import type { ObservabilityCreateContextArgs, ObservabilityRuntimeApi, ObservabilityRuntimeCreateArgs } from './types'

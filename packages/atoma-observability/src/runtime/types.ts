@@ -1,4 +1,4 @@
-import type { DebugConfig, DebugEvent, ObservabilityContext } from '../types'
+import type { DebugConfig, DebugEvent, ObservabilityContext } from 'atoma-types/observability'
 
 export type ObservabilityRuntimeCreateArgs = {
     scope: string

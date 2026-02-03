@@ -1,5 +1,5 @@
 import type { Table } from 'dexie'
-import type { Driver, Endpoint } from 'atoma/backend'
+import type { Driver, Endpoint } from 'atoma-types/client'
 import { IndexedDBOpsClient } from './IndexedDBOpsClient'
 
 export type CreateIndexedDbEndpointOptions = Readonly<{

@@ -1,6 +1,6 @@
-import type { CoreRuntime } from 'atoma-runtime'
-import type { Change, EntityId } from 'atoma-protocol'
-import type { SyncApplier, SyncWriteAck, SyncWriteReject } from '#sync/types'
+import type { CoreRuntime } from 'atoma-types/runtime'
+import type { Change, EntityId } from 'atoma-types/protocol'
+import type { SyncApplier, SyncWriteAck, SyncWriteReject } from 'atoma-types/sync'
 
 export class WritebackApplier implements SyncApplier {
     constructor(private readonly deps: {
@@ -52,7 +52,7 @@ export class WritebackApplier implements SyncApplier {
 
             const upserts = processed.filter((item): item is any => item !== undefined)
 
-            handle.applyWriteback({
+            handle.stateWriter.applyWriteback({
                 upserts,
                 deletes: uniqueDeleteKeys
             } as any)
@@ -81,7 +81,7 @@ export class WritebackApplier implements SyncApplier {
         )
         const normalized = processed.filter((item): item is any => item !== undefined)
 
-        handle.applyWriteback({ upserts: normalized, deletes, versionUpdates } as any)
+        handle.stateWriter.applyWriteback({ upserts: normalized, deletes, versionUpdates } as any)
     }
 
     applyWriteReject = async (
@@ -113,7 +113,7 @@ export class WritebackApplier implements SyncApplier {
         )
         const normalized = processed.filter((item): item is any => item !== undefined)
 
-        handle.applyWriteback({ upserts: normalized, deletes } as any)
+        handle.stateWriter.applyWriteback({ upserts: normalized, deletes } as any)
     }
 
     applyWriteResults: SyncApplier['applyWriteResults'] = async (args) => {

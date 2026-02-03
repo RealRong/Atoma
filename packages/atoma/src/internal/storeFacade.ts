@@ -1,5 +1,5 @@
-import type { Types } from 'atoma-core'
-import type { AtomaClient } from 'atoma-client'
+import type * as Types from 'atoma-types/core'
+import type { AtomaClient } from 'atoma-types/client'
 
 export type StoreFacade<T extends Types.Entity = any, Relations = any> =
     & Types.StoreApi<T, Relations>

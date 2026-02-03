@@ -1,8 +1,9 @@
 import { Observability } from 'atoma-observability'
-import type { Types } from 'atoma-core'
-import type { AtomaDebugEventMap, DebugEmitMeta } from 'atoma-observability'
-import { Protocol, type Meta, type Operation, type OperationResult, type QueryOp, type WriteOp } from 'atoma-protocol'
-import type { ExecuteOpsInput, ExecuteOpsOutput } from '../../../types'
+import type * as Types from 'atoma-types/core'
+import type { AtomaDebugEventMap, DebugEmitMeta } from 'atoma-types/observability'
+import { Protocol } from 'atoma-protocol'
+import type { Meta, Operation, OperationResult, QueryOp, WriteOp } from 'atoma-types/protocol'
+import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client'
 import { zod } from 'atoma-shared'
 
 const { parseOrThrow, z } = zod

@@ -1,7 +1,5 @@
-import type { Envelope } from './types'
-import type { Meta } from '../meta'
+import type { Envelope, Meta, StandardError } from 'atoma-types/protocol'
 import { ensureMeta } from '../meta'
-import type { StandardError } from '../error'
 import { createError } from '../error/error'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -57,4 +55,3 @@ export function parseEnvelope<T>(json: unknown, fallbackMeta: Meta): Envelope<T>
 
     return { ok: false, error: err, meta }
 }
-

@@ -7,7 +7,7 @@ import type {
     OperationResult,
     QueryOp,
     WriteOp
-} from 'atoma-protocol'
+} from 'atoma-types/protocol'
 import type { IOrmAdapter } from '../../adapters/ports'
 import { clampQueryLimit, ensureProtocolVersion, normalizeOpsRequest, parseCursor } from './normalize'
 import { executeQueryOps } from './query'

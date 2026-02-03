@@ -1,7 +1,7 @@
-import type { Types } from 'atoma-core'
-import type { Envelope, Meta, Operation } from 'atoma-protocol'
+import type * as Types from 'atoma-types/core'
+import type { Envelope, Meta, Operation } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
-import type { OpsResponseData } from 'atoma-protocol'
+import type { OpsResponseData } from 'atoma-types/protocol'
 import type { HttpInterceptors } from './jsonClient'
 import { createJsonHttpClient } from './jsonClient'
 

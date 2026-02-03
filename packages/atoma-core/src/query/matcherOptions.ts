@@ -1,5 +1,5 @@
-import type { IndexDefinition } from '../types'
-import type { QueryMatcherOptions } from './QueryMatcher'
+import type { IndexDefinition } from 'atoma-types/core'
+import type { QueryMatcherOptions } from 'atoma-types/core'
 
 export function buildQueryMatcherOptions<T>(indexes?: Array<IndexDefinition<T>>): QueryMatcherOptions | undefined {
     const defs = indexes || []
