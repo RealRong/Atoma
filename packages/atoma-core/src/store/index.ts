@@ -5,6 +5,5 @@ export { buildOptimisticState, collectChangedIdsFromPatches } from './write/opti
 export { type WriteEvent } from './write/events'
 export {
     buildWriteIntents,
-    buildUpsertOptions,
-    buildRestoreWriteItemsFromPatches
+    buildUpsertOptions
 } from './write/ops'

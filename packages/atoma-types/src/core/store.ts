@@ -35,12 +35,12 @@ export type DeleteItem = {
     baseVersion: number
 }
 
-export type WriteIntentOptions = Readonly<{
+export type WriteIntentOptions = {
     merge?: boolean
     upsert?: {
         mode?: 'strict' | 'loose'
     }
-}>
+}
 
 export type WriteIntent<T = any> = Readonly<{
     action: 'create' | 'update' | 'upsert' | 'delete'
