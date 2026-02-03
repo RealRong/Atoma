@@ -1,7 +1,7 @@
 import type { Entity } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { StoreWritebackArgs, StoreWritebackResult, StoreWritebackOptions } from 'atoma-types/core'
-import { StoreWriteUtils } from './utils'
+import { preserveReferenceShallow } from './utils'
 
 class StoreMapEditor<T extends Entity> {
     private after: Map<EntityId, T> | null = null
@@ -79,7 +79,7 @@ export function applyWritebackToMap<T extends Entity>(
 
     if (!upserts.length && !deletes.length && !versionUpdates.length) return null
 
-    const preserve = options?.preserve ?? StoreWriteUtils.preserveReferenceShallow
+    const preserve = options?.preserve ?? preserveReferenceShallow
     const editor = new StoreMapEditor(before, preserve)
 
     for (const id of deletes) {

@@ -86,7 +86,7 @@ export class ReadFlow implements RuntimeRead {
                 const item = remote[i] as T
                 const id = (item as any).id as EntityId
                 const existing = existingMap.get(id)
-                const preserved = Store.StoreWriteUtils.preserveReferenceShallow(existing, item)
+                const preserved = Store.preserveReferenceShallow(existing, item)
                 processed[i] = preserved
                 if (existing === preserved) continue
                 changedIds.add(id)
@@ -163,7 +163,7 @@ export class ReadFlow implements RuntimeRead {
                 const id = (processed as any).id as EntityId
 
                 const existing = before.get(id)
-                const preserved = Store.StoreWriteUtils.preserveReferenceShallow(existing, processed)
+                const preserved = Store.preserveReferenceShallow(existing, processed)
 
                 fetchedById.set(id, preserved)
                 if (cache) {
@@ -172,7 +172,7 @@ export class ReadFlow implements RuntimeRead {
             }
 
             if (cache && itemsToCache.length) {
-                const after = Store.StoreWriteUtils.bulkAdd(itemsToCache as any, before)
+                const after = Store.bulkAdd(itemsToCache as any, before)
                 if (after !== before) {
                     const changedIds = new Set<EntityId>()
                     for (const item of itemsToCache) {
@@ -262,7 +262,7 @@ export class ReadFlow implements RuntimeRead {
             }
 
             const existing = existingMap.get(id)
-            const preserved = Store.StoreWriteUtils.preserveReferenceShallow(existing, processed)
+            const preserved = Store.preserveReferenceShallow(existing, processed)
             itemsToCache.push(preserved as any)
             arr.push(preserved)
         }
@@ -272,9 +272,9 @@ export class ReadFlow implements RuntimeRead {
             if (!incomingIds.has(id)) toRemove.push(id)
         })
 
-        const withRemovals = Store.StoreWriteUtils.bulkRemove(toRemove, existingMap)
+        const withRemovals = Store.bulkRemove(toRemove, existingMap)
         const next = itemsToCache.length
-            ? Store.StoreWriteUtils.bulkAdd(itemsToCache as any, withRemovals)
+            ? Store.bulkAdd(itemsToCache as any, withRemovals)
             : withRemovals
 
         const changedIds = new Set<EntityId>(toRemove)

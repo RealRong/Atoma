@@ -133,6 +133,13 @@ export class Stores implements StoreRegistry {
         }
         handle.stateWriter = new StoreStateWriter(handle)
 
+        this.runtime.hooks.emit.storeCreated({
+            handle,
+            storeName: name,
+            debug: base.debug,
+            debugSink: base.debugSink
+        })
+
         // Relations are lazy; cache compiled relation map per store handle.
         if (typeof base.relations === 'function') {
             let cache: any | undefined

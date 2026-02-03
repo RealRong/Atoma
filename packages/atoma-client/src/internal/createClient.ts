@@ -94,7 +94,8 @@ export function createClient<
         clientId: clientRuntime.id,
         endpoints: endpointRegistry,
         capabilities,
-        runtime: clientRuntime as any
+        runtime: clientRuntime as any,
+        hooks: clientRuntime.hooks
     }
 
     const plugins: ClientPlugin[] = Array.isArray(args.plugins) ? [...args.plugins] : []

@@ -19,7 +19,7 @@ export function applyIntentsOptimistically<T extends Types.Entity>(
     const upsert = (id: EntityId, value: T) => {
         const mapRef = next === baseState ? baseState : next
         const current = mapRef.get(id)
-        const preserved = Store.StoreWriteUtils.preserveReferenceShallow(current, value)
+        const preserved = Store.preserveReferenceShallow(current, value)
         if (mapRef.has(id) && current === preserved) return
         ensureNext().set(id, preserved)
         changedIds.add(id)

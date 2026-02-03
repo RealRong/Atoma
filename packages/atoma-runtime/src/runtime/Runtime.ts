@@ -7,10 +7,10 @@ import type { JotaiStore, StoreDataProcessor } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
 import { createStore as createJotaiStore } from 'jotai/vanilla'
-import type { CoreRuntime, RuntimeIo, RuntimeObservability, RuntimePersistence, RuntimeRead, RuntimeSchema, RuntimeTransform, RuntimeWrite } from 'atoma-types/runtime'
+import type { CoreRuntime, RuntimeHookRegistry, RuntimeIo, RuntimeObservability, RuntimePersistence, RuntimeRead, RuntimeSchema, RuntimeTransform, RuntimeWrite } from 'atoma-types/runtime'
 import { DataProcessor } from './transform'
 import { Stores } from '../store'
-import { StrategyRegistry } from './registry'
+import { HookRegistry, StrategyRegistry } from './registry'
 import { ReadFlow, WriteFlow } from './flows'
 
 /**
@@ -27,6 +27,7 @@ export interface RuntimeConfig {
     observe: RuntimeObservability
     ownerClient?: () => unknown
     now?: () => number
+    hooks?: RuntimeHookRegistry
 }
 
 export class Runtime implements CoreRuntime {
@@ -41,6 +42,7 @@ export class Runtime implements CoreRuntime {
     readonly stores: CoreRuntime['stores']
     readonly read: RuntimeRead
     readonly write: RuntimeWrite
+    readonly hooks: RuntimeHookRegistry
 
     constructor(config: RuntimeConfig) {
         this.id = Protocol.ids.createOpId('client')
@@ -53,6 +55,7 @@ export class Runtime implements CoreRuntime {
         this.io = config.io
         this.transform = new DataProcessor(() => this)
         this.persistence = config.persistence ?? new StrategyRegistry(this)
+        this.hooks = config.hooks ?? new HookRegistry()
 
         this.stores = new Stores(this, {
             schema: config.schema,

@@ -26,7 +26,7 @@ export class StoreStateWriter<T extends Types.Entity> implements StoreStateWrite
 
     applyWriteback = (args: Types.StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
         const before = this.handle.jotaiStore.get(this.handle.atom)
-        const preserve = options?.preserve ?? Store.StoreWriteUtils.preserveReferenceShallow
+        const preserve = options?.preserve ?? Store.preserveReferenceShallow
         const result = Store.applyWritebackToMap(before, args, { preserve })
         if (!result) return
 

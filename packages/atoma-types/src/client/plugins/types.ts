@@ -1,6 +1,6 @@
 import type { Query } from '../../protocol'
 import type * as Types from '../../core'
-import type { CoreRuntime, PersistRequest, PersistResult } from '../../runtime'
+import type { CoreRuntime, PersistRequest, PersistResult, RuntimeHookRegistry } from '../../runtime'
 import type { OperationEnvelope, ResultEnvelope } from '../drivers/types'
 import type { EndpointRegistry, CapabilitiesRegistry } from '../registry'
 
@@ -107,6 +107,7 @@ export type PluginContext = Readonly<{
     endpoints: EndpointRegistry
     capabilities: CapabilitiesRegistry
     runtime: CoreRuntime
+    hooks: RuntimeHookRegistry
 }>
 
 export type ClientPluginContext = PluginContext

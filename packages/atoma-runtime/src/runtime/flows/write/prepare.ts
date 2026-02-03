@@ -9,14 +9,14 @@ export function ensureActionId(opContext?: Types.OperationContext): Types.Operat
 }
 
 export async function prepareForAdd<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, item: Partial<T>, opContext?: Types.OperationContext): Promise<Types.PartialWithId<T>> {
-    let initedObj = Store.StoreWriteUtils.initBaseObject<T>(item, handle.idGenerator)
+    let initedObj = Store.initBaseObject<T>(item, handle.idGenerator)
     initedObj = await runBeforeSave(handle.hooks, initedObj, 'add')
     const processed = await runtime.transform.inbound(handle, initedObj as T, opContext)
     return requireProcessed(processed as Types.PartialWithId<T> | undefined, 'prepareForAdd')
 }
 
 export async function prepareForUpdate<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, base: Types.PartialWithId<T>, patch: Types.PartialWithId<T>, opContext?: Types.OperationContext): Promise<Types.PartialWithId<T>> {
-    let merged = Store.StoreWriteUtils.mergeForUpdate(base, patch)
+    let merged = Store.mergeForUpdate(base, patch)
     merged = await runBeforeSave(handle.hooks, merged, 'update')
     const processed = await runtime.transform.inbound(handle, merged as T, opContext)
     return requireProcessed(processed as Types.PartialWithId<T> | undefined, 'prepareForUpdate')

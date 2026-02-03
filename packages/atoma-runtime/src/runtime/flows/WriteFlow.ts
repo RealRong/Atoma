@@ -17,6 +17,43 @@ function buildUpsertIntentOptions(options?: Types.UpsertWriteOptions): Types.Wri
     return Object.keys(out).length ? out : undefined
 }
 
+function buildRootPatches<T>(args: {
+    id: EntityId
+    before?: T
+    after?: T
+    remove?: boolean
+}): { patches: Patch[]; inversePatches: Patch[] } {
+    const id = args.id
+    const before = args.before
+    const after = args.after
+    const hasBefore = before !== undefined
+    const hasAfter = after !== undefined
+
+    if (args.remove) {
+        const patches: Patch[] = [{ op: 'remove', path: [id] as any }]
+        const inversePatches: Patch[] = hasBefore
+            ? [{ op: 'add', path: [id] as any, value: before } as any]
+            : []
+        return { patches, inversePatches }
+    }
+
+    if (!hasAfter) {
+        return { patches: [], inversePatches: [] }
+    }
+
+    if (hasBefore) {
+        return {
+            patches: [{ op: 'replace', path: [id] as any, value: after } as any],
+            inversePatches: [{ op: 'replace', path: [id] as any, value: before } as any]
+        }
+    }
+
+    return {
+        patches: [{ op: 'add', path: [id] as any, value: after } as any],
+        inversePatches: [{ op: 'remove', path: [id] as any }]
+    }
+}
+
 function resolveOutputFromAck<T extends Types.Entity>(intent: Types.WriteIntent<T> | undefined, ack: Types.PersistAck<T> | undefined, fallback?: T): T | undefined {
     if (!ack) return fallback
     if (!intent) return fallback
@@ -60,7 +97,7 @@ async function prepareUpdateIntent<T extends Types.Entity>(args: {
     recipe: (draft: Draft<T>) => void
     opContext: Types.OperationContext
     options?: Types.StoreOperationOptions
-}): Promise<{ intent: Types.WriteIntent<T>; output: T }> {
+}): Promise<{ intent: Types.WriteIntent<T>; output: T; base: Types.PartialWithId<T> }> {
     const base = await resolveBaseForWrite(args.runtime, args.handle, args.id, args.options)
     const next = produce(base as any, (draft: Draft<T>) => args.recipe(draft)) as any
     const patched = { ...(next as any), id: args.id } as Types.PartialWithId<T>
@@ -73,7 +110,8 @@ async function prepareUpdateIntent<T extends Types.Entity>(args: {
             baseVersion,
             value: prepared as T
         },
-        output: prepared as T
+        output: prepared as T,
+        base
     }
 }
 
@@ -83,7 +121,7 @@ async function prepareUpsertIntent<T extends Types.Entity>(args: {
     item: Types.PartialWithId<T>
     opContext: Types.OperationContext
     options?: Types.StoreOperationOptions & Types.UpsertWriteOptions
-}): Promise<{ intent: Types.WriteIntent<T>; output: T; afterSaveAction: 'add' | 'update' }> {
+}): Promise<{ intent: Types.WriteIntent<T>; output: T; afterSaveAction: 'add' | 'update'; base?: Types.PartialWithId<T> }> {
     const id = args.item.id
     const base = args.handle.jotaiStore.get(args.handle.atom).get(id) as Types.PartialWithId<T> | undefined
     const merge = args.options?.merge !== false
@@ -133,7 +171,8 @@ async function prepareUpsertIntent<T extends Types.Entity>(args: {
     return {
         intent,
         output: prepared as T,
-        afterSaveAction: base ? 'update' : 'add'
+        afterSaveAction: base ? 'update' : 'add',
+        base
     }
 }
 
@@ -143,21 +182,27 @@ async function prepareDeleteIntent<T extends Types.Entity>(args: {
     id: EntityId
     opContext: Types.OperationContext
     options?: Types.StoreOperationOptions
-}): Promise<Types.WriteIntent<T>> {
+}): Promise<{ intent: Types.WriteIntent<T>; base: Types.PartialWithId<T> }> {
     const base = await resolveBaseForWrite(args.runtime, args.handle, args.id, args.options)
     const baseVersion = version.requireBaseVersion(args.id, base as any)
     if (args.options?.force) {
         return {
-            action: 'delete',
-            entityId: args.id,
-            baseVersion
+            intent: {
+                action: 'delete',
+                entityId: args.id,
+                baseVersion
+            },
+            base
         }
     }
     return {
-        action: 'update',
-        entityId: args.id,
-        baseVersion,
-        value: Object.assign({}, base, { deleted: true, deletedAt: Date.now() }) as T
+        intent: {
+            action: 'update',
+            entityId: args.id,
+            baseVersion,
+            value: Object.assign({}, base, { deleted: true, deletedAt: Date.now() }) as T
+        },
+        base
     }
 }
 
@@ -174,16 +219,48 @@ export class WriteFlow implements RuntimeWrite {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
         const { intent, output } = await prepareAddIntent({ runtime, handle, item, opContext })
+        const intents = [intent]
 
-        const result = await this.executeWrite<T>({
-            handle,
-            opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            intents: [intent]
-        })
+        const hooks = runtime.hooks
+        hooks.emit.writeStart({ handle, opContext, intents, source: 'addOne' })
 
-        await runAfterSave(handle.hooks, output as any, 'add')
-        return (result ?? output) as T
+        const patchPayload = (() => {
+            if (!hooks.has.writePatches) return null
+            const entityId = intent.entityId as EntityId | undefined
+            if (!entityId) return null
+            const before = handle.jotaiStore.get(handle.atom).get(entityId) as T | undefined
+            return buildRootPatches<T>({
+                id: entityId,
+                before,
+                after: output as T
+            })
+        })()
+
+        try {
+            const result = await this.executeWrite<T>({
+                handle,
+                opContext,
+                writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+                intents
+            })
+
+            if (patchPayload) {
+                hooks.emit.writePatches({
+                    handle,
+                    opContext,
+                    patches: patchPayload.patches,
+                    inversePatches: patchPayload.inversePatches,
+                    source: 'addOne'
+                })
+            }
+            hooks.emit.writeCommitted({ handle, opContext, result: result ?? output })
+
+            await runAfterSave(handle.hooks, output as any, 'add')
+            return (result ?? output) as T
+        } catch (error) {
+            hooks.emit.writeFailed({ handle, opContext, error })
+            throw error
+        }
     }
 
     addMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: Types.StoreOperationOptions): Promise<T[]> => {
@@ -197,7 +274,7 @@ export class WriteFlow implements RuntimeWrite {
     updateOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, recipe: (draft: ImmerDraft<T>) => void, options?: Types.StoreOperationOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
-        const { intent, output } = await prepareUpdateIntent({
+        const { intent, output, base } = await prepareUpdateIntent({
             runtime,
             handle,
             id,
@@ -205,16 +282,40 @@ export class WriteFlow implements RuntimeWrite {
             opContext,
             options
         })
+        const intents = [intent]
 
-        const result = await this.executeWrite<T>({
-            handle,
-            opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            intents: [intent]
-        })
+        const hooks = runtime.hooks
+        hooks.emit.writeStart({ handle, opContext, intents, source: 'updateOne' })
 
-        await runAfterSave(handle.hooks, output as any, 'update')
-        return (result ?? output) as T
+        const patchPayload = hooks.has.writePatches
+            ? buildRootPatches<T>({ id, before: base as T, after: output as T })
+            : null
+
+        try {
+            const result = await this.executeWrite<T>({
+                handle,
+                opContext,
+                writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+                intents
+            })
+
+            if (patchPayload) {
+                hooks.emit.writePatches({
+                    handle,
+                    opContext,
+                    patches: patchPayload.patches,
+                    inversePatches: patchPayload.inversePatches,
+                    source: 'updateOne'
+                })
+            }
+            hooks.emit.writeCommitted({ handle, opContext, result: result ?? output })
+
+            await runAfterSave(handle.hooks, output as any, 'update')
+            return (result ?? output) as T
+        } catch (error) {
+            hooks.emit.writeFailed({ handle, opContext, error })
+            throw error
+        }
     }
 
     updateMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>, options?: Types.StoreOperationOptions): Promise<Types.WriteManyResult<T>> => {
@@ -236,23 +337,54 @@ export class WriteFlow implements RuntimeWrite {
     upsertOne = async <T extends Types.Entity>(handle: StoreHandle<T>, item: Types.PartialWithId<T>, options?: Types.StoreOperationOptions & Types.UpsertWriteOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
-        const { intent, output, afterSaveAction } = await prepareUpsertIntent({
+        const { intent, output, afterSaveAction, base } = await prepareUpsertIntent({
             runtime,
             handle,
             item,
             opContext,
             options
         })
+        const intents = [intent]
 
-        const result = await this.executeWrite<T>({
-            handle,
-            opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            intents: [intent]
-        })
+        const hooks = runtime.hooks
+        hooks.emit.writeStart({ handle, opContext, intents, source: 'upsertOne' })
 
-        await runAfterSave(handle.hooks, output as any, afterSaveAction)
-        return (result ?? output) as T
+        const patchPayload = (() => {
+            if (!hooks.has.writePatches) return null
+            const entityId = intent.entityId as EntityId | undefined
+            if (!entityId) return null
+            return buildRootPatches<T>({
+                id: entityId,
+                before: base as T | undefined,
+                after: output as T
+            })
+        })()
+
+        try {
+            const result = await this.executeWrite<T>({
+                handle,
+                opContext,
+                writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+                intents
+            })
+
+            if (patchPayload) {
+                hooks.emit.writePatches({
+                    handle,
+                    opContext,
+                    patches: patchPayload.patches,
+                    inversePatches: patchPayload.inversePatches,
+                    source: 'upsertOne'
+                })
+            }
+            hooks.emit.writeCommitted({ handle, opContext, result: result ?? output })
+
+            await runAfterSave(handle.hooks, output as any, afterSaveAction)
+            return (result ?? output) as T
+        } catch (error) {
+            hooks.emit.writeFailed({ handle, opContext, error })
+            throw error
+        }
     }
 
     upsertMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<Types.PartialWithId<T>>, options?: Types.StoreOperationOptions & Types.UpsertWriteOptions): Promise<Types.WriteManyResult<T>> => {
@@ -272,21 +404,50 @@ export class WriteFlow implements RuntimeWrite {
     deleteOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreOperationOptions): Promise<boolean> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
-        const intent = await prepareDeleteIntent({
+        const { intent, base } = await prepareDeleteIntent({
             runtime,
             handle,
             id,
             opContext,
             options
         })
+        const intents = [intent]
 
-        await this.executeWrite<T>({
-            handle,
-            opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            intents: [intent]
-        })
-        return true
+        const hooks = runtime.hooks
+        hooks.emit.writeStart({ handle, opContext, intents, source: 'deleteOne' })
+
+        const patchPayload = hooks.has.writePatches
+            ? buildRootPatches<T>({
+                id,
+                before: base as T,
+                after: intent.value as T | undefined,
+                remove: intent.action === 'delete'
+            })
+            : null
+
+        try {
+            await this.executeWrite<T>({
+                handle,
+                opContext,
+                writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+                intents
+            })
+
+            if (patchPayload) {
+                hooks.emit.writePatches({
+                    handle,
+                    opContext,
+                    patches: patchPayload.patches,
+                    inversePatches: patchPayload.inversePatches,
+                    source: 'deleteOne'
+                })
+            }
+            hooks.emit.writeCommitted({ handle, opContext, result: true })
+            return true
+        } catch (error) {
+            hooks.emit.writeFailed({ handle, opContext, error })
+            throw error
+        }
     }
 
     deleteMany = async <T extends Types.Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: Types.StoreOperationOptions): Promise<Types.WriteManyResult<boolean>> => {
@@ -311,12 +472,35 @@ export class WriteFlow implements RuntimeWrite {
             patches,
             inversePatches
         })
-        await this.executeWrite<T>({
-            handle,
-            opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
-            intents
-        })
+        const hooks = this.runtime.hooks
+        hooks.emit.writeStart({ handle, opContext, intents, source: 'patches' })
+
+        const patchPayload = hooks.has.writePatches
+            ? { patches, inversePatches }
+            : null
+
+        try {
+            await this.executeWrite<T>({
+                handle,
+                opContext,
+                writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+                intents
+            })
+
+            if (patchPayload) {
+                hooks.emit.writePatches({
+                    handle,
+                    opContext,
+                    patches: patchPayload.patches,
+                    inversePatches: patchPayload.inversePatches,
+                    source: 'patches'
+                })
+            }
+            hooks.emit.writeCommitted({ handle, opContext })
+        } catch (error) {
+            hooks.emit.writeFailed({ handle, opContext, error })
+            throw error
+        }
     }
 
     private executeWrite = async <T extends Types.Entity>(args: {

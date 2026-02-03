@@ -3,6 +3,7 @@ import type * as Types from '../core'
 import type { Draft, Patch } from 'immer'
 import type { StoreHandle, StoreStateWriterApi } from './handleTypes'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, TranslatedWriteOp, PersistAck } from './persistenceTypes'
+import type { RuntimeHookRegistry } from './hooks'
 
 export type DataProcessor = Readonly<{
     process: <T>(mode: Types.DataProcessorMode, data: T, context: Types.DataProcessorBaseContext<T> & { dataProcessor?: Types.StoreDataProcessor<T> }) => Promise<T | undefined>
@@ -76,6 +77,7 @@ export type CoreRuntime = Readonly<{
     now: () => number
     jotaiStore: Types.JotaiStore
     stores: StoreRegistry
+    hooks: RuntimeHookRegistry
     io: RuntimeIo
     read: RuntimeRead
     write: RuntimeWrite
