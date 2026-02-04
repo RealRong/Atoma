@@ -2,10 +2,8 @@
  * StrategyRegistry: Routes persistence requests and resolves write policies by strategy.
  */
 import type * as Types from 'atoma-types/core'
-import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, PersistAck, TranslatedWriteOp } from 'atoma-types/runtime'
+import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from 'atoma-types/runtime'
 import type { CoreRuntime, RuntimePersistence } from 'atoma-types/runtime'
-import type { OperationResult, StandardError, WriteAction, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
-import { WritebackCollector } from '../persistence'
 
 const DEFAULT_WRITE_POLICY: WritePolicy = {
     implicitFetch: true,
@@ -66,44 +64,11 @@ export class StrategyRegistry implements RuntimePersistence {
     }
 
     private persistViaOps = async <T extends Types.Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-        const normalized = await this.executeWriteOps<T>({
-            ops: req.writeOps as any
-        })
+        const results = await this.runtime.io.executeOps({ ops: req.writeOps as any })
         return {
             status: 'confirmed',
-            ...(normalized.ack ? { ack: normalized.ack } : {})
+            ...(results.length ? { results } : {})
         }
-    }
-
-    executeWriteOps = async <T extends Types.Entity>(args: {
-        ops: Array<TranslatedWriteOp>
-    }): Promise<{ ack?: PersistAck<T> }> => {
-        if (!args.ops.length) return {}
-
-        const ops = args.ops.map(o => o.op)
-        const results = await this.runtime.io.executeOps({ ops })
-        const resultByOpId = new Map<string, OperationResult>()
-        results.forEach(r => resultByOpId.set(r.opId, r))
-
-        const writeback = new WritebackCollector<T>()
-
-        for (const entry of args.ops) {
-            const result = findOpResult(resultByOpId, entry.op.opId)
-            if (!result.ok) {
-                const err = new Error(`[Atoma] op failed: ${result.error.message || 'Operation failed'}`)
-                ;(err as { error?: unknown }).error = result.error
-                throw err
-            }
-
-            const data = result.data as WriteResultData
-            const itemRes = data.results?.[0]
-            if (!itemRes) throw new Error('[Atoma] missing write item result')
-            if (!itemRes.ok) throw toWriteItemError(entry.action, itemRes)
-
-            writeback.collect(entry, itemRes)
-        }
-
-        return writeback.result()
     }
 
     private normalizeStrategy = (key?: Types.WriteStrategy): Types.WriteStrategy => {
@@ -112,27 +77,5 @@ export class StrategyRegistry implements RuntimePersistence {
             throw new Error('[Atoma] strategy.persist: 未设置默认 writeStrategy')
         }
         return normalized
-    }
-}
-
-function toWriteItemError(action: WriteAction, result: WriteItemResult): Error {
-    if (result.ok) return new Error(`[Atoma] write(${action}) failed`)
-    const msg = result.error.message || 'Write failed'
-    const err = new Error(`[Atoma] write(${action}) failed: ${msg}`)
-    ;(err as { error?: unknown }).error = result.error
-    return err
-}
-
-function findOpResult(results: Map<string, OperationResult>, opId: string): OperationResult {
-    const found = results.get(opId)
-    if (found) return found
-    return {
-        opId,
-        ok: false,
-        error: {
-            code: 'INTERNAL',
-            message: 'Missing operation result',
-            kind: 'internal'
-        } as StandardError
     }
 }

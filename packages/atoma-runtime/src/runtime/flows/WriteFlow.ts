@@ -4,7 +4,7 @@ import type * as Types from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, RuntimeWrite, StoreHandle } from 'atoma-types/runtime'
 import { version } from 'atoma-shared'
-import { applyPersistAck } from './write/finalize'
+import { buildWritebackFromResults } from './write/finalize'
 import { buildWriteIntentsFromPatches, buildWriteOps } from '../persistence'
 import { ensureActionId, prepareForAdd, prepareForUpdate, resolveBaseForWrite, runAfterSave, runBeforeSave } from './write/prepare'
 import { applyIntentsOptimistically } from './write/optimistic'
@@ -52,24 +52,6 @@ function buildRootPatches<T>(args: {
         patches: [{ op: 'add', path: [id] as any, value: after } as any],
         inversePatches: [{ op: 'remove', path: [id] as any }]
     }
-}
-
-function resolveOutputFromAck<T extends Types.Entity>(intent: Types.WriteIntent<T> | undefined, ack: Types.PersistAck<T> | undefined, fallback?: T): T | undefined {
-    if (!ack) return fallback
-    if (!intent) return fallback
-
-    if (intent.action === 'create' && ack.created?.length) {
-        return ack.created[0] as T
-    }
-
-    if ((intent.action === 'update' || intent.action === 'upsert') && ack.upserts?.length) {
-        const id = intent.entityId as EntityId | undefined
-        if (!id) return ack.upserts[0] as T
-        const matched = ack.upserts.find(item => (item as any)?.id === id)
-        return (matched ?? ack.upserts[0]) as T
-    }
-
-    return fallback
 }
 
 async function prepareAddIntent<T extends Types.Entity>(args: {
@@ -533,12 +515,14 @@ export class WriteFlow implements RuntimeWrite {
         const { handle, intents, opContext } = args
 
         return (async () => {
-            const writeOps = await buildWriteOps({
+            const plan = await buildWriteOps({
                 runtime,
                 handle,
                 intents,
                 opContext
             })
+
+            const writeOps = plan.map(entry => entry.op)
 
             if (!writeOps.length) {
                 const primary = intents.length === 1 ? intents[0] : undefined
@@ -558,8 +542,21 @@ export class WriteFlow implements RuntimeWrite {
                 })
 
                 const primaryIntent = intents.length === 1 ? intents[0] : undefined
-                const normalizedAck = await applyPersistAck(runtime, handle, primaryIntent, persistResult)
-                return resolveOutputFromAck(primaryIntent, normalizedAck, primaryIntent?.value as T | undefined)
+                const resolved = (persistResult.results && persistResult.results.length)
+                    ? await buildWritebackFromResults<T>({
+                        runtime,
+                        handle,
+                        plan,
+                        results: persistResult.results,
+                        primaryIntent
+                    })
+                    : {}
+
+                if (resolved.writeback) {
+                    handle.stateWriter.applyWriteback(resolved.writeback)
+                }
+
+                return resolved.output ?? (primaryIntent?.value as T | undefined)
             } catch (error) {
                 if (args.optimisticState !== args.before && args.changedIds.size) {
                     handle.stateWriter.commitMapUpdateDelta({

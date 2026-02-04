@@ -24,14 +24,11 @@ export type {
 } from './hooks'
 
 export type {
-    PersistAck,
     PersistHandler,
     PersistRequest,
     PersistResult,
     PersistStatus,
-    PersistWriteback,
     Persistence,
     StrategyDescriptor,
-    TranslatedWriteOp,
     WritePolicy
 } from './persistenceTypes'

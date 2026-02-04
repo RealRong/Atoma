@@ -83,12 +83,12 @@ export class HttpBackendPlugin implements ClientPlugin {
         }, { priority: 1000 })
 
         register('persist', async (req, _ctx, _next): Promise<PersistResult<any>> => {
-            const normalized = await ctx.runtime.persistence.executeWriteOps<any>({
+            const results = await ctx.runtime.io.executeOps({
                 ops: req.writeOps as any
             })
             return {
                 status: 'confirmed',
-                ...(normalized.ack ? { ack: normalized.ack } : {})
+                ...(results.length ? { results } : {})
             }
         }, { priority: 1000 })
     }

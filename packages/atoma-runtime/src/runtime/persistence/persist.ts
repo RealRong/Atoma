@@ -1,6 +1,6 @@
 import type * as Types from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { TranslatedWriteOp } from 'atoma-types/runtime'
+import type { WriteOp } from 'atoma-types/protocol'
 import type { StoreHandle } from 'atoma-types/runtime'
 import type { CoreRuntime } from 'atoma-types/runtime'
 import { entityId as entityIdUtils, immer as immerUtils, version } from 'atoma-shared'
@@ -12,7 +12,7 @@ export async function buildWriteOps<T extends Types.Entity>(args: {
     handle: StoreHandle<T>
     intents: Array<Types.WriteIntent<T>>
     opContext: Types.OperationContext
-}): Promise<TranslatedWriteOp[]> {
+}): Promise<Array<{ op: WriteOp; intents: Array<Types.WriteIntent<T>> }>> {
     const { runtime, handle, intents, opContext } = args
     if (!intents.length) return []
 
@@ -31,23 +31,76 @@ export async function buildWriteOps<T extends Types.Entity>(args: {
         } as Types.WriteIntent<T>
     }))
 
-    return normalized.map(intent => {
-        const meta = buildWriteItemMeta({ now: runtime.now })
-        const item = buildWriteItem(intent, meta)
+    type Group<T> = {
+        action: Types.WriteIntent<T>['action']
+        options?: ReturnType<typeof buildWriteOptions>
+        intents: Array<Types.WriteIntent<T>>
+    }
+
+    const groupsByKey = new Map<string, Group<T>>()
+    const groups: Group<T>[] = []
+
+    for (const intent of normalized) {
+        const options = intent.options ? buildWriteOptions(intent.options) : undefined
+        const optionsKey = buildOptionsKey(options)
+        const key = `${intent.action}::${optionsKey}`
+
+        let group = groupsByKey.get(key)
+        if (!group) {
+            group = { action: intent.action, options, intents: [] }
+            groupsByKey.set(key, group)
+            groups.push(group)
+        }
+        group.intents.push(intent)
+    }
+
+    return groups.map(group => {
+        const entries = group.intents.map(intent => {
+            const meta = buildWriteItemMeta({ now: runtime.now })
+            return {
+                item: buildWriteItem(intent, meta)
+            }
+        })
+
         const op = buildWriteOperation({
             opId: handle.nextOpId('w'),
             resource: handle.storeName,
-            action: intent.action,
-            items: [item],
-            ...(intent.options ? { options: buildWriteOptions(intent.options) } : {})
+            action: group.action,
+            items: entries.map(e => e.item),
+            ...(group.options ? { options: group.options } : {})
         })
+
         return {
             op,
-            action: intent.action,
-            ...(intent.entityId ? { entityId: intent.entityId } : {}),
-            ...(intent.intent ? { intent: intent.intent } : {})
+            intents: group.intents
         }
     })
+}
+
+function buildOptionsKey(options: ReturnType<typeof buildWriteOptions> | undefined): string {
+    if (!options) return ''
+    const parts: string[] = []
+
+    if (typeof options.returning === 'boolean') {
+        parts.push(`r:${options.returning ? 1 : 0}`)
+    }
+    if (typeof options.merge === 'boolean') {
+        parts.push(`m:${options.merge ? 1 : 0}`)
+    }
+    if (options.upsert?.mode === 'strict' || options.upsert?.mode === 'loose') {
+        parts.push(`u:${options.upsert.mode}`)
+    }
+
+    const select = options.select
+    if (select && typeof select === 'object') {
+        const keys = Object.keys(select).sort()
+        if (keys.length) {
+            const encoded = keys.map(key => `${key}:${select[key] ? 1 : 0}`).join(',')
+            parts.push(`s:${encoded}`)
+        }
+    }
+
+    return parts.join('|')
 }
 
 export function buildWriteIntentsFromPatches<T extends Types.Entity>(args: {

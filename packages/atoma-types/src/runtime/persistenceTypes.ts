@@ -1,49 +1,22 @@
 import type * as Types from '../core'
-import type { EntityId, Operation } from '../protocol'
+import type { OperationResult, WriteOp } from '../protocol'
 import type { StoreHandle } from './handleTypes'
 
-/**
- * Writeback payload for applying remote changes to memory/durable stores.
- */
-export type PersistWriteback<T extends Types.Entity> = Readonly<{
-    upserts?: T[]
-    deletes?: EntityId[]
-    versionUpdates?: Array<{ key: EntityId; version: number }>
-}>
-
-/**
- * Persist ack (server authoritative response for a write batch).
- * - Used to override local state with server versions/data when available.
- */
-export type PersistAck<T extends Types.Entity> = Readonly<{
-    created?: T[]
-    upserts?: T[]
-    deletes?: EntityId[]
-    versionUpdates?: Array<{ key: EntityId; version: number }>
-}>
-
 export type PersistStatus = 'confirmed' | 'enqueued'
-
-export type TranslatedWriteOp = Readonly<{
-    op: Operation
-    action: 'create' | 'update' | 'upsert' | 'delete'
-    entityId?: EntityId
-    intent?: 'created'
-    requireCreatedData?: boolean
-}>
 
 export type PersistRequest<T extends Types.Entity> = Readonly<{
     storeName: Types.StoreToken
     writeStrategy?: Types.WriteStrategy
     handle: StoreHandle<T>
     opContext?: Types.OperationContext
-    writeOps: Array<TranslatedWriteOp>
+    writeOps: Array<WriteOp>
     signal?: AbortSignal
 }>
 
 export type PersistResult<T extends Types.Entity> = Readonly<{
     status: PersistStatus
-    ack?: PersistAck<T>
+    /** Raw ops results for write ops (if confirmed). */
+    results?: OperationResult[]
 }>
 
 export type PersistHandler = <T extends Types.Entity>(args: {

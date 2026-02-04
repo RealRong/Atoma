@@ -2,7 +2,7 @@ import type { Operation, OperationResult, EntityId } from '../protocol'
 import type * as Types from '../core'
 import type { Draft, Patch } from 'immer'
 import type { StoreHandle, StoreStateWriterApi } from './handleTypes'
-import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, TranslatedWriteOp, PersistAck } from './persistenceTypes'
+import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from './persistenceTypes'
 import type { RuntimeHookRegistry } from './hooks'
 
 export type DataProcessor = Readonly<{
@@ -61,9 +61,6 @@ export type RuntimePersistence = Readonly<{
     setDefaultStrategy: (key: Types.WriteStrategy) => () => void
     resolveWritePolicy: (key?: Types.WriteStrategy) => WritePolicy
     persist: <T extends Types.Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
-    executeWriteOps: <T extends Types.Entity>(args: {
-        ops: Array<TranslatedWriteOp>
-    }) => Promise<{ ack?: PersistAck<T> }>
 }>
 
 export type CoreRuntime = Readonly<{

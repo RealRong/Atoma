@@ -1,54 +1,102 @@
 import type * as Types from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
-import type { PersistAck, PersistResult, StoreHandle, CoreRuntime } from 'atoma-types/runtime'
+import type { EntityId, OperationResult, WriteAction, WriteItemResult, WriteOp } from 'atoma-types/protocol'
+import type { StoreHandle, CoreRuntime } from 'atoma-types/runtime'
 
-export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, intent: Types.WriteIntent<T> | undefined, persistResult: PersistResult<T>): Promise<PersistAck<T> | undefined> {
-    const ack = persistResult.ack
-    if (!ack) return undefined
+type WritePlan<T extends Types.Entity> = ReadonlyArray<{
+    op: WriteOp
+    intents: Array<Types.WriteIntent<T>>
+}>
 
-    const normalized = await transformAck(runtime, handle, ack)
+export async function buildWritebackFromResults<T extends Types.Entity>(args: {
+    runtime: CoreRuntime
+    handle: StoreHandle<T>
+    plan: WritePlan<T>
+    results: OperationResult[]
+    primaryIntent?: Types.WriteIntent<T>
+}): Promise<{ writeback?: Types.StoreWritebackArgs<T>; output?: T }> {
+    if (!args.plan.length || !args.results.length) return {}
 
-    if (intent?.action === 'create' && normalized.created?.length) {
-        const created = normalized.created[0] as T
-        const serverId = created?.id as EntityId
-        const tempId = intent.entityId as EntityId
+    const resultByOpId = new Map<string, OperationResult>()
+    args.results.forEach(r => resultByOpId.set(r.opId, r))
 
-        const deletes: EntityId[] = []
-        if (tempId && serverId && tempId !== serverId) {
-            deletes.push(tempId)
+    const upserts: T[] = []
+    const versionUpdates: Array<{ key: EntityId; version: number }> = []
+    let output: T | undefined
+
+    const primary = args.primaryIntent
+        ? { action: args.primaryIntent.action, entityId: args.primaryIntent.entityId as EntityId | undefined }
+        : undefined
+
+    for (const entry of args.plan) {
+        const result = resultByOpId.get(entry.op.opId)
+        if (!result) throw new Error('[Atoma] missing operation result')
+        if (!result.ok) {
+            const err = new Error(`[Atoma] op failed: ${result.error.message || 'Operation failed'}`)
+            ;(err as { error?: unknown }).error = result.error
+            throw err
         }
-        handle.stateWriter.applyWriteback({
-            deletes,
-            upserts: [created],
-            versionUpdates: normalized.versionUpdates
-        })
-        return normalized
+
+        const data = (result as any).data
+        const itemResults = Array.isArray((data as any)?.results) ? (data as any).results as WriteItemResult[] : []
+        if (!itemResults.length) throw new Error('[Atoma] missing write item results')
+
+        const shouldApplyData = shouldUseWritebackData(entry.op)
+
+        for (const itemRes of itemResults) {
+            const index = (itemRes as any)?.index
+            if (typeof index !== 'number' || !Number.isFinite(index)) {
+                throw new Error('[Atoma] write item result missing index')
+            }
+
+            const intent = entry.intents[index]
+            if (!intent) throw new Error('[Atoma] write item result index out of range')
+            if (!itemRes.ok) throw toWriteItemError(entry.op.write.action, itemRes)
+
+            const version = itemRes.version
+            if (typeof version === 'number' && Number.isFinite(version) && version > 0) {
+                const entityId = itemRes.entityId ?? (intent.entityId as EntityId | undefined)
+                if (entityId) versionUpdates.push({ key: entityId, version })
+            }
+
+            if (!shouldApplyData) continue
+            const returned = itemRes.data
+            if (!returned || typeof returned !== 'object') continue
+
+            const normalized = await args.runtime.transform.writeback(args.handle, returned as T)
+            if (!normalized) continue
+
+            upserts.push(normalized)
+            if (!output && primary && intent.action === primary.action) {
+                if (primary.entityId === undefined || intent.entityId === primary.entityId) {
+                    output = normalized as T
+                }
+            }
+        }
     }
 
-    handle.stateWriter.applyWriteback({
-        upserts: normalized.upserts,
-        deletes: normalized.deletes,
-        versionUpdates: normalized.versionUpdates
-    })
+    const writeback = (upserts.length || versionUpdates.length)
+        ? ({
+            ...(upserts.length ? { upserts } : {}),
+            ...(versionUpdates.length ? { versionUpdates } : {})
+        } as Types.StoreWritebackArgs<T>)
+        : undefined
 
-    return normalized
+    return { writeback, output }
 }
 
-async function transformAck<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, ack: PersistAck<T>): Promise<PersistAck<T>> {
-    const created = ack.created
-        ? (await Promise.all(ack.created.map(async item => runtime.transform.writeback(handle, item))))
-            .filter(Boolean) as T[]
-        : undefined
+function shouldUseWritebackData(op: WriteOp): boolean {
+    const options = (op.write && typeof op.write === 'object') ? (op.write as any).options : undefined
+    if (!options || typeof options !== 'object') return true
+    if ((options as any).returning === false) return false
+    const select = (options as any).select
+    if (select && typeof select === 'object' && Object.keys(select as any).length) return false
+    return true
+}
 
-    const upserts = ack.upserts
-        ? (await Promise.all(ack.upserts.map(async item => runtime.transform.writeback(handle, item))))
-            .filter(Boolean) as T[]
-        : undefined
-
-    return {
-        ...(created && created.length ? { created } : {}),
-        ...(upserts && upserts.length ? { upserts } : {}),
-        ...(ack.deletes?.length ? { deletes: ack.deletes } : {}),
-        ...(ack.versionUpdates?.length ? { versionUpdates: ack.versionUpdates } : {})
-    }
+function toWriteItemError(action: WriteAction, result: WriteItemResult): Error {
+    if (result.ok) return new Error(`[Atoma] write(${action}) failed`)
+    const msg = result.error.message || 'Write failed'
+    const err = new Error(`[Atoma] write(${action}) failed: ${msg}`)
+    ;(err as { error?: unknown }).error = result.error
+    return err
 }

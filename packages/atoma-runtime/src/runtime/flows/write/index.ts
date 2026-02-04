@@ -1,4 +1,3 @@
-export { applyPersistAck } from './finalize'
 export {
     ensureActionId,
     prepareForAdd,
