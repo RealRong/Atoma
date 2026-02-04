@@ -5,7 +5,7 @@ import type * as Types from 'atoma-types/core'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy, PersistAck, TranslatedWriteOp } from 'atoma-types/runtime'
 import type { CoreRuntime, RuntimePersistence } from 'atoma-types/runtime'
 import type { OperationResult, StandardError, WriteAction, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
-import { createWritebackCollector } from '../persistence'
+import { WritebackCollector } from '../persistence'
 
 const DEFAULT_WRITE_POLICY: WritePolicy = {
     implicitFetch: true,
@@ -85,7 +85,7 @@ export class StrategyRegistry implements RuntimePersistence {
         const resultByOpId = new Map<string, OperationResult>()
         results.forEach(r => resultByOpId.set(r.opId, r))
 
-        const writeback = createWritebackCollector<T>()
+        const writeback = new WritebackCollector<T>()
 
         for (const entry of args.ops) {
             const result = findOpResult(resultByOpId, entry.op.opId)

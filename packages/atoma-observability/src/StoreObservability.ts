@@ -16,6 +16,14 @@ export class StoreObservability {
     registerStore = (config: StoreObservabilityConfig) => {
         const key = toStoreScope(config.storeName)
         this.observabilityConfigByStore.set(key, { debug: config.debug, debugSink: config.debugSink })
+        if (this.observabilityByStore.has(key)) {
+            const runtime = AtomaObservability.runtime.create({
+                scope: key,
+                debug: config.debug,
+                onEvent: config.debugSink
+            })
+            this.observabilityByStore.set(key, runtime)
+        }
     }
 
     createContext = (storeName: string, ctxArgs?: { traceId?: string; explain?: boolean }) => {

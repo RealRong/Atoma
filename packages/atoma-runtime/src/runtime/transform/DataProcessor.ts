@@ -79,10 +79,10 @@ async function runStage<T>(
 }
 
 export class DataProcessor {
-    private readonly getRuntime: () => CoreRuntime
+    private readonly runtime: CoreRuntime
 
-    constructor(getRuntime: () => CoreRuntime) {
-        this.getRuntime = getRuntime
+    constructor(runtime: CoreRuntime) {
+        this.runtime = runtime
     }
 
     async process<T>(mode: Types.DataProcessorMode, data: T, context: {
@@ -123,7 +123,7 @@ export class DataProcessor {
         data: T,
         opContext?: Types.OperationContext
     ): Promise<T | undefined> {
-        const runtime = this.getRuntime()
+        const runtime = this.runtime
         return this.process('inbound', data, {
             storeName: handle.storeName,
             runtime,
@@ -137,7 +137,7 @@ export class DataProcessor {
         data: T,
         opContext?: Types.OperationContext
     ): Promise<T | undefined> {
-        const runtime = this.getRuntime()
+        const runtime = this.runtime
         return this.process('writeback', data, {
             storeName: handle.storeName,
             runtime,
@@ -151,7 +151,7 @@ export class DataProcessor {
         data: T,
         opContext?: Types.OperationContext
     ): Promise<T | undefined> {
-        const runtime = this.getRuntime()
+        const runtime = this.runtime
         return this.process('outbound', data, {
             storeName: handle.storeName,
             runtime,

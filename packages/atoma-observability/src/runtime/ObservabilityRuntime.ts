@@ -15,7 +15,7 @@ const NOOP_EMIT: ObservabilityContext['emit'] = () => {}
 const NOOP_CONTEXT: ObservabilityContext = {
     active: false,
     traceId: undefined,
-    requestId: () => undefined,
+    requestId: () => '',
     emit: NOOP_EMIT,
     with: () => NOOP_CONTEXT
 }

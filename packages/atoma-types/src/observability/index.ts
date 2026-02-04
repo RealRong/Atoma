@@ -51,7 +51,7 @@ export type Explain = {
 export type ObservabilityContext = {
     active: boolean
     traceId?: string
-    requestId: () => string | undefined
+    requestId: () => string
     emit: (type: string, payload?: unknown, meta?: DebugEmitMeta) => void
     with: (meta: DebugEmitMeta) => ObservabilityContext
 }

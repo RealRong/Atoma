@@ -36,9 +36,9 @@ export class ReadFlow implements RuntimeRead {
         }
 
         try {
-            const startedAt = Date.now()
+            const startedAt = runtime.now()
             const { data, pageInfo } = await runtime.io.query(handle, input)
-            const durationMs = Date.now() - startedAt
+            const durationMs = runtime.now() - startedAt
 
             const fetched = Array.isArray(data) ? data : []
             const remote: T[] = []
@@ -102,9 +102,7 @@ export class ReadFlow implements RuntimeRead {
     }
 
     getMany = async <T extends Types.Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, options?: Types.StoreReadOptions): Promise<T[]> => {
-        const runtime = this.runtime
         const { jotaiStore, atom } = handle
-
         const beforeMap = jotaiStore.get(atom) as Map<EntityId, T>
         const out: Array<T | undefined> = new Array(ids.length)
         const missingSet = new Set<EntityId>()
@@ -125,7 +123,7 @@ export class ReadFlow implements RuntimeRead {
         }
 
         if (missingUnique.length) {
-            const { data } = await runtime.io.query(handle, {
+            const { data } = await this.runtime.io.query(handle, {
                 filter: { op: 'in', field: 'id', values: missingUnique }
             })
 
@@ -135,7 +133,7 @@ export class ReadFlow implements RuntimeRead {
 
             for (const got of data) {
                 if (got === undefined) continue
-                const processed = await runtime.transform.writeback(handle, got as T)
+                const processed = await this.runtime.transform.writeback(handle, got as T)
                 if (!processed) continue
                 const id = (processed as any).id as EntityId
 
@@ -181,22 +179,20 @@ export class ReadFlow implements RuntimeRead {
     }
 
     fetchOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreReadOptions): Promise<T | undefined> => {
-        const runtime = this.runtime
-        const { data } = await runtime.io.query(handle, {
+        const { data } = await this.runtime.io.query(handle, {
             filter: { op: 'eq', field: 'id', value: id },
             page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
         })
         const one = data[0]
         if (one === undefined) return undefined
-        return await runtime.transform.writeback(handle, one as T)
+        return await this.runtime.transform.writeback(handle, one as T)
     }
 
     fetchAll = async <T extends Types.Entity>(handle: StoreHandle<T>, options?: Types.StoreReadOptions): Promise<T[]> => {
-        const runtime = this.runtime
-        const { data } = await runtime.io.query(handle, {})
+        const { data } = await this.runtime.io.query(handle, {})
         const out: T[] = []
         for (let i = 0; i < data.length; i++) {
-            const processed = await runtime.transform.writeback(handle, data[i] as T)
+            const processed = await this.runtime.transform.writeback(handle, data[i] as T)
             if (processed !== undefined) {
                 out.push(processed)
             }
@@ -205,18 +201,17 @@ export class ReadFlow implements RuntimeRead {
     }
 
     getAll = async <T extends Types.Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: Types.StoreReadOptions): Promise<T[]> => {
-        const runtime = this.runtime
         const { jotaiStore, atom } = handle
 
         const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
-        const { data } = await runtime.io.query(handle, {})
+        const { data } = await this.runtime.io.query(handle, {})
         const fetched = Array.isArray(data) ? data : []
         const arr: T[] = []
         const itemsToCache: Array<T> = []
         const incomingIds = new Set<EntityId>()
 
         for (let i = 0; i < fetched.length; i++) {
-            const processed = await runtime.transform.writeback(handle, fetched[i] as T)
+            const processed = await this.runtime.transform.writeback(handle, fetched[i] as T)
             if (!processed) continue
             if (filter && !filter(processed)) continue
             const id = (processed as any).id as EntityId

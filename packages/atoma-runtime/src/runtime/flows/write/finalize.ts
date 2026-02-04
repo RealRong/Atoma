@@ -1,8 +1,6 @@
 import type * as Types from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { PersistAck, PersistResult } from 'atoma-types/runtime'
-import type { StoreHandle } from 'atoma-types/runtime'
-import type { CoreRuntime } from 'atoma-types/runtime'
+import type { PersistAck, PersistResult, StoreHandle, CoreRuntime } from 'atoma-types/runtime'
 
 export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, intent: Types.WriteIntent<T> | undefined, persistResult: PersistResult<T>): Promise<PersistAck<T> | undefined> {
     const ack = persistResult.ack
@@ -12,7 +10,7 @@ export async function applyPersistAck<T extends Types.Entity>(runtime: CoreRunti
 
     if (intent?.action === 'create' && normalized.created?.length) {
         const created = normalized.created[0] as T
-        const serverId = (created as any)?.id as EntityId
+        const serverId = created?.id as EntityId
         const tempId = intent.entityId as EntityId
 
         const deletes: EntityId[] = []

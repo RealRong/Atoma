@@ -125,8 +125,6 @@ export type RuntimeHooks = Readonly<{
         onCreated?: (args: {
             handle: StoreHandle<any>
             storeName: string
-            debug?: Types.DebugConfig
-            debugSink?: (e: Types.DebugEvent) => void
         }) => void
     }>
 }>
@@ -141,7 +139,7 @@ export type RuntimeHookRegistry = Readonly<{
         writePatches: (args: RuntimeWritePatchesArgs) => void
         writeCommitted: (args: RuntimeWriteCommittedArgs) => void
         writeFailed: (args: RuntimeWriteFailedArgs) => void
-        storeCreated: (args: { handle: StoreHandle<any>; storeName: string; debug?: Types.DebugConfig; debugSink?: (e: Types.DebugEvent) => void }) => void
+        storeCreated: (args: { handle: StoreHandle<any>; storeName: string }) => void
     }>
 }>
 ```
@@ -159,6 +157,17 @@ export type PluginContext = Readonly<{
     runtime: CoreRuntime
     hooks: RuntimeHookRegistry
 }>
+```
+
+### 4.3 observability 插件扩展（建议）
+
+```ts
+// 由插件提供，不再占用 schema
+observe.registerStore({
+    storeName: string
+    debug?: DebugConfig
+    debugSink?: (e: DebugEvent) => void
+})
 ```
 
 ---
@@ -184,7 +193,7 @@ export type PluginContext = Readonly<{
 
 ### Step 4：Stores 解耦 debug 注册
 - `Stores` 创建 store 时不再调用 `runtime.observe.registerStore`。
-- 改为 `hooks.emit.storeCreated({ handle, storeName, debug, debugSink })`。
+- 改为 `hooks.emit.storeCreated({ handle, storeName })`。
 
 ### Step 5：移除 Observe Handler 链
 - 删除 `observe` handler 链（PluginRegistry/HandlerChain 中移除 observe 支持）。
@@ -209,6 +218,7 @@ export type PluginContext = Readonly<{
 - 通过 persist handler 使用 `opContext.actionId` 生成 traceId，并写入 `op.meta`（仅插件侧）。
 - 提供扩展 API：
   - `client.observe.createContext(...)`
+  - `client.observe.registerStore(...)`（store 级 debug 配置）
   - 可选：`client.observe.trace(fn)`（由插件实现）
   - 可选：注册 io handler 注入 traceId/requestId（op.meta）
 
@@ -223,8 +233,8 @@ export function observabilityPlugin(): ClientPlugin<{ observe: ObserveApi }> {
 
             const stop = ctx.hooks.register({
                 store: {
-                    onCreated: ({ storeName, debug, debugSink }) => {
-                        storeObs.registerStore({ storeName, debug, debugSink })
+                    onCreated: ({ storeName }) => {
+                        // 可用于记录 store 生命周期（不再透传 debug 配置）
                     }
                 },
                 read: {

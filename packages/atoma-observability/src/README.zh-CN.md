@@ -33,13 +33,13 @@ import { createClient } from 'atoma-client'
 import { observabilityPlugin } from 'atoma-observability'
 
 const client = createClient({
-    schema: {
-        todos: {
-            debug: { enabled: true, sample: 1, payload: false },
-            debugSink: (e: any) => console.log(e)
-        }
-    },
     plugins: [observabilityPlugin({ injectTraceMeta: true })]
+})
+
+client.observe.registerStore({
+    storeName: 'todos',
+    debug: { enabled: true, sample: 1, payload: false },
+    debugSink: (e: any) => console.log(e)
 })
 ```
 
@@ -48,6 +48,7 @@ const client = createClient({
 - `query.explain` 已不再属于 core API。如需 explain 类诊断，请在插件层自行实现（例如按 trace 缓存事件并生成摘要）。
 - 插件默认使用 `actionId` 作为写入 traceId，读请求使用每次 query 的上下文；也可通过插件扩展自行创建 context。
 - 即使服务端暂时不消费 `op.meta.traceId/requestId`，端侧仍可用于关联调试事件与后续升级。
+- 建议在该 store 开始读写前调用 `observe.registerStore(...)`。
 
 ## 延伸阅读
 

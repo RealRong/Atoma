@@ -1,4 +1,4 @@
-export { applyPersistAck, resolveOutputFromAck } from './finalize'
+export { applyPersistAck } from './finalize'
 export {
     ensureActionId,
     prepareForAdd,

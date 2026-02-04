@@ -50,7 +50,7 @@ export class Runtime implements CoreRuntime {
         this.jotaiStore = createJotaiStore()
 
         this.io = config.io
-        this.transform = new DataProcessor(() => this)
+        this.transform = new DataProcessor(this)
         this.persistence = config.persistence ?? new StrategyRegistry(this)
         this.hooks = config.hooks ?? new HookRegistry()
 

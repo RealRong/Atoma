@@ -1,151 +1,101 @@
-import type {
-    RuntimeHookRegistry,
-    RuntimeHooks,
-    RuntimeReadFinishArgs,
-    RuntimeReadStartArgs,
-    RuntimeWriteCommittedArgs,
-    RuntimeWriteFailedArgs,
-    RuntimeWritePatchesArgs,
-    RuntimeWriteStartArgs
-} from 'atoma-types/runtime'
-
-type HookEntry = Readonly<{
-    hooks: RuntimeHooks
-}>
+import type { RuntimeHookRegistry, RuntimeHooks } from 'atoma-types/runtime'
 
 type StoreCreatedArgs = Parameters<RuntimeHookRegistry['emit']['storeCreated']>[0]
+type ReadStartArgs = Parameters<RuntimeHookRegistry['emit']['readStart']>[0]
+type ReadFinishArgs = Parameters<RuntimeHookRegistry['emit']['readFinish']>[0]
+type WriteStartArgs = Parameters<RuntimeHookRegistry['emit']['writeStart']>[0]
+type WritePatchesArgs = Parameters<RuntimeHookRegistry['emit']['writePatches']>[0]
+type WriteCommittedArgs = Parameters<RuntimeHookRegistry['emit']['writeCommitted']>[0]
+type WriteFailedArgs = Parameters<RuntimeHookRegistry['emit']['writeFailed']>[0]
+
+type HookEventMap = Readonly<{
+    readStart: (args: ReadStartArgs) => void
+    readFinish: (args: ReadFinishArgs) => void
+    writeStart: (args: WriteStartArgs) => void
+    writePatches: (args: WritePatchesArgs) => void
+    writeCommitted: (args: WriteCommittedArgs) => void
+    writeFailed: (args: WriteFailedArgs) => void
+    storeCreated: (args: StoreCreatedArgs) => void
+}>
+
+type HookEventName = keyof HookEventMap
 
 export class HookRegistry implements RuntimeHookRegistry {
-    private readonly entries: HookEntry[] = []
-    private writePatchesCount = 0
+    private readonly handlers: { [K in HookEventName]: Set<HookEventMap[K]> } = {
+        readStart: new Set(),
+        readFinish: new Set(),
+        writeStart: new Set(),
+        writePatches: new Set(),
+        writeCommitted: new Set(),
+        writeFailed: new Set(),
+        storeCreated: new Set()
+    }
 
     get has() {
         return {
-            writePatches: this.writePatchesCount > 0
+            writePatches: this.handlers.writePatches.size > 0
         }
     }
 
     register = (hooks: RuntimeHooks) => {
         if (!hooks) return () => {}
 
-        const entry: HookEntry = { hooks }
-        this.entries.push(entry)
-        if (hooks.write?.onPatches) this.writePatchesCount += 1
+        const bindings: Array<{ name: HookEventName; fn: HookEventMap[HookEventName] }> = []
+
+        const add = <K extends HookEventName>(name: K, fn?: HookEventMap[K]) => {
+            if (!fn) return
+            this.handlers[name].add(fn)
+            bindings.push({ name, fn })
+        }
+
+        add('readStart', hooks.read?.onStart)
+        add('readFinish', hooks.read?.onFinish)
+        add('writeStart', hooks.write?.onStart)
+        add('writePatches', hooks.write?.onPatches)
+        add('writeCommitted', hooks.write?.onCommitted)
+        add('writeFailed', hooks.write?.onFailed)
+        add('storeCreated', hooks.store?.onCreated)
 
         let active = true
         return () => {
             if (!active) return
             active = false
-            const index = this.entries.indexOf(entry)
-            if (index >= 0) this.entries.splice(index, 1)
-            if (hooks.write?.onPatches) {
-                this.writePatchesCount = Math.max(0, this.writePatchesCount - 1)
+            for (const binding of bindings) {
+                this.handlers[binding.name].delete(binding.fn as any)
             }
         }
     }
 
     readonly emit = {
-        readStart: (args: RuntimeReadStartArgs) => {
-            this.dispatchReadStart(args)
+        readStart: (args: ReadStartArgs) => {
+            this.dispatch('readStart', args)
         },
-        readFinish: (args: RuntimeReadFinishArgs) => {
-            this.dispatchReadFinish(args)
+        readFinish: (args: ReadFinishArgs) => {
+            this.dispatch('readFinish', args)
         },
-        writeStart: (args: RuntimeWriteStartArgs) => {
-            this.dispatchWriteStart(args)
+        writeStart: (args: WriteStartArgs) => {
+            this.dispatch('writeStart', args)
         },
-        writePatches: (args: RuntimeWritePatchesArgs) => {
-            this.dispatchWritePatches(args)
+        writePatches: (args: WritePatchesArgs) => {
+            this.dispatch('writePatches', args)
         },
-        writeCommitted: (args: RuntimeWriteCommittedArgs) => {
-            this.dispatchWriteCommitted(args)
+        writeCommitted: (args: WriteCommittedArgs) => {
+            this.dispatch('writeCommitted', args)
         },
-        writeFailed: (args: RuntimeWriteFailedArgs) => {
-            this.dispatchWriteFailed(args)
+        writeFailed: (args: WriteFailedArgs) => {
+            this.dispatch('writeFailed', args)
         },
         storeCreated: (args: StoreCreatedArgs) => {
-            this.dispatchStoreCreated(args)
+            this.dispatch('storeCreated', args)
         }
     }
 
-    private dispatchReadStart(args: RuntimeReadStartArgs) {
-        for (const entry of this.entries) {
-            const fn = entry.hooks.read?.onStart
-            if (!fn) continue
+    private dispatch = <K extends HookEventName>(name: K, args: Parameters<HookEventMap[K]>[0]) => {
+        const list = this.handlers[name]
+        if (!list.size) return
+        for (const fn of list) {
             try {
-                fn(args)
-            } catch {
-                // ignore
-            }
-        }
-    }
-
-    private dispatchReadFinish(args: RuntimeReadFinishArgs) {
-        for (const entry of this.entries) {
-            const fn = entry.hooks.read?.onFinish
-            if (!fn) continue
-            try {
-                fn(args)
-            } catch {
-                // ignore
-            }
-        }
-    }
-
-    private dispatchWriteStart(args: RuntimeWriteStartArgs) {
-        for (const entry of this.entries) {
-            const fn = entry.hooks.write?.onStart
-            if (!fn) continue
-            try {
-                fn(args)
-            } catch {
-                // ignore
-            }
-        }
-    }
-
-    private dispatchWritePatches(args: RuntimeWritePatchesArgs) {
-        for (const entry of this.entries) {
-            const fn = entry.hooks.write?.onPatches
-            if (!fn) continue
-            try {
-                fn(args)
-            } catch {
-                // ignore
-            }
-        }
-    }
-
-    private dispatchWriteCommitted(args: RuntimeWriteCommittedArgs) {
-        for (const entry of this.entries) {
-            const fn = entry.hooks.write?.onCommitted
-            if (!fn) continue
-            try {
-                fn(args)
-            } catch {
-                // ignore
-            }
-        }
-    }
-
-    private dispatchWriteFailed(args: RuntimeWriteFailedArgs) {
-        for (const entry of this.entries) {
-            const fn = entry.hooks.write?.onFailed
-            if (!fn) continue
-            try {
-                fn(args)
-            } catch {
-                // ignore
-            }
-        }
-    }
-
-    private dispatchStoreCreated(args: StoreCreatedArgs) {
-        for (const entry of this.entries) {
-            const fn = entry.hooks.store?.onCreated
-            if (!fn) continue
-            try {
-                fn(args)
+                fn(args as any)
             } catch {
                 // ignore
             }

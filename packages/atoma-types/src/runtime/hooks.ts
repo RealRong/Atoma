@@ -63,8 +63,6 @@ export type RuntimeHooks = Readonly<{
         onCreated?: (args: {
             handle: StoreHandle<any>
             storeName: string
-            debug?: Types.DebugConfig
-            debugSink?: (e: Types.DebugEvent) => void
         }) => void
     }>
 }>
@@ -82,8 +80,6 @@ export type RuntimeHookRegistry = Readonly<{
         storeCreated: (args: {
             handle: StoreHandle<any>
             storeName: string
-            debug?: Types.DebugConfig
-            debugSink?: (e: Types.DebugEvent) => void
         }) => void
     }>
 }>

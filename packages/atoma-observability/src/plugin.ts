@@ -2,6 +2,7 @@ import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
 import type { Operation } from 'atoma-types/protocol'
 import type { PersistRequest } from 'atoma-types/runtime'
 import type { ObservabilityContext } from 'atoma-types/observability'
+import type { StoreObservabilityConfig } from './StoreObservability'
 import { StoreObservability } from './StoreObservability'
 
 export type ObservabilityPluginOptions = Readonly<{
@@ -18,6 +19,7 @@ export type ObservabilityPluginOptions = Readonly<{
 export type ObservabilityExtension = Readonly<{
     observe: {
         createContext: (storeName: string, args?: { traceId?: string }) => ObservabilityContext
+        registerStore: (config: StoreObservabilityConfig) => void
     }
 }>
 
@@ -132,11 +134,6 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         },
         init: (ctx: ClientPluginContext) => {
             const stop = ctx.hooks.register({
-                store: {
-                    onCreated: ({ storeName, debug, debugSink }) => {
-                        storeObs.registerStore({ storeName, debug, debugSink })
-                    }
-                },
                 read: {
                     onStart: ({ handle, query }) => {
                         const ctxInstance = storeObs.createContext(String(handle.storeName))
@@ -206,6 +203,9 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                     observe: {
                         createContext: (storeName, args) => {
                             return storeObs.createContext(String(storeName), args)
+                        },
+                        registerStore: (config) => {
+                            storeObs.registerStore(config)
                         }
                     }
                 },

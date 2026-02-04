@@ -1,3 +1,3 @@
 export { Stores } from './Stores'
-export { ConfigResolver } from './ConfigResolver'
+export { StoreFactory } from './StoreFactory'
 export { StoreStateWriter } from './StoreStateWriter'
