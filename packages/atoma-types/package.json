@@ -58,7 +58,6 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "immer": "^10.1.1",
-        "jotai": "^2.12.1"
+        "immer": "^10.1.1"
     }
 }

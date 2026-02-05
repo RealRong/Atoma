@@ -2,7 +2,7 @@
     "name": "atoma",
     "version": "1.0.0",
     "type": "module",
-    "description": "Atomic state management with universal persistence - built on Jotai and Immer",
+    "description": "Atomic state management with universal persistence",
     "main": "dist/index.js",
     "module": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -35,7 +35,6 @@
     "peerDependencies": {
         "@prisma/client": "^5.0.0",
         "immer": "^9.0.0 || ^10.0.0",
-        "jotai": "^2.0.0",
         "react": "^18.0.0 || ^19.0.0",
         "typeorm": "^0.3.20"
     },

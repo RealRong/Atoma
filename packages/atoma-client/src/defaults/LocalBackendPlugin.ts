@@ -16,7 +16,7 @@ const isMissingTerminal = (error: unknown): boolean => {
 
 async function queryLocal<T extends Types.Entity>(ctx: PluginContext, storeName: string, query: any): Promise<QueryResultData> {
     const handle = ctx.runtime.stores.resolveHandle(storeName, 'LocalBackendPlugin.query')
-    const map = handle.jotaiStore.get(handle.atom) as Map<EntityId, T>
+    const map = handle.state.getSnapshot() as Map<EntityId, T>
     const items = Array.from(map.values()) as T[]
     const outbound = await Promise.all(items.map(item => ctx.runtime.transform.outbound(handle, item)))
     const normalized = outbound.filter(item => item !== undefined) as T[]

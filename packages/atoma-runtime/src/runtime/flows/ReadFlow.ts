@@ -13,7 +13,7 @@ export class ReadFlow implements RuntimeRead {
 
     query = async <T extends Types.Entity>(handle: StoreHandle<T>, input: Types.Query<T>): Promise<Types.QueryResult<T>> => {
         const runtime = this.runtime
-        const { jotaiStore, atom, indexes, matcher } = handle
+        const { indexes, matcher, state } = handle
         const hooks = runtime.hooks
 
         hooks.emit.readStart({ handle, query: input })
@@ -22,7 +22,7 @@ export class ReadFlow implements RuntimeRead {
         const getLocalResult = (): { data: T[]; result: Types.QueryResult<T> } => {
             if (localCache) return localCache
 
-            const map = jotaiStore.get(atom) as Map<EntityId, T>
+            const map = state.getSnapshot() as Map<EntityId, T>
             const localResult = Query.evaluateWithIndexes({
                 mapRef: map,
                 query: input,
@@ -56,7 +56,7 @@ export class ReadFlow implements RuntimeRead {
                 return result
             }
 
-            const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
+            const existingMap = state.getSnapshot() as Map<EntityId, T>
             const changedIds = new Set<EntityId>()
             let next: Map<EntityId, T> | null = null
             const processed: T[] = new Array(remote.length)
@@ -102,8 +102,7 @@ export class ReadFlow implements RuntimeRead {
     }
 
     getMany = async <T extends Types.Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, options?: Types.StoreReadOptions): Promise<T[]> => {
-        const { jotaiStore, atom } = handle
-        const beforeMap = jotaiStore.get(atom) as Map<EntityId, T>
+        const beforeMap = handle.state.getSnapshot() as Map<EntityId, T>
         const out: Array<T | undefined> = new Array(ids.length)
         const missingSet = new Set<EntityId>()
         const missingUnique: EntityId[] = []
@@ -127,7 +126,7 @@ export class ReadFlow implements RuntimeRead {
                 filter: { op: 'in', field: 'id', values: missingUnique }
             })
 
-            const before = jotaiStore.get(atom) as Map<EntityId, T>
+            const before = handle.state.getSnapshot() as Map<EntityId, T>
             const fetchedById = new Map<EntityId, T>()
             const itemsToCache: T[] = []
 
@@ -171,8 +170,7 @@ export class ReadFlow implements RuntimeRead {
     }
 
     getOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreReadOptions): Promise<T | undefined> => {
-        const { jotaiStore, atom } = handle
-        const cached = jotaiStore.get(atom).get(id)
+        const cached = handle.state.getSnapshot().get(id)
         if (cached !== undefined) return cached
         const items = await this.getMany(handle, [id], true, options)
         return items[0]
@@ -201,9 +199,7 @@ export class ReadFlow implements RuntimeRead {
     }
 
     getAll = async <T extends Types.Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: Types.StoreReadOptions): Promise<T[]> => {
-        const { jotaiStore, atom } = handle
-
-        const existingMap = jotaiStore.get(atom) as Map<EntityId, T>
+        const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
         const { data } = await this.runtime.io.query(handle, {})
         const fetched = Array.isArray(data) ? data : []
         const arr: T[] = []

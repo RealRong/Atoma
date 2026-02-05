@@ -23,8 +23,7 @@ export async function prepareForUpdate<T extends Types.Entity>(runtime: CoreRunt
 }
 
 export async function resolveBaseForWrite<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, id: EntityId, options?: Types.StoreOperationOptions): Promise<Types.PartialWithId<T>> {
-    const { jotaiStore, atom } = handle
-    const cached = jotaiStore.get(atom).get(id) as T | undefined
+    const cached = handle.state.getSnapshot().get(id) as T | undefined
     if (cached) return cached as Types.PartialWithId<T>
 
     const writePolicy = runtime.persistence.resolveWritePolicy(options?.writeStrategy ?? handle.defaultWriteStrategy)

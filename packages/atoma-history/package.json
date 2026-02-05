@@ -24,7 +24,6 @@
         "atoma-client": "workspace:*",
         "atoma-core": "workspace:*",
         "atoma-runtime": "workspace:*",
-        "immer": "workspace:*",
-        "jotai": "workspace:*"
+        "immer": "workspace:*"
     }
 }

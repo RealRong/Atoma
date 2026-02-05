@@ -4,7 +4,7 @@
     "private": true,
     "type": "module",
     "packageManager": "pnpm@9.15.5",
-    "description": "Atomic state management with universal persistence - built on Jotai and Immer",
+    "description": "Atomic state management with universal persistence",
     "workspaces": [
         "docs",
         "demo/server",
@@ -23,7 +23,6 @@
     },
     "keywords": [
         "react",
-        "jotai",
         "immer",
         "state-management",
         "atomic",
@@ -38,7 +37,6 @@
     "peerDependencies": {
         "@prisma/client": "^5.0.0",
         "immer": "^9.0.0 || ^10.0.0",
-        "jotai": "^2.0.0",
         "typeorm": "^0.3.20"
     },
     "peerDependenciesMeta": {
@@ -63,7 +61,6 @@
         "@types/react-dom": "^19.2.2",
         "@vitejs/plugin-react": "^5.1.2",
         "immer": "^9.0.0 || ^10.0.0",
-        "jotai": "^2.0.0",
         "jsdom": "^25.0.0",
         "mitt": "^3.0.1",
         "p-retry": "^7.1.1",

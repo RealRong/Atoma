@@ -32,7 +32,7 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
 
         if (!entry.storeProviders.has(name)) {
             const snapshot = () => {
-                const map = handle.jotaiStore.get(handle.atom) as Map<EntityId, any>
+                const map = handle.state.getSnapshot() as Map<EntityId, any>
                 const sample = Array.from(map.values()).slice(0, 5)
                 const approxSize = (() => {
                     try {

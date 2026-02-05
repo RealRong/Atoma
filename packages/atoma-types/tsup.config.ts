@@ -18,5 +18,5 @@ export default defineConfig({
     sourcemap: true,
     clean: true,
     treeshake: true,
-    external: ['immer', 'jotai']
+    external: ['immer']
 })

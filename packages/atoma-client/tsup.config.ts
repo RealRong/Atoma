@@ -47,10 +47,6 @@ export default defineConfig({
         'atoma-protocol',
         'atoma-observability',
         'atoma-types',
-        'jotai',
-        'jotai/utils',
-        'jotai/vanilla',
-        'jotai/vanilla/utils',
         'immer'
     ]
 })

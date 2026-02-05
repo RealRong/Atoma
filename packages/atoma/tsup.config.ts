@@ -20,10 +20,6 @@ export default defineConfig({
         'atoma-protocol',
         'atoma-observability',
         'react',
-        'jotai',
-        'jotai/utils',
-        'jotai/vanilla',
-        'jotai/vanilla/utils',
         'immer',
         'lodash'
     ]

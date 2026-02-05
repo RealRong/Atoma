@@ -1,4 +1,3 @@
-import { atom } from 'jotai/vanilla'
 import { Indexes, Query, Relations } from 'atoma-core'
 import type * as Types from 'atoma-types/core'
 import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
@@ -6,6 +5,7 @@ import type { RuntimeSchema, StoreHandle } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime } from 'atoma-types/runtime'
 import { StoreStateWriter } from './StoreStateWriter'
+import { SimpleStoreState } from './StoreState'
 
 export type StoreEngineApi<T extends Types.Entity = any> = Types.IStore<T, any> & Readonly<{
     fetchAll: () => Promise<T[]>
@@ -58,7 +58,7 @@ export class StoreFactory {
             ? () => Relations.compileRelationsMap(storeSchema.relations, name)
             : undefined
 
-        const objectMapAtom = atom(new Map<EntityId, any>())
+        const state = new SimpleStoreState<any>(new Map<EntityId, any>())
         const indexes = storeSchema.indexes && storeSchema.indexes.length ? new Indexes.StoreIndexes<any>(storeSchema.indexes) : null
         const matcher = Query.buildQueryMatcherOptions(storeSchema.indexes)
 
@@ -69,8 +69,7 @@ export class StoreFactory {
         }
 
         const handle: StoreHandle<any> = {
-            atom: objectMapAtom,
-            jotaiStore: this.runtime.jotaiStore,
+            state,
             storeName: name,
             defaultWriteStrategy: storeSchema.write?.strategy,
             indexes,
@@ -161,12 +160,8 @@ export class StoreFactory {
 
     private createBindings = (storeName: string, handle: StoreHandle<any>): StoreBindings<any> => {
         const source = {
-            getSnapshot: () => handle.jotaiStore.get(handle.atom) as ReadonlyMap<EntityId, any>,
-            subscribe: (listener: () => void) => {
-                const s: any = handle.jotaiStore
-                if (typeof s?.sub !== 'function') return () => {}
-                return s.sub(handle.atom, () => listener())
-            }
+            getSnapshot: () => handle.state.getSnapshot() as ReadonlyMap<EntityId, any>,
+            subscribe: (listener: () => void) => handle.state.subscribe(listener)
         }
 
         const hydrate = async (items: any[]) => {
@@ -177,7 +172,7 @@ export class StoreFactory {
 
             if (!processed.length) return
 
-            const before = handle.jotaiStore.get(handle.atom) as Map<any, any>
+            const before = handle.state.getSnapshot() as Map<any, any>
             const after = new Map(before)
             const changedIds = new Set<any>()
 
@@ -189,7 +184,7 @@ export class StoreFactory {
 
             if (!changedIds.size) return
 
-            handle.jotaiStore.set(handle.atom, after)
+            handle.state.setSnapshot(after)
             handle.indexes?.applyChangedIds(before, after, changedIds)
         }
 

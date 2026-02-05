@@ -1,9 +1,8 @@
 import type { Patch } from 'immer'
-import type { Atom } from 'jotai/vanilla'
 import type * as Types from 'atoma-types/core'
 
 export interface PatchMetadata {
-    atom: Atom<any>
+    storeName: string
     databaseName?: string
     timestamp: number
     baseVersion?: number
@@ -14,7 +13,7 @@ export interface PatchMetadata {
 export interface HistoryChange {
     patches: Patch[]
     inversePatches: Patch[]
-    atom: Atom<any>
+    storeName: string
     databaseName?: string
     timestamp: number
 }

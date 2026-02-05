@@ -24,7 +24,6 @@
         "atoma-types": "workspace:*"
     },
     "peerDependencies": {
-        "immer": "^9.0.0 || ^10.0.0",
-        "jotai": "^2.0.0"
+        "immer": "^9.0.0 || ^10.0.0"
     }
 }

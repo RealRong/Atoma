@@ -1,12 +1,12 @@
 # Atoma
 
-Atomic state management with universal persistence — built on Jotai and Immer.
+Atomic state management with universal persistence.
 
 [中文 README](./README.zh.md) · [Layered architecture redesign](./ARCHITECTURE_LAYERED_REDESIGN.zh.md) 
 
 ## Why Atoma
 
-- **Atomic + type-safe stores** powered by Jotai
+- **Atomic + type-safe stores** with pluggable runtime
 - **Unified persistence** via pluggable data sources (HTTP, IndexedDB, memory, hybrid)
 - **Ops protocol** (`/ops`) for reads/writes, designed for batching and sync
 - **Offline-first sync** (outbox + pull/subscribe SSE)
@@ -20,7 +20,7 @@ npm i atoma
 ```
 
 Peer deps:
-- `jotai`, `immer`
+- `immer`
 - Server-side adapters: `typeorm` and/or `@prisma/client` (optional)
 
 ## Quick start (client + React)

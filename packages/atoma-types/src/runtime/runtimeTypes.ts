@@ -66,7 +66,6 @@ export type RuntimePersistence = Readonly<{
 export type CoreRuntime = Readonly<{
     id: string
     now: () => number
-    jotaiStore: Types.JotaiStore
     stores: StoreRegistry
     hooks: RuntimeHookRegistry
     io: RuntimeIo

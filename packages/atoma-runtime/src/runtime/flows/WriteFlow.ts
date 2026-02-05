@@ -105,7 +105,7 @@ async function prepareUpsertIntent<T extends Types.Entity>(args: {
     options?: Types.StoreOperationOptions & Types.UpsertWriteOptions
 }): Promise<{ intent: Types.WriteIntent<T>; output: T; afterSaveAction: 'add' | 'update'; base?: Types.PartialWithId<T> }> {
     const id = args.item.id
-    const base = args.handle.jotaiStore.get(args.handle.atom).get(id) as Types.PartialWithId<T> | undefined
+    const base = args.handle.state.getSnapshot().get(id) as Types.PartialWithId<T> | undefined
     const merge = args.options?.merge !== false
 
     const prepared = await (async () => {
@@ -273,7 +273,7 @@ export class WriteFlow implements RuntimeWrite {
             if (!runtime.hooks.has.writePatches) return null
             const entityId = intent.entityId as EntityId | undefined
             if (!entityId) return null
-            const before = handle.jotaiStore.get(handle.atom).get(entityId) as T | undefined
+            const before = handle.state.getSnapshot().get(entityId) as T | undefined
             return buildRootPatches<T>({
                 id: entityId,
                 before,
@@ -430,7 +430,7 @@ export class WriteFlow implements RuntimeWrite {
 
     patches = async <T extends Types.Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: Types.StoreOperationOptions): Promise<void> => {
         const opContext = ensureActionId(options?.opContext)
-        const before = handle.jotaiStore.get(handle.atom) as Map<EntityId, T>
+        const before = handle.state.getSnapshot() as Map<EntityId, T>
         const intents = buildWriteIntentsFromPatches({
             baseState: before,
             patches,
@@ -482,8 +482,7 @@ export class WriteFlow implements RuntimeWrite {
         writeStrategy?: string
     }): { before: Map<EntityId, T>; optimisticState: Map<EntityId, T>; changedIds: Set<EntityId> } {
         const { handle, intents, writeStrategy } = args
-        const { jotaiStore, atom } = handle
-        const before = jotaiStore.get(atom) as Map<EntityId, T>
+        const before = handle.state.getSnapshot() as Map<EntityId, T>
         const writePolicy = this.runtime.persistence.resolveWritePolicy(writeStrategy)
         const shouldOptimistic = writePolicy.optimistic !== false
         const optimistic = (shouldOptimistic && intents.length)

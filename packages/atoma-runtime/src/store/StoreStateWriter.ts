@@ -25,7 +25,7 @@ export class StoreStateWriter<T extends Types.Entity> implements StoreStateWrite
     }
 
     applyWriteback = (args: Types.StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
-        const before = this.handle.jotaiStore.get(this.handle.atom)
+        const before = this.handle.state.getSnapshot() as Map<EntityId, T>
         const preserve = options?.preserve ?? Store.preserveReferenceShallow
         const result = Store.applyWritebackToMap(before, args, { preserve })
         if (!result) return
@@ -43,7 +43,7 @@ export class StoreStateWriter<T extends Types.Entity> implements StoreStateWrite
         changedIds?: ChangedIds
     }) => {
         const { before, after, changedIds } = params
-        const { jotaiStore, atom, indexes } = this.handle
+        const { indexes, state } = this.handle
 
         if (before === after) return
 
@@ -54,7 +54,7 @@ export class StoreStateWriter<T extends Types.Entity> implements StoreStateWrite
             if (size === 0) return
         }
 
-        jotaiStore.set(atom, after)
+        state.setSnapshot(after)
         if (changedIds) {
             indexes?.applyChangedIds(before, after, changedIds)
         } else {
