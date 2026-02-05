@@ -1,1 +1,1 @@
-export { SyncDevtools } from '#sync/devtools/SyncDevtools'
+export { SyncDevtools } from '#sync/devtools/sync-devtools'

@@ -1,7 +1,7 @@
 import { createId, requestId, createRequestSequencer } from './trace'
 import { isSampled } from './sampling'
 import { byteLength } from './utf8'
-import { ObservabilityRuntime } from './runtime/ObservabilityRuntime'
+import { ObservabilityRuntime } from './runtime/observability-runtime'
 import type { ObservabilityRuntimeCreateArgs } from './runtime/types'
 
 export const Observability = {

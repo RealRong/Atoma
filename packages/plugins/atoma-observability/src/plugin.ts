@@ -2,26 +2,8 @@ import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
 import type { Operation } from 'atoma-types/protocol'
 import type { PersistRequest } from 'atoma-types/runtime'
 import type { ObservabilityContext } from 'atoma-types/observability'
-import type { StoreObservabilityConfig } from './StoreObservability'
-import { StoreObservability } from './StoreObservability'
-
-export type ObservabilityPluginOptions = Readonly<{
-    /**
-     * Customize event type names (optional).
-     */
-    eventPrefix?: string
-    /**
-     * Inject traceId/requestId into ops meta (default: true).
-     */
-    injectTraceMeta?: boolean
-}>
-
-export type ObservabilityExtension = Readonly<{
-    observe: {
-        createContext: (storeName: string, args?: { traceId?: string }) => ObservabilityContext
-        registerStore: (config: StoreObservabilityConfig) => void
-    }
-}>
+import { StoreObservability } from './store-observability'
+import type { ObservabilityExtension, ObservabilityPluginOptions } from './types'
 
 type WriteContextEntry = {
     ctx: ObservabilityContext

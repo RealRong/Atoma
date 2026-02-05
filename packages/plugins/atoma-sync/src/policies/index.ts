@@ -1,2 +1,2 @@
-export { defaultCompareCursor } from '#sync/policies/cursorGuard'
-export { SingleInstanceLock } from '#sync/policies/singleInstanceLock'
+export { defaultCompareCursor } from '#sync/policies/cursor-guard'
+export { SingleInstanceLock } from '#sync/policies/single-instance-lock'

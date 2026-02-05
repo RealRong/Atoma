@@ -1,2 +1,3 @@
-export { indexedDbBackendPlugin } from './IndexedDbBackendPlugin'
-export type { IndexedDbBackendPluginOptions } from './IndexedDbBackendPlugin'
+export { indexedDbBackendPlugin } from './plugin'
+export type { IndexedDbBackendPluginOptions } from './types'
+export { IndexedDBOpsClient } from './ops-client'

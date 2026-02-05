@@ -1,1 +1,0 @@
-export { OpsClient } from './types'

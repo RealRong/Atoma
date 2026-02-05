@@ -1,3 +1,3 @@
-export { NotifyLane } from '#sync/lanes/NotifyLane'
-export { PullLane } from '#sync/lanes/PullLane'
-export { PushLane } from '#sync/lanes/PushLane'
+export { NotifyLane } from '#sync/lanes/notify-lane'
+export { PullLane } from '#sync/lanes/pull-lane'
+export { PushLane } from '#sync/lanes/push-lane'

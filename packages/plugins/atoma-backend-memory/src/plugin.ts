@@ -1,12 +1,8 @@
-import type { Table } from 'dexie'
 import { Protocol } from 'atoma-protocol'
 import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client'
 import type { PersistResult } from 'atoma-types/runtime'
-import { IndexedDBOpsClient } from './IndexedDBOpsClient'
-
-export type IndexedDbBackendPluginOptions = Readonly<{
-    tables: Record<string, Table<any, string>>
-}>
+import { MemoryOpsClient } from './ops-client'
+import type { MemoryBackendPluginOptions } from './types'
 
 async function queryViaOps(ctx: PluginContext, req: ReadRequest) {
     const opId = Protocol.ids.createOpId('q', { now: ctx.runtime.now })
@@ -34,16 +30,12 @@ async function queryViaOps(ctx: PluginContext, req: ReadRequest) {
     }
 }
 
-export function indexedDbBackendPlugin(options: IndexedDbBackendPluginOptions): ClientPlugin {
+export function memoryBackendPlugin(options?: MemoryBackendPluginOptions): ClientPlugin {
     return {
-        id: 'indexeddb',
+        id: 'memory',
         register: (ctx: PluginContext, register: Register) => {
-            const opsClient = new IndexedDBOpsClient({
-                tableForResource: (resource) => {
-                    const tbl = (options.tables as any)[resource]
-                    if (tbl) return tbl as Table<any, string>
-                    throw new Error(`[Atoma] indexeddb: 未知 resource: ${String(resource)}`)
-                }
+            const opsClient = new MemoryOpsClient({
+                ...(options?.seed ? { seed: options.seed } : {})
             })
 
             register('io', async (req) => {

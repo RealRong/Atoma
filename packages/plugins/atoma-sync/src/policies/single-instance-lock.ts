@@ -1,4 +1,4 @@
-import { createKVStore } from '#sync/internal/kvStore'
+import { createKVStore } from '#sync/internal/kv-store'
 import { AbortError } from '#sync/internal/abort'
 import { computeBackoffDelayMs, resolveRetryBackoff } from '#sync/internal/backoff'
 import { sleepMs } from '#sync/internal/sleep'

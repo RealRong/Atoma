@@ -31,7 +31,7 @@ function ensureSchema(db: any, storeName: string) {
     if (!db.objectStoreNames.contains(storeName)) {
         db.createObjectStore(storeName)
     }
-    // Ensure the outbox objectStore exists as well; see `storage/outboxStore.ts`.
+    // Ensure the outbox objectStore exists as well; see `storage/outbox-store.ts`.
     if (!db.objectStoreNames.contains(OUTBOX_STORE_NAME)) {
         const store = db.createObjectStore(OUTBOX_STORE_NAME, { keyPath: 'pk' })
         store.createIndex('by_outbox', 'outboxKey')

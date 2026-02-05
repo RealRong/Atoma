@@ -1,10 +1,10 @@
 import { Protocol } from 'atoma-protocol'
 import type { Meta, OpsResponseData } from 'atoma-types/protocol'
-import { OpsClient } from '../types'
+import { OpsClient } from './internal/ops-client-base'
 import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client'
-import { BatchEngine } from './internal/batch/BatchEngine'
-import { createOpsHttpTransport } from './internal/transport/opsTransport'
-import type { HttpInterceptors } from './internal/transport/jsonClient'
+import { BatchEngine } from './internal/batch/batch-engine'
+import { createOpsHttpTransport } from './internal/transport/ops-transport'
+import type { HttpInterceptors } from './internal/transport/json-client'
 
 export type RetryOptions = {
     maxAttempts?: number

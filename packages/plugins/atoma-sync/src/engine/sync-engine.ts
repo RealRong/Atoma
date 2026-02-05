@@ -1,10 +1,10 @@
 import type { Meta } from 'atoma-types/protocol'
 import { AbortError, toError } from '#sync/internal'
 import { runPeriodic } from '#sync/internal/periodic'
-import { NotifyLane } from '#sync/lanes/NotifyLane'
-import { PullLane } from '#sync/lanes/PullLane'
-import { PushLane } from '#sync/lanes/PushLane'
-import { SingleInstanceLock } from '#sync/policies/singleInstanceLock'
+import { NotifyLane } from '#sync/lanes/notify-lane'
+import { PullLane } from '#sync/lanes/pull-lane'
+import { PushLane } from '#sync/lanes/push-lane'
+import { SingleInstanceLock } from '#sync/policies/single-instance-lock'
 import type {
     CursorStore,
     OutboxStore,

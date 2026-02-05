@@ -1,6 +1,6 @@
 import type { CursorStore, OutboxStore } from 'atoma-types/sync'
-import { DefaultOutboxStore } from '#sync/storage/outboxStore'
-import { DefaultCursorStore } from '#sync/storage/cursorStore'
+import { DefaultOutboxStore } from '#sync/storage/outbox-store'
+import { DefaultCursorStore } from '#sync/storage/cursor-store'
 
 export type SyncStoresConfig = {
     outboxKey: string
@@ -27,5 +27,5 @@ export function createStores(config: SyncStoresConfig): SyncStores {
     }
 }
 
-export { DefaultOutboxStore } from '#sync/storage/outboxStore'
-export { DefaultCursorStore } from '#sync/storage/cursorStore'
+export { DefaultOutboxStore } from '#sync/storage/outbox-store'
+export { DefaultCursorStore } from '#sync/storage/cursor-store'

@@ -37,6 +37,7 @@
         "atoma": "workspace:*",
         "atoma-client": "workspace:*",
         "atoma-protocol": "workspace:*",
+        "atoma-types": "workspace:*",
         "tailwindcss": "^4.1.18",
         "postcss": "^8.4.0",
         "autoprefixer": "^10.4.0"

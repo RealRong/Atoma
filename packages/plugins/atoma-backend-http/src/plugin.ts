@@ -1,19 +1,8 @@
 import { Protocol } from 'atoma-protocol'
 import type { PersistResult } from 'atoma-types/runtime'
-import { HttpOpsClient, type HttpOpsClientConfig } from './backend/http/HttpOpsClient'
+import { HttpOpsClient } from './ops-client'
 import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client'
-
-export type HttpBackendPluginOptions = Readonly<{
-    baseURL: string
-    opsPath?: HttpOpsClientConfig['opsPath']
-    headers?: HttpOpsClientConfig['headers']
-    retry?: HttpOpsClientConfig['retry']
-    fetchFn?: HttpOpsClientConfig['fetchFn']
-    onRequest?: NonNullable<HttpOpsClientConfig['interceptors']>['onRequest']
-    onResponse?: NonNullable<HttpOpsClientConfig['interceptors']>['onResponse']
-    responseParser?: NonNullable<HttpOpsClientConfig['interceptors']>['responseParser']
-    batch?: HttpOpsClientConfig['batch']
-}>
+import type { HttpBackendPluginOptions } from './types'
 
 function normalizeBaseUrl(baseURL: string): string {
     const url = String(baseURL ?? '').trim()

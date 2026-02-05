@@ -2,7 +2,7 @@ import type { ClientRuntime } from 'atoma-types/client'
 import type { ClientMeta, DevtoolsClientInspector, HistoryProvider, SyncProvider } from './types'
 import { inspectorForEntry } from './inspector'
 import { ensureEntry, removeEntryById } from './registry'
-import { attachHistoryProvider, attachRuntime, attachSyncProvider } from './runtimeAdapter'
+import { attachHistoryProvider, attachRuntime, attachSyncProvider } from './runtime-adapter'
 
 type CreateClientDevtoolsArgs = {
     runtime: ClientRuntime

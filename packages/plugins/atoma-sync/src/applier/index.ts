@@ -1,1 +1,1 @@
-export { WritebackApplier } from '#sync/applier/WritebackApplier'
+export { WritebackApplier } from '#sync/applier/writeback-applier'

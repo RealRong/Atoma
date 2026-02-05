@@ -1,1 +1,1 @@
-export { SyncPersistHandlers } from '#sync/persistence/SyncPersistHandlers'
+export { SyncPersistHandlers } from '#sync/persistence/sync-persist-handlers'

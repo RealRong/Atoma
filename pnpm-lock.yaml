@@ -45,9 +45,6 @@ importers:
       immer:
         specifier: ^9.0.0 || ^10.0.0
         version: 10.2.0
-      jotai:
-        specifier: ^2.0.0
-        version: 2.16.2(@babel/core@7.28.6)(@babel/template@7.28.6)(@types/react@19.2.9)(react@19.2.3)
       jsdom:
         specifier: ^25.0.0
         version: 25.0.1
@@ -84,87 +81,15 @@ importers:
 
   packages/atoma:
     dependencies:
-      '@prisma/client':
-        specifier: ^5.0.0
-        version: 5.22.0(prisma@5.22.0)
       atoma-client:
         specifier: workspace:*
         version: link:../atoma-client
-      atoma-core:
+      atoma-types:
         specifier: workspace:*
-        version: link:../atoma-core
-      atoma-observability:
-        specifier: workspace:*
-        version: link:../atoma-observability
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../atoma-shared
+        version: link:../atoma-types
       immer:
         specifier: ^9.0.0 || ^10.0.0
         version: 10.2.0
-      jotai:
-        specifier: ^2.0.0
-        version: 2.16.2(@babel/core@7.28.6)(@babel/template@7.28.6)(@types/react@19.2.9)(react@19.2.3)
-      lodash:
-        specifier: ^4.17.21
-        version: 4.17.23
-      mitt:
-        specifier: ^3.0.1
-        version: 3.0.1
-      p-limit:
-        specifier: ^7.2.0
-        version: 7.2.0
-      react:
-        specifier: ^18.0.0 || ^19.0.0
-        version: 19.2.3
-      typeorm:
-        specifier: ^0.3.20
-        version: 0.3.28(babel-plugin-macros@3.1.0)
-      zod:
-        specifier: ^4.2.1
-        version: 4.3.5
-
-  packages/atoma-backend:
-    dependencies:
-      atoma:
-        specifier: workspace:*
-        version: link:../atoma
-      atoma-client:
-        specifier: workspace:*
-        version: link:../atoma-client
-
-  packages/atoma-backend-indexeddb:
-    dependencies:
-      atoma:
-        specifier: workspace:*
-        version: link:../atoma
-      atoma-core:
-        specifier: workspace:*
-        version: link:../atoma-core
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../atoma-shared
-      dexie:
-        specifier: ^3.2.0 || ^4.0.0
-        version: 4.2.1
-
-  packages/atoma-backend-memory:
-    dependencies:
-      atoma:
-        specifier: workspace:*
-        version: link:../atoma
-      atoma-core:
-        specifier: workspace:*
-        version: link:../atoma-core
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
 
   packages/atoma-client:
     dependencies:
@@ -173,7 +98,7 @@ importers:
         version: link:../atoma-core
       atoma-observability:
         specifier: workspace:*
-        version: link:../atoma-observability
+        version: link:../plugins/atoma-observability
       atoma-protocol:
         specifier: workspace:*
         version: link:../atoma-protocol
@@ -183,42 +108,163 @@ importers:
       atoma-shared:
         specifier: workspace:*
         version: link:../atoma-shared
+      atoma-types:
+        specifier: workspace:*
+        version: link:../atoma-types
       immer:
         specifier: ^9.0.0 || ^10.0.0
         version: 10.2.0
-      jotai:
-        specifier: ^2.0.0
-        version: 2.16.2(@babel/core@7.28.6)(@babel/template@7.28.6)(@types/react@19.2.9)(react@19.2.3)
 
   packages/atoma-core:
     dependencies:
-      atoma-observability:
-        specifier: workspace:*
-        version: link:../atoma-observability
       atoma-protocol:
         specifier: workspace:*
         version: link:../atoma-protocol
       atoma-shared:
         specifier: workspace:*
         version: link:../atoma-shared
+      atoma-types:
+        specifier: workspace:*
+        version: link:../atoma-types
       immer:
         specifier: ^9.0.0 || ^10.0.0
         version: 10.2.0
-      jotai:
-        specifier: ^2.0.0
-        version: 2.16.2(@babel/core@7.28.6)(@babel/template@7.28.6)(@types/react@19.2.9)(react@19.2.3)
 
-  packages/atoma-devtools:
+  packages/atoma-protocol:
     dependencies:
-      atoma:
+      atoma-types:
         specifier: workspace:*
-        version: link:../atoma
-      atoma-client:
+        version: link:../atoma-types
+
+  packages/atoma-react:
+    dependencies:
+      atoma-core:
         specifier: workspace:*
-        version: link:../atoma-client
+        version: link:../atoma-core
       atoma-protocol:
         specifier: workspace:*
         version: link:../atoma-protocol
+      atoma-shared:
+        specifier: workspace:*
+        version: link:../atoma-shared
+      atoma-types:
+        specifier: workspace:*
+        version: link:../atoma-types
+      react:
+        specifier: ^18.0.0 || ^19.0.0
+        version: 19.2.3
+    devDependencies:
+      atoma:
+        specifier: workspace:*
+        version: link:../atoma
+
+  packages/atoma-runtime:
+    dependencies:
+      atoma-core:
+        specifier: workspace:*
+        version: link:../atoma-core
+      atoma-protocol:
+        specifier: workspace:*
+        version: link:../atoma-protocol
+      atoma-shared:
+        specifier: workspace:*
+        version: link:../atoma-shared
+      atoma-types:
+        specifier: workspace:*
+        version: link:../atoma-types
+      immer:
+        specifier: ^9.0.0 || ^10.0.0
+        version: 10.2.0
+
+  packages/atoma-server:
+    dependencies:
+      '@prisma/client':
+        specifier: ^5.0.0
+        version: 5.22.0(prisma@5.22.0)
+      atoma:
+        specifier: workspace:*
+        version: link:../atoma
+      atoma-observability:
+        specifier: workspace:*
+        version: link:../plugins/atoma-observability
+      atoma-protocol:
+        specifier: workspace:*
+        version: link:../atoma-protocol
+      atoma-shared:
+        specifier: workspace:*
+        version: link:../atoma-shared
+      typeorm:
+        specifier: ^0.3.20
+        version: 0.3.28(babel-plugin-macros@3.1.0)
+
+  packages/atoma-shared:
+    dependencies:
+      zod:
+        specifier: ^4.2.1
+        version: 4.3.5
+
+  packages/atoma-types:
+    dependencies:
+      immer:
+        specifier: ^10.1.1
+        version: 10.2.0
+
+  packages/plugins/atoma-backend-http:
+    dependencies:
+      atoma-protocol:
+        specifier: workspace:*
+        version: link:../../atoma-protocol
+      atoma-shared:
+        specifier: workspace:*
+        version: link:../../atoma-shared
+      atoma-types:
+        specifier: workspace:*
+        version: link:../../atoma-types
+
+  packages/plugins/atoma-backend-indexeddb:
+    dependencies:
+      atoma-core:
+        specifier: workspace:*
+        version: link:../../atoma-core
+      atoma-protocol:
+        specifier: workspace:*
+        version: link:../../atoma-protocol
+      atoma-shared:
+        specifier: workspace:*
+        version: link:../../atoma-shared
+      atoma-types:
+        specifier: workspace:*
+        version: link:../../atoma-types
+      dexie:
+        specifier: ^3.2.0 || ^4.0.0
+        version: 4.2.1
+
+  packages/plugins/atoma-backend-memory:
+    dependencies:
+      atoma-core:
+        specifier: workspace:*
+        version: link:../../atoma-core
+      atoma-protocol:
+        specifier: workspace:*
+        version: link:../../atoma-protocol
+      atoma-types:
+        specifier: workspace:*
+        version: link:../../atoma-types
+
+  packages/plugins/atoma-devtools:
+    dependencies:
+      atoma:
+        specifier: workspace:*
+        version: link:../../atoma
+      atoma-client:
+        specifier: workspace:*
+        version: link:../../atoma-client
+      atoma-protocol:
+        specifier: workspace:*
+        version: link:../../atoma-protocol
+      atoma-types:
+        specifier: workspace:*
+        version: link:../../atoma-types
       autoprefixer:
         specifier: ^10.4.0
         version: 10.4.23(postcss@8.5.6)
@@ -257,109 +303,50 @@ importers:
         specifier: ^7.2.0
         version: 7.3.1(@types/node@24.10.9)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
 
-  packages/atoma-history:
+  packages/plugins/atoma-history:
     dependencies:
       atoma:
         specifier: workspace:*
-        version: link:../atoma
+        version: link:../../atoma
       atoma-client:
         specifier: workspace:*
-        version: link:../atoma-client
+        version: link:../../atoma-client
       atoma-core:
         specifier: workspace:*
-        version: link:../atoma-core
+        version: link:../../atoma-core
       atoma-runtime:
         specifier: workspace:*
-        version: link:../atoma-runtime
-
-  packages/atoma-observability: {}
-
-  packages/atoma-protocol: {}
-
-  packages/atoma-react:
-    dependencies:
-      atoma-core:
-        specifier: workspace:*
-        version: link:../atoma-core
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../atoma-shared
-      react:
-        specifier: ^18.0.0 || ^19.0.0
-        version: 19.2.3
-    devDependencies:
-      atoma:
-        specifier: workspace:*
-        version: link:../atoma
-
-  packages/atoma-runtime:
-    dependencies:
-      atoma-core:
-        specifier: workspace:*
-        version: link:../atoma-core
-      atoma-observability:
-        specifier: workspace:*
-        version: link:../atoma-observability
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../atoma-shared
+        version: link:../../atoma-runtime
       immer:
         specifier: ^9.0.0 || ^10.0.0
         version: 10.2.0
-      jotai:
-        specifier: ^2.0.0
-        version: 2.16.2(@babel/core@7.28.6)(@babel/template@7.28.6)(@types/react@19.2.9)(react@19.2.3)
 
-  packages/atoma-server:
+  packages/plugins/atoma-observability:
     dependencies:
-      '@prisma/client':
-        specifier: ^5.0.0
-        version: 5.22.0(prisma@5.22.0)
-      atoma:
+      atoma-types:
         specifier: workspace:*
-        version: link:../atoma
-      atoma-observability:
-        specifier: workspace:*
-        version: link:../atoma-observability
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../atoma-shared
-      typeorm:
-        specifier: ^0.3.20
-        version: 0.3.28(babel-plugin-macros@3.1.0)
+        version: link:../../atoma-types
 
-  packages/atoma-shared:
-    dependencies:
-      zod:
-        specifier: ^4.2.1
-        version: 4.3.5
-
-  packages/atoma-sync:
+  packages/plugins/atoma-sync:
     dependencies:
       atoma:
         specifier: workspace:*
-        version: link:../atoma
+        version: link:../../atoma
       atoma-client:
         specifier: workspace:*
-        version: link:../atoma-client
+        version: link:../../atoma-client
       atoma-core:
         specifier: workspace:*
-        version: link:../atoma-core
+        version: link:../../atoma-core
       atoma-protocol:
         specifier: workspace:*
-        version: link:../atoma-protocol
+        version: link:../../atoma-protocol
       atoma-runtime:
         specifier: workspace:*
-        version: link:../atoma-runtime
+        version: link:../../atoma-runtime
+      atoma-types:
+        specifier: workspace:*
+        version: link:../../atoma-types
       idb:
         specifier: ^8.0.3
         version: 8.0.3
@@ -1439,24 +1426,6 @@ packages:
   jiti@2.6.1:
     resolution: {integrity: sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==}
     hasBin: true
-
-  jotai@2.16.2:
-    resolution: {integrity: sha512-DH0lBiTXvewsxtqqwjDW6Hg9JPTDnq9LcOsXSFWCAUEt+qj5ohl9iRVX9zQXPPHKLXCdH+5mGvM28fsXMl17/g==}
-    engines: {node: '>=12.20.0'}
-    peerDependencies:
-      '@babel/core': '>=7.0.0'
-      '@babel/template': '>=7.0.0'
-      '@types/react': '>=17.0.0'
-      react: '>=17.0.0'
-    peerDependenciesMeta:
-      '@babel/core':
-        optional: true
-      '@babel/template':
-        optional: true
-      '@types/react':
-        optional: true
-      react:
-        optional: true
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -3181,13 +3150,6 @@ snapshots:
       '@pkgjs/parseargs': 0.11.0
 
   jiti@2.6.1: {}
-
-  jotai@2.16.2(@babel/core@7.28.6)(@babel/template@7.28.6)(@types/react@19.2.9)(react@19.2.3):
-    optionalDependencies:
-      '@babel/core': 7.28.6
-      '@babel/template': 7.28.6
-      '@types/react': 19.2.9
-      react: 19.2.3
 
   joycon@3.1.1: {}
 

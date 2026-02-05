@@ -3,7 +3,7 @@ import type {
 } from './types'
 import { getEntryById, listEntries } from './registry'
 import { inspectorForEntry } from './inspector'
-import { createClientInspector } from './createClientInspector'
+import { createClientInspector } from './create-client-inspector'
 
 export type {
     DevtoolsStoreSnapshot,

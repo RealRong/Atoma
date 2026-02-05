@@ -1,8 +1,8 @@
 import type { Envelope, Meta, Operation } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
 import type { OpsResponseData } from 'atoma-types/protocol'
-import type { HttpInterceptors } from './jsonClient'
-import { createJsonHttpClient } from './jsonClient'
+import type { HttpInterceptors } from './json-client'
+import { createJsonHttpClient } from './json-client'
 
 export type ExecuteOpsArgs = {
     baseURL: string

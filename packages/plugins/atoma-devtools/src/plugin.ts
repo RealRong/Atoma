@@ -1,9 +1,9 @@
 import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
 import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry, type DevtoolsMeta } from 'atoma-types/devtools'
 import type { HistoryProvider, SyncProvider } from './types'
-import { createClientInspector } from './createClientInspector'
-import { attachHistoryProvider, attachSyncProvider } from './runtimeAdapter'
-import { getEntryById } from './registry'
+import { createClientInspector } from './runtime/create-client-inspector'
+import { attachHistoryProvider, attachSyncProvider } from './runtime/runtime-adapter'
+import { getEntryById } from './runtime/registry'
 
 export type DevtoolsPluginOptions = Readonly<{
     /**

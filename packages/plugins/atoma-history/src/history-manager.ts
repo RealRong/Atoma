@@ -1,7 +1,7 @@
 import type { Patch } from 'immer'
 import type { OperationContext } from 'atoma-types/core'
 import { Operation } from 'atoma-core'
-import type { ActionRecord, ChangeRecord, UndoStack } from './historyTypes'
+import type { ActionRecord, ChangeRecord, UndoStack } from './types'
 
 export type HistoryRecordArgs = Readonly<{
     storeName: string

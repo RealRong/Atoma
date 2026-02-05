@@ -1,6 +1,6 @@
 import React from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import DevtoolsApp from './ui/DevtoolsApp'
+import DevtoolsApp from './DevtoolsApp'
 import stylesText from './styles.css?inline'
 
 export type MountAtomaDevToolsOptions = {

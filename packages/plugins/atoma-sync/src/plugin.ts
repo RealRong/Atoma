@@ -1,45 +1,14 @@
 import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
 import { DEVTOOLS_REGISTRY_KEY } from 'atoma-types/devtools'
-import type { SyncBackoffConfig, SyncClient, SyncEvent, SyncMode, SyncPhase, SyncRetryConfig, SyncRuntimeConfig } from 'atoma-types/sync'
-import { SyncEngine } from '#sync/engine/SyncEngine'
+import type { SyncClient, SyncMode, SyncPhase, SyncRuntimeConfig } from 'atoma-types/sync'
+import { SyncEngine } from '#sync/engine/sync-engine'
 import { createStores } from '#sync/storage'
-import { WritebackApplier } from '#sync/applier/WritebackApplier'
-import { SyncDevtools } from '#sync/devtools/SyncDevtools'
-import { SyncPersistHandlers } from '#sync/persistence/SyncPersistHandlers'
+import { WritebackApplier } from '#sync/applier/writeback-applier'
+import { SyncDevtools } from '#sync/devtools/sync-devtools'
+import { SyncPersistHandlers } from '#sync/persistence/sync-persist-handlers'
 import { getSyncDriver, getSyncSubscribeDriver } from '#sync/capabilities'
-import { getOrCreateGlobalReplicaId } from '#sync/internal/replicaId'
-
-export type SyncPluginOptions = Readonly<{
-    mode?: SyncMode
-    resources?: string[]
-
-    pull?: Readonly<{ intervalMs?: number }>
-    push?: Readonly<{ maxItems?: number }>
-    subscribe?: boolean | Readonly<{ reconnectDelayMs?: number }>
-
-    policy?: Readonly<{
-        retry?: SyncRetryConfig
-        backoff?: SyncBackoffConfig
-    }>
-
-    now?: () => number
-    onError?: (error: Error, context: { phase: SyncPhase }) => void
-    onEvent?: (event: SyncEvent) => void
-    /** Optional client namespace override for outbox keys. */
-    clientKey?: string
-}>
-
-export type SyncExtension = Readonly<{
-    sync: {
-        start: (mode?: SyncMode) => void
-        stop: () => void
-        dispose: () => void
-        status: () => { started: boolean; configured: boolean }
-        pull: () => Promise<void>
-        push: () => Promise<void>
-        devtools: { snapshot: () => any; subscribe: (fn: (e: any) => void) => () => void }
-    }
-}>
+import { getOrCreateGlobalReplicaId } from '#sync/internal/replica-id'
+import type { SyncExtension, SyncPluginOptions } from './types'
 
 export function syncPlugin(opts: SyncPluginOptions = {}): ClientPlugin<SyncExtension> {
     return {
