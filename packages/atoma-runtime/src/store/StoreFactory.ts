@@ -1,6 +1,7 @@
 import { atom } from 'jotai/vanilla'
 import { Indexes, Query, Relations } from 'atoma-core'
 import type * as Types from 'atoma-types/core'
+import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
 import type { RuntimeSchema, StoreHandle } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime } from 'atoma-types/runtime'
@@ -32,8 +33,6 @@ export class StoreFactory {
         idGenerator?: () => EntityId
     }
     private readonly dataProcessor?: Types.StoreDataProcessor<any>
-    private readonly ownerClient?: () => unknown
-
     constructor(args: {
         runtime: CoreRuntime
         schema: RuntimeSchema
@@ -41,13 +40,11 @@ export class StoreFactory {
             idGenerator?: () => EntityId
         }
         dataProcessor?: Types.StoreDataProcessor<any>
-        ownerClient?: () => unknown
     }) {
         this.runtime = args.runtime
         this.schema = args.schema
         this.defaults = args.defaults
         this.dataProcessor = args.dataProcessor
-        this.ownerClient = args.ownerClient
     }
 
     build = (storeName: string): StoreFactoryResult<any> => {
@@ -130,6 +127,12 @@ export class StoreFactory {
         }
 
         const facade: StoreFacade = this.createFacade(name, api)
+        const bindings = this.createBindings(name, handle)
+        Object.defineProperty(facade, STORE_BINDINGS, {
+            value: bindings,
+            enumerable: false,
+            configurable: false
+        })
 
         return { handle, api, facade }
     }
@@ -153,14 +156,53 @@ export class StoreFactory {
             query: (query: any) => api.query(query),
             queryOne: (query: any) => api.queryOne(query)
         }
-
-        Object.defineProperty(facade, 'client', {
-            get: () => this.ownerClient?.(),
-            enumerable: false,
-            configurable: false
-        })
-
         return facade as StoreFacade
+    }
+
+    private createBindings = (storeName: string, handle: StoreHandle<any>): StoreBindings<any> => {
+        const source = {
+            getSnapshot: () => handle.jotaiStore.get(handle.atom) as ReadonlyMap<EntityId, any>,
+            subscribe: (listener: () => void) => {
+                const s: any = handle.jotaiStore
+                if (typeof s?.sub !== 'function') return () => {}
+                return s.sub(handle.atom, () => listener())
+            }
+        }
+
+        const hydrate = async (items: any[]) => {
+            if (!items.length) return
+
+            const processed = (await Promise.all(items.map(async (item) => this.runtime.transform.writeback(handle, item))))
+                .filter(Boolean) as any[]
+
+            if (!processed.length) return
+
+            const before = handle.jotaiStore.get(handle.atom) as Map<any, any>
+            const after = new Map(before)
+            const changedIds = new Set<any>()
+
+            processed.forEach(item => {
+                const prev = before.get(item.id)
+                after.set(item.id, item)
+                if (prev !== item) changedIds.add(item.id)
+            })
+
+            if (!changedIds.size) return
+
+            handle.jotaiStore.set(handle.atom, after)
+            handle.indexes?.applyChangedIds(before, after, changedIds)
+        }
+
+        return {
+            name: storeName,
+            cacheKey: this.runtime as unknown as object,
+            source,
+            indexes: handle.indexes,
+            matcher: handle.matcher,
+            relations: () => handle.relations?.(),
+            ensureStore: (name: Types.StoreToken) => this.runtime.stores.ensure(String(name)),
+            hydrate
+        }
     }
 
     private mergeDataProcessor = <T>(

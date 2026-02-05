@@ -2,7 +2,6 @@ import type * as Types from 'atoma-types/core'
 import type { PersistRequest, RuntimeIo } from 'atoma-types/runtime'
 import { Runtime } from 'atoma-runtime'
 import type { AtomaClient, AtomaSchema, CreateClientOptions, ClientPlugin, PluginContext, PluginInitResult } from 'atoma-types/client'
-import { registerClientRuntime } from './runtimeRegistry'
 import { zod } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
 import { EndpointRegistry } from '../drivers/EndpointRegistry'
@@ -84,8 +83,7 @@ export function createClient<
             query: async () => {
                 throw new Error('[Atoma] io not ready')
             }
-        } satisfies RuntimeIo,
-        ownerClient: () => client
+        } satisfies RuntimeIo
     }) as any
 
     const pluginContext: PluginContext = {
@@ -189,8 +187,6 @@ export function createClient<
             }
         }
     }
-
-    registerClientRuntime(client, clientRuntime)
 
     return client as AtomaClient<E, S>
 }

@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { Query } from 'atoma-core'
 import { stableStringify } from 'atoma-shared'
 import type * as Types from 'atoma-types/core'
-import { getStoreMatcher } from 'atoma/internal'
-import { requireStoreOwner } from './internal/storeInternal'
+import { getStoreBindings } from 'atoma-types/internal'
 
 /**
  * Hook for pure client-side filtering and sorting of arrays.
@@ -22,8 +21,7 @@ export function useLocalQuery<T extends Types.Entity>(
 
     const matcher = useMemo(() => {
         if (!store) return undefined
-        const { client, storeName } = requireStoreOwner(store, 'useLocalQuery')
-        return getStoreMatcher(client, storeName)
+        return getStoreBindings(store, 'useLocalQuery').matcher
     }, [store])
 
     return useMemo(() => {

@@ -9,7 +9,8 @@ export default defineConfig({
         protocol: 'src/protocol/index.ts',
         observability: 'src/observability/index.ts',
         sync: 'src/sync/index.ts',
-        devtools: 'src/devtools/index.ts'
+        devtools: 'src/devtools/index.ts',
+        internal: 'src/internal/index.ts'
     },
     format: ['esm'],
     dts: true,

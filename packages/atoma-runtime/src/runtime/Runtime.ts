@@ -24,7 +24,6 @@ export interface RuntimeConfig {
         idGenerator?: () => EntityId
     }
     persistence?: RuntimePersistence
-    ownerClient?: () => unknown
     now?: () => number
     hooks?: RuntimeHookRegistry
 }
@@ -32,7 +31,6 @@ export interface RuntimeConfig {
 export class Runtime implements CoreRuntime {
     readonly id: string
     readonly now: () => number
-    readonly ownerClient?: () => unknown
     readonly jotaiStore: JotaiStore
     io: RuntimeIo
     readonly persistence: RuntimePersistence
@@ -45,8 +43,6 @@ export class Runtime implements CoreRuntime {
     constructor(config: RuntimeConfig) {
         this.id = Protocol.ids.createOpId('client')
         this.now = config.now ?? (() => Date.now())
-        this.ownerClient = config.ownerClient
-
         this.jotaiStore = createJotaiStore()
 
         this.io = config.io
@@ -57,8 +53,7 @@ export class Runtime implements CoreRuntime {
         this.stores = new Stores(this, {
             schema: config.schema,
             dataProcessor: config.dataProcessor,
-            defaults: config.defaults,
-            ownerClient: config.ownerClient
+            defaults: config.defaults
         })
 
         this.read = new ReadFlow(this)

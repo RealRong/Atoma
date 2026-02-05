@@ -22,7 +22,8 @@
     "dependencies": {
         "atoma-core": "workspace:*",
         "atoma-protocol": "workspace:*",
-        "atoma-shared": "workspace:*"
+        "atoma-shared": "workspace:*",
+        "atoma-types": "workspace:*"
     },
     "scripts": {
         "build": "tsup",

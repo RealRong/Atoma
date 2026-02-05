@@ -3,9 +3,8 @@ import { Relations } from 'atoma-core'
 import { stableStringify } from 'atoma-shared'
 import type * as Types from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { getStoreIndexes, getStoreSnapshotMap, getStoreSource } from 'atoma/internal'
+import { getStoreBindings } from 'atoma-types/internal'
 import { useShallowStableArray } from './useShallowStableArray'
-import { requireStoreOwner } from './internal/storeInternal'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 
@@ -82,10 +81,10 @@ export function useRelations<T extends Types.Entity>(
         if (!resolveStore) return undefined
         const store = resolveStore(storeToken)
         if (!store) return undefined
-        const { client, storeName } = requireStoreOwner(store as any, 'useRelations')
+        const bindings = getStoreBindings(store as any, 'useRelations')
         return {
-            map: getStoreSnapshotMap(client, storeName) as Map<EntityId, any>,
-            indexes: getStoreIndexes(client, storeName)
+            map: bindings.source.getSnapshot() as Map<EntityId, any>,
+            indexes: bindings.indexes
         }
     }
 
@@ -190,8 +189,7 @@ export function useRelations<T extends Types.Entity>(
         tokens.forEach(token => {
             const store = resolveStore(token)
             if (!store) return
-            const { client, storeName } = requireStoreOwner(store as any, 'useRelations')
-            const source = getStoreSource<any>(client, storeName)
+            const source = getStoreBindings(store as any, 'useRelations').source
             const unsub = source.subscribe(() => setLiveTick(t => t + 1))
             unsubscribers.push(unsub)
         })

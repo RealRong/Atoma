@@ -25,7 +25,7 @@
     "baseUrl": ".",
     "paths": {
       "atoma": ["packages/atoma/src/index.ts"],
-      "atoma/internal": ["packages/atoma/src/internal/index.ts"],
+      "atoma-types/internal": ["packages/atoma-types/src/internal/index.ts"],
       "atoma-backend": ["packages/atoma-backend/src/index.ts"],
       "atoma-backend-indexeddb": ["packages/atoma-backend-indexeddb/src/index.ts"],
       "atoma-backend-memory": ["packages/atoma-backend-memory/src/index.ts"],

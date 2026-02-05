@@ -10,11 +10,6 @@
         ".": {
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js"
-        },
-        "./internal": {
-            "types": "./dist/internal/index.d.ts",
-            "import": "./dist/internal/index.js",
-            "source": "./src/internal/index.ts"
         }
     },
     "files": [

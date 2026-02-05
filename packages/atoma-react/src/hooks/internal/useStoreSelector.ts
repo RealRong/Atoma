@@ -1,8 +1,7 @@
 import { useRef, useSyncExternalStore } from 'react'
 import type * as Types from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { getStoreSource } from 'atoma/internal'
-import { requireStoreOwner } from './storeInternal'
+import { getStoreBindings } from 'atoma-types/internal'
 
 type StoreSnapshot<T extends Types.Entity> = ReadonlyMap<EntityId, T>
 
@@ -10,8 +9,7 @@ export function useStoreSnapshot<T extends Types.Entity, Relations = {}>(
     store: Types.StoreApi<T, Relations>,
     tag: string
 ): StoreSnapshot<T> {
-    const { client, storeName } = requireStoreOwner(store, tag)
-    const source = getStoreSource<T>(client, storeName)
+    const source = getStoreBindings(store, tag).source
     const getSnapshot = () => source.getSnapshot() as StoreSnapshot<T>
     const subscribe = (listener: () => void) => source.subscribe(listener)
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
@@ -30,8 +28,7 @@ export function useStoreSelector<T extends Types.Entity, Relations = {}, Selecte
 
     const cacheRef = useRef<{ store: Types.StoreApi<T, Relations>; snapshot: StoreSnapshot<T>; selection: Selected } | null>(null)
 
-    const { client, storeName } = requireStoreOwner(store, tag)
-    const source = getStoreSource<T>(client, storeName)
+    const source = getStoreBindings(store, tag).source
 
     const getSnapshot = () => {
         const snapshot = source.getSnapshot() as StoreSnapshot<T>

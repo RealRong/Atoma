@@ -23,15 +23,13 @@ export class Stores implements StoreRegistry {
             defaults?: {
                 idGenerator?: () => EntityId
             }
-            ownerClient?: () => unknown
         }
     ) {
         this.storeFactory = new StoreFactory({
             runtime: this.runtime,
             schema: this.args.schema,
             defaults: this.args.defaults,
-            dataProcessor: this.args.dataProcessor,
-            ownerClient: this.args.ownerClient
+            dataProcessor: this.args.dataProcessor
         })
     }
 

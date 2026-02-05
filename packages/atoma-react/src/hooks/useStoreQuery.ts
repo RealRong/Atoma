@@ -3,8 +3,7 @@ import { Query } from 'atoma-core'
 import { stableStringify } from 'atoma-shared'
 import type * as Types from 'atoma-types/core'
 import { useStoreSnapshot } from './internal/useStoreSelector'
-import { getStoreIndexes, getStoreMatcher } from 'atoma/internal'
-import { requireStoreOwner } from './internal/storeInternal'
+import { getStoreBindings } from 'atoma-types/internal'
 
 type UseStoreQueryResultMode = 'entities' | 'ids'
 
@@ -28,9 +27,9 @@ function useStoreQueryInternal<T extends Types.Entity, Relations = {}>(
     options?: UseStoreQueryOptions<T>
 ): StoreQueryResult<T> {
     const map = useStoreSnapshot(store, 'useStoreQuery')
-    const { client, storeName } = requireStoreOwner(store, 'useStoreQuery')
-    const indexes = getStoreIndexes(client, storeName)
-    const matcher = getStoreMatcher(client, storeName)
+    const bindings = getStoreBindings(store, 'useStoreQuery')
+    const indexes = bindings.indexes
+    const matcher = bindings.matcher
 
     const query = stripResult(options)
     const queryKey = useMemo(() => stableStringify(query), [query])

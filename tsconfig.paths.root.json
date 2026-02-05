@@ -4,7 +4,6 @@
         "baseUrl": ".",
         "paths": {
             "atoma": ["packages/atoma/src/index.ts"],
-            "atoma/internal": ["packages/atoma/src/internal/index.ts"],
             "atoma-backend": ["packages/atoma-backend/src/index.ts"],
             "atoma-backend-indexeddb": ["packages/atoma-backend-indexeddb/src/index.ts"],
             "atoma-backend-memory": ["packages/atoma-backend-memory/src/index.ts"],
@@ -30,6 +29,7 @@
             "atoma-sync": ["packages/atoma-sync/src/index.ts"],
             "atoma-sync/*": ["packages/atoma-sync/src/*"],
             "atoma-types": ["packages/atoma-types/src/index.ts"],
+            "atoma-types/internal": ["packages/atoma-types/src/internal/index.ts"],
             "atoma-types/core": ["packages/atoma-types/src/core/index.ts"],
             "atoma-types/runtime": ["packages/atoma-types/src/runtime/index.ts"],
             "atoma-types/client": ["packages/atoma-types/src/client/index.ts"],

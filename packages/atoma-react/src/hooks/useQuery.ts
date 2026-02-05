@@ -1,10 +1,9 @@
 import { useMemo } from 'react'
 import type * as Types from 'atoma-types/core'
-import { getStoreRelations, resolveStore } from 'atoma/internal'
+import { getStoreBindings } from 'atoma-types/internal'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'
 import { useRemoteQuery } from './useRemoteQuery'
-import { requireStoreOwner } from './internal/storeInternal'
 
 type UseQueryResultMode = 'entities' | 'ids'
 
@@ -139,15 +138,15 @@ export function useQuery<T extends Types.Entity, Relations = {}, const Include e
         } satisfies UseQueryIdsResult<T>
     }
 
-    const { client, storeName } = requireStoreOwner(store, 'useQuery')
-    const relations = getStoreRelations(client, storeName) as Relations | undefined
+    const bindings = getStoreBindings(store, 'useQuery')
+    const relations = bindings.relations?.() as Relations | undefined
     const effectiveInclude = (options as any)?.include ?? ({} as Include)
 
     const relationsResult = useRelations<T, Relations, Include>(
         data as unknown as T[],
         effectiveInclude,
         relations,
-        (name) => resolveStore(client, name)
+        (name) => bindings.ensureStore(name)
     )
 
     return {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { stableStringify } from 'atoma-shared'
 import type * as Types from 'atoma-types/core'
-import { getStoreRuntimeKey, requireStoreOwner } from './internal/storeInternal'
+import { getStoreBindings } from 'atoma-types/internal'
 
 type RemoteState<T extends Types.Entity> = Readonly<{
     isFetching: boolean
@@ -73,8 +73,9 @@ export function useRemoteQuery<T extends Types.Entity, Relations = {}>(args: {
     enabled?: boolean
 }): UseRemoteQueryResult<T> {
     const enabled = args.enabled !== false
-    const { storeName } = requireStoreOwner(args.store, 'useRemoteQuery')
-    const runtime = getStoreRuntimeKey(args.store, 'useRemoteQuery')
+    const bindings = getStoreBindings(args.store, 'useRemoteQuery')
+    const storeName = bindings.name
+    const runtime = bindings.cacheKey
 
     const key = useMemo(() => {
         const optionsKey = stableStringify(stripRuntimeOptions(args.options))
