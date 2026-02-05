@@ -4,14 +4,14 @@
         "baseUrl": ".",
         "paths": {
             "atoma": ["packages/atoma/src/index.ts"],
-            "atoma-backend": ["packages/atoma-backend/src/index.ts"],
-            "atoma-backend-indexeddb": ["packages/atoma-backend-indexeddb/src/index.ts"],
-            "atoma-backend-memory": ["packages/atoma-backend-memory/src/index.ts"],
+            "atoma-backend-indexeddb": ["packages/plugins/atoma-backend-indexeddb/src/index.ts"],
+            "atoma-backend-http": ["packages/plugins/atoma-backend-http/src/index.ts"],
+            "atoma-backend-memory": ["packages/plugins/atoma-backend-memory/src/index.ts"],
             "atoma-client": ["packages/atoma-client/src/index.ts"],
             "atoma-core": ["packages/atoma-core/src/index.ts"],
-            "atoma-devtools": ["packages/atoma-devtools/src/index.ts"],
-            "atoma-history": ["packages/atoma-history/src/index.ts"],
-            "atoma-observability": ["packages/atoma-observability/src/index.ts"],
+            "atoma-devtools": ["packages/plugins/atoma-devtools/src/index.ts"],
+            "atoma-history": ["packages/plugins/atoma-history/src/index.ts"],
+            "atoma-observability": ["packages/plugins/atoma-observability/src/index.ts"],
             "atoma-protocol": ["packages/atoma-protocol/src/index.ts"],
             "atoma-react": ["packages/atoma-react/src/index.ts"],
             "atoma-runtime": ["packages/atoma-runtime/src/index.ts"],
@@ -20,7 +20,7 @@
             "atoma-server/adapters/typeorm": ["packages/atoma-server/src/adapters/typeorm/index.ts"],
             "atoma-server/adapters/prisma": ["packages/atoma-server/src/adapters/prisma/index.ts"],
             "atoma-shared": ["packages/atoma-shared/src/index.ts"],
-            "atoma-sync": ["packages/atoma-sync/src/index.ts"],
+            "atoma-sync": ["packages/plugins/atoma-sync/src/index.ts"],
             "atoma-types": ["packages/atoma-types/src/index.ts"],
             "atoma-types/internal": ["packages/atoma-types/src/internal/index.ts"],
             "atoma-types/core": ["packages/atoma-types/src/core/index.ts"],
@@ -32,7 +32,7 @@
             "atoma-types/devtools": ["packages/atoma-types/src/devtools/index.ts"],
             "#client": ["packages/atoma-client/src/index.ts"],
             "#client/*": ["packages/atoma-client/src/*"],
-            "#sync/*": ["packages/atoma-sync/src/*"]
+            "#sync/*": ["packages/plugins/atoma-sync/src/*"]
         }
     }
 }

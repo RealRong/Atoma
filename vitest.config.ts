@@ -10,13 +10,13 @@ export default defineConfig({
             { find: /^atoma-client$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/index.ts') },
             { find: /^atoma-core$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/index.ts') },
             { find: /^atoma-shared$/, replacement: path.resolve(__dirname, 'packages/atoma-shared/src/index.ts') },
-            { find: /^atoma-observability$/, replacement: path.resolve(__dirname, 'packages/atoma-observability/src/index.ts') },
+            { find: /^atoma-observability$/, replacement: path.resolve(__dirname, 'packages/plugins/atoma-observability/src/index.ts') },
             { find: /^atoma-protocol$/, replacement: path.resolve(__dirname, 'packages/atoma-protocol/src/index.ts') },
 
-            { find: /^atoma-sync$/, replacement: path.resolve(__dirname, 'packages/atoma-sync/src/index.ts') },
-            { find: /^atoma-sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma-sync/src/$1') },
+            { find: /^atoma-sync$/, replacement: path.resolve(__dirname, 'packages/plugins/atoma-sync/src/index.ts') },
+            { find: /^atoma-sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/plugins/atoma-sync/src/$1') },
 
-            { find: /^#sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma-sync/src/$1') },
+            { find: /^#sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/plugins/atoma-sync/src/$1') },
 
             { find: /^#backend$/, replacement: path.resolve(__dirname, 'packages/atoma/src/backend/index.ts') },
             { find: /^#backend\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma/src/backend/$1') },

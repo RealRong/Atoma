@@ -1,4 +1,4 @@
-export type { CreateClientOptions, BackendInput } from './options'
+export type { CreateClientOptions } from './options'
 
 export type { CoreRuntime as ClientRuntime } from '../runtime'
 

@@ -28,11 +28,14 @@ Peer deps:
 ```ts
 import { createClient } from 'atoma-client'
 import { useFindMany } from 'atoma-react'
+import { httpBackendPlugin } from 'atoma-backend-http'
 
 type User = { id: string; name: string; version?: number }
 
 const client = createClient<{ users: User }>({
-    backend: 'http://localhost:3000/api'
+    plugins: [
+        httpBackendPlugin({ baseURL: 'http://localhost:3000/api' })
+    ]
 })
 
 export function Users() {
@@ -46,7 +49,6 @@ export function Users() {
 
 ## Client config (new)
 
-- `backend: string | { baseURL }` is a shorthand for installing the default HTTP plugin.
 - `plugins: ClientPlugin[]` is the primary extension surface (io/persist/read/observe handler chains).
 - Plugins are assembled **at initialization**; `client.use` is intentionally removed.
 

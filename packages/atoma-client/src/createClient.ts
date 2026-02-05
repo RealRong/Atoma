@@ -6,7 +6,6 @@ import { zod } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
 import { EndpointRegistry } from './drivers/EndpointRegistry'
 import { CapabilitiesRegistry, HandlerChain, PluginRegistry, PluginRuntimeIo } from './plugins'
-import { HttpBackendPlugin, LocalBackendPlugin } from './defaults'
 import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry } from 'atoma-types/devtools'
 
 const { parseOrThrow } = zod
@@ -96,27 +95,9 @@ export function createClient<
 
     const plugins: ClientPlugin[] = Array.isArray(args.plugins) ? [...args.plugins] : []
 
-    const backend = args.backend
-    let hasBackend = false
-    if (typeof backend === 'string') {
-        plugins.push(new HttpBackendPlugin({ baseURL: backend }))
-        hasBackend = true
-    } else if (backend && typeof backend === 'object') {
-        const baseURL = String((backend as any).baseURL ?? '').trim()
-        if (baseURL) {
-            plugins.push(new HttpBackendPlugin({ baseURL }))
-            hasBackend = true
-        }
-    }
-    if (!hasBackend) {
-        plugins.push(new LocalBackendPlugin())
-    }
-
     ensureDevtoolsRegistry(capabilities)
     capabilities.register(DEVTOOLS_META_KEY, {
-        storeBackend: hasBackend
-            ? { role: 'remote', kind: 'http' }
-            : { role: 'local', kind: 'custom' }
+        storeBackend: { role: 'local', kind: 'custom' }
     })
 
     for (const plugin of plugins) {

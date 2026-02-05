@@ -1,0 +1,26 @@
+{
+    "name": "atoma-backend-indexeddb",
+    "version": "0.0.0",
+    "type": "module",
+    "description": "Atoma IndexedDB backend (optional)",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsup",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "atoma-core": "workspace:*",
+        "atoma-shared": "workspace:*",
+        "atoma-protocol": "workspace:*",
+        "atoma-types": "workspace:*",
+        "dexie": "^3.2.0 || ^4.0.0"
+    }
+}

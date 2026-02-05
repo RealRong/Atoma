@@ -28,11 +28,14 @@ Peer 依赖：
 ```ts
 import { createClient } from 'atoma-client'
 import { useFindMany } from 'atoma-react'
+import { httpBackendPlugin } from 'atoma-backend-http'
 
 type User = { id: string; name: string; version?: number }
 
 const client = createClient<{ users: User }>({
-    backend: 'http://localhost:3000/api'
+    plugins: [
+        httpBackendPlugin({ baseURL: 'http://localhost:3000/api' })
+    ]
 })
 
 export function Users() {
@@ -46,7 +49,6 @@ export function Users() {
 
 ## 客户端配置（新版）
 
-- `backend: string | { baseURL }` 是默认 HTTP 插件的显式预设语法。
 - `plugins: ClientPlugin[]` 是主要扩展面（io/persist/read/observe 处理器链）。
 - 插件仅在初始化时装配，**不再提供 `client.use`**。
 

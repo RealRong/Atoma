@@ -1,2 +1,1 @@
-export { HttpBackendPlugin } from './HttpBackendPlugin'
-export { LocalBackendPlugin } from './LocalBackendPlugin'
+export { localBackendPlugin } from './LocalBackendPlugin'

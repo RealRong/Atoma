@@ -35,50 +35,51 @@ function toUnsupportedOpsResults(ops: Operation[]): OperationResult[] {
     }))
 }
 
-export class LocalBackendPlugin implements ClientPlugin {
-    readonly id = 'defaults:local-backend'
-
-    register(ctx: PluginContext, register: Register) {
-        const ioHandler: IoHandler = async (req, _ctx, next) => {
-            try {
-                return await next()
-            } catch (error) {
-                if (!isMissingTerminal(error)) throw error
-            }
-
-            if (!req.ops.length) return { results: [] }
-            const results: OperationResult[] = []
-            for (const op of req.ops) {
-                if (op.kind === 'query') {
-                    const data = await queryLocal(ctx, op.query.resource, op.query.query)
-                    results.push({ opId: op.opId, ok: true, data })
-                    continue
+export function localBackendPlugin(): ClientPlugin {
+    return {
+        id: 'defaults:local-backend',
+        register: (ctx: PluginContext, register: Register) => {
+            const ioHandler: IoHandler = async (req, _ctx, next) => {
+                try {
+                    return await next()
+                } catch (error) {
+                    if (!isMissingTerminal(error)) throw error
                 }
-                results.push(...toUnsupportedOpsResults([op]))
-            }
-            return { results }
-        }
 
-        const readHandler: ReadHandler = async (req, _ctx, next) => {
-            try {
-                return await next()
-            } catch (error) {
-                if (!isMissingTerminal(error)) throw error
+                if (!req.ops.length) return { results: [] }
+                const results: OperationResult[] = []
+                for (const op of req.ops) {
+                    if (op.kind === 'query') {
+                        const data = await queryLocal(ctx, op.query.resource, op.query.query)
+                        results.push({ opId: op.opId, ok: true, data })
+                        continue
+                    }
+                    results.push(...toUnsupportedOpsResults([op]))
+                }
+                return { results }
             }
-            return await queryLocal(ctx, String(req.storeName), req.query)
-        }
 
-        const persistHandler: PersistHandler = async (_req, _ctx, next) => {
-            try {
-                return await next()
-            } catch (error) {
-                if (!isMissingTerminal(error)) throw error
+            const readHandler: ReadHandler = async (req, _ctx, next) => {
+                try {
+                    return await next()
+                } catch (error) {
+                    if (!isMissingTerminal(error)) throw error
+                }
+                return await queryLocal(ctx, String(req.storeName), req.query)
             }
-            return { status: 'confirmed' }
-        }
 
-        register('io', ioHandler, { priority: -1000 })
-        register('read', readHandler, { priority: -1000 })
-        register('persist', persistHandler, { priority: -1000 })
+            const persistHandler: PersistHandler = async (_req, _ctx, next) => {
+                try {
+                    return await next()
+                } catch (error) {
+                    if (!isMissingTerminal(error)) throw error
+                }
+                return { status: 'confirmed' }
+            }
+
+            register('io', ioHandler, { priority: -1000 })
+            register('read', readHandler, { priority: -1000 })
+            register('persist', persistHandler, { priority: -1000 })
+        }
     }
 }

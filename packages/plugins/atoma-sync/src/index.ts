@@ -1,0 +1,7 @@
+export { syncPlugin } from './withSync'
+export { syncOpsDriverPlugin } from './plugins/syncOpsDriverPlugin'
+export { sseSubscribeDriverPlugin } from './plugins/sseSubscribeDriverPlugin'
+export { SYNC_DRIVER_CAPABILITY_KEY, SYNC_SUBSCRIBE_CAPABILITY_KEY, getSyncDriver, getSyncSubscribeDriver, registerSyncDriver, registerSyncSubscribeDriver } from './capabilities'
+export type { SyncOpsDriverPluginOptions } from './plugins/syncOpsDriverPlugin'
+export type { SseSubscribeDriverPluginOptions } from './plugins/sseSubscribeDriverPlugin'
+export type { SyncPluginOptions, SyncExtension } from './withSync'
