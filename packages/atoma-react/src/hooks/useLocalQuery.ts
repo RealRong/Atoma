@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Query } from 'atoma-core'
 import { stableStringify } from 'atoma-shared'
-import type * as Types from 'atoma-types/core'
+import type { Entity, Query as StoreQuery, StoreApi } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 
 /**
@@ -12,10 +12,10 @@ import { getStoreBindings } from 'atoma-types/internal'
  * @param query Query spec (filter/sort/page/select)
  * @param store Optional store instance to provide custom matchers (e.g. text search configuration)
  */
-export function useLocalQuery<T extends Types.Entity>(
+export function useLocalQuery<T extends Entity>(
     data: T[],
-    query?: Types.Query<T>,
-    store?: Types.StoreApi<T, any>
+    query?: StoreQuery<T>,
+    store?: StoreApi<T, any>
 ): T[] {
     const queryKey = useMemo(() => stableStringify(query), [query])
 

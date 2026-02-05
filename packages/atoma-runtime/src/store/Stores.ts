@@ -1,17 +1,17 @@
-import type * as Types from 'atoma-types/core'
+import type { IStore, StoreApi, StoreDataProcessor, StoreToken } from 'atoma-types/core'
 import type { RuntimeSchema, StoreHandle, StoreRegistry } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime } from 'atoma-types/runtime'
 import { StoreFactory, type StoreEngine } from './StoreFactory'
 
-type StoreListener = (store: Types.StoreApi<any, any> & { name: string }) => void
+type StoreListener = (store: StoreApi<any, any> & { name: string }) => void
 
 const toStoreName = (name: unknown) => String(name)
 
 export class Stores implements StoreRegistry {
     private readonly engineByName = new Map<string, StoreEngine<any>>()
-    private readonly facadeByName = new Map<string, Types.StoreApi<any, any> & { name: string }>()
-    private readonly created: Array<Types.StoreApi<any, any> & { name: string }> = []
+    private readonly facadeByName = new Map<string, StoreApi<any, any> & { name: string }>()
+    private readonly created: Array<StoreApi<any, any> & { name: string }> = []
     private readonly listeners = new Set<StoreListener>()
     private readonly storeFactory: StoreFactory
 
@@ -19,7 +19,7 @@ export class Stores implements StoreRegistry {
         private readonly runtime: CoreRuntime,
         private readonly args: {
             schema: RuntimeSchema
-            dataProcessor?: Types.StoreDataProcessor<any>
+            dataProcessor?: StoreDataProcessor<any>
             defaults?: {
                 idGenerator?: () => EntityId
             }
@@ -33,7 +33,7 @@ export class Stores implements StoreRegistry {
         })
     }
 
-    private notifyCreated = (store: Types.StoreApi<any, any> & { name: string }) => {
+    private notifyCreated = (store: StoreApi<any, any> & { name: string }) => {
         this.created.push(store)
         for (const listener of this.listeners) {
             try {
@@ -69,12 +69,12 @@ export class Stores implements StoreRegistry {
         return engine
     }
 
-    resolve = (name: Types.StoreToken): Types.IStore<any> | undefined => {
+    resolve = (name: StoreToken): IStore<any> | undefined => {
         const key = toStoreName(name)
         return this.facadeByName.get(key)
     }
 
-    ensure = (name: Types.StoreToken): Types.IStore<any> => {
+    ensure = (name: StoreToken): IStore<any> => {
         const key = toStoreName(name)
         this.ensureEngine(key)
         const facade = this.facadeByName.get(key)
@@ -100,7 +100,7 @@ export class Stores implements StoreRegistry {
         }
     }
 
-    resolveHandle = (name: Types.StoreToken, tag?: string): StoreHandle<any> => {
+    resolveHandle = (name: StoreToken, tag?: string): StoreHandle<any> => {
         const key = toStoreName(name)
         const existing = this.engineByName.get(key)
         if (existing) return existing.handle

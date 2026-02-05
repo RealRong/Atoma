@@ -1,5 +1,5 @@
 import { Query } from 'atoma-core'
-import type * as Types from 'atoma-types/core'
+import type { Entity } from 'atoma-types/core'
 import type { EntityId, Operation, OperationResult, QueryResultData } from 'atoma-types/protocol'
 import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client'
 
@@ -14,7 +14,7 @@ const isMissingTerminal = (error: unknown): boolean => {
     return false
 }
 
-async function queryLocal<T extends Types.Entity>(ctx: PluginContext, storeName: string, query: any): Promise<QueryResultData> {
+async function queryLocal<T extends Entity>(ctx: PluginContext, storeName: string, query: any): Promise<QueryResultData> {
     const handle = ctx.runtime.stores.resolveHandle(storeName, 'LocalBackendPlugin.query')
     const map = handle.state.getSnapshot() as Map<EntityId, T>
     const items = Array.from(map.values()) as T[]

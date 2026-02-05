@@ -1,7 +1,7 @@
 /**
  * StrategyRegistry: Routes persistence requests and resolves write policies by strategy.
  */
-import type * as Types from 'atoma-types/core'
+import type { Entity, WriteStrategy } from 'atoma-types/core'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from 'atoma-types/runtime'
 import type { CoreRuntime, RuntimePersistence } from 'atoma-types/runtime'
 
@@ -11,15 +11,15 @@ const DEFAULT_WRITE_POLICY: WritePolicy = {
 }
 
 export class StrategyRegistry implements RuntimePersistence {
-    private readonly strategies = new Map<Types.WriteStrategy, StrategyDescriptor>()
+    private readonly strategies = new Map<WriteStrategy, StrategyDescriptor>()
     private readonly runtime: CoreRuntime
-    private defaultStrategy?: Types.WriteStrategy
+    private defaultStrategy?: WriteStrategy
 
     constructor(runtime: CoreRuntime) {
         this.runtime = runtime
     }
 
-    register = (key: Types.WriteStrategy, descriptor: StrategyDescriptor) => {
+    register = (key: WriteStrategy, descriptor: StrategyDescriptor) => {
         const k = String(key)
         if (!k) throw new Error('[Atoma] strategy.register: key 必填')
         if (this.strategies.has(k)) throw new Error(`[Atoma] strategy.register: key 已存在: ${k}`)
@@ -29,7 +29,7 @@ export class StrategyRegistry implements RuntimePersistence {
         }
     }
 
-    setDefaultStrategy = (key: Types.WriteStrategy) => {
+    setDefaultStrategy = (key: WriteStrategy) => {
         const k = String(key)
         if (!k) throw new Error('[Atoma] strategy.setDefaultStrategy: key 必填')
         const previous = this.defaultStrategy
@@ -41,7 +41,7 @@ export class StrategyRegistry implements RuntimePersistence {
         }
     }
 
-    resolveWritePolicy = (key?: Types.WriteStrategy): WritePolicy => {
+    resolveWritePolicy = (key?: WriteStrategy): WritePolicy => {
         const k = (typeof key === 'string' && key) ? key : this.defaultStrategy
         if (!k) {
             throw new Error('[Atoma] strategy.resolveWritePolicy: 未设置默认 writeStrategy')
@@ -54,7 +54,7 @@ export class StrategyRegistry implements RuntimePersistence {
         }
     }
 
-    persist = async <T extends Types.Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
+    persist = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
         const key = this.normalizeStrategy(req.writeStrategy)
         const handler = this.strategies.get(key)?.persist
         if (!handler) {
@@ -63,7 +63,7 @@ export class StrategyRegistry implements RuntimePersistence {
         return await handler({ req, next: this.persistViaOps })
     }
 
-    private persistViaOps = async <T extends Types.Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
+    private persistViaOps = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
         const results = await this.runtime.io.executeOps({ ops: req.writeOps as any })
         return {
             status: 'confirmed',
@@ -71,7 +71,7 @@ export class StrategyRegistry implements RuntimePersistence {
         }
     }
 
-    private normalizeStrategy = (key?: Types.WriteStrategy): Types.WriteStrategy => {
+    private normalizeStrategy = (key?: WriteStrategy): WriteStrategy => {
         const normalized = (typeof key === 'string' && key) ? key : this.defaultStrategy
         if (!normalized) {
             throw new Error('[Atoma] strategy.persist: 未设置默认 writeStrategy')

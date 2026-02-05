@@ -1,5 +1,5 @@
 import { Query, Store } from 'atoma-core'
-import type * as Types from 'atoma-types/core'
+import type { Entity, Query as StoreQuery, QueryOneResult, QueryResult, StoreReadOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { toErrorWithFallback as toError } from 'atoma-shared'
 import type { CoreRuntime, RuntimeRead, StoreHandle } from 'atoma-types/runtime'
@@ -11,7 +11,7 @@ export class ReadFlow implements RuntimeRead {
         this.runtime = runtime
     }
 
-    query = async <T extends Types.Entity>(handle: StoreHandle<T>, input: Types.Query<T>): Promise<Types.QueryResult<T>> => {
+    query = async <T extends Entity>(handle: StoreHandle<T>, input: StoreQuery<T>): Promise<QueryResult<T>> => {
         const runtime = this.runtime
         const { state } = handle
         const { indexes, matcher } = state
@@ -19,8 +19,8 @@ export class ReadFlow implements RuntimeRead {
 
         hooks.emit.readStart({ handle, query: input })
 
-        let localCache: { data: T[]; result: Types.QueryResult<T> } | null = null
-        const getLocalResult = (): { data: T[]; result: Types.QueryResult<T> } => {
+        let localCache: { data: T[]; result: QueryResult<T> } | null = null
+        const getLocalResult = (): { data: T[]; result: QueryResult<T> } => {
             if (localCache) return localCache
 
             const map = state.getSnapshot() as Map<EntityId, T>
@@ -93,8 +93,8 @@ export class ReadFlow implements RuntimeRead {
         }
     }
 
-    queryOne = async <T extends Types.Entity>(handle: StoreHandle<T>, input: Types.Query<T>): Promise<Types.QueryOneResult<T>> => {
-        const next: Types.Query<T> = {
+    queryOne = async <T extends Entity>(handle: StoreHandle<T>, input: StoreQuery<T>): Promise<QueryOneResult<T>> => {
+        const next: StoreQuery<T> = {
             ...input,
             page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
         }
@@ -102,7 +102,7 @@ export class ReadFlow implements RuntimeRead {
         return { data: res.data[0] }
     }
 
-    getMany = async <T extends Types.Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, options?: Types.StoreReadOptions): Promise<T[]> => {
+    getMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, options?: StoreReadOptions): Promise<T[]> => {
         const beforeMap = handle.state.getSnapshot() as Map<EntityId, T>
         const out: Array<T | undefined> = new Array(ids.length)
         const missingSet = new Set<EntityId>()
@@ -170,14 +170,14 @@ export class ReadFlow implements RuntimeRead {
         return out.filter((i): i is T => i !== undefined)
     }
 
-    getOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreReadOptions): Promise<T | undefined> => {
+    getOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreReadOptions): Promise<T | undefined> => {
         const cached = handle.state.getSnapshot().get(id)
         if (cached !== undefined) return cached
         const items = await this.getMany(handle, [id], true, options)
         return items[0]
     }
 
-    fetchOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreReadOptions): Promise<T | undefined> => {
+    fetchOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreReadOptions): Promise<T | undefined> => {
         const { data } = await this.runtime.io.query(handle, {
             filter: { op: 'eq', field: 'id', value: id },
             page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
@@ -187,7 +187,7 @@ export class ReadFlow implements RuntimeRead {
         return await this.runtime.transform.writeback(handle, one as T)
     }
 
-    fetchAll = async <T extends Types.Entity>(handle: StoreHandle<T>, options?: Types.StoreReadOptions): Promise<T[]> => {
+    fetchAll = async <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions): Promise<T[]> => {
         const { data } = await this.runtime.io.query(handle, {})
         const out: T[] = []
         for (let i = 0; i < data.length; i++) {
@@ -199,7 +199,7 @@ export class ReadFlow implements RuntimeRead {
         return out
     }
 
-    getAll = async <T extends Types.Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: Types.StoreReadOptions): Promise<T[]> => {
+    getAll = async <T extends Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions): Promise<T[]> => {
         const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
         const { data } = await this.runtime.io.query(handle, {})
         const fetched = Array.isArray(data) ? data : []

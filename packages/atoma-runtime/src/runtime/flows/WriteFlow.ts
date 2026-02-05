@@ -1,6 +1,16 @@
 import { produce, type Draft, type Patch } from 'immer'
 import type { Draft as ImmerDraft } from 'immer'
-import type * as Types from 'atoma-types/core'
+import type {
+    Entity,
+    OperationContext,
+    PartialWithId,
+    RuntimeWriteHookSource,
+    StoreOperationOptions,
+    UpsertWriteOptions,
+    WriteIntent,
+    WriteIntentOptions,
+    WriteManyResult
+} from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, RuntimeWrite, StoreHandle } from 'atoma-types/runtime'
 import { version } from 'atoma-shared'
@@ -9,9 +19,9 @@ import { buildWriteIntentsFromPatches, buildWriteOps } from '../persistence'
 import { ensureActionId, prepareForAdd, prepareForUpdate, resolveBaseForWrite, runAfterSave, runBeforeSave } from './write/prepare'
 import { applyIntentsOptimistically } from './write/optimistic'
 
-function buildUpsertIntentOptions(options?: Types.UpsertWriteOptions): Types.WriteIntentOptions | undefined {
+function buildUpsertIntentOptions(options?: UpsertWriteOptions): WriteIntentOptions | undefined {
     if (!options) return undefined
-    const out: Types.WriteIntentOptions = {}
+    const out: WriteIntentOptions = {}
     if (typeof options.merge === 'boolean') out.merge = options.merge
     if (options.mode === 'strict' || options.mode === 'loose') out.upsert = { mode: options.mode }
     return Object.keys(out).length ? out : undefined
@@ -54,12 +64,12 @@ function buildRootPatches<T>(args: {
     }
 }
 
-async function prepareAddIntent<T extends Types.Entity>(args: {
+async function prepareAddIntent<T extends Entity>(args: {
     runtime: CoreRuntime
     handle: StoreHandle<T>
     item: Partial<T>
-    opContext: Types.OperationContext
-}): Promise<{ intent: Types.WriteIntent<T>; output: T }> {
+    opContext: OperationContext
+}): Promise<{ intent: WriteIntent<T>; output: T }> {
     const prepared = await prepareForAdd(args.runtime, args.handle, args.item, args.opContext)
     return {
         intent: {
@@ -72,17 +82,17 @@ async function prepareAddIntent<T extends Types.Entity>(args: {
     }
 }
 
-async function prepareUpdateIntent<T extends Types.Entity>(args: {
+async function prepareUpdateIntent<T extends Entity>(args: {
     runtime: CoreRuntime
     handle: StoreHandle<T>
     id: EntityId
     recipe: (draft: Draft<T>) => void
-    opContext: Types.OperationContext
-    options?: Types.StoreOperationOptions
-}): Promise<{ intent: Types.WriteIntent<T>; output: T; base: Types.PartialWithId<T> }> {
+    opContext: OperationContext
+    options?: StoreOperationOptions
+}): Promise<{ intent: WriteIntent<T>; output: T; base: PartialWithId<T> }> {
     const base = await resolveBaseForWrite(args.runtime, args.handle, args.id, args.options)
     const next = produce(base as any, (draft: Draft<T>) => args.recipe(draft)) as any
-    const patched = { ...(next as any), id: args.id } as Types.PartialWithId<T>
+    const patched = { ...(next as any), id: args.id } as PartialWithId<T>
     const prepared = await prepareForUpdate(args.runtime, args.handle, base, patched, args.opContext)
     const baseVersion = version.requireBaseVersion(args.id, base as any)
     return {
@@ -97,15 +107,15 @@ async function prepareUpdateIntent<T extends Types.Entity>(args: {
     }
 }
 
-async function prepareUpsertIntent<T extends Types.Entity>(args: {
+async function prepareUpsertIntent<T extends Entity>(args: {
     runtime: CoreRuntime
     handle: StoreHandle<T>
-    item: Types.PartialWithId<T>
-    opContext: Types.OperationContext
-    options?: Types.StoreOperationOptions & Types.UpsertWriteOptions
-}): Promise<{ intent: Types.WriteIntent<T>; output: T; afterSaveAction: 'add' | 'update'; base?: Types.PartialWithId<T> }> {
+    item: PartialWithId<T>
+    opContext: OperationContext
+    options?: StoreOperationOptions & UpsertWriteOptions
+}): Promise<{ intent: WriteIntent<T>; output: T; afterSaveAction: 'add' | 'update'; base?: PartialWithId<T> }> {
     const id = args.item.id
-    const base = args.handle.state.getSnapshot().get(id) as Types.PartialWithId<T> | undefined
+    const base = args.handle.state.getSnapshot().get(id) as PartialWithId<T> | undefined
     const merge = args.options?.merge !== false
 
     const prepared = await (async () => {
@@ -138,12 +148,12 @@ async function prepareUpsertIntent<T extends Types.Entity>(args: {
         if (!processed) {
             throw new Error('[Atoma] upsertOne: transform returned empty')
         }
-        return processed as Types.PartialWithId<T>
+        return processed as PartialWithId<T>
     })()
 
     const baseVersion = version.resolvePositiveVersion(prepared as any)
     const intentOptions = buildUpsertIntentOptions(args.options)
-    const intent: Types.WriteIntent<T> = {
+    const intent: WriteIntent<T> = {
         action: 'upsert',
         entityId: id,
         ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
@@ -158,13 +168,13 @@ async function prepareUpsertIntent<T extends Types.Entity>(args: {
     }
 }
 
-async function prepareDeleteIntent<T extends Types.Entity>(args: {
+async function prepareDeleteIntent<T extends Entity>(args: {
     runtime: CoreRuntime
     handle: StoreHandle<T>
     id: EntityId
-    opContext: Types.OperationContext
-    options?: Types.StoreOperationOptions
-}): Promise<{ intent: Types.WriteIntent<T>; base: Types.PartialWithId<T> }> {
+    opContext: OperationContext
+    options?: StoreOperationOptions
+}): Promise<{ intent: WriteIntent<T>; base: PartialWithId<T> }> {
     const base = await resolveBaseForWrite(args.runtime, args.handle, args.id, args.options)
     const baseVersion = version.requireBaseVersion(args.id, base as any)
     if (args.options?.force) {
@@ -197,12 +207,12 @@ export class WriteFlow implements RuntimeWrite {
         this.runtime = runtime
     }
 
-    private executeSingleWrite = async <T extends Types.Entity>(args: {
+    private executeSingleWrite = async <T extends Entity>(args: {
         handle: StoreHandle<T>
-        opContext: Types.OperationContext
+        opContext: OperationContext
         writeStrategy?: string
-        intents: Array<Types.WriteIntent<T>>
-        source: Types.RuntimeWriteHookSource
+        intents: Array<WriteIntent<T>>
+        source: RuntimeWriteHookSource
         output?: T
         patchPayload: { patches: Patch[]; inversePatches: Patch[] } | null
         afterSaveAction?: 'add' | 'update'
@@ -263,7 +273,7 @@ export class WriteFlow implements RuntimeWrite {
         return results
     }
 
-    addOne = async <T extends Types.Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: Types.StoreOperationOptions): Promise<T> => {
+    addOne = async <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
         const { intent, output } = await prepareAddIntent({ runtime, handle, item, opContext })
@@ -294,7 +304,7 @@ export class WriteFlow implements RuntimeWrite {
         })
     }
 
-    addMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: Types.StoreOperationOptions): Promise<T[]> => {
+    addMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]> => {
         const out: T[] = []
         for (const item of items) {
             out.push(await this.addOne(handle, item, options))
@@ -302,7 +312,7 @@ export class WriteFlow implements RuntimeWrite {
         return out
     }
 
-    updateOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, recipe: (draft: ImmerDraft<T>) => void, options?: Types.StoreOperationOptions): Promise<T> => {
+    updateOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, recipe: (draft: ImmerDraft<T>) => void, options?: StoreOperationOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
         const { intent, output, base } = await prepareUpdateIntent({
@@ -332,16 +342,16 @@ export class WriteFlow implements RuntimeWrite {
         })
     }
 
-    updateMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>, options?: Types.StoreOperationOptions): Promise<Types.WriteManyResult<T>> => {
+    updateMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>, options?: StoreOperationOptions): Promise<WriteManyResult<T>> => {
         return await this.runManyWrites(
             items,
             (entry) => this.updateOne(handle, entry.id, entry.recipe, options),
             ({ index, value }) => ({ index, ok: true, value }),
             ({ index, error }) => ({ index, ok: false, error })
-        ) as Types.WriteManyResult<T>
+        ) as WriteManyResult<T>
     }
 
-    upsertOne = async <T extends Types.Entity>(handle: StoreHandle<T>, item: Types.PartialWithId<T>, options?: Types.StoreOperationOptions & Types.UpsertWriteOptions): Promise<T> => {
+    upsertOne = async <T extends Entity>(handle: StoreHandle<T>, item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
         const { intent, output, afterSaveAction, base } = await prepareUpsertIntent({
@@ -377,16 +387,16 @@ export class WriteFlow implements RuntimeWrite {
         })
     }
 
-    upsertMany = async <T extends Types.Entity>(handle: StoreHandle<T>, items: Array<Types.PartialWithId<T>>, options?: Types.StoreOperationOptions & Types.UpsertWriteOptions): Promise<Types.WriteManyResult<T>> => {
+    upsertMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>> => {
         return await this.runManyWrites(
             items,
             (entry) => this.upsertOne(handle, entry, options),
             ({ index, value }) => ({ index, ok: true, value }),
             ({ index, error }) => ({ index, ok: false, error })
-        ) as Types.WriteManyResult<T>
+        ) as WriteManyResult<T>
     }
 
-    deleteOne = async <T extends Types.Entity>(handle: StoreHandle<T>, id: EntityId, options?: Types.StoreOperationOptions): Promise<boolean> => {
+    deleteOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<boolean> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
         const { intent, base } = await prepareDeleteIntent({
@@ -419,16 +429,16 @@ export class WriteFlow implements RuntimeWrite {
         return true
     }
 
-    deleteMany = async <T extends Types.Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: Types.StoreOperationOptions): Promise<Types.WriteManyResult<boolean>> => {
+    deleteMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
         return await this.runManyWrites(
             ids,
             (id) => this.deleteOne(handle, id, options),
             ({ index, value }) => ({ index, ok: true, value }),
             ({ index, error }) => ({ index, ok: false, error })
-        ) as Types.WriteManyResult<boolean>
+        ) as WriteManyResult<boolean>
     }
 
-    patches = async <T extends Types.Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: Types.StoreOperationOptions): Promise<void> => {
+    patches = async <T extends Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: StoreOperationOptions): Promise<void> => {
         const opContext = ensureActionId(options?.opContext)
         const before = handle.state.getSnapshot() as Map<EntityId, T>
         const intents = buildWriteIntentsFromPatches({
@@ -451,11 +461,11 @@ export class WriteFlow implements RuntimeWrite {
         })
     }
 
-    private executeWrite = async <T extends Types.Entity>(args: {
+    private executeWrite = async <T extends Entity>(args: {
         handle: StoreHandle<T>
-        opContext: Types.OperationContext
+        opContext: OperationContext
         writeStrategy?: string
-        intents?: Array<Types.WriteIntent<T>>
+        intents?: Array<WriteIntent<T>>
     }): Promise<T | void> => {
         const intents = this.makeIntents(args)
         const optimistic = this.applyOptimistic({
@@ -472,13 +482,13 @@ export class WriteFlow implements RuntimeWrite {
         })
     }
 
-    private makeIntents<T extends Types.Entity>(args: { intents?: Array<Types.WriteIntent<T>> }): Array<Types.WriteIntent<T>> {
+    private makeIntents<T extends Entity>(args: { intents?: Array<WriteIntent<T>> }): Array<WriteIntent<T>> {
         return args.intents ?? []
     }
 
-    private applyOptimistic<T extends Types.Entity>(args: {
+    private applyOptimistic<T extends Entity>(args: {
         handle: StoreHandle<T>
-        intents: Array<Types.WriteIntent<T>>
+        intents: Array<WriteIntent<T>>
         writeStrategy?: string
     }): { before: Map<EntityId, T>; optimisticState: Map<EntityId, T>; changedIds: Set<EntityId> } {
         const { handle, intents, writeStrategy } = args
@@ -501,10 +511,10 @@ export class WriteFlow implements RuntimeWrite {
         return { before, optimisticState, changedIds }
     }
 
-    private persistAndFinalize<T extends Types.Entity>(args: {
+    private persistAndFinalize<T extends Entity>(args: {
         handle: StoreHandle<T>
-        intents: Array<Types.WriteIntent<T>>
-        opContext: Types.OperationContext
+        intents: Array<WriteIntent<T>>
+        opContext: OperationContext
         writeStrategy?: string
         before: Map<EntityId, T>
         optimisticState: Map<EntityId, T>

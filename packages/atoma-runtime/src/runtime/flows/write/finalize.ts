@@ -1,19 +1,19 @@
-import type * as Types from 'atoma-types/core'
+import type { Entity, StoreWritebackArgs, WriteIntent } from 'atoma-types/core'
 import type { EntityId, OperationResult, WriteAction, WriteItemResult, WriteOp } from 'atoma-types/protocol'
 import type { StoreHandle, CoreRuntime } from 'atoma-types/runtime'
 
-type WritePlan<T extends Types.Entity> = ReadonlyArray<{
+type WritePlan<T extends Entity> = ReadonlyArray<{
     op: WriteOp
-    intents: Array<Types.WriteIntent<T>>
+    intents: Array<WriteIntent<T>>
 }>
 
-export async function buildWritebackFromResults<T extends Types.Entity>(args: {
+export async function buildWritebackFromResults<T extends Entity>(args: {
     runtime: CoreRuntime
     handle: StoreHandle<T>
     plan: WritePlan<T>
     results: OperationResult[]
-    primaryIntent?: Types.WriteIntent<T>
-}): Promise<{ writeback?: Types.StoreWritebackArgs<T>; output?: T }> {
+    primaryIntent?: WriteIntent<T>
+}): Promise<{ writeback?: StoreWritebackArgs<T>; output?: T }> {
     if (!args.plan.length || !args.results.length) return {}
 
     const resultByOpId = new Map<string, OperationResult>()
@@ -78,7 +78,7 @@ export async function buildWritebackFromResults<T extends Types.Entity>(args: {
         ? ({
             ...(upserts.length ? { upserts } : {}),
             ...(versionUpdates.length ? { versionUpdates } : {})
-        } as Types.StoreWritebackArgs<T>)
+        } as StoreWritebackArgs<T>)
         : undefined
 
     return { writeback, output }

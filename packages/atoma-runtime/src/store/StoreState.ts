@@ -1,15 +1,15 @@
 import { Store } from 'atoma-core'
-import type * as Types from 'atoma-types/core'
+import type { Entity, QueryMatcherOptions, StoreIndexesLike, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { StoreChangedIds, StoreSnapshot, StoreState } from 'atoma-types/runtime'
 
-export class SimpleStoreState<T extends Types.Entity = any> implements StoreState<T> {
+export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
     private snapshot: StoreSnapshot<T>
     private listeners = new Set<() => void>()
-    readonly indexes: Types.StoreIndexesLike<T> | null
-    readonly matcher?: Types.QueryMatcherOptions
+    readonly indexes: StoreIndexesLike<T> | null
+    readonly matcher?: QueryMatcherOptions
 
-    constructor(args?: { initial?: StoreSnapshot<T>; indexes?: Types.StoreIndexesLike<T> | null; matcher?: Types.QueryMatcherOptions }) {
+    constructor(args?: { initial?: StoreSnapshot<T>; indexes?: StoreIndexesLike<T> | null; matcher?: QueryMatcherOptions }) {
         this.snapshot = args?.initial ?? new Map<EntityId, T>()
         this.indexes = args?.indexes ?? null
         this.matcher = args?.matcher
@@ -60,7 +60,7 @@ export class SimpleStoreState<T extends Types.Entity = any> implements StoreStat
         }
     }
 
-    applyWriteback = (args: Types.StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
+    applyWriteback = (args: StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
         const before = this.snapshot as Map<EntityId, T>
         const preserve = options?.preserve ?? Store.preserveReferenceShallow
         const result = Store.applyWritebackToMap(before, args, { preserve })

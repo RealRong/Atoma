@@ -1,10 +1,10 @@
-import type * as Types from 'atoma-types/core'
+import type { Entity, WriteIntent } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { Store } from 'atoma-core'
 
-export function applyIntentsOptimistically<T extends Types.Entity>(
+export function applyIntentsOptimistically<T extends Entity>(
     baseState: Map<EntityId, T>,
-    intents: Array<Types.WriteIntent<T>>
+    intents: Array<WriteIntent<T>>
 ): { optimisticState: Map<EntityId, T>; changedIds: Set<EntityId> } {
     let next = baseState
     const changedIds = new Set<EntityId>()

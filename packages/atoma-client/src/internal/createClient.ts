@@ -1,4 +1,4 @@
-import type * as Types from 'atoma-types/core'
+import type { Entity } from 'atoma-types/core'
 import type { PersistRequest, RuntimeIo } from 'atoma-types/runtime'
 import { Runtime } from 'atoma-runtime'
 import type { AtomaClient, AtomaSchema, CreateClientOptions, ClientPlugin, PluginContext, PluginInitResult } from 'atoma-types/client'
@@ -63,7 +63,7 @@ function ensureDevtoolsRegistry(capabilities: CapabilitiesRegistry): DevtoolsReg
  * It handles options validation, plugin assembly, and runtime wiring.
  */
 export function createClient<
-    const E extends Record<string, Types.Entity>,
+    const E extends Record<string, Entity>,
     const S extends AtomaSchema<E> = AtomaSchema<E>
 >(opt: CreateClientOptions<E, S>): AtomaClient<E, S> {
     const args = parseOrThrow(createClientBuildArgsSchema, opt, { prefix: '[Atoma] createClient: ' }) as any

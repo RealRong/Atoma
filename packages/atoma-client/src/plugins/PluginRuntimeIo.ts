@@ -1,5 +1,5 @@
 import { Protocol } from 'atoma-protocol'
-import type * as Types from 'atoma-types/core'
+import type { Entity, Query } from 'atoma-types/core'
 import type { RuntimeIo, StoreHandle } from 'atoma-types/runtime'
 import type { HandlerChain } from './HandlerChain'
 import type { IoContext, QueryResult, ReadContext, ReadRequest } from 'atoma-types/client'
@@ -44,9 +44,9 @@ export class PluginRuntimeIo implements RuntimeIo {
         }
     }
 
-    query: RuntimeIo['query'] = async <T extends Types.Entity>(
+    query: RuntimeIo['query'] = async <T extends Entity>(
         handle: StoreHandle<T>,
-        query: Types.Query,
+        query: Query,
         signal?: AbortSignal
     ): Promise<QueryResult> => {
         const req: ReadRequest = {

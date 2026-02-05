@@ -1,30 +1,30 @@
-import type * as Types from 'atoma-types/core'
+import type { Entity, LifecycleHooks, OperationContext, PartialWithId, StoreOperationOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { Operation, Store } from 'atoma-core'
 import type { StoreHandle } from 'atoma-types/runtime'
 import type { CoreRuntime } from 'atoma-types/runtime'
 
-export function ensureActionId(opContext?: Types.OperationContext): Types.OperationContext {
+export function ensureActionId(opContext?: OperationContext): OperationContext {
     return Operation.normalizeOperationContext(opContext)
 }
 
-export async function prepareForAdd<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, item: Partial<T>, opContext?: Types.OperationContext): Promise<Types.PartialWithId<T>> {
+export async function prepareForAdd<T extends Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, item: Partial<T>, opContext?: OperationContext): Promise<PartialWithId<T>> {
     let initedObj = Store.initBaseObject<T>(item, handle.config.idGenerator)
     initedObj = await runBeforeSave(handle.config.hooks, initedObj, 'add')
     const processed = await runtime.transform.inbound(handle, initedObj as T, opContext)
-    return requireProcessed(processed as Types.PartialWithId<T> | undefined, 'prepareForAdd')
+    return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareForAdd')
 }
 
-export async function prepareForUpdate<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, base: Types.PartialWithId<T>, patch: Types.PartialWithId<T>, opContext?: Types.OperationContext): Promise<Types.PartialWithId<T>> {
+export async function prepareForUpdate<T extends Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, base: PartialWithId<T>, patch: PartialWithId<T>, opContext?: OperationContext): Promise<PartialWithId<T>> {
     let merged = Store.mergeForUpdate(base, patch)
     merged = await runBeforeSave(handle.config.hooks, merged, 'update')
     const processed = await runtime.transform.inbound(handle, merged as T, opContext)
-    return requireProcessed(processed as Types.PartialWithId<T> | undefined, 'prepareForUpdate')
+    return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareForUpdate')
 }
 
-export async function resolveBaseForWrite<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, id: EntityId, options?: Types.StoreOperationOptions): Promise<Types.PartialWithId<T>> {
+export async function resolveBaseForWrite<T extends Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<PartialWithId<T>> {
     const cached = handle.state.getSnapshot().get(id) as T | undefined
-    if (cached) return cached as Types.PartialWithId<T>
+    if (cached) return cached as PartialWithId<T>
 
     const writePolicy = runtime.persistence.resolveWritePolicy(options?.writeStrategy ?? handle.config.defaultWriteStrategy)
     const allowImplicitFetchForWrite = writePolicy.implicitFetch !== false
@@ -46,17 +46,17 @@ export async function resolveBaseForWrite<T extends Types.Entity>(runtime: CoreR
     if (!processed) {
         throw new Error(`Item with id ${id} not found`)
     }
-    return processed as Types.PartialWithId<T>
+    return processed as PartialWithId<T>
 }
 
-export async function runBeforeSave<T>(hooks: Types.LifecycleHooks<T> | undefined, item: Types.PartialWithId<T>, action: 'add' | 'update'): Promise<Types.PartialWithId<T>> {
+export async function runBeforeSave<T>(hooks: LifecycleHooks<T> | undefined, item: PartialWithId<T>, action: 'add' | 'update'): Promise<PartialWithId<T>> {
     if (hooks?.beforeSave) {
         return await hooks.beforeSave({ action, item })
     }
     return item
 }
 
-export async function runAfterSave<T>(hooks: Types.LifecycleHooks<T> | undefined, item: Types.PartialWithId<T>, action: 'add' | 'update'): Promise<void> {
+export async function runAfterSave<T>(hooks: LifecycleHooks<T> | undefined, item: PartialWithId<T>, action: 'add' | 'update'): Promise<void> {
     if (hooks?.afterSave) {
         await hooks.afterSave({ action, item })
     }

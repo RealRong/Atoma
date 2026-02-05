@@ -1,13 +1,13 @@
 import { useRef, useSyncExternalStore } from 'react'
-import type * as Types from 'atoma-types/core'
+import type { Entity, StoreApi } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { getStoreBindings } from 'atoma-types/internal'
 import { createBatchedSubscribe } from './batchedSubscribe'
 
-type StoreSnapshot<T extends Types.Entity> = ReadonlyMap<EntityId, T>
+type StoreSnapshot<T extends Entity> = ReadonlyMap<EntityId, T>
 
-export function useStoreSnapshot<T extends Types.Entity, Relations = {}>(
-    store: Types.StoreApi<T, Relations>,
+export function useStoreSnapshot<T extends Entity, Relations = {}>(
+    store: StoreApi<T, Relations>,
     tag: string
 ): StoreSnapshot<T> {
     const source = getStoreBindings(store, tag).source
@@ -16,8 +16,8 @@ export function useStoreSnapshot<T extends Types.Entity, Relations = {}>(
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
-export function useStoreSelector<T extends Types.Entity, Relations = {}, Selected = unknown>(
-    store: Types.StoreApi<T, Relations>,
+export function useStoreSelector<T extends Entity, Relations = {}, Selected = unknown>(
+    store: StoreApi<T, Relations>,
     selector: (snapshot: StoreSnapshot<T>) => Selected,
     isEqual: (a: Selected, b: Selected) => boolean,
     tag: string
@@ -27,7 +27,7 @@ export function useStoreSelector<T extends Types.Entity, Relations = {}, Selecte
     selectorRef.current = selector
     isEqualRef.current = isEqual
 
-    const cacheRef = useRef<{ store: Types.StoreApi<T, Relations>; snapshot: StoreSnapshot<T>; selection: Selected } | null>(null)
+    const cacheRef = useRef<{ store: StoreApi<T, Relations>; snapshot: StoreSnapshot<T>; selection: Selected } | null>(null)
 
     const source = getStoreBindings(store, tag).source
 

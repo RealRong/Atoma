@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type * as Types from 'atoma-types/core'
+import type { Entity, RelationIncludeInput, StoreApi, WithRelations } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
@@ -8,11 +8,11 @@ import { useRelations } from './useRelations'
  * React hook to subscribe to entire collection
  * Returns all items as an array
  */
-export function useAll<T extends Types.Entity, Relations = {}, const Include extends Types.RelationIncludeInput<Relations> = {}>(
-    store: Types.StoreApi<T, Relations>,
-    options?: { include?: Types.RelationIncludeInput<Relations> & Include }
-): (keyof Include extends never ? T[] : Types.WithRelations<T, Relations, Include>[]) {
-    type Result = keyof Include extends never ? T[] : Types.WithRelations<T, Relations, Include>[]
+export function useAll<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
+    store: StoreApi<T, Relations>,
+    options?: { include?: RelationIncludeInput<Relations> & Include }
+): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
+    type Result = keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]
 
     const all = useStoreSnapshot(store, 'useAll')
     const memoedArr = useMemo(() => Array.from(all.values()), [all])

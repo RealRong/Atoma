@@ -1,5 +1,5 @@
 import type { CoreRuntime } from 'atoma-types/runtime'
-import type * as Types from 'atoma-types/core'
+import type { Entity } from 'atoma-types/core'
 import type { PersistRequest, PersistResult } from 'atoma-types/runtime'
 import type { WriteAction, WriteItem, WriteOptions } from 'atoma-types/protocol'
 import type { OutboxStore, OutboxWrite } from 'atoma-types/sync'
@@ -74,7 +74,7 @@ export class SyncPersistHandlers {
 
         this.unregister.push(runtime.persistence.register('queue', {
             write: { implicitFetch: false },
-            persist: async <T extends Types.Entity>(x: {
+            persist: async <T extends Entity>(x: {
                 req: PersistRequest<T>
                 next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
             }) => {
@@ -86,7 +86,7 @@ export class SyncPersistHandlers {
 
         this.unregister.push(runtime.persistence.register('local-first', {
             write: { implicitFetch: true },
-            persist: async <T extends Types.Entity>(x: {
+            persist: async <T extends Entity>(x: {
                 req: PersistRequest<T>
                 next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
             }) => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Relations } from 'atoma-core'
 import { stableStringify } from 'atoma-shared'
-import type * as Types from 'atoma-types/core'
+import type { Entity, IStore, RelationIncludeInput, StoreToken, WithRelations } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useShallowStableArray } from './useShallowStableArray'
@@ -9,32 +9,32 @@ import { createBatchedSubscribe } from './internal/batchedSubscribe'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 
-export interface UseRelationsResult<T extends Types.Entity> {
+export interface UseRelationsResult<T extends Entity> {
     data: T[]
     loading: boolean
     error?: Error
     refetch: () => Promise<T[]>
 }
 
-export function useRelations<T extends Types.Entity, Relations>(
+export function useRelations<T extends Entity, Relations>(
     items: T[],
     include: undefined,
     relations: Relations | undefined,
-    resolveStore?: (name: Types.StoreToken) => Types.IStore<any, any> | undefined
+    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
 ): UseRelationsResult<T>
 
-export function useRelations<T extends Types.Entity, Relations, const Include extends Types.RelationIncludeInput<Relations>>(
+export function useRelations<T extends Entity, Relations, const Include extends RelationIncludeInput<Relations>>(
     items: T[],
     include: Include,
     relations: Relations | undefined,
-    resolveStore?: (name: Types.StoreToken) => Types.IStore<any, any> | undefined
-): UseRelationsResult<keyof Include extends never ? T : Types.WithRelations<T, Relations, Include>>
+    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
+): UseRelationsResult<keyof Include extends never ? T : WithRelations<T, Relations, Include>>
 
-export function useRelations<T extends Types.Entity>(
+export function useRelations<T extends Entity>(
     items: T[],
     include: Record<string, any> | undefined,
     relations: any | undefined,
-    resolveStore?: (name: Types.StoreToken) => Types.IStore<any, any> | undefined
+    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
 ): UseRelationsResult<any> {
     const effectiveInclude = include && typeof include === 'object' && Object.keys(include).length === 0
         ? undefined
@@ -78,7 +78,7 @@ export function useRelations<T extends Types.Entity>(
         clearSnapshot()
     }, [includeKey, relations])
 
-    const getStoreMap = (storeToken: Types.StoreToken) => {
+    const getStoreMap = (storeToken: StoreToken) => {
         if (!resolveStore) return undefined
         const store = resolveStore(storeToken)
         if (!store) return undefined

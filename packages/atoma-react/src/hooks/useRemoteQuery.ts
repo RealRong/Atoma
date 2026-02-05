@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { stableStringify } from 'atoma-shared'
-import type * as Types from 'atoma-types/core'
+import type { Entity, PageInfo, Query, StoreApi } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 
-type RemoteState<T extends Types.Entity> = Readonly<{
+type RemoteState<T extends Entity> = Readonly<{
     isFetching: boolean
     error?: Error
-    pageInfo?: Types.PageInfo
+    pageInfo?: PageInfo
     data?: T[]
 }>
 
@@ -14,12 +14,12 @@ type RemoteBehavior =
     | { hydrate: true; transient?: false }
     | { hydrate?: false; transient: true }
 
-type UseRemoteQueryResult<T extends Types.Entity> = RemoteState<T> & Readonly<{
+type UseRemoteQueryResult<T extends Entity> = RemoteState<T> & Readonly<{
     refetch: () => Promise<T[]>
-    fetchMore: (options: Types.Query<T>) => Promise<T[]>
+    fetchMore: (options: Query<T>) => Promise<T[]>
 }>
 
-type CacheEntry<T extends Types.Entity> = {
+type CacheEntry<T extends Entity> = {
     state: RemoteState<T>
     subscribers: Set<(state: RemoteState<T>) => void>
     promise: Promise<T[]> | null
@@ -34,7 +34,7 @@ function stripRuntimeOptions(options?: any) {
     return rest
 }
 
-function normalizeResult<T extends Types.Entity>(res: any): { data: T[]; pageInfo?: Types.PageInfo } {
+function normalizeResult<T extends Entity>(res: any): { data: T[]; pageInfo?: PageInfo } {
     if (res && Array.isArray(res.data)) return { data: res.data, pageInfo: res.pageInfo }
     return { data: [] }
 }
@@ -48,7 +48,7 @@ function getRuntimeCache(runtime?: object | null): Map<string, CacheEntry<any>> 
     return next
 }
 
-function getOrCreateEntry<T extends Types.Entity>(runtime: object | null, key: string): CacheEntry<T> {
+function getOrCreateEntry<T extends Entity>(runtime: object | null, key: string): CacheEntry<T> {
     const cache = getRuntimeCache(runtime)
     const existing = cache.get(key)
     if (existing) return existing
@@ -61,14 +61,14 @@ function getOrCreateEntry<T extends Types.Entity>(runtime: object | null, key: s
     return next
 }
 
-function publish<T extends Types.Entity>(entry: CacheEntry<T>, patch: Partial<RemoteState<T>>) {
+function publish<T extends Entity>(entry: CacheEntry<T>, patch: Partial<RemoteState<T>>) {
     entry.state = { ...entry.state, ...patch }
     entry.subscribers.forEach(fn => fn(entry.state))
 }
 
-export function useRemoteQuery<T extends Types.Entity, Relations = {}>(args: {
-    store: Types.StoreApi<T, Relations>
-    options?: Types.Query<T>
+export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
+    store: StoreApi<T, Relations>
+    options?: Query<T>
     behavior: RemoteBehavior
     enabled?: boolean
 }): UseRemoteQueryResult<T> {
@@ -95,7 +95,7 @@ export function useRemoteQuery<T extends Types.Entity, Relations = {}>(args: {
         }
     }, [entry])
 
-    const runFetch = async (options: Types.Query<T> | undefined, mode: 'refetch' | 'fetchMore'): Promise<T[]> => {
+    const runFetch = async (options: Query<T> | undefined, mode: 'refetch' | 'fetchMore'): Promise<T[]> => {
         if (!enabled) return []
         if (!args.store.query) {
             const err = new Error('query not implemented')
@@ -145,7 +145,7 @@ export function useRemoteQuery<T extends Types.Entity, Relations = {}>(args: {
     }, [key, enabled])
 
     const refetch = () => runFetch(args.options, 'refetch')
-    const fetchMore = (moreOptions: Types.Query<T>) => runFetch(moreOptions, 'fetchMore')
+    const fetchMore = (moreOptions: Query<T>) => runFetch(moreOptions, 'fetchMore')
 
     return {
         ...state,

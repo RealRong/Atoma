@@ -1,4 +1,4 @@
-import type * as Types from 'atoma-types/core'
+import type { Entity, OperationContext, WriteIntent } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { WriteOp } from 'atoma-types/protocol'
 import type { StoreHandle } from 'atoma-types/runtime'
@@ -7,12 +7,12 @@ import { entityId as entityIdUtils, immer as immerUtils, version } from 'atoma-s
 import { applyPatches, type Patch } from 'immer'
 import { buildWriteItem, buildWriteItemMeta, buildWriteOperation, buildWriteOptions } from './opsBuilder'
 
-export async function buildWriteOps<T extends Types.Entity>(args: {
+export async function buildWriteOps<T extends Entity>(args: {
     runtime: CoreRuntime
     handle: StoreHandle<T>
-    intents: Array<Types.WriteIntent<T>>
-    opContext: Types.OperationContext
-}): Promise<Array<{ op: WriteOp; intents: Array<Types.WriteIntent<T>> }>> {
+    intents: Array<WriteIntent<T>>
+    opContext: OperationContext
+}): Promise<Array<{ op: WriteOp; intents: Array<WriteIntent<T>> }>> {
     const { runtime, handle, intents, opContext } = args
     if (!intents.length) return []
 
@@ -28,13 +28,13 @@ export async function buildWriteOps<T extends Types.Entity>(args: {
         return {
             ...intent,
             value: outbound
-        } as Types.WriteIntent<T>
+        } as WriteIntent<T>
     }))
 
     type Group<T> = {
-        action: Types.WriteIntent<T>['action']
+        action: WriteIntent<T>['action']
         options?: ReturnType<typeof buildWriteOptions>
-        intents: Array<Types.WriteIntent<T>>
+        intents: Array<WriteIntent<T>>
     }
 
     const groupsByKey = new Map<string, Group<T>>()
@@ -103,11 +103,11 @@ function buildOptionsKey(options: ReturnType<typeof buildWriteOptions> | undefin
     return parts.join('|')
 }
 
-export function buildWriteIntentsFromPatches<T extends Types.Entity>(args: {
+export function buildWriteIntentsFromPatches<T extends Entity>(args: {
     baseState: Map<EntityId, T>
     patches: Patch[]
     inversePatches: Patch[]
-}): Types.WriteIntent<T>[] {
+}): WriteIntent<T>[] {
     const optimisticState = applyPatches(args.baseState, args.patches) as Map<EntityId, T>
     const touchedIds = new Set<EntityId>()
     args.patches.forEach(p => {
@@ -121,7 +121,7 @@ export function buildWriteIntentsFromPatches<T extends Types.Entity>(args: {
         baseVersionByDeletedId.set(id, version.requireBaseVersion(id, value))
     })
 
-    const intents: Types.WriteIntent<T>[] = []
+    const intents: WriteIntent<T>[] = []
     for (const id of touchedIds.values()) {
         const next = optimisticState.get(id)
         if (next) {

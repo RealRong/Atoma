@@ -1,29 +1,29 @@
 import { useMemo } from 'react'
 import { Query } from 'atoma-core'
 import { stableStringify } from 'atoma-shared'
-import type * as Types from 'atoma-types/core'
+import type { Entity, Query as StoreQuery, StoreApi } from 'atoma-types/core'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 import { getStoreBindings } from 'atoma-types/internal'
 
 type UseStoreQueryResultMode = 'entities' | 'ids'
 
-type UseStoreQueryOptions<T extends Types.Entity> =
-    & Types.Query<T>
+type UseStoreQueryOptions<T extends Entity> =
+    & StoreQuery<T>
     & { result?: UseStoreQueryResultMode }
 
-type StoreQueryResult<T extends Types.Entity> = {
+type StoreQueryResult<T extends Entity> = {
     ids: Array<T['id']>
     data: T[]
 }
 
-function stripResult(options?: UseStoreQueryOptions<any>): Types.Query | undefined {
+function stripResult(options?: UseStoreQueryOptions<any>): StoreQuery | undefined {
     if (!options) return undefined
     const { result: _result, ...rest } = options
     return rest
 }
 
-function useStoreQueryInternal<T extends Types.Entity, Relations = {}>(
-    store: Types.StoreApi<T, Relations>,
+function useStoreQueryInternal<T extends Entity, Relations = {}>(
+    store: StoreApi<T, Relations>,
     options?: UseStoreQueryOptions<T>
 ): StoreQueryResult<T> {
     const map = useStoreSnapshot(store, 'useStoreQuery')
@@ -49,7 +49,7 @@ function useStoreQueryInternal<T extends Types.Entity, Relations = {}>(
             && query?.filter
 
         const effectiveQuery = shouldSkipFilter
-            ? ({ ...query, filter: undefined } as Types.Query<T>)
+            ? ({ ...query, filter: undefined } as StoreQuery<T>)
             : query
 
         const shouldSkipApplyQuery =
@@ -61,19 +61,19 @@ function useStoreQueryInternal<T extends Types.Entity, Relations = {}>(
 
         const result = shouldSkipApplyQuery || !effectiveQuery
             ? source
-            : (Query.executeLocalQuery(source, effectiveQuery as Types.Query<T>, matcher ? { matcher } : undefined).data as T[])
+            : (Query.executeLocalQuery(source, effectiveQuery as StoreQuery<T>, matcher ? { matcher } : undefined).data as T[])
 
         return { ids: result.map(item => item.id) as Array<T['id']>, data: result }
     }, [map, indexes, matcher, queryKey])
 }
 
-export function useStoreQuery<T extends Types.Entity, Relations = {}>(
-    store: Types.StoreApi<T, Relations>,
+export function useStoreQuery<T extends Entity, Relations = {}>(
+    store: StoreApi<T, Relations>,
     options: UseStoreQueryOptions<T> & { result: 'ids' }
 ): Array<T['id']>
 
-export function useStoreQuery<T extends Types.Entity, Relations = {}>(
-    store: Types.StoreApi<T, Relations>,
+export function useStoreQuery<T extends Entity, Relations = {}>(
+    store: StoreApi<T, Relations>,
     options?: UseStoreQueryOptions<T>
 ): T[] {
     const resultMode: UseStoreQueryResultMode = (options as any)?.result || 'entities'

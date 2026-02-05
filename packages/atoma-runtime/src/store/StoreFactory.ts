@@ -1,25 +1,25 @@
 import { Indexes, Query, Relations } from 'atoma-core'
-import type * as Types from 'atoma-types/core'
+import type { Entity, IStore, StoreApi, StoreDataProcessor, StoreToken } from 'atoma-types/core'
 import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
 import type { RuntimeSchema, StoreHandle } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime } from 'atoma-types/runtime'
 import { SimpleStoreState } from './StoreState'
 
-export type StoreEngineApi<T extends Types.Entity = any> = Types.IStore<T, any> & Readonly<{
+export type StoreEngineApi<T extends Entity = any> = IStore<T, any> & Readonly<{
     fetchAll: () => Promise<T[]>
     query: (query: any) => Promise<any>
     queryOne: (query: any) => Promise<any>
 }>
 
-export type StoreEngine<T extends Types.Entity = any> = Readonly<{
+export type StoreEngine<T extends Entity = any> = Readonly<{
     handle: StoreHandle<T>
     api: StoreEngineApi<T>
 }>
 
-export type StoreFacade = Types.StoreApi<any, any> & { name: string }
+export type StoreFacade = StoreApi<any, any> & { name: string }
 
-export type StoreFactoryResult<T extends Types.Entity = any> = Readonly<{
+export type StoreFactoryResult<T extends Entity = any> = Readonly<{
     handle: StoreHandle<T>
     api: StoreEngineApi<T>
     facade: StoreFacade
@@ -31,14 +31,14 @@ export class StoreFactory {
     private readonly defaults?: {
         idGenerator?: () => EntityId
     }
-    private readonly dataProcessor?: Types.StoreDataProcessor<any>
+    private readonly dataProcessor?: StoreDataProcessor<any>
     constructor(args: {
         runtime: CoreRuntime
         schema: RuntimeSchema
         defaults?: {
             idGenerator?: () => EntityId
         }
-        dataProcessor?: Types.StoreDataProcessor<any>
+        dataProcessor?: StoreDataProcessor<any>
     }) {
         this.runtime = args.runtime
         this.schema = args.schema
@@ -190,19 +190,19 @@ export class StoreFactory {
             indexes: handle.state.indexes,
             matcher: handle.state.matcher,
             relations: () => handle.relations?.(),
-            ensureStore: (name: Types.StoreToken) => this.runtime.stores.ensure(String(name)),
+            ensureStore: (name: StoreToken) => this.runtime.stores.ensure(String(name)),
             hydrate
         }
     }
 
     private mergeDataProcessor = <T>(
-        base?: Types.StoreDataProcessor<T>,
-        override?: Types.StoreDataProcessor<T>
-    ): Types.StoreDataProcessor<T> | undefined => {
+        base?: StoreDataProcessor<T>,
+        override?: StoreDataProcessor<T>
+    ): StoreDataProcessor<T> | undefined => {
         if (!base && !override) return undefined
         return {
             ...(base ?? {}),
             ...(override ?? {})
-        } as Types.StoreDataProcessor<T>
+        } as StoreDataProcessor<T>
     }
 }

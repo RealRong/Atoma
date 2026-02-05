@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type * as Types from 'atoma-types/core'
+import type { OperationContext } from 'atoma-types/core'
 
 export interface PatchMetadata {
     storeName: string
@@ -22,7 +22,7 @@ export type ChangeRecord = Readonly<{
     storeName: string
     patches: Patch[]
     inversePatches: Patch[]
-    ctx: Types.OperationContext
+    ctx: OperationContext
 }>
 
 export type ActionRecord = {
