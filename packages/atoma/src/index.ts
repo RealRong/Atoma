@@ -1,5 +1,4 @@
-/**
- * Atoma 主入口不再进行跨包 re-export。
- */
+export { createClient } from 'atoma-client'
 
-export {}
+export type { AtomaClient, AtomaSchema, CreateClientOptions } from 'atoma-types/client'
+export type { Entity, Query, RelationIncludeInput, StoreApi, WithRelations } from 'atoma-types/core'

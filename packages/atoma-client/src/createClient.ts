@@ -4,9 +4,9 @@ import { Runtime } from 'atoma-runtime'
 import type { AtomaClient, AtomaSchema, CreateClientOptions, ClientPlugin, PluginContext, PluginInitResult } from 'atoma-types/client'
 import { zod } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
-import { EndpointRegistry } from '../drivers/EndpointRegistry'
-import { CapabilitiesRegistry, HandlerChain, PluginRegistry, PluginRuntimeIo } from '../plugins'
-import { HttpBackendPlugin, LocalBackendPlugin } from '../defaults'
+import { EndpointRegistry } from './drivers/EndpointRegistry'
+import { CapabilitiesRegistry, HandlerChain, PluginRegistry, PluginRuntimeIo } from './plugins'
+import { HttpBackendPlugin, LocalBackendPlugin } from './defaults'
 import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry } from 'atoma-types/devtools'
 
 const { parseOrThrow } = zod
