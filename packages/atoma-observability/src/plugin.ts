@@ -82,7 +82,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         if (!traceId) return
         const requestId = ctxInstance.requestId()
         for (const item of req.writeOps) {
-            applyTraceMeta(item.op as Operation, traceId, requestId)
+            applyTraceMeta(item, traceId, requestId)
         }
     }
 

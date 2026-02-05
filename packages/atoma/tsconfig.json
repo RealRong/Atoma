@@ -1,24 +1,20 @@
 {
-    "extends": "../../tsconfig.base.json",
+    "extends": "../../tsconfig.paths.root.json",
     "compilerOptions": {
-        "baseUrl": ".",
-        "paths": {
-            "atoma": ["src/index.ts"],
-            "atoma-core": ["../atoma-core/src/index.ts"],
-            "atoma-shared": ["../atoma-shared/src/index.ts"],
-            "atoma-shared/*": ["../atoma-shared/src/*"],
-            "atoma-observability": ["../atoma-observability/src/index.ts"],
-            "atoma-observability/*": ["../atoma-observability/src/*"],
-            "atoma-protocol": ["../atoma-protocol/src/index.ts"],
-            "atoma-protocol/*": ["../atoma-protocol/src/*"],
-            "#client": ["../atoma-client/src/index.ts"],
-            "#client/*": ["../atoma-client/src/*"]
-        },
         "resolvePackageJsonImports": true,
-        "customConditions": ["source"],
+        "customConditions": [
+            "source"
+        ],
         "jsx": "react-jsx",
         "noEmit": true
     },
-    "include": ["src/**/*"],
-    "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "**/*.test.ts",
+        "**/*.spec.ts"
+    ]
 }

@@ -1,15 +1,20 @@
 {
-    "extends": "../../tsconfig.base.json",
+    "extends": "../../tsconfig.paths.root.json",
     "compilerOptions": {
-        "baseUrl": ".",
         "noEmit": true,
-        "paths": {
-            "#sync/*": ["src/*"]
-        },
         "resolvePackageJsonImports": true,
         "resolvePackageJsonExports": true,
-        "customConditions": ["source"]
+        "customConditions": [
+            "source"
+        ]
     },
-    "include": ["src/index.ts"],
-    "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+    "include": [
+        "src/index.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "**/*.test.ts",
+        "**/*.spec.ts"
+    ]
 }
