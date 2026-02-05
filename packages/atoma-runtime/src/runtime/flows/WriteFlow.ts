@@ -133,7 +133,7 @@ async function prepareUpsertIntent<T extends Types.Entity>(args: {
             candidate._etag = (base as any)._etag
         }
 
-        let next = await runBeforeSave(args.handle.hooks, candidate as any, 'update')
+        let next = await runBeforeSave(args.handle.config.hooks, candidate as any, 'update')
         const processed = await args.runtime.transform.inbound(args.handle, next as any, args.opContext)
         if (!processed) {
             throw new Error('[Atoma] upsertOne: transform returned empty')
@@ -234,7 +234,7 @@ export class WriteFlow implements RuntimeWrite {
             hooks.emit.writeCommitted({ handle, opContext, result: finalValue })
 
             if (args.afterSaveAction && args.output) {
-                await runAfterSave(handle.hooks, args.output as any, args.afterSaveAction)
+                await runAfterSave(handle.config.hooks, args.output as any, args.afterSaveAction)
             }
 
             return finalValue
@@ -284,7 +284,7 @@ export class WriteFlow implements RuntimeWrite {
         return await this.executeSingleWrite({
             handle,
             opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+            writeStrategy: options?.writeStrategy ?? handle.config.defaultWriteStrategy,
             intents,
             source: 'addOne',
             output: output as T,
@@ -322,7 +322,7 @@ export class WriteFlow implements RuntimeWrite {
         return await this.executeSingleWrite({
             handle,
             opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+            writeStrategy: options?.writeStrategy ?? handle.config.defaultWriteStrategy,
             intents,
             source: 'updateOne',
             output: output as T,
@@ -367,7 +367,7 @@ export class WriteFlow implements RuntimeWrite {
         return await this.executeSingleWrite({
             handle,
             opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+            writeStrategy: options?.writeStrategy ?? handle.config.defaultWriteStrategy,
             intents,
             source: 'upsertOne',
             output: output as T,
@@ -410,7 +410,7 @@ export class WriteFlow implements RuntimeWrite {
         await this.executeSingleWrite({
             handle,
             opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+            writeStrategy: options?.writeStrategy ?? handle.config.defaultWriteStrategy,
             intents,
             source: 'deleteOne',
             patchPayload,
@@ -443,7 +443,7 @@ export class WriteFlow implements RuntimeWrite {
         await this.executeSingleWrite({
             handle,
             opContext,
-            writeStrategy: options?.writeStrategy ?? handle.defaultWriteStrategy,
+            writeStrategy: options?.writeStrategy ?? handle.config.defaultWriteStrategy,
             intents,
             source: 'patches',
             patchPayload,

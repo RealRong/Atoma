@@ -6,11 +6,13 @@ import type { StoreChangedIds, StoreSnapshot, StoreState } from 'atoma-types/run
 export class SimpleStoreState<T extends Types.Entity = any> implements StoreState<T> {
     private snapshot: StoreSnapshot<T>
     private listeners = new Set<() => void>()
-    private readonly indexes: Types.StoreIndexesLike<T> | null
+    readonly indexes: Types.StoreIndexesLike<T> | null
+    readonly matcher?: Types.QueryMatcherOptions
 
-    constructor(args?: { initial?: StoreSnapshot<T>; indexes?: Types.StoreIndexesLike<T> | null }) {
+    constructor(args?: { initial?: StoreSnapshot<T>; indexes?: Types.StoreIndexesLike<T> | null; matcher?: Types.QueryMatcherOptions }) {
         this.snapshot = args?.initial ?? new Map<EntityId, T>()
         this.indexes = args?.indexes ?? null
+        this.matcher = args?.matcher
     }
 
     getSnapshot = () => this.snapshot

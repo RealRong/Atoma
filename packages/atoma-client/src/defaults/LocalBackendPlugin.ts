@@ -20,7 +20,7 @@ async function queryLocal<T extends Types.Entity>(ctx: PluginContext, storeName:
     const items = Array.from(map.values()) as T[]
     const outbound = await Promise.all(items.map(item => ctx.runtime.transform.outbound(handle, item)))
     const normalized = outbound.filter(item => item !== undefined) as T[]
-    return Query.executeLocalQuery(normalized as any, query as any, { matcher: handle.matcher })
+    return Query.executeLocalQuery(normalized as any, query as any, { matcher: handle.state.matcher })
 }
 
 function toUnsupportedOpsResults(ops: Operation[]): OperationResult[] {

@@ -128,7 +128,7 @@ export class DataProcessor {
             storeName: handle.storeName,
             runtime,
             opContext,
-            dataProcessor: handle.dataProcessor
+            dataProcessor: handle.config.dataProcessor
         })
     }
 
@@ -142,7 +142,7 @@ export class DataProcessor {
             storeName: handle.storeName,
             runtime,
             opContext,
-            dataProcessor: handle.dataProcessor
+            dataProcessor: handle.config.dataProcessor
         })
     }
 
@@ -156,7 +156,7 @@ export class DataProcessor {
             storeName: handle.storeName,
             runtime,
             opContext,
-            dataProcessor: handle.dataProcessor
+            dataProcessor: handle.config.dataProcessor
         })
     }
 }

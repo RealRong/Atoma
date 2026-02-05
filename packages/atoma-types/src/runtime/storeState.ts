@@ -11,6 +11,8 @@ export type StoreState<T extends Types.Entity = any> = Readonly<{
     getSnapshot: () => StoreSnapshot<T>
     setSnapshot: (next: StoreSnapshot<T>) => void
     subscribe: (listener: StoreListener) => () => void
+    indexes?: Types.StoreIndexesLike<T> | null
+    matcher?: Types.QueryMatcherOptions
     commit: (params: { before: Map<EntityId, T>; after: Map<EntityId, T>; changedIds?: StoreChangedIds }) => void
     applyWriteback: (args: Types.StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => void
 }>

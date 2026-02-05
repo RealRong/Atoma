@@ -57,7 +57,7 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
             emit(entry, { type: 'store:registered', payload: { clientId: entry.id, name } })
         }
 
-        const indexesRef = handle.indexes
+        const indexesRef = handle.state.indexes
         if (indexesRef && !entry.indexProviders.has(name)) {
             const snapshot = () => {
                 const indexes = indexesRef.getIndexSnapshots().map((s: any) => ({

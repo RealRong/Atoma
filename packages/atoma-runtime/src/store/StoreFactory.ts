@@ -58,28 +58,24 @@ export class StoreFactory {
             : undefined
 
         const indexes = storeSchema.indexes && storeSchema.indexes.length ? new Indexes.StoreIndexes<any>(storeSchema.indexes) : null
+        const matcher = Query.buildQueryMatcherOptions(storeSchema.indexes)
         const state = new SimpleStoreState<any>({
             initial: new Map<EntityId, any>(),
-            indexes
+            indexes,
+            matcher
         })
-        const matcher = Query.buildQueryMatcherOptions(storeSchema.indexes)
 
-        let opSeq = 0
-        const nextOpId = (prefix: 'q' | 'w') => {
-            opSeq += 1
-            return `${prefix}_${Date.now()}_${opSeq}`
+        const config = {
+            defaultWriteStrategy: storeSchema.write?.strategy,
+            hooks: storeSchema.hooks,
+            idGenerator,
+            dataProcessor
         }
 
         const handle: StoreHandle<any> = {
             state,
             storeName: name,
-            defaultWriteStrategy: storeSchema.write?.strategy,
-            indexes,
-            matcher,
-            hooks: storeSchema.hooks,
-            idGenerator,
-            dataProcessor,
-            nextOpId
+            config
         }
 
         if (typeof relationsFactory === 'function') {
@@ -191,8 +187,8 @@ export class StoreFactory {
             name: storeName,
             cacheKey: this.runtime as unknown as object,
             source,
-            indexes: handle.indexes,
-            matcher: handle.matcher,
+            indexes: handle.state.indexes,
+            matcher: handle.state.matcher,
             relations: () => handle.relations?.(),
             ensureStore: (name: Types.StoreToken) => this.runtime.stores.ensure(String(name)),
             hydrate

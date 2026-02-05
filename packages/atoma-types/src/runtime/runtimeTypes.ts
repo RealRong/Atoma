@@ -66,6 +66,7 @@ export type RuntimePersistence = Readonly<{
 export type CoreRuntime = Readonly<{
     id: string
     now: () => number
+    nextOpId: (storeName: Types.StoreToken, prefix: 'q' | 'w') => string
     stores: StoreRegistry
     hooks: RuntimeHookRegistry
     io: RuntimeIo

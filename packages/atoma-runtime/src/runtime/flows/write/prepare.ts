@@ -9,15 +9,15 @@ export function ensureActionId(opContext?: Types.OperationContext): Types.Operat
 }
 
 export async function prepareForAdd<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, item: Partial<T>, opContext?: Types.OperationContext): Promise<Types.PartialWithId<T>> {
-    let initedObj = Store.initBaseObject<T>(item, handle.idGenerator)
-    initedObj = await runBeforeSave(handle.hooks, initedObj, 'add')
+    let initedObj = Store.initBaseObject<T>(item, handle.config.idGenerator)
+    initedObj = await runBeforeSave(handle.config.hooks, initedObj, 'add')
     const processed = await runtime.transform.inbound(handle, initedObj as T, opContext)
     return requireProcessed(processed as Types.PartialWithId<T> | undefined, 'prepareForAdd')
 }
 
 export async function prepareForUpdate<T extends Types.Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, base: Types.PartialWithId<T>, patch: Types.PartialWithId<T>, opContext?: Types.OperationContext): Promise<Types.PartialWithId<T>> {
     let merged = Store.mergeForUpdate(base, patch)
-    merged = await runBeforeSave(handle.hooks, merged, 'update')
+    merged = await runBeforeSave(handle.config.hooks, merged, 'update')
     const processed = await runtime.transform.inbound(handle, merged as T, opContext)
     return requireProcessed(processed as Types.PartialWithId<T> | undefined, 'prepareForUpdate')
 }
@@ -26,7 +26,7 @@ export async function resolveBaseForWrite<T extends Types.Entity>(runtime: CoreR
     const cached = handle.state.getSnapshot().get(id) as T | undefined
     if (cached) return cached as Types.PartialWithId<T>
 
-    const writePolicy = runtime.persistence.resolveWritePolicy(options?.writeStrategy ?? handle.defaultWriteStrategy)
+    const writePolicy = runtime.persistence.resolveWritePolicy(options?.writeStrategy ?? handle.config.defaultWriteStrategy)
     const allowImplicitFetchForWrite = writePolicy.implicitFetch !== false
     if (!allowImplicitFetchForWrite) {
         throw new Error(`[Atoma] write: 缓存缺失且当前写入模式禁止补读，请先 fetch 再写入（id=${String(id)}）`)

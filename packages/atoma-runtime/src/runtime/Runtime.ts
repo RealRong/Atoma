@@ -30,6 +30,7 @@ export interface RuntimeConfig {
 export class Runtime implements CoreRuntime {
     readonly id: string
     readonly now: () => number
+    readonly nextOpId: CoreRuntime['nextOpId']
     io: RuntimeIo
     readonly persistence: RuntimePersistence
     readonly transform: RuntimeTransform
@@ -37,10 +38,17 @@ export class Runtime implements CoreRuntime {
     readonly read: RuntimeRead
     readonly write: RuntimeWrite
     readonly hooks: RuntimeHookRegistry
+    private opSeqByStore = new Map<string, number>()
 
     constructor(config: RuntimeConfig) {
         this.id = Protocol.ids.createOpId('client')
         this.now = config.now ?? (() => Date.now())
+        this.nextOpId = (storeName: string, prefix: 'q' | 'w') => {
+            const key = String(storeName)
+            const next = (this.opSeqByStore.get(key) ?? 0) + 1
+            this.opSeqByStore.set(key, next)
+            return `${prefix}_${this.now()}_${next}`
+        }
         this.io = config.io
         this.transform = new DataProcessor(this)
         this.persistence = config.persistence ?? new StrategyRegistry(this)

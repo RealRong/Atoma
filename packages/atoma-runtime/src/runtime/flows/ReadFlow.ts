@@ -13,7 +13,8 @@ export class ReadFlow implements RuntimeRead {
 
     query = async <T extends Types.Entity>(handle: StoreHandle<T>, input: Types.Query<T>): Promise<Types.QueryResult<T>> => {
         const runtime = this.runtime
-        const { indexes, matcher, state } = handle
+        const { state } = handle
+        const { indexes, matcher } = state
         const hooks = runtime.hooks
 
         hooks.emit.readStart({ handle, query: input })

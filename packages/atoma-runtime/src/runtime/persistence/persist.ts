@@ -63,7 +63,7 @@ export async function buildWriteOps<T extends Types.Entity>(args: {
         })
 
         const op = buildWriteOperation({
-            opId: handle.nextOpId('w'),
+            opId: runtime.nextOpId(handle.storeName, 'w'),
             resource: handle.storeName,
             action: group.action,
             items: entries.map(e => e.item),
