@@ -50,7 +50,7 @@ export class WritebackApplier implements SyncApplier {
 
             const upserts = processed.filter((item): item is any => item !== undefined)
 
-            handle.stateWriter.applyWriteback({
+            handle.state.applyWriteback({
                 upserts,
                 deletes: uniqueDeleteKeys
             } as any)
@@ -79,7 +79,7 @@ export class WritebackApplier implements SyncApplier {
         )
         const normalized = processed.filter((item): item is any => item !== undefined)
 
-        handle.stateWriter.applyWriteback({ upserts: normalized, deletes, versionUpdates } as any)
+        handle.state.applyWriteback({ upserts: normalized, deletes, versionUpdates } as any)
     }
 
     applyWriteReject = async (
@@ -111,7 +111,7 @@ export class WritebackApplier implements SyncApplier {
         )
         const normalized = processed.filter((item): item is any => item !== undefined)
 
-        handle.stateWriter.applyWriteback({ upserts: normalized, deletes } as any)
+        handle.state.applyWriteback({ upserts: normalized, deletes } as any)
     }
 
     applyWriteResults: SyncApplier['applyWriteResults'] = async (args) => {

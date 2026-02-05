@@ -2,6 +2,7 @@ import { useRef, useSyncExternalStore } from 'react'
 import type * as Types from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { getStoreBindings } from 'atoma-types/internal'
+import { createBatchedSubscribe } from './batchedSubscribe'
 
 type StoreSnapshot<T extends Types.Entity> = ReadonlyMap<EntityId, T>
 
@@ -11,7 +12,7 @@ export function useStoreSnapshot<T extends Types.Entity, Relations = {}>(
 ): StoreSnapshot<T> {
     const source = getStoreBindings(store, tag).source
     const getSnapshot = () => source.getSnapshot() as StoreSnapshot<T>
-    const subscribe = (listener: () => void) => source.subscribe(listener)
+    const subscribe = createBatchedSubscribe((listener: () => void) => source.subscribe(listener))
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
@@ -47,6 +48,6 @@ export function useStoreSelector<T extends Types.Entity, Relations = {}, Selecte
         return next
     }
 
-    const subscribe = (listener: () => void) => source.subscribe(listener)
+    const subscribe = createBatchedSubscribe((listener: () => void) => source.subscribe(listener))
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

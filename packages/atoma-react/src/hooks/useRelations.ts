@@ -5,6 +5,7 @@ import type * as Types from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useShallowStableArray } from './useShallowStableArray'
+import { createBatchedSubscribe } from './internal/batchedSubscribe'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 
@@ -190,7 +191,8 @@ export function useRelations<T extends Types.Entity>(
             const store = resolveStore(token)
             if (!store) return
             const source = getStoreBindings(store as any, 'useRelations').source
-            const unsub = source.subscribe(() => setLiveTick(t => t + 1))
+            const subscribe = createBatchedSubscribe((listener: () => void) => source.subscribe(listener))
+            const unsub = subscribe(() => setLiveTick(t => t + 1))
             unsubscribers.push(unsub)
         })
 

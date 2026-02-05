@@ -1,14 +1,5 @@
 import type * as Types from '../core'
-import type { EntityId } from '../protocol'
 import type { StoreState } from './storeState'
-
-type ChangedIds = ReadonlyArray<EntityId> | ReadonlySet<EntityId>
-
-export type StoreStateWriterApi<T extends Types.Entity = any> = {
-    commitMapUpdate: (params: { before: Map<EntityId, T>; after: Map<EntityId, T> }) => void
-    commitMapUpdateDelta: (params: { before: Map<EntityId, T>; after: Map<EntityId, T>; changedIds: ChangedIds }) => void
-    applyWriteback: (args: Types.StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => void
-}
 
 /**
  * Store internal handle bindings.
@@ -26,7 +17,6 @@ export type StoreHandle<T extends Types.Entity = any> = {
     hooks: Types.StoreConfig<T>['hooks']
     idGenerator: Types.StoreConfig<T>['idGenerator']
     dataProcessor: Types.StoreConfig<T>['dataProcessor']
-    stateWriter: StoreStateWriterApi<T>
 
     /** 内部：生成本 store 的 opId */
     nextOpId: (prefix: 'q' | 'w') => string

@@ -7,10 +7,9 @@ export type {
     RuntimeWrite,
     StoreRegistry,
     StoreHandle,
-    StoreStateWriterApi,
     DataProcessor
 } from './runtimeTypes'
-export type { StoreListener, StoreSnapshot, StoreState } from './storeState'
+export type { StoreChangedIds, StoreListener, StoreSnapshot, StoreState } from './storeState'
 export type { RuntimeSchema, RuntimeStoreSchema } from './schema'
 export type {
     RuntimeHooks,

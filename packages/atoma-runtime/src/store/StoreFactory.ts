@@ -4,7 +4,6 @@ import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
 import type { RuntimeSchema, StoreHandle } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime } from 'atoma-types/runtime'
-import { StoreStateWriter } from './StoreStateWriter'
 import { SimpleStoreState } from './StoreState'
 
 export type StoreEngineApi<T extends Types.Entity = any> = Types.IStore<T, any> & Readonly<{
@@ -58,8 +57,11 @@ export class StoreFactory {
             ? () => Relations.compileRelationsMap(storeSchema.relations, name)
             : undefined
 
-        const state = new SimpleStoreState<any>(new Map<EntityId, any>())
         const indexes = storeSchema.indexes && storeSchema.indexes.length ? new Indexes.StoreIndexes<any>(storeSchema.indexes) : null
+        const state = new SimpleStoreState<any>({
+            initial: new Map<EntityId, any>(),
+            indexes
+        })
         const matcher = Query.buildQueryMatcherOptions(storeSchema.indexes)
 
         let opSeq = 0
@@ -77,10 +79,8 @@ export class StoreFactory {
             hooks: storeSchema.hooks,
             idGenerator,
             dataProcessor,
-            stateWriter: null as any,
             nextOpId
         }
-        handle.stateWriter = new StoreStateWriter(handle)
 
         if (typeof relationsFactory === 'function') {
             let cache: any | undefined
@@ -184,8 +184,7 @@ export class StoreFactory {
 
             if (!changedIds.size) return
 
-            handle.state.setSnapshot(after)
-            handle.indexes?.applyChangedIds(before, after, changedIds)
+            handle.state.commit({ before, after, changedIds })
         }
 
         return {

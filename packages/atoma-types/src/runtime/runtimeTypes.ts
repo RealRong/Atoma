@@ -1,7 +1,7 @@
 import type { Operation, OperationResult, EntityId } from '../protocol'
 import type * as Types from '../core'
 import type { Draft, Patch } from 'immer'
-import type { StoreHandle, StoreStateWriterApi } from './handleTypes'
+import type { StoreHandle } from './handleTypes'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from './persistenceTypes'
 import type { RuntimeHookRegistry } from './hooks'
 
@@ -75,4 +75,4 @@ export type CoreRuntime = Readonly<{
     transform: RuntimeTransform
 }>
 
-export type { StoreHandle, StoreStateWriterApi }
+export type { StoreHandle }

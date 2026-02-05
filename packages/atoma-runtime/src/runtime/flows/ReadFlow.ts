@@ -74,7 +74,7 @@ export class ReadFlow implements RuntimeRead {
             }
 
             if (next && changedIds.size) {
-                handle.stateWriter.commitMapUpdateDelta({
+                handle.state.commit({
                     before: existingMap,
                     after: next,
                     changedIds
@@ -155,7 +155,7 @@ export class ReadFlow implements RuntimeRead {
                             changedIds.add(id)
                         }
                     }
-                    handle.stateWriter.commitMapUpdateDelta({ before, after, changedIds })
+                    handle.state.commit({ before, after, changedIds })
                 }
             }
 
@@ -244,7 +244,7 @@ export class ReadFlow implements RuntimeRead {
             }
         }
 
-        handle.stateWriter.commitMapUpdateDelta({ before: existingMap, after: next, changedIds })
+        handle.state.commit({ before: existingMap, after: next, changedIds })
 
         return arr
     }

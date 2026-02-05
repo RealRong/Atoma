@@ -491,7 +491,7 @@ export class WriteFlow implements RuntimeWrite {
         const { optimisticState, changedIds } = optimistic
 
         if (optimisticState !== before && changedIds.size) {
-            handle.stateWriter.commitMapUpdateDelta({
+            handle.state.commit({
                 before,
                 after: optimisticState,
                 changedIds
@@ -552,13 +552,13 @@ export class WriteFlow implements RuntimeWrite {
                     : {}
 
                 if (resolved.writeback) {
-                    handle.stateWriter.applyWriteback(resolved.writeback)
+                    handle.state.applyWriteback(resolved.writeback)
                 }
 
                 return resolved.output ?? (primaryIntent?.value as T | undefined)
             } catch (error) {
                 if (args.optimisticState !== args.before && args.changedIds.size) {
-                    handle.stateWriter.commitMapUpdateDelta({
+                    handle.state.commit({
                         before: args.optimisticState,
                         after: args.before,
                         changedIds: args.changedIds
