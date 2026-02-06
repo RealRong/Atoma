@@ -4,7 +4,6 @@ import { Runtime } from 'atoma-runtime'
 import type { AtomaClient, AtomaSchema, CreateClientOptions, ClientPlugin, PluginContext, PluginInitResult } from 'atoma-types/client'
 import { zod } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
-import { EndpointRegistry } from './drivers/EndpointRegistry'
 import { CapabilitiesRegistry, HandlerChain, PluginRegistry, PluginRuntimeIo } from './plugins'
 import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry } from 'atoma-types/devtools'
 
@@ -69,7 +68,6 @@ export function createClient<
 
     const client: any = {}
 
-    const endpointRegistry = new EndpointRegistry()
     const pluginRegistry = new PluginRegistry()
     const capabilities = new CapabilitiesRegistry()
 
@@ -87,7 +85,6 @@ export function createClient<
 
     const pluginContext: PluginContext = {
         clientId: clientRuntime.id,
-        endpoints: endpointRegistry,
         capabilities,
         runtime: clientRuntime as any,
         hooks: clientRuntime.hooks
@@ -156,13 +153,6 @@ export function createClient<
         for (let i = pluginDisposers.length - 1; i >= 0; i--) {
             try {
                 pluginDisposers[i]()
-            } catch {
-                // ignore
-            }
-        }
-        for (const endpoint of endpointRegistry.list()) {
-            try {
-                endpoint.driver.dispose?.()
             } catch {
                 // ignore
             }

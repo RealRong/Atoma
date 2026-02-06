@@ -21,13 +21,11 @@ export type {
     PluginInitResult
 } from './plugins'
 
-export type { CapabilitiesRegistry, EndpointRegistry } from './registry'
+export type { CapabilitiesRegistry } from './registry'
 
 export type {
     OperationEnvelope,
-    ResultEnvelope,
-    Driver,
-    Endpoint
+    ResultEnvelope
 } from './drivers/types'
 
 export type {

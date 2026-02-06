@@ -2,13 +2,12 @@ import type { Query } from '../../protocol'
 import type * as Types from '../../core'
 import type { CoreRuntime, PersistRequest, PersistResult, RuntimeHookRegistry } from '../../runtime'
 import type { OperationEnvelope, ResultEnvelope } from '../drivers/types'
-import type { EndpointRegistry, CapabilitiesRegistry } from '../registry'
+import type { CapabilitiesRegistry } from '../registry'
 
 export type Next<T> = () => Promise<T>
 
 export type IoContext = {
     clientId: string
-    endpointId?: string
     storeName?: string
 }
 
@@ -83,7 +82,6 @@ export type ClientPlugin<Ext = unknown> = Readonly<{
 
 export type PluginContext = Readonly<{
     clientId: string
-    endpoints: EndpointRegistry
     capabilities: CapabilitiesRegistry
     runtime: CoreRuntime
     hooks: RuntimeHookRegistry

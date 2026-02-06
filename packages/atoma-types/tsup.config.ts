@@ -13,7 +13,7 @@ export default defineConfig({
         internal: 'src/internal/index.ts'
     },
     format: ['esm'],
-    dts: true,
+    dts: false,
     splitting: false,
     sourcemap: true,
     clean: true,
