@@ -66,6 +66,15 @@ export type WriteTimeoutBehavior = 'reject' | 'resolve-enqueued'
 export interface StoreOperationOptions {
     force?: boolean
     /**
+     * 批量操作执行配置（addMany/updateMany/upsertMany/deleteMany）
+     * - 默认 `{ concurrency: 1 }`（串行）
+     * - `concurrency > 1` 时启用受控并发
+     */
+    batch?: {
+        /** 并发度，<=1 视为串行 */
+        concurrency?: number
+    }
+    /**
      * 写入策略（本次调用级别）。不指定时使用该 store 的 schema 默认策略（若也未配置，则视为 direct）。
      *
      * 说明：

@@ -14,8 +14,8 @@ export class ReadFlow implements RuntimeRead {
     query = async <T extends Entity>(handle: StoreHandle<T>, input: StoreQuery<T>): Promise<QueryResult<T>> => {
         const runtime = this.runtime
         const { state } = handle
-        const { indexes, matcher } = state
-        const hooks = runtime.hooks
+            const { indexes, matcher } = state
+            const hooks = runtime.hooks
 
         hooks.emit.readStart({ handle, query: input })
 
@@ -27,7 +27,7 @@ export class ReadFlow implements RuntimeRead {
             const localResult = Query.evaluateWithIndexes({
                 mapRef: map,
                 query: input,
-                indexes,
+                indexes: (indexes ?? null) as any,
                 matcher
             })
 

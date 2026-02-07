@@ -6,6 +6,15 @@ import type { EntityId } from 'atoma-types/protocol'
 import { STORE_BINDINGS, getStoreBindings } from 'atoma-types/internal'
 import { useShallowStableArray } from './useShallowStableArray'
 import { createBatchedSubscribe } from './internal/batchedSubscribe'
+import {
+    buildPrefetchDoneKey,
+    collectCurrentAndNewIds,
+    filterStableItemsForRelation,
+    getEntityId,
+    normalizeInclude,
+    normalizeStoreName,
+    resolvePrefetchMode
+} from './internal/relationInclude'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 const PREFETCH_DEDUP_TTL_MS = 300
@@ -82,7 +91,7 @@ export function useRelations<T extends Entity>(
         const cached = wrappedStoreCacheRef.current.get(store as any)
         if (cached) return cached
 
-        const storeName = String((store as any)?.name ?? name ?? '')
+        const storeName = normalizeStoreName(store, name)
         const query = typeof store.query === 'function' ? store.query.bind(store) : undefined
         const getMany = typeof store.getMany === 'function' ? store.getMany.bind(store) : undefined
 
@@ -115,11 +124,8 @@ export function useRelations<T extends Entity>(
         return wrapped
     }, [])
 
-    const effectiveInclude = include && typeof include === 'object' && Object.keys(include).length === 0
-        ? undefined
-        : include
-
-    const includeKey = useMemo(() => stableStringify(effectiveInclude), [effectiveInclude])
+    const includePlan = useMemo(() => normalizeInclude(include), [include])
+    const { includeKey, effectiveInclude, liveInclude, snapshotInclude, snapshotNames } = includePlan
     const stableItems = useShallowStableArray(items)
 
     type State = { data: T[]; loading: boolean; error?: Error }
@@ -133,25 +139,6 @@ export function useRelations<T extends Entity>(
         snapshotNamesRef.current = []
     }
 
-    const { liveInclude, snapshotInclude, snapshotNames } = useMemo(() => {
-        if (!effectiveInclude) return { liveInclude: undefined, snapshotInclude: undefined, snapshotNames: [] as string[] }
-
-        const live: Record<string, any> = {}
-        const snapshot: Record<string, any> = {}
-        Object.entries(effectiveInclude).forEach(([name, opts]) => {
-            if (opts === false || opts === undefined || opts === null) return
-            const isLive = typeof opts === 'object' ? (opts as any).live !== false : true
-            ;(isLive ? live : snapshot)[name] = opts
-        })
-
-        const snapshotNames = Object.keys(snapshot)
-        return {
-            liveInclude: Object.keys(live).length ? live : undefined,
-            snapshotInclude: snapshotNames.length ? snapshot : undefined,
-            snapshotNames
-        }
-    }, [includeKey])
-
     // include/relations 变化时先清空快照，避免短暂合并旧数据
     useEffect(() => {
         clearSnapshot()
@@ -160,19 +147,6 @@ export function useRelations<T extends Entity>(
     useEffect(() => {
         prefetchDoneRef.current = new Set()
     }, [includeKey, relations])
-
-    const getEntityId = (item: any): EntityId | undefined => {
-        const id = item?.id
-        return (typeof id === 'string' && id) ? (id as EntityId) : undefined
-    }
-
-    const getPrefetchMode = (relConfig: any, includeValue: any): 'on-mount' | 'on-change' | 'manual' => {
-        if (includeValue && typeof includeValue === 'object') {
-            const mode = includeValue.prefetch
-            if (mode === 'on-mount' || mode === 'on-change' || mode === 'manual') return mode
-        }
-        return relConfig?.type === 'hasMany' ? 'on-mount' : 'on-change'
-    }
 
     const getStoreMap = (storeToken: StoreToken) => {
         if (!resolveStoreRef.current) return undefined
@@ -226,17 +200,8 @@ export function useRelations<T extends Entity>(
     }
 
     const prefetchAndProject = async (options?: { cancelled?: () => boolean; force?: boolean }): Promise<T[]> => {
-        const currentIds = new Set<EntityId>()
-        stableItems.forEach(item => {
-            const id = getEntityId(item)
-            if (id) currentIds.add(id)
-        })
-
         const previousIds = prevIdsRef.current
-        const newIds = new Set<EntityId>()
-        currentIds.forEach(id => {
-            if (!previousIds.has(id)) newIds.add(id)
-        })
+        const { currentIds, newIds } = collectCurrentAndNewIds(stableItems, previousIds)
 
         if (!effectiveInclude || !relations || stableItems.length === 0) {
             clearSnapshot()
@@ -267,23 +232,22 @@ export function useRelations<T extends Entity>(
                 const relConfig = (relations as any)?.[name]
                 if (!relConfig) return
 
-                const mode = getPrefetchMode(relConfig, value)
+                const mode = resolvePrefetchMode(relConfig, value)
                 if (!options?.force && mode === 'manual') return
 
-                const doneKey = `${includeKey}:${name}`
+                const doneKey = buildPrefetchDoneKey({ includeKey, relationName: name })
                 const shouldPrefetch = options?.force
                     || mode === 'on-change'
                     || (!prefetchDoneRef.current.has(doneKey) && stableItems.length > 0)
 
                 if (!shouldPrefetch) return
 
-                let itemsForRelation = stableItems
-                if (!options?.force && relConfig.type === 'hasMany' && newIds.size) {
-                    itemsForRelation = stableItems.filter(item => {
-                        const id = getEntityId(item)
-                        return id && !newIds.has(id)
-                    })
-                }
+                const itemsForRelation = filterStableItemsForRelation({
+                    items: stableItems,
+                    relationConfig: relConfig,
+                    newIds,
+                    force: options?.force
+                })
 
                 if (!itemsForRelation.length) {
                     if (mode === 'on-mount' && stableItems.length > 0) markDone.push(doneKey)

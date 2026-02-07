@@ -4,7 +4,6 @@ import type {
     Entity,
     OperationContext,
     PartialWithId,
-    RuntimeWriteHookSource,
     StoreOperationOptions,
     UpsertWriteOptions,
     WriteIntent,
@@ -12,12 +11,12 @@ import type {
     WriteManyResult
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CoreRuntime, RuntimeWrite, StoreHandle } from 'atoma-types/runtime'
+import type { CoreRuntime, RuntimeWrite, RuntimeWriteHookSource, StoreHandle } from 'atoma-types/runtime'
 import { version } from 'atoma-shared'
-import { buildWritebackFromResults } from './write/finalize'
-import { buildWriteIntentsFromPatches, buildWriteOps } from '../persistence'
+import { buildWriteIntentsFromPatches } from '../persistence'
 import { ensureActionId, prepareForAdd, prepareForUpdate, resolveBaseForWrite, runAfterSave, runBeforeSave } from './write/prepare'
-import { applyIntentsOptimistically } from './write/optimistic'
+import { WriteCommandService } from './write/WriteCommandService'
+import { WriteBatchRunner } from './write/WriteBatchRunner'
 
 function buildUpsertIntentOptions(options?: UpsertWriteOptions): WriteIntentOptions | undefined {
     if (!options) return undefined
@@ -143,7 +142,7 @@ async function prepareUpsertIntent<T extends Entity>(args: {
             candidate._etag = (base as any)._etag
         }
 
-        let next = await runBeforeSave(args.handle.config.hooks, candidate as any, 'update')
+        const next = await runBeforeSave(args.handle.config.hooks, candidate as any, 'update')
         const processed = await args.runtime.transform.inbound(args.handle, next as any, args.opContext)
         if (!processed) {
             throw new Error('[Atoma] upsertOne: transform returned empty')
@@ -192,19 +191,21 @@ async function prepareDeleteIntent<T extends Entity>(args: {
             action: 'update',
             entityId: args.id,
             baseVersion,
-            value: Object.assign({}, base, { deleted: true, deletedAt: args.runtime.now() }) as T
+            value: Object.assign({}, base, { deleted: true, deletedAt: args.runtime.now() }) as unknown as T
         },
         base
     }
 }
 
- 
-
 export class WriteFlow implements RuntimeWrite {
     private runtime: CoreRuntime
+    private readonly writeCommands: WriteCommandService
+    private readonly writeBatchRunner: WriteBatchRunner
 
     constructor(runtime: CoreRuntime) {
         this.runtime = runtime
+        this.writeCommands = new WriteCommandService()
+        this.writeBatchRunner = new WriteBatchRunner()
     }
 
     private executeSingleWrite = async <T extends Entity>(args: {
@@ -254,25 +255,6 @@ export class WriteFlow implements RuntimeWrite {
         }
     }
 
-    private runManyWrites = async <T, R>(
-        items: T[],
-        runner: (item: T) => Promise<R>,
-        toResult: (args: { index: number; value: R }) => any,
-        toError: (args: { index: number; error: unknown }) => any
-    ) => {
-        const results: any[] = new Array(items.length)
-        for (let index = 0; index < items.length; index++) {
-            const entry = items[index]
-            try {
-                const value = await runner(entry)
-                results[index] = toResult({ index, value })
-            } catch (error) {
-                results[index] = toError({ index, error })
-            }
-        }
-        return results
-    }
-
     addOne = async <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {
         const runtime = this.runtime
         const opContext = ensureActionId(options?.opContext)
@@ -305,11 +287,20 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     addMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]> => {
-        const out: T[] = []
-        for (const item of items) {
-            out.push(await this.addOne(handle, item, options))
+        const results = await this.writeBatchRunner.runMany({
+            items,
+            options,
+            runner: (entry) => this.addOne(handle, entry, options),
+            toResult: ({ index, value }) => ({ index, ok: true as const, value }),
+            toError: ({ index, error }) => ({ index, ok: false as const, error })
+        })
+
+        const firstError = results.find(item => !item.ok)
+        if (firstError) {
+            throw firstError.error
         }
-        return out
+
+        return results.map(item => item.value as T)
     }
 
     updateOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, recipe: (draft: ImmerDraft<T>) => void, options?: StoreOperationOptions): Promise<T> => {
@@ -343,12 +334,13 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     updateMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>, options?: StoreOperationOptions): Promise<WriteManyResult<T>> => {
-        return await this.runManyWrites(
+        return await this.writeBatchRunner.runMany({
             items,
-            (entry) => this.updateOne(handle, entry.id, entry.recipe, options),
-            ({ index, value }) => ({ index, ok: true, value }),
-            ({ index, error }) => ({ index, ok: false, error })
-        ) as WriteManyResult<T>
+            options,
+            runner: (entry) => this.updateOne(handle, entry.id, entry.recipe, options),
+            toResult: ({ index, value }) => ({ index, ok: true, value }),
+            toError: ({ index, error }) => ({ index, ok: false, error })
+        }) as WriteManyResult<T>
     }
 
     upsertOne = async <T extends Entity>(handle: StoreHandle<T>, item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T> => {
@@ -388,12 +380,13 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     upsertMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>> => {
-        return await this.runManyWrites(
+        return await this.writeBatchRunner.runMany({
             items,
-            (entry) => this.upsertOne(handle, entry, options),
-            ({ index, value }) => ({ index, ok: true, value }),
-            ({ index, error }) => ({ index, ok: false, error })
-        ) as WriteManyResult<T>
+            options,
+            runner: (entry) => this.upsertOne(handle, entry, options),
+            toResult: ({ index, value }) => ({ index, ok: true, value }),
+            toError: ({ index, error }) => ({ index, ok: false, error })
+        }) as WriteManyResult<T>
     }
 
     deleteOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<boolean> => {
@@ -430,12 +423,13 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     deleteMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
-        return await this.runManyWrites(
-            ids,
-            (id) => this.deleteOne(handle, id, options),
-            ({ index, value }) => ({ index, ok: true, value }),
-            ({ index, error }) => ({ index, ok: false, error })
-        ) as WriteManyResult<boolean>
+        return await this.writeBatchRunner.runMany({
+            items: ids,
+            options,
+            runner: (id) => this.deleteOne(handle, id, options),
+            toResult: ({ index, value }) => ({ index, ok: true, value }),
+            toError: ({ index, error }) => ({ index, ok: false, error })
+        }) as WriteManyResult<boolean>
     }
 
     patches = async <T extends Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: StoreOperationOptions): Promise<void> => {
@@ -467,115 +461,12 @@ export class WriteFlow implements RuntimeWrite {
         writeStrategy?: string
         intents?: Array<WriteIntent<T>>
     }): Promise<T | void> => {
-        const intents = this.makeIntents(args)
-        const optimistic = this.applyOptimistic({
+        return await this.writeCommands.execute({
+            runtime: this.runtime,
             handle: args.handle,
-            intents,
-            writeStrategy: args.writeStrategy
-        })
-        return await this.persistAndFinalize({
-            handle: args.handle,
-            intents,
             opContext: args.opContext,
             writeStrategy: args.writeStrategy,
-            ...optimistic
+            intents: args.intents ?? []
         })
-    }
-
-    private makeIntents<T extends Entity>(args: { intents?: Array<WriteIntent<T>> }): Array<WriteIntent<T>> {
-        return args.intents ?? []
-    }
-
-    private applyOptimistic<T extends Entity>(args: {
-        handle: StoreHandle<T>
-        intents: Array<WriteIntent<T>>
-        writeStrategy?: string
-    }): { before: Map<EntityId, T>; optimisticState: Map<EntityId, T>; changedIds: Set<EntityId> } {
-        const { handle, intents, writeStrategy } = args
-        const before = handle.state.getSnapshot() as Map<EntityId, T>
-        const writePolicy = this.runtime.persistence.resolveWritePolicy(writeStrategy)
-        const shouldOptimistic = writePolicy.optimistic !== false
-        const optimistic = (shouldOptimistic && intents.length)
-            ? applyIntentsOptimistically(before, intents)
-            : { optimisticState: before, changedIds: new Set<EntityId>() }
-        const { optimisticState, changedIds } = optimistic
-
-        if (optimisticState !== before && changedIds.size) {
-            handle.state.commit({
-                before,
-                after: optimisticState,
-                changedIds
-            })
-        }
-
-        return { before, optimisticState, changedIds }
-    }
-
-    private persistAndFinalize<T extends Entity>(args: {
-        handle: StoreHandle<T>
-        intents: Array<WriteIntent<T>>
-        opContext: OperationContext
-        writeStrategy?: string
-        before: Map<EntityId, T>
-        optimisticState: Map<EntityId, T>
-        changedIds: Set<EntityId>
-    }): Promise<T | void> {
-        const runtime = this.runtime
-        const { handle, intents, opContext } = args
-
-        return (async () => {
-            const plan = await buildWriteOps({
-                runtime,
-                handle,
-                intents,
-                opContext
-            })
-
-            const writeOps = plan.map(entry => entry.op)
-
-            if (!writeOps.length) {
-                const primary = intents.length === 1 ? intents[0] : undefined
-                if (primary && primary.action !== 'delete') {
-                    return primary.value as T
-                }
-                return undefined
-            }
-
-            try {
-                const persistResult = await runtime.persistence.persist({
-                    storeName: String(handle.storeName),
-                    writeStrategy: args.writeStrategy,
-                    handle,
-                    opContext,
-                    writeOps
-                })
-
-                const primaryIntent = intents.length === 1 ? intents[0] : undefined
-                const resolved = (persistResult.results && persistResult.results.length)
-                    ? await buildWritebackFromResults<T>({
-                        runtime,
-                        handle,
-                        plan,
-                        results: persistResult.results,
-                        primaryIntent
-                    })
-                    : {}
-
-                if (resolved.writeback) {
-                    handle.state.applyWriteback(resolved.writeback)
-                }
-
-                return resolved.output ?? (primaryIntent?.value as T | undefined)
-            } catch (error) {
-                if (args.optimisticState !== args.before && args.changedIds.size) {
-                    handle.state.commit({
-                        before: args.optimisticState,
-                        after: args.before,
-                        changedIds: args.changedIds
-                    })
-                }
-                throw error
-            }
-        })()
     }
 }

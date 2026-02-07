@@ -4,6 +4,7 @@ import { getStoreBindings } from 'atoma-types/internal'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'
 import { useRemoteQuery } from './useRemoteQuery'
+import { evaluateFetchPolicyRuntime, resolveRemoteEnabled } from './internal/fetchPolicy'
 
 type UseQueryResultMode = 'entities' | 'ids'
 
@@ -75,7 +76,7 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
         : ({ result: 'ids' as const } as any)
     )
 
-    const remoteEnabled = fetchPolicy !== 'cache-only'
+    const remoteEnabled = resolveRemoteEnabled(fetchPolicy)
     const remoteBehavior = wantsTransientRemote ? ({ transient: true } as const) : ({ hydrate: true } as const)
 
     const optionsForRemote = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
@@ -99,8 +100,13 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
 
     const hasData = data.length > 0
     const isFetching = remoteEnabled ? remote.isFetching : false
-    const loading = Boolean(remoteEnabled && isFetching && !hasData)
-    const isStale = Boolean(fetchPolicy === 'cache-and-network' && hasData && isFetching)
+    const fetchPolicyRuntime = evaluateFetchPolicyRuntime({
+        fetchPolicy,
+        hasData,
+        isFetching
+    })
+    const loading = fetchPolicyRuntime.loading
+    const isStale = fetchPolicyRuntime.isStale
 
     const pageInfo = remote.pageInfo
     const error = remote.error

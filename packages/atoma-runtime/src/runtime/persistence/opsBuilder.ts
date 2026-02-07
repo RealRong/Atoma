@@ -1,5 +1,5 @@
 import type { WriteIntent, WriteIntentOptions } from 'atoma-types/core'
-import type { EntityId, Operation, WriteAction, WriteItem, WriteItemMeta, WriteOptions } from 'atoma-types/protocol'
+import type { EntityId, WriteAction, WriteItem, WriteItemMeta, WriteOp, WriteOptions } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
 
 export function buildWriteOperation(args: {
@@ -8,7 +8,7 @@ export function buildWriteOperation(args: {
     action: WriteAction
     items: WriteItem[]
     options?: WriteOptions
-}): Operation {
+}): WriteOp {
     return Protocol.ops.build.buildWriteOp({
         opId: args.opId,
         write: {
