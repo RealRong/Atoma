@@ -8,6 +8,8 @@ export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
 export type RelationIncludeOptions<T, Include extends Record<string, any> = Record<string, any>> = Pick<Query<T>, 'sort' | 'page' | 'include' | 'select'> & {
     /** live=true 订阅子 store 实时变化；false 则使用快照（默认 true） */
     live?: boolean
+    /** 关系预取策略（默认：belongsTo/hasOne 为 on-change，hasMany 为 on-mount） */
+    prefetch?: 'on-mount' | 'on-change' | 'manual'
 }
 
 export interface BelongsToConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {
