@@ -1,13 +1,21 @@
 import type { HandlerEntry, HandlerMap, HandlerName } from 'atoma-types/client'
 
-type StoredEntry = {
-    handler: HandlerEntry['handler']
+type StoredEntry<K extends HandlerName> = {
+    handler: HandlerMap[K]
     priority: number
     order: number
 }
 
+type StoredEntries = {
+    [K in HandlerName]: Array<StoredEntry<K>>
+}
+
 export class PluginRegistry {
-    private readonly entries = new Map<HandlerName, StoredEntry[]>()
+    private readonly entries: StoredEntries = {
+        io: [],
+        persist: [],
+        read: []
+    }
     private order = 0
 
     register = <K extends HandlerName>(
@@ -15,27 +23,40 @@ export class PluginRegistry {
         handler: HandlerMap[K],
         opts?: { priority?: number }
     ) => {
-        const list = this.entries.get(name) ?? []
+        const list = this.entries[name] as Array<StoredEntry<K>>
         const priority = (typeof opts?.priority === 'number' && Number.isFinite(opts.priority)) ? opts.priority : 0
-        const entry: StoredEntry = { handler: handler as HandlerEntry['handler'], priority, order: this.order++ }
+        const entry: StoredEntry<K> = {
+            handler,
+            priority,
+            order: this.order++
+        }
+
         list.push(entry)
-        this.entries.set(name, list)
 
         return () => {
-            const current = this.entries.get(name)
-            if (!current) return
-            const next = current.filter(item => item !== entry)
-            if (!next.length) this.entries.delete(name)
-            else this.entries.set(name, next)
+            const index = list.indexOf(entry)
+            if (index >= 0) {
+                list.splice(index, 1)
+            }
         }
     }
 
-    list = (name: HandlerName): HandlerEntry[] => {
-        const current = this.entries.get(name) ?? []
-        const sorted = [...current].sort((a, b) => {
-            if (a.priority !== b.priority) return a.priority - b.priority
-            return a.order - b.order
+    list = <K extends HandlerName>(name: K): HandlerEntry<K>[] => {
+        const current = this.entries[name] as Array<StoredEntry<K>>
+        const sorted = [...current].sort((left, right) => {
+            if (left.priority !== right.priority) return left.priority - right.priority
+            return left.order - right.order
         })
-        return sorted.map(entry => ({ handler: entry.handler, priority: entry.priority }))
+
+        return sorted.map(entry => ({
+            handler: entry.handler,
+            priority: entry.priority
+        }))
+    }
+
+    clear = () => {
+        this.entries.io.length = 0
+        this.entries.persist.length = 0
+        this.entries.read.length = 0
     }
 }

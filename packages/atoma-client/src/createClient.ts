@@ -1,21 +1,30 @@
 import type { Entity } from 'atoma-types/core'
-import type { PersistRequest, RuntimeIo } from 'atoma-types/runtime'
+import type { PersistRequest, PersistResult, RuntimeIo, RuntimeSchema } from 'atoma-types/runtime'
 import { Runtime } from 'atoma-runtime'
-import type { AtomaClient, AtomaSchema, CreateClientOptions, ClientPlugin, PluginContext, PluginInitResult } from 'atoma-types/client'
+import type { AtomaClient, AtomaSchema, CreateClientOptions, ClientPlugin, PluginContext, PluginInitResult, Register } from 'atoma-types/client'
 import { zod } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
 import { CapabilitiesRegistry, HandlerChain, PluginRegistry, PluginRuntimeIo } from './plugins'
+import { markTerminalResult } from './plugins/HandlerChain'
+import { localBackendPlugin } from './defaults/LocalBackendPlugin'
 import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry } from 'atoma-types/devtools'
 
 const { parseOrThrow } = zod
 
-function ensureDevtoolsRegistry(capabilities: CapabilitiesRegistry): DevtoolsRegistry {
+const LOCAL_BACKEND_PLUGIN_ID = 'defaults:local-backend'
+
+type MutableClient<
+    E extends Record<string, Entity>,
+    S extends AtomaSchema<E>
+> = AtomaClient<E, S> & Record<string, unknown>
+
+function ensureDevtoolsRegistry(capabilities: CapabilitiesRegistry): (() => void) | undefined {
     const existing = capabilities.get<DevtoolsRegistry>(DEVTOOLS_REGISTRY_KEY)
     if (existing && typeof existing.get === 'function' && typeof existing.register === 'function') {
-        return existing
+        return
     }
 
-    const store = new Map<string, any>()
+    const store = new Map<string, unknown>()
     const subscribers = new Set<(e: { type: 'register' | 'unregister'; key: string }) => void>()
 
     const registry: DevtoolsRegistry = {
@@ -50,8 +59,133 @@ function ensureDevtoolsRegistry(capabilities: CapabilitiesRegistry): DevtoolsReg
         }
     }
 
-    capabilities.register(DEVTOOLS_REGISTRY_KEY, registry)
-    return registry
+    return capabilities.register(DEVTOOLS_REGISTRY_KEY, registry)
+}
+
+function createNotReadyIo(): RuntimeIo {
+    return {
+        executeOps: async () => {
+            throw new Error('[Atoma] io not ready')
+        },
+        query: async () => {
+            throw new Error('[Atoma] io not ready')
+        }
+    }
+}
+
+function safeDispose(dispose: (() => void) | undefined): void {
+    if (typeof dispose !== 'function') return
+    try {
+        dispose()
+    } catch {
+        // ignore
+    }
+}
+
+function isClientPlugin(value: unknown): value is ClientPlugin {
+    return !!value && typeof value === 'object'
+}
+
+function normalizePlugins(value: ReadonlyArray<unknown>): ClientPlugin[] {
+    return value.filter(isClientPlugin)
+}
+
+function buildPluginList(plugins: ClientPlugin[]): ClientPlugin[] {
+    const seenIds = new Set<string>()
+    const unique: ClientPlugin[] = []
+
+    for (const plugin of plugins) {
+        const id = (typeof plugin.id === 'string' && plugin.id.trim()) ? plugin.id.trim() : undefined
+        if (id) {
+            if (seenIds.has(id)) continue
+            seenIds.add(id)
+        }
+        unique.push(plugin)
+    }
+
+    if (!seenIds.has(LOCAL_BACKEND_PLUGIN_ID)) {
+        unique.push(localBackendPlugin())
+    }
+
+    return unique
+}
+
+function createClientSurface<
+    E extends Record<string, Entity>,
+    S extends AtomaSchema<E>
+>(runtime: Runtime): MutableClient<E, S> {
+    const client = {} as MutableClient<E, S>
+    client.stores = ((name: keyof E & string) => {
+        return runtime.stores.ensure(String(name))
+    }) as AtomaClient<E, S>['stores']
+    client.dispose = () => {
+        // assigned later
+    }
+    return client
+}
+
+function registerPluginHandlers(
+    plugins: ClientPlugin[],
+    ctx: PluginContext,
+    register: Register
+): void {
+    for (const plugin of plugins) {
+        if (typeof plugin.register !== 'function') continue
+        plugin.register(ctx, register)
+    }
+}
+
+function initPlugins<
+    E extends Record<string, Entity>,
+    S extends AtomaSchema<E>
+>(
+    plugins: ClientPlugin[],
+    ctx: PluginContext,
+    client: MutableClient<E, S>
+): Array<() => void> {
+    const disposers: Array<() => void> = []
+
+    for (const plugin of plugins) {
+        if (typeof plugin.init !== 'function') continue
+        const result = plugin.init(ctx) as PluginInitResult<unknown> | void
+        if (result?.extension && typeof result.extension === 'object') {
+            Object.assign(client, result.extension)
+        }
+        if (typeof result?.dispose === 'function') {
+            disposers.push(result.dispose)
+        }
+    }
+
+    return disposers
+}
+
+function createHandlerChains(pluginRegistry: PluginRegistry): {
+    io: HandlerChain<'io'>
+    persist: HandlerChain<'persist'>
+    read: HandlerChain<'read'>
+} {
+    const ioEntries = pluginRegistry.list('io')
+    const persistEntries = pluginRegistry.list('persist')
+    const readEntries = pluginRegistry.list('read')
+
+    if (!ioEntries.length) throw new Error('[Atoma] io handler missing')
+    if (!persistEntries.length) throw new Error('[Atoma] persist handler missing')
+    if (!readEntries.length) throw new Error('[Atoma] read handler missing')
+
+    return {
+        io: new HandlerChain<'io'>(ioEntries, {
+            name: 'io',
+            terminal: () => markTerminalResult({ results: [] })
+        }),
+        persist: new HandlerChain<'persist'>(persistEntries, {
+            name: 'persist',
+            terminal: () => markTerminalResult({ status: 'confirmed' as const })
+        }),
+        read: new HandlerChain<'read'>(readEntries, {
+            name: 'read',
+            terminal: () => markTerminalResult({ data: [] })
+        })
+    }
 }
 
 /**
@@ -64,100 +198,80 @@ export function createClient<
     const E extends Record<string, Entity>,
     const S extends AtomaSchema<E> = AtomaSchema<E>
 >(opt: CreateClientOptions<E, S>): AtomaClient<E, S> {
-    const args = parseOrThrow(createClientBuildArgsSchema, opt, { prefix: '[Atoma] createClient: ' }) as any
-
-    const client: any = {}
+    const args = parseOrThrow(createClientBuildArgsSchema, opt, {
+        prefix: '[Atoma] createClient: '
+    })
 
     const pluginRegistry = new PluginRegistry()
     const capabilities = new CapabilitiesRegistry()
+    const runtime = new Runtime({
+        schema: args.schema as RuntimeSchema,
+        io: createNotReadyIo()
+    })
 
-    const clientRuntime = new Runtime({
-        schema: ((args.schema ?? {}) as S) as any,
-        io: {
-            executeOps: async () => {
-                throw new Error('[Atoma] io not ready')
-            },
-            query: async () => {
-                throw new Error('[Atoma] io not ready')
-            }
-        } satisfies RuntimeIo
-    }) as any
-
-    const pluginContext: PluginContext = {
-        clientId: clientRuntime.id,
+    const context: PluginContext = {
+        clientId: runtime.id,
         capabilities,
-        runtime: clientRuntime as any,
-        hooks: clientRuntime.hooks
+        runtime,
+        hooks: runtime.hooks
     }
 
-    const plugins: ClientPlugin[] = Array.isArray(args.plugins) ? [...args.plugins] : []
+    const disposers: Array<() => void> = []
+    const plugins = buildPluginList(normalizePlugins(args.plugins))
 
-    ensureDevtoolsRegistry(capabilities)
-    capabilities.register(DEVTOOLS_META_KEY, {
+    const unregisterDevtoolsRegistry = ensureDevtoolsRegistry(capabilities)
+    if (unregisterDevtoolsRegistry) {
+        disposers.push(unregisterDevtoolsRegistry)
+    }
+
+    disposers.push(capabilities.register(DEVTOOLS_META_KEY, {
         storeBackend: { role: 'local', kind: 'custom' }
-    })
+    }))
 
-    for (const plugin of plugins) {
-        if (!plugin) continue
-        if (typeof plugin.register === 'function') {
-            plugin.register(pluginContext, pluginRegistry.register)
-        }
+    const register: Register = (name, handler, opts) => {
+        const unregister = pluginRegistry.register(name, handler, opts)
+        disposers.push(unregister)
+        return unregister
     }
 
-    const ioEntries = pluginRegistry.list('io')
-    const persistEntries = pluginRegistry.list('persist')
-    const readEntries = pluginRegistry.list('read')
-    if (!ioEntries.length) throw new Error('[Atoma] io handler missing')
-    if (!persistEntries.length) throw new Error('[Atoma] persist handler missing')
-    if (!readEntries.length) throw new Error('[Atoma] read handler missing')
+    registerPluginHandlers(plugins, context, register)
 
-    const ioChain = new HandlerChain(ioEntries)
-    const persistChain = new HandlerChain(persistEntries)
-    const readChain = new HandlerChain(readEntries)
-
-    clientRuntime.io = new PluginRuntimeIo({
-        io: ioChain,
-        read: readChain,
-        now: clientRuntime.now,
-        clientId: clientRuntime.id
+    const chains = createHandlerChains(pluginRegistry)
+    runtime.io = new PluginRuntimeIo({
+        io: chains.io,
+        read: chains.read,
+        now: runtime.now,
+        clientId: runtime.id
     })
 
-    clientRuntime.strategy.register('direct', {
-        persist: async ({ req }: { req: PersistRequest<any> }) => {
-            return await persistChain.execute(req, {
-                clientId: clientRuntime.id,
-                store: String(req.storeName)
-            } as any)
+    const unregisterDirectStrategy = runtime.strategy.register('direct', {
+        persist: async <T extends Entity>({ req }: { req: PersistRequest<T> }): Promise<PersistResult<T>> => {
+            return await chains.persist.execute(req, {
+                clientId: runtime.id,
+                storeName: String(req.storeName)
+            }) as PersistResult<T>
         }
     })
-    clientRuntime.strategy.setDefaultStrategy('direct')
 
-    const pluginDisposers: Array<() => void> = []
+    const restoreDefaultStrategy = runtime.strategy.setDefaultStrategy('direct')
+    disposers.push(restoreDefaultStrategy)
+    disposers.push(unregisterDirectStrategy)
 
-    for (const plugin of plugins) {
-        if (!plugin || typeof plugin.init !== 'function') continue
-        const result = plugin.init(pluginContext) as PluginInitResult<any> | void
-        if (result?.extension && typeof result.extension === 'object') {
-            Object.assign(client, result.extension)
-        }
-        if (typeof result?.dispose === 'function') {
-            pluginDisposers.push(result.dispose)
-        }
-    }
+    const client = createClientSurface<E, S>(runtime)
+    const pluginInitDisposers = initPlugins(plugins, context, client)
+    disposers.push(...pluginInitDisposers)
 
-    client.stores = ((name: keyof E & string) => {
-        return clientRuntime.stores.ensure(String(name)) as any
-    }) as AtomaClient<E, S>['stores']
-
+    let disposed = false
     client.dispose = () => {
-        for (let i = pluginDisposers.length - 1; i >= 0; i--) {
-            try {
-                pluginDisposers[i]()
-            } catch {
-                // ignore
-            }
+        if (disposed) return
+        disposed = true
+
+        for (let i = disposers.length - 1; i >= 0; i--) {
+            safeDispose(disposers[i])
         }
+
+        pluginRegistry.clear()
     }
 
-    return client as AtomaClient<E, S>
+    return client
 }

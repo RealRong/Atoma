@@ -1,4 +1,4 @@
-import type { Query } from '../../protocol'
+import type { Query } from '../../core'
 import type * as Types from '../../core'
 import type { CoreRuntime, PersistRequest, PersistResult, RuntimeHookRegistry } from '../../runtime'
 import type { OperationEnvelope, ResultEnvelope } from '../drivers/types'
@@ -13,12 +13,12 @@ export type IoContext = {
 
 export type PersistContext = {
     clientId: string
-    store: string
+    storeName: string
 }
 
 export type ReadContext = {
     clientId: string
-    store: string
+    storeName: string
 }
 
 export type ReadRequest = Readonly<{

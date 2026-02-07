@@ -1,18 +1,19 @@
 import { Protocol } from 'atoma-protocol'
 import type { Entity, Query } from 'atoma-types/core'
 import type { RuntimeIo, StoreHandle } from 'atoma-types/runtime'
+import type { OperationEnvelope, ResultEnvelope } from 'atoma-types/client'
 import type { HandlerChain } from './HandlerChain'
 import type { IoContext, QueryResult, ReadContext, ReadRequest } from 'atoma-types/client'
 
 export class PluginRuntimeIo implements RuntimeIo {
-    private readonly ioChain: HandlerChain
-    private readonly readChain: HandlerChain
+    private readonly ioChain: HandlerChain<'io'>
+    private readonly readChain: HandlerChain<'read'>
     private readonly now: () => number
     private readonly clientId: string
 
     constructor(args: {
-        io: HandlerChain
-        read: HandlerChain
+        io: HandlerChain<'io'>
+        read: HandlerChain<'read'>
         now?: () => number
         clientId: string
     }) {
@@ -31,14 +32,17 @@ export class PluginRuntimeIo implements RuntimeIo {
         })
         Protocol.ops.validate.assertOutgoingOps({ ops: opsWithTrace, meta })
 
-        const res = await this.ioChain.execute({
+        const req: OperationEnvelope = {
             ops: opsWithTrace,
             meta,
             ...(input.signal ? { signal: input.signal } : {})
-        }, { clientId: this.clientId } as IoContext)
+        }
+        const ctx: IoContext = { clientId: this.clientId }
+
+        const envelope = assertResultEnvelope(await this.ioChain.execute(req, ctx))
 
         try {
-            return Protocol.ops.validate.assertOperationResults((res as any).results)
+            return Protocol.ops.validate.assertOperationResults(envelope.results)
         } catch (error) {
             throw toProtocolValidationError(error, 'Invalid ops response')
         }
@@ -56,10 +60,23 @@ export class PluginRuntimeIo implements RuntimeIo {
         }
         const ctx: ReadContext = {
             clientId: this.clientId,
-            store: String(handle.storeName)
+            storeName: String(handle.storeName)
         }
         return await this.readChain.execute(req, ctx)
     }
+}
+
+function assertResultEnvelope(value: unknown): ResultEnvelope {
+    if (!value || typeof value !== 'object') {
+        throw new Error('[Atoma] Invalid ops response: envelope missing')
+    }
+
+    const candidate = value as { results?: unknown }
+    if (!Array.isArray(candidate.results)) {
+        throw new Error('[Atoma] Invalid ops response: results must be an array')
+    }
+
+    return value as ResultEnvelope
 }
 
 function toProtocolValidationError(error: unknown, fallbackMessage: string): Error {
@@ -69,6 +86,7 @@ function toProtocolValidationError(error: unknown, fallbackMessage: string): Err
         kind: 'validation'
     })
     const err = new Error(`[Atoma] ${standard.message}`)
-    ;(err as any).error = standard
+    const enhanced = err as Error & { error?: unknown }
+    enhanced.error = standard
     return err
 }

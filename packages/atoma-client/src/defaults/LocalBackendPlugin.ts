@@ -1,26 +1,16 @@
 import { executeLocalQuery } from 'atoma-core/query'
-import type { Entity } from 'atoma-types/core'
+import type { Entity, Query } from 'atoma-types/core'
 import type { EntityId, Operation, OperationResult, QueryResultData } from 'atoma-types/protocol'
 import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client'
+import { isTerminalResult } from '../plugins/HandlerChain'
 
-const MISSING_TERMINAL = '[Atoma] HandlerChain: missing terminal handler'
-
-const isMissingTerminal = (error: unknown): boolean => {
-    if (!error) return false
-    if (typeof error === 'string') return error.includes(MISSING_TERMINAL)
-    if (typeof (error as any).message === 'string') {
-        return String((error as any).message).includes(MISSING_TERMINAL)
-    }
-    return false
-}
-
-async function queryLocal<T extends Entity>(ctx: PluginContext, storeName: string, query: any): Promise<QueryResultData> {
+async function queryLocal<T extends Entity>(ctx: PluginContext, storeName: string, query: Query): Promise<QueryResultData> {
     const handle = ctx.runtime.stores.resolveHandle(storeName, 'LocalBackendPlugin.query')
     const map = handle.state.getSnapshot() as Map<EntityId, T>
-    const items = Array.from(map.values()) as T[]
+    const items = Array.from(map.values())
     const outbound = await Promise.all(items.map(item => ctx.runtime.transform.outbound(handle, item)))
     const normalized = outbound.filter(item => item !== undefined) as T[]
-    return executeLocalQuery(normalized as any, query as any, { matcher: handle.state.matcher })
+    return executeLocalQuery(normalized, query, { matcher: handle.state.matcher })
 }
 
 function toUnsupportedOpsResults(ops: Operation[]): OperationResult[] {
@@ -40,11 +30,8 @@ export function localBackendPlugin(): ClientPlugin {
         id: 'defaults:local-backend',
         register: (ctx: PluginContext, register: Register) => {
             const ioHandler: IoHandler = async (req, _ctx, next) => {
-                try {
-                    return await next()
-                } catch (error) {
-                    if (!isMissingTerminal(error)) throw error
-                }
+                const upstream = await next()
+                if (!isTerminalResult(upstream)) return upstream
 
                 if (!req.ops.length) return { results: [] }
                 const results: OperationResult[] = []
@@ -60,20 +47,14 @@ export function localBackendPlugin(): ClientPlugin {
             }
 
             const readHandler: ReadHandler = async (req, _ctx, next) => {
-                try {
-                    return await next()
-                } catch (error) {
-                    if (!isMissingTerminal(error)) throw error
-                }
+                const upstream = await next()
+                if (!isTerminalResult(upstream)) return upstream
                 return await queryLocal(ctx, String(req.storeName), req.query)
             }
 
             const persistHandler: PersistHandler = async (_req, _ctx, next) => {
-                try {
-                    return await next()
-                } catch (error) {
-                    if (!isMissingTerminal(error)) throw error
-                }
+                const upstream = await next()
+                if (!isTerminalResult(upstream)) return upstream
                 return { status: 'confirmed' }
             }
 
