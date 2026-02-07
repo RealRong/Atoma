@@ -1,4 +1,4 @@
-import { Store } from 'atoma-core'
+import { applyWritebackToMap, preserveReferenceShallow } from 'atoma-core/store'
 import type { Entity, QueryMatcherOptions, StoreIndexesLike, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { StoreChangedIds, StoreSnapshot, StoreState } from 'atoma-types/runtime'
@@ -62,8 +62,8 @@ export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
 
     applyWriteback = (args: StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
         const before = this.snapshot as Map<EntityId, T>
-        const preserve = options?.preserve ?? Store.preserveReferenceShallow
-        const result = Store.applyWritebackToMap(before, args, { preserve })
+        const preserve = options?.preserve ?? preserveReferenceShallow
+        const result = applyWritebackToMap(before, args, { preserve })
         if (!result) return
 
         this.commit({

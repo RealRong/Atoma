@@ -72,7 +72,7 @@ export class SyncPersistHandlers {
     private register() {
         const { runtime, outbox } = this.deps
 
-        this.unregister.push(runtime.persistence.register('queue', {
+        this.unregister.push(runtime.strategy.register('queue', {
             write: { implicitFetch: false },
             persist: async <T extends Entity>(x: {
                 req: PersistRequest<T>
@@ -84,7 +84,7 @@ export class SyncPersistHandlers {
             }
         }))
 
-        this.unregister.push(runtime.persistence.register('local-first', {
+        this.unregister.push(runtime.strategy.register('local-first', {
             write: { implicitFetch: true },
             persist: async <T extends Entity>(x: {
                 req: PersistRequest<T>

@@ -1,5 +1,0 @@
-export * as Store from './store'
-export * as Query from './query'
-export * as Relations from './relations'
-export * as Indexes from './indexes'
-export * as Operation from './operation'

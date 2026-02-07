@@ -8,7 +8,11 @@ export default defineConfig({
             { find: /^#client\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/$1') },
 
             { find: /^atoma-client$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/index.ts') },
-            { find: /^atoma-core$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/index.ts') },
+            { find: /^atoma-core\/store$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/store/index.ts') },
+            { find: /^atoma-core\/query$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/query/index.ts') },
+            { find: /^atoma-core\/relations$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/relations/index.ts') },
+            { find: /^atoma-core\/indexes$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/indexes/index.ts') },
+            { find: /^atoma-core\/operation$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/operation.ts') },
             { find: /^atoma-shared$/, replacement: path.resolve(__dirname, 'packages/atoma-shared/src/index.ts') },
             { find: /^atoma-observability$/, replacement: path.resolve(__dirname, 'packages/plugins/atoma-observability/src/index.ts') },
             { find: /^atoma-protocol$/, replacement: path.resolve(__dirname, 'packages/atoma-protocol/src/index.ts') },

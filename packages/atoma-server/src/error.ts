@@ -1,5 +1,4 @@
 import type { ErrorKind, StandardError, StandardErrorDetails } from 'atoma-types/protocol'
-import { Protocol } from 'atoma-protocol'
 
 const ATOMA_ERROR_BRAND = Symbol.for('atoma.error')
 
@@ -124,7 +123,7 @@ export function sanitizeDetails(details: unknown): AtomaErrorDetails | undefined
 export function toStandardError(reason: unknown, fallbackCode: string = 'INTERNAL'): StandardError {
     if (isAtomaError(reason)) {
         const details = sanitizeDetails(reason.details)
-        const kind = details?.kind ?? Protocol.error.inferKindFromCode(reason.code)
+        const kind = details?.kind ?? inferKindFromCode(reason.code)
         if (!details) {
             return { code: reason.code, message: reason.message, kind }
         }
@@ -139,7 +138,60 @@ export function toStandardError(reason: unknown, fallbackCode: string = 'INTERNA
     }
 
     // Allow already-normalized StandardError to pass through (e.g. from adapter layer).
-    return Protocol.error.wrap(reason, { code: fallbackCode, message: 'Internal error', kind: 'internal' })
+    return wrapToStandardError(reason, { code: fallbackCode, message: 'Internal error', kind: 'internal' })
+}
+
+function inferKindFromCode(code: string): ErrorKind {
+    switch (code) {
+        case 'NOT_FOUND':
+            return 'not_found'
+        case 'CONFLICT':
+            return 'conflict'
+        case 'ACCESS_DENIED':
+        case 'RESOURCE_NOT_ALLOWED':
+            return 'auth'
+        case 'INVALID_REQUEST':
+        case 'INVALID_QUERY':
+        case 'INVALID_WRITE':
+        case 'INVALID_PAYLOAD':
+        case 'INVALID_ORDER_BY':
+        case 'METHOD_NOT_ALLOWED':
+        case 'PROTOCOL_UNSUPPORTED_VERSION':
+        case 'PROTOCOL_INVALID_ENVELOPE':
+            return 'validation'
+        case 'TOO_MANY_QUERIES':
+        case 'TOO_MANY_ITEMS':
+        case 'PAYLOAD_TOO_LARGE':
+            return 'limits'
+        default:
+            return 'internal'
+    }
+}
+
+function wrapToStandardError(reason: unknown, fallback: {
+    code: string
+    message: string
+    kind?: ErrorKind
+    details?: StandardErrorDetails
+}): StandardError {
+    const error = reason as any
+    if (error && typeof error === 'object'
+        && typeof error.code === 'string'
+        && typeof error.message === 'string'
+        && typeof error.kind === 'string'
+    ) {
+        const details = (error as any).details
+        if (details === undefined) return error as StandardError
+        if (details && typeof details === 'object' && !Array.isArray(details)) return error as StandardError
+        return { code: error.code, message: error.message, kind: error.kind } as StandardError
+    }
+
+    return {
+        code: fallback.code,
+        message: fallback.message,
+        kind: fallback.kind ?? inferKindFromCode(fallback.code),
+        ...(fallback.details ? { details: fallback.details } : {})
+    }
 }
 
 export function errorStatus(error: Pick<StandardError, 'code'>) {

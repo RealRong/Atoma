@@ -3,14 +3,14 @@
  */
 import type { Entity, WriteStrategy } from 'atoma-types/core'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from 'atoma-types/runtime'
-import type { CoreRuntime, RuntimePersistence } from 'atoma-types/runtime'
+import type { CoreRuntime, RuntimeStrategyRegistry } from 'atoma-types/runtime'
 
 const DEFAULT_WRITE_POLICY: WritePolicy = {
     implicitFetch: true,
     optimistic: true
 }
 
-export class StrategyRegistry implements RuntimePersistence {
+export class StrategyRegistry implements RuntimeStrategyRegistry {
     private readonly strategies = new Map<WriteStrategy, StrategyDescriptor>()
     private readonly runtime: CoreRuntime
     private defaultStrategy?: WriteStrategy
@@ -64,7 +64,7 @@ export class StrategyRegistry implements RuntimePersistence {
     }
 
     private persistViaOps = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-        const results = await this.runtime.io.executeOps({ ops: req.writeOps as any })
+        const results = await this.runtime.io.executeOps({ ops: req.writeOps })
         return {
             status: 'confirmed',
             ...(results.length ? { results } : {})

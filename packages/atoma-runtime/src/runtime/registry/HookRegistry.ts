@@ -1,4 +1,4 @@
-import type { RuntimeHookRegistry, RuntimeHooks } from 'atoma-types/runtime'
+import type { RuntimeHookEventName, RuntimeHookRegistry, RuntimeHooks } from 'atoma-types/runtime'
 
 type StoreCreatedArgs = Parameters<RuntimeHookRegistry['emit']['storeCreated']>[0]
 type ReadStartArgs = Parameters<RuntimeHookRegistry['emit']['readStart']>[0]
@@ -33,6 +33,7 @@ export class HookRegistry implements RuntimeHookRegistry {
 
     get has() {
         return {
+            event: (name: RuntimeHookEventName) => this.handlers[name].size > 0,
             writePatches: this.handlers.writePatches.size > 0
         }
     }
@@ -40,12 +41,14 @@ export class HookRegistry implements RuntimeHookRegistry {
     register = (hooks: RuntimeHooks) => {
         if (!hooks) return () => {}
 
-        const bindings: Array<{ name: HookEventName; fn: HookEventMap[HookEventName] }> = []
+        const cleanups: Array<() => void> = []
 
         const add = <K extends HookEventName>(name: K, fn?: HookEventMap[K]) => {
             if (!fn) return
             this.handlers[name].add(fn)
-            bindings.push({ name, fn })
+            cleanups.push(() => {
+                this.handlers[name].delete(fn)
+            })
         }
 
         add('readStart', hooks.read?.onStart)
@@ -60,9 +63,7 @@ export class HookRegistry implements RuntimeHookRegistry {
         return () => {
             if (!active) return
             active = false
-            for (const binding of bindings) {
-                this.handlers[binding.name].delete(binding.fn as any)
-            }
+            cleanups.forEach(cleanup => cleanup())
         }
     }
 
@@ -91,11 +92,11 @@ export class HookRegistry implements RuntimeHookRegistry {
     }
 
     private dispatch = <K extends HookEventName>(name: K, args: Parameters<HookEventMap[K]>[0]) => {
-        const list = this.handlers[name]
+        const list = this.handlers[name] as Set<(payload: Parameters<HookEventMap[K]>[0]) => void>
         if (!list.size) return
         for (const fn of list) {
             try {
-                fn(args as any)
+                fn(args)
             } catch {
                 // ignore
             }

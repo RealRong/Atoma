@@ -1,7 +1,7 @@
 export type {
     CoreRuntime,
     RuntimeIo,
-    RuntimePersistence,
+    RuntimeStrategyRegistry,
     RuntimeRead,
     RuntimeTransform,
     RuntimeWrite,
@@ -13,6 +13,7 @@ export type { StoreChangedIds, StoreListener, StoreSnapshot, StoreState } from '
 export type { RuntimeSchema, RuntimeStoreSchema } from './schema'
 export type {
     RuntimeHooks,
+    RuntimeHookEventName,
     RuntimeHookRegistry,
     RuntimeReadStartArgs,
     RuntimeReadFinishArgs,

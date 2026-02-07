@@ -1,21 +1,79 @@
-import { Query, Store } from 'atoma-core'
+import { bulkAdd, bulkRemove, preserveReferenceShallow } from 'atoma-core/store'
+import { evaluateWithIndexes, resolveCachePolicy } from 'atoma-core/query'
 import type { Entity, Query as StoreQuery, QueryOneResult, QueryResult, StoreReadOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { toErrorWithFallback as toError } from 'atoma-shared'
 import type { CoreRuntime, RuntimeRead, StoreHandle } from 'atoma-types/runtime'
 
 export class ReadFlow implements RuntimeRead {
-    private runtime: CoreRuntime
+    private readonly runtime: CoreRuntime
 
     constructor(runtime: CoreRuntime) {
         this.runtime = runtime
     }
 
+    private toQueryResult = <T extends Entity>(data: T[], pageInfo?: unknown): QueryResult<T> => {
+        return pageInfo ? { data, pageInfo: pageInfo as any } : { data }
+    }
+
+    private writebackOne = async <T extends Entity>(handle: StoreHandle<T>, input: unknown): Promise<T | undefined> => {
+        return await this.runtime.transform.writeback(handle, input as T)
+    }
+
+    private writebackArray = async <T extends Entity>(handle: StoreHandle<T>, input: unknown[]): Promise<T[]> => {
+        const output: T[] = []
+        for (const item of input) {
+            const processed = await this.writebackOne(handle, item)
+            if (processed !== undefined) output.push(processed)
+        }
+        return output
+    }
+
+    private collectChangedIdsForItems = <T extends Entity>(before: Map<EntityId, T>, items: T[]): Set<EntityId> => {
+        const changedIds = new Set<EntityId>()
+        for (const item of items) {
+            const id = (item as any).id as EntityId
+            if (!before.has(id) || before.get(id) !== item) {
+                changedIds.add(id)
+            }
+        }
+        return changedIds
+    }
+
+    private applyQueryWriteback = <T extends Entity>(handle: StoreHandle<T>, remote: T[]): T[] => {
+        const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
+        const changedIds = new Set<EntityId>()
+        let next: Map<EntityId, T> | null = null
+        const processed: T[] = new Array(remote.length)
+
+        for (let i = 0; i < remote.length; i++) {
+            const item = remote[i]
+            const id = (item as any).id as EntityId
+            const existing = existingMap.get(id)
+            const preserved = preserveReferenceShallow(existing, item)
+            processed[i] = preserved
+            if (existing === preserved) continue
+            changedIds.add(id)
+            if (!next) next = new Map(existingMap)
+            next.set(id, preserved)
+        }
+
+        if (next && changedIds.size) {
+            handle.state.commit({
+                before: existingMap,
+                after: next,
+                changedIds
+            })
+        }
+
+        return processed
+    }
+
     query = async <T extends Entity>(handle: StoreHandle<T>, input: StoreQuery<T>): Promise<QueryResult<T>> => {
         const runtime = this.runtime
         const { state } = handle
-            const { indexes, matcher } = state
-            const hooks = runtime.hooks
+        const { indexes, matcher } = state
+        const hooks = runtime.hooks
 
         hooks.emit.readStart({ handle, query: input })
 
@@ -24,14 +82,14 @@ export class ReadFlow implements RuntimeRead {
             if (localCache) return localCache
 
             const map = state.getSnapshot() as Map<EntityId, T>
-            const localResult = Query.evaluateWithIndexes({
+            const localResult = evaluateWithIndexes({
                 mapRef: map,
                 query: input,
                 indexes: (indexes ?? null) as any,
                 matcher
             })
 
-            const result = { data: localResult.data, ...(localResult.pageInfo ? { pageInfo: localResult.pageInfo } : {}) }
+            const result = this.toQueryResult(localResult.data, localResult.pageInfo)
             localCache = { data: localResult.data, result }
             return localCache
         }
@@ -42,47 +100,17 @@ export class ReadFlow implements RuntimeRead {
             const durationMs = runtime.now() - startedAt
 
             const fetched = Array.isArray(data) ? data : []
-            const remote: T[] = []
-            for (let i = 0; i < fetched.length; i++) {
-                const processed = await runtime.transform.writeback(handle, fetched[i] as T)
-                if (processed !== undefined) {
-                    remote.push(processed)
-                }
-            }
+            const remote = await this.writebackArray(handle, fetched)
 
-            const cachePolicy = Query.resolveCachePolicy(input)
+            const cachePolicy = resolveCachePolicy(input)
             if (cachePolicy.effectiveSkipStore) {
-                const result = { data: remote, ...(pageInfo ? { pageInfo: pageInfo as any } : {}) }
+                const result = this.toQueryResult(remote, pageInfo)
                 hooks.emit.readFinish({ handle, query: input, result, durationMs })
                 return result
             }
 
-            const existingMap = state.getSnapshot() as Map<EntityId, T>
-            const changedIds = new Set<EntityId>()
-            let next: Map<EntityId, T> | null = null
-            const processed: T[] = new Array(remote.length)
-
-            for (let i = 0; i < remote.length; i++) {
-                const item = remote[i] as T
-                const id = (item as any).id as EntityId
-                const existing = existingMap.get(id)
-                const preserved = Store.preserveReferenceShallow(existing, item)
-                processed[i] = preserved
-                if (existing === preserved) continue
-                changedIds.add(id)
-                if (!next) next = new Map(existingMap)
-                next.set(id, preserved)
-            }
-
-            if (next && changedIds.size) {
-                handle.state.commit({
-                    before: existingMap,
-                    after: next,
-                    changedIds
-                })
-            }
-
-            const result = { data: processed, ...(pageInfo ? { pageInfo: pageInfo as any } : {}) }
+            const processed = this.applyQueryWriteback(handle, remote)
+            const result = this.toQueryResult(processed, pageInfo)
             hooks.emit.readFinish({ handle, query: input, result, durationMs })
             return result
         } catch (error) {
@@ -98,24 +126,24 @@ export class ReadFlow implements RuntimeRead {
             ...input,
             page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
         }
-        const res = await this.query(handle, next)
-        return { data: res.data[0] }
+        const result = await this.query(handle, next)
+        return { data: result.data[0] }
     }
 
-    getMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, options?: StoreReadOptions): Promise<T[]> => {
+    getMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true, _options?: StoreReadOptions): Promise<T[]> => {
         const beforeMap = handle.state.getSnapshot() as Map<EntityId, T>
-        const out: Array<T | undefined> = new Array(ids.length)
+        const output: Array<T | undefined> = new Array(ids.length)
         const missingSet = new Set<EntityId>()
         const missingUnique: EntityId[] = []
 
-        for (let i = 0; i < ids.length; i++) {
-            const id = ids[i]
+        for (let index = 0; index < ids.length; index++) {
+            const id = ids[index]
             const cached = beforeMap.get(id)
             if (cached !== undefined) {
-                out[i] = cached
+                output[index] = cached
                 continue
             }
-            out[i] = undefined
+            output[index] = undefined
             if (!missingSet.has(id)) {
                 missingSet.add(id)
                 missingUnique.push(id)
@@ -131,122 +159,107 @@ export class ReadFlow implements RuntimeRead {
             const fetchedById = new Map<EntityId, T>()
             const itemsToCache: T[] = []
 
-            for (const got of data) {
-                if (got === undefined) continue
-                const processed = await this.runtime.transform.writeback(handle, got as T)
+            for (const rawItem of data) {
+                if (rawItem === undefined) continue
+                const processed = await this.writebackOne(handle, rawItem)
                 if (!processed) continue
-                const id = (processed as any).id as EntityId
 
+                const id = (processed as any).id as EntityId
                 const existing = before.get(id)
-                const preserved = Store.preserveReferenceShallow(existing, processed)
+                const preserved = preserveReferenceShallow(existing, processed)
 
                 fetchedById.set(id, preserved)
-                if (cache) {
-                    itemsToCache.push(preserved)
-                }
+                if (cache) itemsToCache.push(preserved)
             }
 
             if (cache && itemsToCache.length) {
-                const after = Store.bulkAdd(itemsToCache as any, before)
+                const after = bulkAdd(itemsToCache, before)
                 if (after !== before) {
-                    const changedIds = new Set<EntityId>()
-                    for (const item of itemsToCache) {
-                        const id = (item as any).id as EntityId
-                        if (!before.has(id) || before.get(id) !== item) {
-                            changedIds.add(id)
-                        }
-                    }
+                    const changedIds = this.collectChangedIdsForItems(before, itemsToCache)
                     handle.state.commit({ before, after, changedIds })
                 }
             }
 
-            for (let i = 0; i < ids.length; i++) {
-                if (out[i] !== undefined) continue
-                const id = ids[i]
-                out[i] = fetchedById.get(id)
+            for (let index = 0; index < ids.length; index++) {
+                if (output[index] !== undefined) continue
+                const id = ids[index]
+                output[index] = fetchedById.get(id)
             }
         }
 
-        return out.filter((i): i is T => i !== undefined)
+        return output.filter((item): item is T => item !== undefined)
     }
 
-    getOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreReadOptions): Promise<T | undefined> => {
+    getOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, _options?: StoreReadOptions): Promise<T | undefined> => {
         const cached = handle.state.getSnapshot().get(id)
         if (cached !== undefined) return cached
-        const items = await this.getMany(handle, [id], true, options)
+        const items = await this.getMany(handle, [id], true)
         return items[0]
     }
 
-    fetchOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreReadOptions): Promise<T | undefined> => {
+    fetchOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, _options?: StoreReadOptions): Promise<T | undefined> => {
         const { data } = await this.runtime.io.query(handle, {
             filter: { op: 'eq', field: 'id', value: id },
             page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
         })
         const one = data[0]
         if (one === undefined) return undefined
-        return await this.runtime.transform.writeback(handle, one as T)
+        return await this.writebackOne(handle, one)
     }
 
-    fetchAll = async <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions): Promise<T[]> => {
+    fetchAll = async <T extends Entity>(handle: StoreHandle<T>, _options?: StoreReadOptions): Promise<T[]> => {
         const { data } = await this.runtime.io.query(handle, {})
-        const out: T[] = []
-        for (let i = 0; i < data.length; i++) {
-            const processed = await this.runtime.transform.writeback(handle, data[i] as T)
-            if (processed !== undefined) {
-                out.push(processed)
-            }
-        }
-        return out
+        return await this.writebackArray(handle, data)
     }
 
-    getAll = async <T extends Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions): Promise<T[]> => {
+    getAll = async <T extends Entity>(
+        handle: StoreHandle<T>,
+        filter?: (item: T) => boolean,
+        cacheFilter?: (item: T) => boolean,
+        _options?: StoreReadOptions
+    ): Promise<T[]> => {
         const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
         const { data } = await this.runtime.io.query(handle, {})
         const fetched = Array.isArray(data) ? data : []
-        const arr: T[] = []
-        const itemsToCache: Array<T> = []
+        const output: T[] = []
+        const itemsToCache: T[] = []
         const incomingIds = new Set<EntityId>()
 
-        for (let i = 0; i < fetched.length; i++) {
-            const processed = await this.runtime.transform.writeback(handle, fetched[i] as T)
+        for (const rawItem of fetched) {
+            const processed = await this.writebackOne(handle, rawItem)
             if (!processed) continue
             if (filter && !filter(processed)) continue
+
             const id = (processed as any).id as EntityId
             incomingIds.add(id)
 
             const shouldCache = cacheFilter ? cacheFilter(processed) : true
             if (!shouldCache) {
-                arr.push(processed)
+                output.push(processed)
                 continue
             }
 
             const existing = existingMap.get(id)
-            const preserved = Store.preserveReferenceShallow(existing, processed)
-            itemsToCache.push(preserved as any)
-            arr.push(preserved)
+            const preserved = preserveReferenceShallow(existing, processed)
+            itemsToCache.push(preserved)
+            output.push(preserved)
         }
 
         const toRemove: EntityId[] = []
-        existingMap.forEach((_value: T, id: EntityId) => {
+        existingMap.forEach((_value, id) => {
             if (!incomingIds.has(id)) toRemove.push(id)
         })
 
-        const withRemovals = Store.bulkRemove(toRemove, existingMap)
+        const withRemovals = bulkRemove(toRemove, existingMap)
         const next = itemsToCache.length
-            ? Store.bulkAdd(itemsToCache as any, withRemovals)
+            ? bulkAdd(itemsToCache, withRemovals)
             : withRemovals
 
         const changedIds = new Set<EntityId>(toRemove)
-        for (const item of itemsToCache) {
-            const id = (item as any).id as EntityId
-            const beforeVal = existingMap.get(id)
-            if (!existingMap.has(id) || beforeVal !== (item as any)) {
-                changedIds.add(id)
-            }
-        }
+        const upsertChangedIds = this.collectChangedIdsForItems(existingMap, itemsToCache)
+        upsertChangedIds.forEach(id => changedIds.add(id))
 
         handle.state.commit({ before: existingMap, after: next, changedIds })
-
-        return arr
+        return output
     }
 }

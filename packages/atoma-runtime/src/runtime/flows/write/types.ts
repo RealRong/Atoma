@@ -8,10 +8,12 @@ export type OptimisticState<T extends Entity> = Readonly<{
     changedIds: Set<EntityId>
 }>
 
-export type PersistPlan<T extends Entity> = ReadonlyArray<{
+export type PersistPlanEntry<T extends Entity> = Readonly<{
     op: WriteOp
     intents: Array<WriteIntent<T>>
 }>
+
+export type PersistPlan<T extends Entity> = ReadonlyArray<PersistPlanEntry<T>>
 
 export type ExecuteWriteRequest<T extends Entity> = Readonly<{
     runtime: CoreRuntime

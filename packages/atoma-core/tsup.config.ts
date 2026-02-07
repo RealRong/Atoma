@@ -2,7 +2,11 @@ import { defineConfig } from 'tsup'
 
 export default defineConfig({
     entry: {
-        index: 'src/index.ts'
+        store: 'src/store/index.ts',
+        query: 'src/query/index.ts',
+        relations: 'src/relations/index.ts',
+        indexes: 'src/indexes/index.ts',
+        operation: 'src/operation.ts'
     },
     format: ['esm'],
     dts: true,

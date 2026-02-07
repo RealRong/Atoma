@@ -1,4 +1,4 @@
-import { Query as CoreQuery } from 'atoma-core'
+import { executeLocalQuery } from 'atoma-core/query'
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma-types/client'
 import type {
     ChangeBatch,
@@ -167,7 +167,7 @@ export class StorageOpsClient implements OpsClientLike {
 
     private async executeQuery(resource: string, query: Query): Promise<QueryResultData> {
         const items = await this.adapter.list(resource)
-        const result = CoreQuery.executeLocalQuery(items as any, query as any)
+        const result = executeLocalQuery(items as any, query as any)
         return {
             data: result.data,
             ...(result.pageInfo ? { pageInfo: result.pageInfo } : {})

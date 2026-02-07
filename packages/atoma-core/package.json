@@ -3,14 +3,31 @@
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma core store engine",
-    "main": "dist/index.js",
-    "module": "dist/index.js",
-    "types": "dist/index.d.ts",
     "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js",
-            "source": "./src/index.ts"
+        "./store": {
+            "types": "./dist/store.d.ts",
+            "import": "./dist/store.js",
+            "source": "./src/store/index.ts"
+        },
+        "./query": {
+            "types": "./dist/query.d.ts",
+            "import": "./dist/query.js",
+            "source": "./src/query/index.ts"
+        },
+        "./relations": {
+            "types": "./dist/relations.d.ts",
+            "import": "./dist/relations.js",
+            "source": "./src/relations/index.ts"
+        },
+        "./indexes": {
+            "types": "./dist/indexes.d.ts",
+            "import": "./dist/indexes.js",
+            "source": "./src/indexes/index.ts"
+        },
+        "./operation": {
+            "types": "./dist/operation.d.ts",
+            "import": "./dist/operation.js",
+            "source": "./src/operation.ts"
         }
     },
     "scripts": {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Relations } from 'atoma-core'
+import { RelationResolver, collectRelationStoreTokens, projectRelationsBatch } from 'atoma-core/relations'
 import { stableStringify } from 'atoma-shared'
 import type { Entity, IStore, RelationIncludeInput, StoreToken, WithRelations } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
@@ -162,7 +162,7 @@ export function useRelations<T extends Entity>(
     const project = (source: T[]): T[] => {
         if (!effectiveInclude || !relations || !resolveStoreRef.current || source.length === 0) return source
 
-        const projectedLive = Relations.projectRelationsBatch(
+        const projectedLive = projectRelationsBatch(
             source,
             liveInclude,
             relations,
@@ -184,7 +184,7 @@ export function useRelations<T extends Entity>(
         clearSnapshot()
         if (!snapshotInclude || !snapshotNames.length || !relations || !resolveStoreRef.current || source.length === 0) return
 
-        const projected = Relations.projectRelationsBatch(source, snapshotInclude, relations, getStoreMap) as any[]
+        const projected = projectRelationsBatch(source, snapshotInclude, relations, getStoreMap) as any[]
 
         const next = new Map<EntityId, Record<string, any>>()
         projected.forEach(item => {
@@ -255,7 +255,7 @@ export function useRelations<T extends Entity>(
                 }
 
                 const includeArg = { [name]: value } as Record<string, any>
-                tasks.push(Relations.RelationResolver.prefetchBatch(
+                tasks.push(RelationResolver.prefetchBatch(
                     itemsForRelation,
                     includeArg,
                     relations,
@@ -301,7 +301,7 @@ export function useRelations<T extends Entity>(
     useEffect(() => {
         if (!liveInclude || !relations || !resolveStoreRef.current) return
 
-        const tokens = Relations.collectRelationStoreTokens(liveInclude, relations)
+        const tokens = collectRelationStoreTokens(liveInclude, relations)
         if (!tokens.length) return
 
         const unsubscribers: Array<() => void> = []

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Query } from 'atoma-core'
+import { executeLocalQuery } from 'atoma-core/query'
 import { stableStringify } from 'atoma-shared'
 import type { Entity, Query as StoreQuery, StoreApi } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
@@ -28,6 +28,6 @@ export function useLocalQuery<T extends Entity>(
         if (!data || !data.length) return []
         if (!query) return data
 
-        return Query.executeLocalQuery(data, query, matcher ? { matcher } : undefined).data as T[]
+        return executeLocalQuery(data, query, matcher ? { matcher } : undefined).data as T[]
     }, [data, queryKey, matcher])
 }

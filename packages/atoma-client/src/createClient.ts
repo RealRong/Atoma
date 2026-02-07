@@ -122,7 +122,7 @@ export function createClient<
         clientId: clientRuntime.id
     })
 
-    clientRuntime.persistence.register('direct', {
+    clientRuntime.strategy.register('direct', {
         persist: async ({ req }: { req: PersistRequest<any> }) => {
             return await persistChain.execute(req, {
                 clientId: clientRuntime.id,
@@ -130,7 +130,7 @@ export function createClient<
             } as any)
         }
     })
-    clientRuntime.persistence.setDefaultStrategy('direct')
+    clientRuntime.strategy.setDefaultStrategy('direct')
 
     const pluginDisposers: Array<() => void> = []
 

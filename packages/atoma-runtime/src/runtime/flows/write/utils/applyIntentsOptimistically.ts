@@ -1,6 +1,6 @@
 import type { Entity, WriteIntent } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { Store } from 'atoma-core'
+import { preserveReferenceShallow } from 'atoma-core/store'
 
 export function applyIntentsOptimistically<T extends Entity>(
     baseState: Map<EntityId, T>,
@@ -19,7 +19,7 @@ export function applyIntentsOptimistically<T extends Entity>(
     const upsert = (id: EntityId, value: T) => {
         const mapRef = next === baseState ? baseState : next
         const current = mapRef.get(id)
-        const preserved = Store.preserveReferenceShallow(current, value)
+        const preserved = preserveReferenceShallow(current, value)
         if (mapRef.has(id) && current === preserved) return
         ensureNext().set(id, preserved)
         changedIds.add(id)

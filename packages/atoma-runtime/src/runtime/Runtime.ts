@@ -1,12 +1,12 @@
 /**
  * Runtime: Unified entrypoint for read/write flows.
- * - Owns all subsystems (io, persistence, transform, stores).
+ * - Owns all subsystems (io, strategy, transform, stores).
  * - Exposes runtime.read/runtime.write as the only flow entrypoints.
  */
 import type { StoreDataProcessor } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
-import type { CoreRuntime, RuntimeHookRegistry, RuntimeIo, RuntimePersistence, RuntimeRead, RuntimeSchema, RuntimeTransform, RuntimeWrite } from 'atoma-types/runtime'
+import type { CoreRuntime, RuntimeHookRegistry, RuntimeIo, RuntimeRead, RuntimeSchema, RuntimeStrategyRegistry, RuntimeTransform, RuntimeWrite } from 'atoma-types/runtime'
 import { DataProcessor } from './transform'
 import { Stores } from '../store'
 import { HookRegistry, StrategyRegistry } from './registry'
@@ -22,7 +22,7 @@ export interface RuntimeConfig {
     defaults?: {
         idGenerator?: () => EntityId
     }
-    persistence?: RuntimePersistence
+    strategy?: RuntimeStrategyRegistry
     now?: () => number
     hooks?: RuntimeHookRegistry
 }
@@ -32,7 +32,7 @@ export class Runtime implements CoreRuntime {
     readonly now: () => number
     readonly nextOpId: CoreRuntime['nextOpId']
     io: RuntimeIo
-    readonly persistence: RuntimePersistence
+    readonly strategy: RuntimeStrategyRegistry
     readonly transform: RuntimeTransform
     readonly stores: CoreRuntime['stores']
     readonly read: RuntimeRead
@@ -51,7 +51,7 @@ export class Runtime implements CoreRuntime {
         }
         this.io = config.io
         this.transform = new DataProcessor(this)
-        this.persistence = config.persistence ?? new StrategyRegistry(this)
+        this.strategy = config.strategy ?? new StrategyRegistry(this)
         this.hooks = config.hooks ?? new HookRegistry()
 
         this.stores = new Stores(this, {

@@ -20,7 +20,7 @@ export function attachRuntime(entry: ClientEntry, runtime: ClientRuntime): void 
     entry.runtime = runtime
 
     entry.stopStoreListener?.()
-    entry.stopStoreListener = runtime.stores.onCreated((store) => {
+    entry.stopStoreListener = runtime.stores.onCreated((store: unknown) => {
         const name = String((store as any)?.name ?? '')
         if (!name) return
         let handle: any

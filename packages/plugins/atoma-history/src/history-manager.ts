@@ -1,6 +1,6 @@
 import type { Patch } from 'immer'
 import type { OperationContext } from 'atoma-types/core'
-import { Operation } from 'atoma-core'
+import { createActionId } from 'atoma-core/operation'
 import type { ActionRecord, ChangeRecord, UndoStack } from './types'
 
 export type HistoryRecordArgs = Readonly<{
@@ -52,7 +52,7 @@ export class HistoryManager {
         return {
             scope: String(args.scope || 'default'),
             origin: args.origin ?? 'user',
-            actionId: Operation.createActionId(),
+            actionId: createActionId(),
             label: args.label,
             timestamp: Date.now()
         }
@@ -65,7 +65,7 @@ export class HistoryManager {
         const opContext: OperationContext = {
             scope: String(args.scope || 'default'),
             origin: 'history',
-            actionId: Operation.createActionId(),
+            actionId: createActionId(),
             label: action.label
         }
 
@@ -94,7 +94,7 @@ export class HistoryManager {
         const opContext: OperationContext = {
             scope: String(args.scope || 'default'),
             origin: 'history',
-            actionId: Operation.createActionId(),
+            actionId: createActionId(),
             label: action.label
         }
 

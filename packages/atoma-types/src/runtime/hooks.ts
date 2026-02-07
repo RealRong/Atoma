@@ -48,6 +48,15 @@ export type RuntimeWriteFailedArgs = Readonly<{
     error: unknown
 }>
 
+export type RuntimeHookEventName =
+    | 'readStart'
+    | 'readFinish'
+    | 'writeStart'
+    | 'writePatches'
+    | 'writeCommitted'
+    | 'writeFailed'
+    | 'storeCreated'
+
 export type RuntimeHooks = Readonly<{
     read?: Readonly<{
         onStart?: (args: RuntimeReadStartArgs) => void
@@ -69,7 +78,10 @@ export type RuntimeHooks = Readonly<{
 
 export type RuntimeHookRegistry = Readonly<{
     register: (hooks: RuntimeHooks) => () => void
-    has: Readonly<{ writePatches: boolean }>
+    has: Readonly<{
+        event: (name: RuntimeHookEventName) => boolean
+        writePatches: boolean
+    }>
     emit: Readonly<{
         readStart: (args: RuntimeReadStartArgs) => void
         readFinish: (args: RuntimeReadFinishArgs) => void

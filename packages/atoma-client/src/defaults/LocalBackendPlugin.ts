@@ -1,4 +1,4 @@
-import { Query } from 'atoma-core'
+import { executeLocalQuery } from 'atoma-core/query'
 import type { Entity } from 'atoma-types/core'
 import type { EntityId, Operation, OperationResult, QueryResultData } from 'atoma-types/protocol'
 import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client'
@@ -20,7 +20,7 @@ async function queryLocal<T extends Entity>(ctx: PluginContext, storeName: strin
     const items = Array.from(map.values()) as T[]
     const outbound = await Promise.all(items.map(item => ctx.runtime.transform.outbound(handle, item)))
     const normalized = outbound.filter(item => item !== undefined) as T[]
-    return Query.executeLocalQuery(normalized as any, query as any, { matcher: handle.state.matcher })
+    return executeLocalQuery(normalized as any, query as any, { matcher: handle.state.matcher })
 }
 
 function toUnsupportedOpsResults(ops: Operation[]): OperationResult[] {

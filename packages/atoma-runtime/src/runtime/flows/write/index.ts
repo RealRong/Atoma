@@ -5,8 +5,14 @@ export {
     resolveBaseForWrite,
     runAfterSave,
     runBeforeSave
-} from './prepare'
-export { WriteCommandService } from './WriteCommandService'
-export { PersistCoordinator } from './PersistCoordinator'
-export { OptimisticService } from './OptimisticService'
-export { WriteBatchRunner } from './WriteBatchRunner'
+} from './utils/prepareWriteInput'
+export { buildEntityRootPatches } from './utils/buildEntityRootPatches'
+export { buildUpsertIntentOptions } from './utils/buildUpsertIntentOptions'
+export { applyIntentsOptimistically } from './utils/applyIntentsOptimistically'
+export { applyOptimisticCommit, rollbackOptimisticCommit } from './utils/optimisticCommit'
+export { resolveWriteResultFromOperationResults } from './utils/resolveWriteResult'
+export { runWriteBatch } from './utils/runWriteBatch'
+export { buildWriteIntentsFromPatches } from './commit/buildWriteIntentsFromPatches'
+export { WriteOpsPlanner } from './commit/WriteOpsPlanner'
+export { WriteCommitFlow } from './commit/WriteCommitFlow'
+export { WriteIntentFactory } from './services/WriteIntentFactory'

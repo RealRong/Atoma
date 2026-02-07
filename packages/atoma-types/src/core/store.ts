@@ -79,7 +79,7 @@ export interface StoreOperationOptions {
      *
      * 说明：
      * - 这是“写入执行参数”，不属于 store identity。
-     * - 由 core 透传给 `CoreRuntime.persistence.persist`，并由 persistence handlers 决定语义。
+     * - 由 core 透传给 `CoreRuntime.strategy.persist`，并由 strategy handlers 决定语义。
      */
     writeStrategy?: WriteStrategy
     /**

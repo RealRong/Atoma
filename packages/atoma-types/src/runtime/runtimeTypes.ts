@@ -13,7 +13,7 @@ export type DataProcessor = Readonly<{
 }>
 
 /**
- * CoreRuntime：唯一上下文，承载跨 store 能力（read/write/persistence/resolveStore）
+ * CoreRuntime：唯一上下文，承载跨 store 能力（read/write/strategy/resolveStore）
  */
 export type StoreRegistry = Readonly<{
     resolve: (name: Types.StoreToken) => Types.IStore<any> | undefined
@@ -56,7 +56,7 @@ export type RuntimeWrite = Readonly<{
     patches: <T extends Types.Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: Types.StoreOperationOptions) => Promise<void>
 }>
 
-export type RuntimePersistence = Readonly<{
+export type RuntimeStrategyRegistry = Readonly<{
     register: (key: Types.WriteStrategy, descriptor: StrategyDescriptor) => () => void
     setDefaultStrategy: (key: Types.WriteStrategy) => () => void
     resolveWritePolicy: (key?: Types.WriteStrategy) => WritePolicy
@@ -72,7 +72,7 @@ export type CoreRuntime = Readonly<{
     io: RuntimeIo
     read: RuntimeRead
     write: RuntimeWrite
-    persistence: RuntimePersistence
+    strategy: RuntimeStrategyRegistry
     transform: RuntimeTransform
 }>
 
