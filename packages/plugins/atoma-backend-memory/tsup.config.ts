@@ -11,6 +11,7 @@ export default defineConfig({
     clean: true,
     treeshake: true,
     external: [
+        'atoma-backend-shared',
         'atoma-core',
         'atoma-protocol',
         'atoma-types'

@@ -1,39 +1,13 @@
-import { Protocol } from 'atoma-protocol'
 import type { PersistResult } from 'atoma-types/runtime'
 import { HttpOpsClient } from './ops-client'
 import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client'
+import { persistViaOps, queryViaOps } from 'atoma-backend-shared'
 import type { HttpBackendPluginOptions } from './types'
 
 function normalizeBaseUrl(baseURL: string): string {
     const url = String(baseURL ?? '').trim()
     if (!url) throw new Error('[Atoma] HttpBackendPlugin: baseURL 必填')
     return url
-}
-
-async function queryViaOps(ctx: PluginContext, req: ReadRequest) {
-    const opId = Protocol.ids.createOpId('q', { now: ctx.runtime.now })
-    const op = Protocol.ops.build.buildQueryOp({
-        opId,
-        resource: String(req.storeName),
-        query: req.query
-    })
-    const results = await ctx.runtime.io.executeOps({
-        ops: [op],
-        ...(req.signal ? { signal: req.signal } : {})
-    })
-    const result = results[0]
-    if (!result) throw new Error('[Atoma] Missing query result')
-    if (!(result as any).ok) {
-        const msg = ((result as any).error && typeof (result as any).error.message === 'string')
-            ? (result as any).error.message
-            : '[Atoma] Query failed'
-        throw new Error(msg)
-    }
-    const data = Protocol.ops.validate.assertQueryResultData((result as any).data)
-    return {
-        data: Array.isArray((data as any)?.data) ? ((data as any).data as unknown[]) : [],
-        pageInfo: (data as any)?.pageInfo
-    }
 }
 
 export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlugin {
@@ -72,13 +46,7 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
             }, { priority: 1000 })
 
             register('persist', async (req, _ctx, _next): Promise<PersistResult<any>> => {
-                const results = await ctx.runtime.io.executeOps({
-                    ops: req.writeOps as any
-                })
-                return {
-                    status: 'confirmed',
-                    ...(results.length ? { results } : {})
-                }
+                return await persistViaOps(ctx, req)
             }, { priority: 1000 })
         }
     }

@@ -17,6 +17,7 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
+        "atoma-backend-shared": "workspace:*",
         "atoma-core": "workspace:*",
         "atoma-protocol": "workspace:*",
         "atoma-types": "workspace:*"

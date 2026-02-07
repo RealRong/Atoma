@@ -7,6 +7,7 @@
             "atoma-backend-indexeddb": ["packages/plugins/atoma-backend-indexeddb/src/index.ts"],
             "atoma-backend-http": ["packages/plugins/atoma-backend-http/src/index.ts"],
             "atoma-backend-memory": ["packages/plugins/atoma-backend-memory/src/index.ts"],
+            "atoma-backend-shared": ["packages/plugins/atoma-backend-shared/src/index.ts"],
             "atoma-client": ["packages/atoma-client/src/index.ts"],
             "atoma-core": ["packages/atoma-core/src/index.ts"],
             "atoma-devtools": ["packages/plugins/atoma-devtools/src/index.ts"],

@@ -1,15 +1,16 @@
 {
-    "name": "atoma-backend-http",
+    "name": "atoma-backend-shared",
     "version": "0.0.0",
     "type": "module",
-    "description": "Atoma HTTP backend (optional)",
+    "description": "Shared backend helpers for Atoma optional backend plugins",
     "main": "dist/index.js",
     "module": "dist/index.js",
     "types": "dist/index.d.ts",
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
-            "import": "./dist/index.js"
+            "import": "./dist/index.js",
+            "source": "./src/index.ts"
         }
     },
     "scripts": {
@@ -17,9 +18,8 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-backend-shared": "workspace:*",
+        "atoma-core": "workspace:*",
         "atoma-protocol": "workspace:*",
-        "atoma-shared": "workspace:*",
         "atoma-types": "workspace:*"
     }
 }
