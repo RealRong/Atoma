@@ -1,21 +1,20 @@
-import type { Entity, Query, QueryMatcherOptions } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
-import type { Indexes } from '../../indexes'
-import { summarizeQuery } from '../summary'
-import { LocalQueryExecutor } from './LocalQueryExecutor'
+import type { Entity, IndexesLike, PageInfo, Query, QueryMatcherOptions } from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/shared'
+import { summarizeQuery } from './internal/summary'
+import { runQuery } from './internal/run'
 
-export function evaluateWithIndexes<T extends Entity>(params: {
-    mapRef: Map<EntityId, T>
+export function queryMap<T extends Entity>(params: {
+    mapRef: ReadonlyMap<EntityId, T>
     query: Query<T>
-    indexes: Indexes<T> | null
+    indexes: IndexesLike<T> | null
     matcher?: QueryMatcherOptions
     emit?: (type: string, payload: unknown) => void
-}): { data: T[]; pageInfo?: unknown } {
+}): { data: T[]; pageInfo?: PageInfo } {
     const { mapRef, query, indexes, matcher } = params
     const emit = params.emit ?? (() => {})
 
     const paramsSummary = summarizeQuery(query)
-    const candidateRes = indexes ? indexes.collectCandidates(query?.filter) : { kind: 'unsupported' as const }
+    const candidateRes = indexes ? indexes.collectCandidates(query.filter) : { kind: 'unsupported' as const }
     const plan = indexes?.getLastQueryPlan()
 
     emit('query:index', {
@@ -43,7 +42,7 @@ export function evaluateWithIndexes<T extends Entity>(params: {
             })()
             : Array.from(mapRef.values())
 
-    const output = new LocalQueryExecutor(source, query as Query, { preSorted: false, matcher }).execute()
+    const output = runQuery(source, query, { preSorted: false, matcher })
 
     emit('query:finalize', { inputCount: source.length, outputCount: output.data.length, params: paramsSummary })
 

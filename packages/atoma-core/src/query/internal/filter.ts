@@ -1,6 +1,5 @@
 import type { FilterExpr, FuzzyDefaults, MatchDefaults, QueryMatcherOptions } from 'atoma-types/core'
-import { defaultTokenizer } from '../../indexes/internal/tokenize'
-import { levenshteinDistance } from '../../indexes/internal/search'
+import { defaultTokenizer, levenshteinDistance } from './text'
 
 const normalizeString = (value: unknown) => {
     if (value === undefined || value === null) return ''

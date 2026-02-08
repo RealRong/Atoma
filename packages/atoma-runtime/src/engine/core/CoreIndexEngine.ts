@@ -1,4 +1,4 @@
-import { buildQueryMatcherOptions } from 'atoma-core/query'
+import { buildMatcher } from 'atoma-core/query'
 import { Indexes } from 'atoma-core/indexes'
 import type { Entity, IndexDefinition, QueryMatcherOptions, IndexesLike } from 'atoma-types/core'
 import type { RuntimeIndexes } from 'atoma-types/runtime'
@@ -9,7 +9,7 @@ export class CoreIndexEngine implements RuntimeIndexes {
         return new Indexes<T>(definitions)
     }
 
-    matcherOptions = <T extends Entity>(definitions?: IndexDefinition<T>[] | null): QueryMatcherOptions | undefined => {
-        return buildQueryMatcherOptions(definitions ?? undefined)
+    matcher = <T extends Entity>(definitions?: IndexDefinition<T>[] | null): QueryMatcherOptions | undefined => {
+        return buildMatcher(definitions ?? undefined)
     }
 }

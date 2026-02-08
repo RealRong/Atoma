@@ -67,7 +67,7 @@ export class StoreFactory {
             : undefined
 
         const indexes = this.runtime.engine.index.create<T>(storeSchema.indexes ?? null)
-        const matcher = this.runtime.engine.index.matcherOptions<T>(storeSchema.indexes ?? null)
+        const matcher = this.runtime.engine.index.matcher<T>(storeSchema.indexes ?? null)
 
         const state = new SimpleStoreState<T>({
             initial: new Map<EntityId, T>(),

@@ -1,6 +1,6 @@
 import type { PageInfo, PageSpec, SortRule } from 'atoma-types/core'
-import { decodeCursorToken, encodeCursorToken } from '../cursor'
-import { compareItemToValues, getSortValues, isSameSortRules } from './sortEngine'
+import { decodeCursorToken, encodeCursorToken } from './cursorCodec'
+import { compareItemToValues, getSortValues, isSameSortRules } from './sort'
 
 type PageResult<T> = {
     data: T[]

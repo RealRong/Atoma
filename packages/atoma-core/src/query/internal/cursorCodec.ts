@@ -1,4 +1,4 @@
-import type { CursorToken, SortRule } from 'atoma-types/protocol'
+import type { CursorToken, SortRule } from 'atoma-types/core'
 
 type CursorPayload = { v: 1; sort: SortRule[]; values: unknown[] }
 
