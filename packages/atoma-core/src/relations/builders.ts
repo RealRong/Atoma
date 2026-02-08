@@ -1,6 +1,17 @@
-import type { BelongsToConfig, Entity, HasManyConfig, HasOneConfig, KeySelector, RelationIncludeOptions, RelationMap, InferIncludeType, VariantsConfig, VariantBranch } from 'atoma-types/core'
+import type {
+    BelongsToConfig,
+    Entity,
+    HasManyConfig,
+    HasOneConfig,
+    InferIncludeType,
+    KeySelector,
+    RelationIncludeOptions,
+    RelationMap,
+    VariantBranch,
+    VariantsConfig
+} from 'atoma-types/core'
 
-type IncludeForRelations<Relations extends RelationMap<any>> =
+type IncludeForRelations<Relations extends Record<string, unknown>> =
     Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>
 
 export function belongsTo<TSource, TTarget extends Entity, TTargetRelations extends RelationMap<TTarget> = {}>(
@@ -54,7 +65,7 @@ export function hasOne<TSource, TTarget extends Entity, TTargetRelations extends
     }
 }
 
-export function variants<TSource>(branches: Array<VariantBranch<TSource, any>>): VariantsConfig<TSource> {
+export function variants<TSource>(branches: Array<VariantBranch<TSource, Entity>>): VariantsConfig<TSource> {
     return {
         type: 'variants',
         branches

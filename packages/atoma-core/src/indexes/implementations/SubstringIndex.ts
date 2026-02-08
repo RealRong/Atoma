@@ -4,7 +4,7 @@ import type { CandidateResult, IndexStats } from 'atoma-types/core'
 import { binarySearchPrefix, intersectAll } from '../utils'
 import { IIndex } from '../base/IIndex'
 
-const normalize = (value: any): string => {
+const normalize = (value: unknown): string => {
     if (value === undefined || value === null) return ''
     return String(value).toLowerCase()
 }
@@ -45,7 +45,7 @@ export class SubstringIndex<T> implements IIndex<T> {
         this.ngramSize = Math.max(2, Math.min(6, config.options?.ngramSize ?? 3))
     }
 
-    add(id: EntityId, value: any): void {
+    add(id: EntityId, value: unknown): void {
         const str = normalize(value)
         this.docValue.set(id, str)
 
@@ -74,9 +74,9 @@ export class SubstringIndex<T> implements IIndex<T> {
         this.dirty = true
     }
 
-    remove(id: EntityId, _value: any): void {
-        const str = this.docValue.get(id)
-        if (!str) return
+    remove(id: EntityId, _value: unknown): void {
+        if (!this.docValue.has(id)) return
+        const str = this.docValue.get(id) ?? ''
 
         const set = this.valueMap.get(str)
         if (set) {
@@ -117,29 +117,35 @@ export class SubstringIndex<T> implements IIndex<T> {
         this.dirty = true
     }
 
-    queryCandidates(condition: any): CandidateResult {
+    queryCandidates(condition: unknown): CandidateResult {
         if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
             return { kind: 'unsupported' }
         }
 
-        if ((condition as any).startsWith !== undefined) {
-            const prefix = normalize((condition as any).startsWith)
+        const conditionRecord = condition as {
+            startsWith?: unknown
+            endsWith?: unknown
+            contains?: unknown
+        }
+
+        if (conditionRecord.startsWith !== undefined) {
+            const prefix = normalize(conditionRecord.startsWith)
             if (!prefix) return { kind: 'unsupported' }
             const result = this.prefixSearch(prefix)
             if (result.size === 0) return { kind: 'empty' }
             return { kind: 'candidates', ids: result, exactness: 'exact' }
         }
 
-        if ((condition as any).endsWith !== undefined) {
-            const suffix = normalize((condition as any).endsWith)
+        if (conditionRecord.endsWith !== undefined) {
+            const suffix = normalize(conditionRecord.endsWith)
             if (!suffix) return { kind: 'unsupported' }
             const result = this.suffixSearch(suffix)
             if (result.size === 0) return { kind: 'empty' }
             return { kind: 'candidates', ids: result, exactness: 'exact' }
         }
 
-        if ((condition as any).contains !== undefined) {
-            const needle = normalize((condition as any).contains)
+        if (conditionRecord.contains !== undefined) {
+            const needle = normalize(conditionRecord.contains)
             if (!needle) return { kind: 'unsupported' }
             if (needle.length < this.ngramSize) return { kind: 'unsupported' }
             const grams = buildNgrams(needle, this.ngramSize)

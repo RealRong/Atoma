@@ -1,18 +1,24 @@
-import { applyWritebackToMap, preserveReferenceShallow } from 'atoma-core/store'
 import type { Entity, QueryMatcherOptions, StoreIndexesLike, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { StoreChangedIds, StoreSnapshot, StoreState } from 'atoma-types/runtime'
+import type { RuntimeEngine, StoreChangedIds, StoreSnapshot, StoreState } from 'atoma-types/runtime'
 
 export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
     private snapshot: StoreSnapshot<T>
     private listeners = new Set<() => void>()
+    private readonly engine: RuntimeEngine
     readonly indexes: StoreIndexesLike<T> | null
     readonly matcher?: QueryMatcherOptions
 
-    constructor(args?: { initial?: StoreSnapshot<T>; indexes?: StoreIndexesLike<T> | null; matcher?: QueryMatcherOptions }) {
-        this.snapshot = args?.initial ?? new Map<EntityId, T>()
-        this.indexes = args?.indexes ?? null
-        this.matcher = args?.matcher
+    constructor(args: {
+        initial?: StoreSnapshot<T>
+        indexes?: StoreIndexesLike<T> | null
+        matcher?: QueryMatcherOptions
+        engine: RuntimeEngine
+    }) {
+        this.snapshot = args.initial ?? new Map<EntityId, T>()
+        this.indexes = args.indexes ?? null
+        this.matcher = args.matcher
+        this.engine = args.engine
     }
 
     getSnapshot = () => this.snapshot
@@ -62,8 +68,8 @@ export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
 
     applyWriteback = (args: StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
         const before = this.snapshot as Map<EntityId, T>
-        const preserve = options?.preserve ?? preserveReferenceShallow
-        const result = applyWritebackToMap(before, args, { preserve })
+        const preserve = options?.preserve ?? this.engine.preserveReferenceShallow
+        const result = this.engine.applyWritebackToMap(before, args, { preserve })
         if (!result) return
 
         this.commit({

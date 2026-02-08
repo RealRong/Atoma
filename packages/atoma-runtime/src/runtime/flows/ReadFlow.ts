@@ -1,5 +1,3 @@
-import { bulkAdd, bulkRemove, preserveReferenceShallow } from 'atoma-core/store'
-import { evaluateWithIndexes, resolveCachePolicy } from 'atoma-core/query'
 import type { Entity, Query as StoreQuery, QueryOneResult, QueryResult, StoreReadOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { toErrorWithFallback as toError } from 'atoma-shared'
@@ -13,7 +11,7 @@ export class ReadFlow implements RuntimeRead {
     }
 
     private toQueryResult = <T extends Entity>(data: T[], pageInfo?: unknown): QueryResult<T> => {
-        return pageInfo ? { data, pageInfo: pageInfo as any } : { data }
+        return pageInfo ? { data, pageInfo: pageInfo as QueryResult<T>['pageInfo'] } : { data }
     }
 
     private writebackOne = async <T extends Entity>(handle: StoreHandle<T>, input: unknown): Promise<T | undefined> => {
@@ -32,7 +30,7 @@ export class ReadFlow implements RuntimeRead {
     private collectChangedIdsForItems = <T extends Entity>(before: Map<EntityId, T>, items: T[]): Set<EntityId> => {
         const changedIds = new Set<EntityId>()
         for (const item of items) {
-            const id = (item as any).id as EntityId
+            const id = item.id
             if (!before.has(id) || before.get(id) !== item) {
                 changedIds.add(id)
             }
@@ -48,9 +46,9 @@ export class ReadFlow implements RuntimeRead {
 
         for (let i = 0; i < remote.length; i++) {
             const item = remote[i]
-            const id = (item as any).id as EntityId
+            const id = item.id
             const existing = existingMap.get(id)
-            const preserved = preserveReferenceShallow(existing, item)
+            const preserved = this.runtime.engine.preserveReferenceShallow(existing, item)
             processed[i] = preserved
             if (existing === preserved) continue
             changedIds.add(id)
@@ -82,10 +80,10 @@ export class ReadFlow implements RuntimeRead {
             if (localCache) return localCache
 
             const map = state.getSnapshot() as Map<EntityId, T>
-            const localResult = evaluateWithIndexes({
+            const localResult = runtime.engine.evaluateWithIndexes({
                 mapRef: map,
                 query: input,
-                indexes: (indexes ?? null) as any,
+                indexes: indexes ?? null,
                 matcher
             })
 
@@ -102,7 +100,7 @@ export class ReadFlow implements RuntimeRead {
             const fetched = Array.isArray(data) ? data : []
             const remote = await this.writebackArray(handle, fetched)
 
-            const cachePolicy = resolveCachePolicy(input)
+            const cachePolicy = runtime.engine.resolveCachePolicy(input)
             if (cachePolicy.effectiveSkipStore) {
                 const result = this.toQueryResult(remote, pageInfo)
                 hooks.emit.readFinish({ handle, query: input, result, durationMs })
@@ -164,16 +162,16 @@ export class ReadFlow implements RuntimeRead {
                 const processed = await this.writebackOne(handle, rawItem)
                 if (!processed) continue
 
-                const id = (processed as any).id as EntityId
+                const id = processed.id
                 const existing = before.get(id)
-                const preserved = preserveReferenceShallow(existing, processed)
+                const preserved = this.runtime.engine.preserveReferenceShallow(existing, processed)
 
                 fetchedById.set(id, preserved)
                 if (cache) itemsToCache.push(preserved)
             }
 
             if (cache && itemsToCache.length) {
-                const after = bulkAdd(itemsToCache, before)
+                const after = this.runtime.engine.bulkAdd(itemsToCache, before)
                 if (after !== before) {
                     const changedIds = this.collectChangedIdsForItems(before, itemsToCache)
                     handle.state.commit({ before, after, changedIds })
@@ -230,7 +228,7 @@ export class ReadFlow implements RuntimeRead {
             if (!processed) continue
             if (filter && !filter(processed)) continue
 
-            const id = (processed as any).id as EntityId
+            const id = processed.id
             incomingIds.add(id)
 
             const shouldCache = cacheFilter ? cacheFilter(processed) : true
@@ -240,7 +238,7 @@ export class ReadFlow implements RuntimeRead {
             }
 
             const existing = existingMap.get(id)
-            const preserved = preserveReferenceShallow(existing, processed)
+            const preserved = this.runtime.engine.preserveReferenceShallow(existing, processed)
             itemsToCache.push(preserved)
             output.push(preserved)
         }
@@ -250,9 +248,9 @@ export class ReadFlow implements RuntimeRead {
             if (!incomingIds.has(id)) toRemove.push(id)
         })
 
-        const withRemovals = bulkRemove(toRemove, existingMap)
+        const withRemovals = this.runtime.engine.bulkRemove(toRemove, existingMap)
         const next = itemsToCache.length
-            ? bulkAdd(itemsToCache, withRemovals)
+            ? this.runtime.engine.bulkAdd(itemsToCache, withRemovals)
             : withRemovals
 
         const changedIds = new Set<EntityId>(toRemove)

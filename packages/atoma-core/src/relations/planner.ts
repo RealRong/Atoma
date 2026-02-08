@@ -4,19 +4,21 @@ import type {
     Query,
     RelationConfig,
     RelationMap,
+    SortRule,
     StoreToken,
     VariantsConfig
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { getValueByPath } from './utils'
+import { mergeIncludeQuery, resolveLimit } from './utils/includeQuery'
+import { collectUniqueKeys } from './utils/key'
 
-export type IncludeInput = Record<string, boolean | Query<any>> | undefined
+export type IncludeInput = Record<string, boolean | Query<unknown>> | undefined
 
-export type StandardRelationConfig<T extends Entity> = Exclude<RelationConfig<T, any>, VariantsConfig<T>>
+export type StandardRelationConfig<T extends Entity> = Exclude<RelationConfig<T, Entity>, VariantsConfig<T>>
 
 export type PlannedRelation<T extends Entity> = Readonly<{
     relationName: string
-    includeValue: boolean | Query<any>
+    includeValue: boolean | Query<unknown>
     relationType: 'belongsTo' | 'hasMany' | 'hasOne'
     relation: StandardRelationConfig<T>
     items: T[]
@@ -24,12 +26,16 @@ export type PlannedRelation<T extends Entity> = Readonly<{
     sourceKeySelector: KeySelector<T>
     targetKeyField: string
     uniqueKeys: EntityId[]
-    mergedQuery: Query<any>
+    mergedQuery: Query<unknown>
     projectionOptions: {
-        sort?: any[]
+        sort?: SortRule[]
         limit?: number
     }
 }>
+
+function getRelationOptions<T extends Entity>(relation: StandardRelationConfig<T>): Query<unknown> | undefined {
+    return (relation as { options?: Query<unknown> }).options
+}
 
 export function collectRelationStoreTokensFromInclude<T extends Entity>(
     include: IncludeInput,
@@ -37,24 +43,25 @@ export function collectRelationStoreTokensFromInclude<T extends Entity>(
 ): StoreToken[] {
     if (!include || !relations) return []
 
-    const out = new Set<StoreToken>()
+    const output = new Set<StoreToken>()
 
     Object.entries(include).forEach(([name, value]) => {
         if (value === false || value === undefined || value === null) return
+
         const relation = relations[name]
         if (!relation) return
 
         if (relation.type === 'variants') {
             relation.branches.forEach(branch => {
-                out.add(branch.relation.store)
+                output.add(branch.relation.store)
             })
             return
         }
 
-        out.add(relation.store)
+        output.add(relation.store)
     })
 
-    return Array.from(out)
+    return Array.from(output)
 }
 
 export function buildRelationPlan<T extends Entity>(
@@ -64,7 +71,7 @@ export function buildRelationPlan<T extends Entity>(
 ): PlannedRelation<T>[] {
     if (!items.length || !include || !relations) return []
 
-    const out: PlannedRelation<T>[] = []
+    const output: PlannedRelation<T>[] = []
 
     Object.entries(include).forEach(([relationName, includeValue]) => {
         if (includeValue === false || includeValue === undefined || includeValue === null) return
@@ -75,39 +82,39 @@ export function buildRelationPlan<T extends Entity>(
         if (relation.type === 'variants') {
             const grouped = new Map<number, T[]>()
             items.forEach(item => {
-                const index = relation.branches.findIndex(branch => branch.when(item))
-                if (index < 0) return
-                const group = grouped.get(index) || []
+                const branchIndex = relation.branches.findIndex(branch => branch.when(item))
+                if (branchIndex < 0) return
+
+                const group = grouped.get(branchIndex) || []
                 group.push(item)
-                grouped.set(index, group)
+                grouped.set(branchIndex, group)
             })
 
             grouped.forEach((group, branchIndex) => {
                 const branch = relation.branches[branchIndex]
-                const planned = buildStandardPlan(group, relationName, includeValue, branch.relation as StandardRelationConfig<T>)
-                out.push(planned)
+                output.push(buildStandardPlan(group, relationName, includeValue, branch.relation as StandardRelationConfig<T>))
             })
             return
         }
 
-        out.push(buildStandardPlan(items, relationName, includeValue, relation as StandardRelationConfig<T>))
+        output.push(buildStandardPlan(items, relationName, includeValue, relation as StandardRelationConfig<T>))
     })
 
-    return out
+    return output
 }
 
 function buildStandardPlan<T extends Entity>(
     items: T[],
     relationName: string,
-    includeValue: boolean | Query<any>,
+    includeValue: boolean | Query<unknown>,
     relation: StandardRelationConfig<T>
 ): PlannedRelation<T> {
     const sourceKeySelector: KeySelector<T> = relation.type === 'belongsTo'
         ? relation.foreignKey
         : relation.primaryKey || 'id'
 
-    const mergedQuery = mergeQuery(
-        (relation as any).options,
+    const mergedQuery = mergeIncludeQuery(
+        getRelationOptions(relation),
         typeof includeValue === 'object' ? includeValue : undefined
     )
 
@@ -120,68 +127,17 @@ function buildStandardPlan<T extends Entity>(
         store: relation.store,
         sourceKeySelector,
         targetKeyField: getTargetKeyField(relation),
-        uniqueKeys: collectKeys(items, sourceKeySelector),
+        uniqueKeys: collectUniqueKeys(items, sourceKeySelector),
         mergedQuery,
         projectionOptions: {
-            sort: mergedQuery.sort as any[] | undefined,
+            sort: mergedQuery.sort,
             limit: resolveLimit(mergedQuery.page)
         }
     }
 }
 
-function getTargetKeyField(config: StandardRelationConfig<any>): string {
+function getTargetKeyField<T extends Entity>(config: StandardRelationConfig<T>): string {
     return config.type === 'belongsTo'
-        ? (config.primaryKey as string) || 'id'
+        ? (config.primaryKey || 'id')
         : config.foreignKey
-}
-
-function resolveLimit(page: any): number | undefined {
-    const raw = page && typeof page === 'object' ? (page as any).limit : undefined
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined
-    return Math.max(0, Math.floor(raw))
-}
-
-function collectKeys<T extends Entity>(items: T[], selector: KeySelector<T>): EntityId[] {
-    const out = new Set<EntityId>()
-
-    items.forEach(item => {
-        const keyValue = extractKeyValue(item, selector)
-        if (keyValue === undefined || keyValue === null) return
-
-        if (Array.isArray(keyValue)) {
-            keyValue.forEach(key => {
-                if (key === undefined || key === null) return
-                out.add(key)
-            })
-            return
-        }
-
-        out.add(keyValue)
-    })
-
-    return Array.from(out)
-}
-
-function extractKeyValue<T>(item: T, selector: KeySelector<T>): EntityId | EntityId[] | undefined | null {
-    if (typeof selector === 'function') return selector(item)
-    if (typeof selector === 'string') return getValueByPath(item, selector)
-    return undefined
-}
-
-function mergeQuery(base?: Query<any>, override?: Query<any>): Query<any> {
-    if (!base && !override) return {}
-    if (!base) return { ...override }
-    if (!override) return { ...base }
-
-    const filter = base.filter && override.filter
-        ? ({ op: 'and', args: [base.filter, override.filter] } as any)
-        : (override.filter ?? base.filter)
-
-    return {
-        filter,
-        sort: override.sort !== undefined ? override.sort : base.sort,
-        select: override.select !== undefined ? override.select : base.select,
-        include: override.include !== undefined ? override.include : base.include,
-        page: override.page !== undefined ? override.page : base.page
-    }
 }

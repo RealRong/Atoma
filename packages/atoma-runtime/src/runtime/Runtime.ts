@@ -6,11 +6,22 @@
 import type { StoreDataProcessor } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { Protocol } from 'atoma-protocol'
-import type { CoreRuntime, RuntimeHookRegistry, RuntimeIo, RuntimeRead, RuntimeSchema, RuntimeStrategyRegistry, RuntimeTransform, RuntimeWrite } from 'atoma-types/runtime'
+import type {
+    CoreRuntime,
+    RuntimeEngine,
+    RuntimeHookRegistry,
+    RuntimeIo,
+    RuntimeRead,
+    RuntimeSchema,
+    RuntimeStrategyRegistry,
+    RuntimeTransform,
+    RuntimeWrite
+} from 'atoma-types/runtime'
 import { DataProcessor } from './transform'
 import { Stores } from '../store'
 import { HookRegistry, StrategyRegistry } from './registry'
 import { ReadFlow, WriteFlow } from './flows'
+import { CoreRuntimeEngine } from '../engine'
 
 /**
  * Configuration for creating a Runtime.
@@ -25,6 +36,7 @@ export interface RuntimeConfig {
     strategy?: RuntimeStrategyRegistry
     now?: () => number
     hooks?: RuntimeHookRegistry
+    engine?: RuntimeEngine
 }
 
 export class Runtime implements CoreRuntime {
@@ -38,6 +50,7 @@ export class Runtime implements CoreRuntime {
     readonly read: RuntimeRead
     readonly write: RuntimeWrite
     readonly hooks: RuntimeHookRegistry
+    readonly engine: RuntimeEngine
     private opSeqByStore = new Map<string, number>()
 
     constructor(config: RuntimeConfig) {
@@ -49,7 +62,9 @@ export class Runtime implements CoreRuntime {
             this.opSeqByStore.set(key, next)
             return `${prefix}_${this.now()}_${next}`
         }
+
         this.io = config.io
+        this.engine = config.engine ?? new CoreRuntimeEngine()
         this.transform = new DataProcessor(this)
         this.strategy = config.strategy ?? new StrategyRegistry(this)
         this.hooks = config.hooks ?? new HookRegistry()

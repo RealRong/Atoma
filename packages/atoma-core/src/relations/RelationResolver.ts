@@ -1,15 +1,29 @@
-import {
+import type {
     Entity,
+    FilterExpr,
     IStore,
     Query,
     RelationMap
 } from 'atoma-types/core'
-import { buildRelationPlan, type PlannedRelation } from './planner'
+import {
+    buildRelationPlan,
+    type IncludeInput,
+    type PlannedRelation,
+    type StandardRelationConfig
+} from './planner'
 
 export interface ResolveBatchOptions {
     onError?: 'skip' | 'throw' | 'partial'
     timeout?: number
     maxConcurrency?: number
+}
+
+type RelationOptionsCarrier = {
+    options?: Query<unknown>
+}
+
+function getRelationOptions<T extends Entity>(relation: StandardRelationConfig<T>): Query<unknown> | undefined {
+    return (relation as RelationOptionsCarrier).options
 }
 
 export class RelationResolver {
@@ -19,9 +33,9 @@ export class RelationResolver {
      */
     static async resolveBatch<T extends Entity>(
         items: T[],
-        include: Record<string, boolean | Query<any>> | undefined,
+        include: IncludeInput,
         relations: RelationMap<T> | undefined,
-        resolveStore: (name: string) => IStore<any> | undefined,
+        resolveStore: (name: string) => IStore<unknown> | undefined,
         options: ResolveBatchOptions = {}
     ): Promise<T[]> {
         await this.prefetchBatch(items, include, relations, resolveStore, options)
@@ -30,17 +44,18 @@ export class RelationResolver {
 
     static async prefetchBatch<T extends Entity>(
         items: T[],
-        include: Record<string, boolean | Query<any>> | undefined,
+        include: IncludeInput,
         relations: RelationMap<T> | undefined,
-        resolveStore: (name: string) => IStore<any> | undefined,
+        resolveStore: (name: string) => IStore<unknown> | undefined,
         options: ResolveBatchOptions = {}
     ): Promise<void> {
         if (!items.length || !include || !relations) return
 
         const { onError = 'partial', timeout = 5000, maxConcurrency = 10 } = options
         const plan = buildRelationPlan(items, include, relations)
+        const concurrencyLimit = this.normalizeConcurrency(maxConcurrency)
 
-        await this.runWithConcurrency(plan, maxConcurrency, async (entry) => {
+        await this.runWithConcurrency(plan, concurrencyLimit, async (entry) => {
             const controller = new AbortController()
             try {
                 await this.withTimeout(
@@ -59,14 +74,14 @@ export class RelationResolver {
 
     private static async prefetchPlannedRelation<T extends Entity>(
         entry: PlannedRelation<T>,
-        resolveStore: (name: string) => IStore<any> | undefined,
+        resolveStore: (name: string) => IStore<unknown> | undefined,
         signal: AbortSignal
     ): Promise<void> {
         if (signal.aborted) return
 
-        const userQuery = typeof entry.includeValue === 'object' ? entry.includeValue : {}
+        const userQuery = typeof entry.includeValue === 'object' ? entry.includeValue : undefined
         this.validateIncludeQuery(entry.relationName, userQuery)
-        this.validateIncludeQuery(entry.relationName, (entry.relation as any).options)
+        this.validateIncludeQuery(entry.relationName, getRelationOptions(entry.relation))
 
         if (!entry.uniqueKeys.length) return
 
@@ -87,15 +102,18 @@ export class RelationResolver {
             return
         }
 
-        const keyFilter = { op: 'in', field: entry.targetKeyField, values: entry.uniqueKeys } as any
-        const filter = entry.mergedQuery.filter
-            ? ({ op: 'and', args: [entry.mergedQuery.filter, keyFilter] } as any)
+        const keyFilter: FilterExpr = {
+            op: 'in',
+            field: entry.targetKeyField,
+            values: entry.uniqueKeys
+        }
+        const filter: FilterExpr = entry.mergedQuery.filter
+            ? { op: 'and', args: [entry.mergedQuery.filter, keyFilter] }
             : keyFilter
 
-        const query: Query<any> = {
+        const query: Query<unknown> = {
             ...entry.mergedQuery,
             filter,
-            // include 不支持分页：强制清空 page
             page: undefined
         }
 
@@ -103,11 +121,32 @@ export class RelationResolver {
         await store.query?.(query)
     }
 
-    private static validateIncludeQuery(relName: string, query?: Query<any>) {
+    private static validateIncludeQuery(relName: string, query?: Query<unknown>) {
         if (!query) return
-        if ((query as any).page !== undefined) {
-            throw new Error(`include.${relName} 不支持分页（page）；请使用子 store 的 query 进行分页`)
+
+        const page = query.page
+        if (page === undefined) return
+
+        if (!page || typeof page !== 'object' || Array.isArray(page)) {
+            throw new Error(`include.${relName}.page 必须是对象，且仅支持 { limit?: number }`)
         }
+
+        const pageRecord = page as Record<string, unknown>
+        const keys = Object.keys(pageRecord).filter(key => pageRecord[key] !== undefined)
+        const hasUnsupportedKey = keys.some(key => key !== 'limit')
+        if (hasUnsupportedKey) {
+            throw new Error(`include.${relName}.page 仅支持 limit，不支持 mode/offset/cursor`)
+        }
+
+        const limit = pageRecord.limit
+        if (limit !== undefined && (typeof limit !== 'number' || !Number.isFinite(limit) || limit < 0)) {
+            throw new Error(`include.${relName}.page.limit 必须是 >= 0 的有限数字`)
+        }
+    }
+
+    private static normalizeConcurrency(limit: number): number {
+        if (!Number.isFinite(limit)) return 1
+        return Math.max(1, Math.floor(limit))
     }
 
     private static async withTimeout<T>(
@@ -116,7 +155,7 @@ export class RelationResolver {
         controller: AbortController,
         relName: string
     ): Promise<T> {
-        let timer: any
+        let timer: ReturnType<typeof setTimeout> | undefined
         const timeoutTask = new Promise<T>((_, reject) => {
             timer = setTimeout(() => {
                 controller.abort()
@@ -127,7 +166,7 @@ export class RelationResolver {
         try {
             return await Promise.race([task, timeoutTask])
         } finally {
-            clearTimeout(timer)
+            if (timer !== undefined) clearTimeout(timer)
         }
     }
 
@@ -136,21 +175,18 @@ export class RelationResolver {
         limit: number,
         runner: (task: T) => Promise<void>
     ): Promise<void> {
+        if (!tasks.length) return
+
         const queue = tasks.slice()
-        const running: Promise<void>[] = []
+        const workerCount = Math.min(limit, queue.length)
+        const workers = Array.from({ length: workerCount }, async () => {
+            while (queue.length > 0) {
+                const next = queue.shift()
+                if (!next) return
+                await runner(next)
+            }
+        })
 
-        const runNext = async () => {
-            const next = queue.shift()
-            if (!next) return
-            await runner(next)
-            await runNext()
-        }
-
-        const count = Math.min(limit, queue.length)
-        for (let i = 0; i < count; i++) {
-            running.push(runNext())
-        }
-
-        await Promise.all(running)
+        await Promise.all(workers)
     }
 }

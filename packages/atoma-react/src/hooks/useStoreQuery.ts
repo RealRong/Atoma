@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import { executeLocalQuery } from 'atoma-core/query'
 import { stableStringify } from 'atoma-shared'
 import type { Entity, Query as StoreQuery, StoreApi } from 'atoma-types/core'
-import { useStoreSnapshot } from './internal/useStoreSelector'
+import type { EntityId } from 'atoma-types/protocol'
 import { getStoreBindings } from 'atoma-types/internal'
+import { useStoreSnapshot } from './internal/useStoreSelector'
 
 type UseStoreQueryResultMode = 'entities' | 'ids'
 
@@ -16,7 +16,7 @@ type StoreQueryResult<T extends Entity> = {
     data: T[]
 }
 
-function stripResult(options?: UseStoreQueryOptions<any>): StoreQuery | undefined {
+function stripResult<T extends Entity>(options?: UseStoreQueryOptions<T>): StoreQuery<T> | undefined {
     if (!options) return undefined
     const { result: _result, ...rest } = options
     return rest
@@ -30,41 +30,40 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
     const bindings = getStoreBindings(store, 'useStoreQuery')
     const indexes = bindings.indexes
     const matcher = bindings.matcher
+    const engine = bindings.engine
 
     const query = stripResult(options)
     const queryKey = useMemo(() => stableStringify(query), [query])
 
     return useMemo(() => {
-        const candidate = indexes?.collectCandidates(query?.filter as any)
+        const source = Array.from(map.values()) as T[]
+        if (!query) {
+            return {
+                ids: source.map(item => item.id) as Array<T['id']>,
+                data: source
+            }
+        }
 
-        if (candidate?.kind === 'empty') return { ids: [] as Array<T['id']>, data: [] as T[] }
+        if (!engine) {
+            return {
+                ids: source.map(item => item.id) as Array<T['id']>,
+                data: source
+            }
+        }
 
-        const source = (candidate?.kind === 'candidates')
-            ? Array.from(candidate.ids).map(id => map.get(id as any)).filter(Boolean) as T[]
-            : Array.from(map.values())
+        const result = engine.evaluateWithIndexes({
+            mapRef: map as Map<EntityId, T>,
+            query,
+            indexes: indexes ?? null,
+            matcher
+        })
 
-        const shouldSkipFilter =
-            candidate?.kind === 'candidates'
-            && candidate.exactness === 'exact'
-            && query?.filter
-
-        const effectiveQuery = shouldSkipFilter
-            ? ({ ...query, filter: undefined } as StoreQuery<T>)
-            : query
-
-        const shouldSkipApplyQuery =
-            effectiveQuery
-            && !effectiveQuery.filter
-            && !effectiveQuery.sort
-            && !effectiveQuery.page
-            && !effectiveQuery.select
-
-        const result = shouldSkipApplyQuery || !effectiveQuery
-            ? source
-            : (executeLocalQuery(source, effectiveQuery as StoreQuery<T>, matcher ? { matcher } : undefined).data as T[])
-
-        return { ids: result.map(item => item.id) as Array<T['id']>, data: result }
-    }, [map, indexes, matcher, queryKey])
+        const data = result.data as T[]
+        return {
+            ids: data.map(item => item.id) as Array<T['id']>,
+            data
+        }
+    }, [engine, indexes, map, matcher, queryKey])
 }
 
 export function useStoreQuery<T extends Entity, Relations = {}>(
@@ -76,13 +75,15 @@ export function useStoreQuery<T extends Entity, Relations = {}>(
     store: StoreApi<T, Relations>,
     options?: UseStoreQueryOptions<T>
 ): T[] {
-    const resultMode: UseStoreQueryResultMode = (options as any)?.result || 'entities'
+    const resultMode: UseStoreQueryResultMode = options?.result ?? 'entities'
     const baseQuery = stripResult(options)
 
     const effectiveOptions = resultMode === 'ids'
-        ? ({ ...(baseQuery as any), select: undefined } as UseStoreQueryOptions<T>)
+        ? ({ ...(baseQuery ?? {}), select: undefined } as UseStoreQueryOptions<T>)
         : options
 
-    const res = useStoreQueryInternal(store, effectiveOptions)
-    return (resultMode === 'ids' ? (res.ids as Array<T['id']>) : res.data) as any
+    const result = useStoreQueryInternal(store, effectiveOptions)
+    return resultMode === 'ids'
+        ? result.ids as unknown as T[]
+        : result.data
 }

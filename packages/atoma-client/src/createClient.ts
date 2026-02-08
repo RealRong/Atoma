@@ -1,7 +1,15 @@
 import type { Entity } from 'atoma-types/core'
 import type { PersistRequest, PersistResult, RuntimeIo, RuntimeSchema } from 'atoma-types/runtime'
 import { Runtime } from 'atoma-runtime'
-import type { AtomaClient, AtomaSchema, CreateClientOptions, ClientPlugin, PluginContext, PluginInitResult, Register } from 'atoma-types/client'
+import type {
+    AtomaClient,
+    AtomaSchema,
+    CreateClientOptions,
+    ClientPlugin,
+    PluginContext,
+    PluginInitResult,
+    Register
+} from 'atoma-types/client'
 import { zod } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
 import { CapabilitiesRegistry, HandlerChain, PluginRegistry, PluginRuntimeIo } from './plugins'
@@ -17,6 +25,16 @@ type MutableClient<
     E extends Record<string, Entity>,
     S extends AtomaSchema<E>
 > = AtomaClient<E, S> & Record<string, unknown>
+
+type ClientPluginLike = {
+    id?: unknown
+    register?: unknown
+    init?: unknown
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 function ensureDevtoolsRegistry(capabilities: CapabilitiesRegistry): (() => void) | undefined {
     const existing = capabilities.get<DevtoolsRegistry>(DEVTOOLS_REGISTRY_KEY)
@@ -83,7 +101,14 @@ function safeDispose(dispose: (() => void) | undefined): void {
 }
 
 function isClientPlugin(value: unknown): value is ClientPlugin {
-    return !!value && typeof value === 'object'
+    if (!isPlainObject(value)) return false
+
+    const candidate = value as ClientPluginLike
+    if (candidate.id !== undefined && typeof candidate.id !== 'string') return false
+    if (candidate.register !== undefined && typeof candidate.register !== 'function') return false
+    if (candidate.init !== undefined && typeof candidate.init !== 'function') return false
+
+    return true
 }
 
 function normalizePlugins(value: ReadonlyArray<unknown>): ClientPlugin[] {
@@ -135,6 +160,24 @@ function registerPluginHandlers(
     }
 }
 
+function toPluginInitResult(value: unknown): PluginInitResult<unknown> | undefined {
+    if (!isPlainObject(value)) return undefined
+
+    const candidate = value as {
+        extension?: unknown
+        dispose?: unknown
+    }
+
+    if (candidate.dispose !== undefined && typeof candidate.dispose !== 'function') {
+        return undefined
+    }
+
+    return {
+        extension: candidate.extension,
+        dispose: candidate.dispose as (() => void) | undefined
+    }
+}
+
 function initPlugins<
     E extends Record<string, Entity>,
     S extends AtomaSchema<E>
@@ -147,11 +190,15 @@ function initPlugins<
 
     for (const plugin of plugins) {
         if (typeof plugin.init !== 'function') continue
-        const result = plugin.init(ctx) as PluginInitResult<unknown> | void
-        if (result?.extension && typeof result.extension === 'object') {
+
+        const result = toPluginInitResult(plugin.init(ctx))
+        if (!result) continue
+
+        if (isPlainObject(result.extension)) {
             Object.assign(client, result.extension)
         }
-        if (typeof result?.dispose === 'function') {
+
+        if (typeof result.dispose === 'function') {
             disposers.push(result.dispose)
         }
     }

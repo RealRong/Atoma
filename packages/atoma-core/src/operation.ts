@@ -1,18 +1,24 @@
 import type { OperationContext, OperationOrigin } from 'atoma-types/core'
 
+type CryptoLike = {
+    randomUUID?: () => string
+}
+
 const createFallbackId = () =>
     `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 
 export const createActionId = (): string => {
-    const cryptoAny = (globalThis as any)?.crypto
-    const uuid = cryptoAny?.randomUUID?.bind(cryptoAny)
+    const cryptoObject = (globalThis as { crypto?: CryptoLike }).crypto
+    const uuid = cryptoObject?.randomUUID
+
     if (typeof uuid === 'function') {
         try {
-            return String(uuid())
+            return String(uuid.call(cryptoObject))
         } catch {
             // ignore
         }
     }
+
     return createFallbackId()
 }
 

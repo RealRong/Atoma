@@ -65,17 +65,24 @@ export function buildPrefetchDoneKey(args: { includeKey: string; relationName: s
 export function filterStableItemsForRelation<T extends Entity>(args: {
     items: T[]
     relationConfig: any
+    mode: PrefetchMode
     newIds: Set<EntityId>
     force?: boolean
 }): T[] {
-    const { items, relationConfig, newIds, force } = args
-    if (force || relationConfig?.type !== 'hasMany' || newIds.size === 0) {
+    const { items, relationConfig, mode, newIds, force } = args
+    if (force || relationConfig?.type !== 'hasMany') {
         return items
     }
 
+    if (mode === 'on-mount') {
+        return items
+    }
+
+    if (newIds.size === 0) return []
+
     return items.filter(item => {
         const id = getEntityId(item)
-        return Boolean(id && !newIds.has(id))
+        return Boolean(id && newIds.has(id))
     })
 }
 
@@ -100,4 +107,3 @@ export function collectCurrentAndNewIds<T extends Entity>(
 export function normalizeStoreName(store: any, fallback: StoreToken): string {
     return String(store?.name ?? fallback ?? '')
 }
-

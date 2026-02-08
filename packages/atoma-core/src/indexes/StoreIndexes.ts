@@ -1,152 +1,66 @@
 import type { Patch } from 'immer'
-import type { FilterExpr, IndexDefinition } from 'atoma-types/core'
+import type { CandidateResult, FilterExpr, IndexDefinition, IndexStats } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CandidateExactness, CandidateResult, IndexStats } from 'atoma-types/core'
-import { intersectAll } from './utils'
-import { NumberDateIndex } from './implementations/NumberDateIndex'
-import { StringIndex } from './implementations/StringIndex'
-import { SubstringIndex } from './implementations/SubstringIndex'
-import { TextIndex } from './implementations/TextIndex'
 import { IIndex } from './base/IIndex'
-import { zod } from 'atoma-shared'
+import { createIndex } from './factory/createIndex'
+import { collectCandidatesWithPlan, type IndexQueryPlan } from './planner/IndexQueryPlanner'
+import { IndexDeltaUpdater } from './updater/IndexDeltaUpdater'
 
-const { parseOrThrow, z } = zod
+function readEntityId<T>(item: T): EntityId {
+    return (item as { id: EntityId }).id
+}
 
-const indexDefinitionSchema = z.object({
-    field: z.string().trim().min(1),
-    type: z.enum(['number', 'date', 'string', 'substring', 'text']),
-    options: z.any().optional()
-}).loose()
+function readFieldValue<T>(item: T, field: string): unknown {
+    return (item as Record<string, unknown>)[field]
+}
 
 export class StoreIndexes<T> {
     private readonly indexes = new Map<string, IIndex<T>>()
-    private lastQueryPlan:
-        | undefined
-        | {
-            timestamp: number
-            whereFields: string[]
-            perField: Array<{
-                field: string
-                status: 'no_index' | 'unsupported' | 'empty' | 'candidates'
-                exactness?: CandidateExactness
-                candidates?: number
-            }>
-            result: { kind: CandidateResult['kind']; exactness?: CandidateExactness; candidates?: number }
-        }
+    private lastQueryPlan: IndexQueryPlan | undefined
 
     constructor(defs: Array<IndexDefinition<T>>) {
         const seen = new Set<string>()
         defs.forEach(def => {
             if (seen.has(def.field)) {
-                throw new Error(`[Atoma Index] Duplicate index field \"${def.field}\".`)
+                throw new Error(`[Atoma Index] Duplicate index field "${def.field}".`)
             }
             seen.add(def.field)
-            this.indexes.set(def.field, this.createIndex(def))
+            this.indexes.set(def.field, createIndex(def))
         })
     }
 
     add(item: T): void {
-        const id = (item as any).id as EntityId
-        this.indexes.forEach(idx => {
-            const value = (item as any)[idx.config.field]
+        const id = readEntityId(item)
+        this.indexes.forEach(index => {
+            const value = readFieldValue(item, index.config.field)
             if (value !== undefined && value !== null) {
-                idx.add(id, value)
+                index.add(id, value)
             }
         })
     }
 
     remove(item?: T): void {
         if (!item) return
-        const id = (item as any).id as EntityId
-        this.indexes.forEach(idx => {
-            const value = (item as any)[idx.config.field]
+
+        const id = readEntityId(item)
+        this.indexes.forEach(index => {
+            const value = readFieldValue(item, index.config.field)
             if (value !== undefined && value !== null) {
-                idx.remove(id, value)
+                index.remove(id, value)
             }
         })
     }
 
     rebuild(items: Iterable<T>): void {
         const source = Array.isArray(items) ? items : Array.from(items)
-        this.indexes.forEach(idx => idx.clear())
+        this.indexes.forEach(index => index.clear())
         source.forEach(item => this.add(item))
     }
 
     collectCandidates(filter?: FilterExpr): CandidateResult {
-        const where = filterToWhere(filter)
-        if (!where) {
-            this.lastQueryPlan = {
-                timestamp: Date.now(),
-                whereFields: [],
-                perField: [],
-                result: { kind: 'unsupported' }
-            }
-            return { kind: 'unsupported' }
-        }
-
-        const candidateSets: Set<EntityId>[] = []
-        let hasUnsupportedCondition = false
-        let exactness: CandidateExactness = 'exact'
-        const planPerField: Array<{
-            field: string
-            status: 'no_index' | 'unsupported' | 'empty' | 'candidates'
-            exactness?: CandidateExactness
-            candidates?: number
-        }> = []
-
-        Object.entries(where as any).forEach(([field, cond]) => {
-            const idx = this.indexes.get(field)
-            if (!idx) {
-                hasUnsupportedCondition = true
-                planPerField.push({ field, status: 'no_index' })
-                return
-            }
-            const res = idx.queryCandidates(cond)
-            if (res.kind === 'unsupported') {
-                hasUnsupportedCondition = true
-                planPerField.push({ field, status: 'unsupported' })
-                return
-            }
-            if (res.kind === 'empty') {
-                exactness = 'superset'
-                candidateSets.length = 0
-                candidateSets.push(new Set())
-                planPerField.push({ field, status: 'empty' })
-                return
-            }
-            if (res.exactness === 'superset') exactness = 'superset'
-            candidateSets.push(res.ids)
-            planPerField.push({ field, status: 'candidates', exactness: res.exactness, candidates: res.ids.size })
-        })
-
-        if (!candidateSets.length) {
-            this.lastQueryPlan = {
-                timestamp: Date.now(),
-                whereFields: Object.keys(where as any),
-                perField: planPerField,
-                result: { kind: 'unsupported' }
-            }
-            return { kind: 'unsupported' }
-        }
-        if (hasUnsupportedCondition) exactness = 'superset'
-
-        const ids = intersectAll(candidateSets)
-        const result: CandidateResult =
-            ids.size === 0
-                ? { kind: 'empty' }
-                : { kind: 'candidates', ids, exactness }
-
-        this.lastQueryPlan = {
-            timestamp: Date.now(),
-            whereFields: Object.keys(where as any),
-            perField: planPerField,
-            result:
-                result.kind === 'candidates'
-                    ? { kind: 'candidates', exactness: result.exactness, candidates: result.ids.size }
-                    : { kind: result.kind }
-        }
-
-        return result
+        const planned = collectCandidatesWithPlan({ indexes: this.indexes, filter })
+        this.lastQueryPlan = planned.plan
+        return planned.result
     }
 
     getStats(field: string): IndexStats | undefined {
@@ -155,12 +69,12 @@ export class StoreIndexes<T> {
 
     getIndexSnapshots(): Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> {
         const list: Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> = []
-        this.indexes.forEach((idx, field) => {
-            const stats = idx.getStats()
+        this.indexes.forEach((index, field) => {
+            const stats = index.getStats()
             list.push({
                 field,
-                type: (idx.config as any).type,
-                dirty: idx.isDirty(),
+                type: index.type,
+                dirty: index.isDirty(),
                 ...stats
             })
         })
@@ -172,105 +86,37 @@ export class StoreIndexes<T> {
     }
 
     applyPatches(before: Map<EntityId, T>, after: Map<EntityId, T>, patches: Patch[]) {
-        const changedIds = new Set<EntityId>()
-        patches.forEach(p => {
-            const path = (p as any)?.path
-            if (!Array.isArray(path) || path.length < 1) return
-            changedIds.add(path[0] as any as EntityId)
-        })
-
-        changedIds.forEach(id => {
-            const prev = before.get(id)
-            const next = after.get(id)
-            if (prev) this.remove(prev)
-            if (next) this.add(next)
+        IndexDeltaUpdater.applyPatches({
+            before,
+            after,
+            patches,
+            handler: {
+                add: (item) => this.add(item),
+                remove: (item) => this.remove(item)
+            }
         })
     }
 
     applyChangedIds(before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: Iterable<EntityId>) {
-        for (const id of changedIds) {
-            const prev = before.get(id)
-            const next = after.get(id)
-
-            if (prev === next) continue
-            if (prev) this.remove(prev)
-            if (next) this.add(next)
-        }
+        IndexDeltaUpdater.applyChangedIds({
+            before,
+            after,
+            changedIds,
+            handler: {
+                add: (item) => this.add(item),
+                remove: (item) => this.remove(item)
+            }
+        })
     }
 
     applyMapDiff(before: Map<EntityId, T>, after: Map<EntityId, T>) {
-        // removals + updates
-        before.forEach((prevItem, id) => {
-            const nextItem = after.get(id)
-            if (!nextItem) {
-                this.remove(prevItem)
-                return
-            }
-            if (nextItem !== prevItem) {
-                this.remove(prevItem)
-                this.add(nextItem)
-            }
-        })
-
-        // additions
-        after.forEach((nextItem, id) => {
-            if (!before.has(id)) {
-                this.add(nextItem)
+        IndexDeltaUpdater.applyMapDiff({
+            before,
+            after,
+            handler: {
+                add: (item) => this.add(item),
+                remove: (item) => this.remove(item)
             }
         })
     }
-
-    private createIndex(def: IndexDefinition<T>): IIndex<T> {
-        def = parseOrThrow(indexDefinitionSchema, def, { prefix: '[Atoma Index] ' }) as any
-
-        switch (def.type) {
-            case 'number':
-            case 'date':
-                return new NumberDateIndex<T>(def as any)
-            case 'string':
-                return new StringIndex<T>(def)
-            case 'substring':
-                return new SubstringIndex<T>(def)
-            case 'text':
-                return new TextIndex<T>(def)
-        }
-    }
-}
-
-function filterToWhere(filter?: FilterExpr): Record<string, any> | undefined {
-    if (!filter) return undefined
-    const op = (filter as any).op
-
-    if (op === 'and' && Array.isArray((filter as any).args)) {
-        const out: Record<string, any> = {}
-        for (const child of (filter as any).args as any[]) {
-            const partial = filterToWhere(child as any)
-            if (!partial) return undefined
-            for (const [k, v] of Object.entries(partial)) {
-                if (Object.prototype.hasOwnProperty.call(out, k)) return undefined
-                out[k] = v
-            }
-        }
-        return Object.keys(out).length ? out : undefined
-    }
-
-    if (op === 'eq') return { [(filter as any).field]: { eq: (filter as any).value } }
-    if (op === 'in') return { [(filter as any).field]: { in: (filter as any).values } }
-    if (op === 'gt') return { [(filter as any).field]: { gt: (filter as any).value } }
-    if (op === 'gte') return { [(filter as any).field]: { gte: (filter as any).value } }
-    if (op === 'lt') return { [(filter as any).field]: { lt: (filter as any).value } }
-    if (op === 'lte') return { [(filter as any).field]: { lte: (filter as any).value } }
-    if (op === 'startsWith') return { [(filter as any).field]: { startsWith: (filter as any).value } }
-    if (op === 'endsWith') return { [(filter as any).field]: { endsWith: (filter as any).value } }
-    if (op === 'contains') return { [(filter as any).field]: { contains: (filter as any).value } }
-    if (op === 'text') {
-        const mode = (filter as any).mode
-        const query = (filter as any).query
-        if (mode === 'fuzzy') {
-            return { [(filter as any).field]: { fuzzy: { q: query, distance: (filter as any).distance } } }
-        }
-        return { [(filter as any).field]: { match: { q: query } } }
-    }
-
-    return undefined
 }

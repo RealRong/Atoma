@@ -1,10 +1,28 @@
 import type { IndexDefinition } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
 import type { CandidateResult, IndexStats } from 'atoma-types/core'
-import { intersectAll, levenshteinDistance } from '../utils'
+import type { EntityId } from 'atoma-types/protocol'
 import { defaultTokenizer } from '../tokenizer'
-import { validateString } from '../validators'
 import { IIndex } from '../base/IIndex'
+import { intersectAll, levenshteinDistance } from '../utils'
+import { validateString } from '../validators'
+
+type TokenOperator = 'and' | 'or'
+
+type MatchSpec = {
+    q?: unknown
+    op?: TokenOperator
+    minTokenLength?: number
+    tokenizer?: (text: string) => string[]
+}
+
+type FuzzySpec = MatchSpec & {
+    distance?: 0 | 1 | 2
+}
+
+type TextCondition = {
+    match?: string | MatchSpec
+    fuzzy?: string | FuzzySpec
+}
 
 export class TextIndex<T> implements IIndex<T> {
     readonly type = 'text'
@@ -24,7 +42,7 @@ export class TextIndex<T> implements IIndex<T> {
         this.fuzzyDistance = config.options?.fuzzyDistance ?? 1
     }
 
-    add(id: EntityId, value: any): void {
+    add(id: EntityId, value: unknown): void {
         const text = validateString(value, this.config.field, id)
         const tokens = this.tokenize(text)
         this.docTokens.set(id, tokens)
@@ -39,7 +57,7 @@ export class TextIndex<T> implements IIndex<T> {
         })
     }
 
-    remove(id: EntityId, value: any): void {
+    remove(id: EntityId, value: unknown): void {
         const tokens = this.docTokens.get(id) || this.tokenize(validateString(value, this.config.field, id))
         tokens.forEach(token => {
             const set = this.invertedIndex.get(token)
@@ -58,28 +76,30 @@ export class TextIndex<T> implements IIndex<T> {
         this.docTokens.clear()
     }
 
-    queryCandidates(_condition: any): CandidateResult {
-        const condition = _condition
+    queryCandidates(condition: unknown): CandidateResult {
         if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
             return { kind: 'unsupported' }
         }
 
-        const matchSpec = (condition as any).match
-        const fuzzySpec = (condition as any).fuzzy
-        if (matchSpec === undefined && fuzzySpec === undefined) return { kind: 'unsupported' }
+        const parsed = condition as TextCondition
+        if (parsed.match === undefined && parsed.fuzzy === undefined) {
+            return { kind: 'unsupported' }
+        }
 
-        const spec = matchSpec !== undefined ? matchSpec : fuzzySpec
-        const isFuzzy = fuzzySpec !== undefined
-        const resolved = typeof spec === 'string' ? { q: spec } : spec
-        const query = String((resolved as any).q ?? '')
-        const op = ((resolved as any).op as 'and' | 'or' | undefined) || 'and'
-        const distance: 0 | 1 | 2 = isFuzzy ? (((resolved as any).distance ?? this.fuzzyDistance) as any) : 0
-        const minTokenLength = (resolved as any).minTokenLength ?? this.minTokenLength
-        const tokenizer: (text: string) => string[] = (resolved as any).tokenizer || this.tokenizer || defaultTokenizer
+        const spec = parsed.match !== undefined ? parsed.match : parsed.fuzzy
+        const isFuzzy = parsed.fuzzy !== undefined
+        const resolved = typeof spec === 'string' ? { q: spec } : (spec || {})
+        const query = String(resolved.q ?? '')
+        const operator = resolved.op || 'and'
+        const distance: 0 | 1 | 2 = isFuzzy
+            ? ((resolved as FuzzySpec).distance ?? this.fuzzyDistance)
+            : 0
+        const minTokenLength = resolved.minTokenLength ?? this.minTokenLength
+        const tokenizer = resolved.tokenizer || this.tokenizer || defaultTokenizer
 
         const tokens = tokenizer(query)
-            .filter((t: string) => t.length >= minTokenLength)
-            .map((t: string) => t.toLowerCase())
+            .filter((token: string) => token.length >= minTokenLength)
+            .map((token: string) => token.toLowerCase())
         if (!tokens.length) return { kind: 'empty' }
 
         const tokenSets: Set<EntityId>[] = []
@@ -90,9 +110,9 @@ export class TextIndex<T> implements IIndex<T> {
             if (exact) return new Set(exact)
             if (!distance) return new Set()
             const fuzzyMatches = new Set<EntityId>()
-            this.invertedIndex.forEach((set, t) => {
-                if (Math.abs(t.length - token.length) > distance) return
-                if (levenshteinDistance(token, t, distance) <= distance) {
+            this.invertedIndex.forEach((set, indexedToken) => {
+                if (Math.abs(indexedToken.length - token.length) > distance) return
+                if (levenshteinDistance(token, indexedToken, distance) <= distance) {
                     set.forEach(id => fuzzyMatches.add(id))
                 }
             })
@@ -101,22 +121,22 @@ export class TextIndex<T> implements IIndex<T> {
 
         tokens.forEach((token: string) => {
             const ids = lookupToken(token)
-            if (op === 'and') {
+            if (operator === 'and') {
                 tokenSets.push(ids)
             } else {
                 tokenUnions.push(ids)
             }
         })
 
-        if (op === 'and') {
-            if (tokenSets.some(s => s.size === 0)) return { kind: 'empty' }
+        if (operator === 'and') {
+            if (tokenSets.some(set => set.size === 0)) return { kind: 'empty' }
             const ids = intersectAll(tokenSets)
             if (ids.size === 0) return { kind: 'empty' }
             return { kind: 'candidates', ids, exactness: distance ? 'superset' : 'exact' }
         }
 
         const union = new Set<EntityId>()
-        tokenUnions.forEach(s => s.forEach(id => union.add(id)))
+        tokenUnions.forEach(set => set.forEach(id => union.add(id)))
         if (union.size === 0) return { kind: 'empty' }
         return { kind: 'candidates', ids: union, exactness: distance ? 'superset' : 'exact' }
     }
@@ -153,6 +173,6 @@ export class TextIndex<T> implements IIndex<T> {
     }
 
     private tokenize(input: string): string[] {
-        return this.tokenizer(input.toLowerCase()).filter(t => t.length >= this.minTokenLength)
+        return this.tokenizer(input.toLowerCase()).filter(token => token.length >= this.minTokenLength)
     }
 }

@@ -49,7 +49,7 @@ export class WriteFlow implements RuntimeWrite {
 
     private resolveWriteContext = <T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions): WriteContext => {
         return {
-            opContext: ensureActionId(options?.opContext),
+            opContext: ensureActionId(this.runtime, options?.opContext),
             writeStrategy: options?.writeStrategy ?? handle.config.defaultWriteStrategy
         }
     }

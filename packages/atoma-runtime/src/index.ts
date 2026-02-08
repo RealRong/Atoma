@@ -4,3 +4,4 @@ enablePatches()
 
 export { Runtime } from './runtime'
 export type { RuntimeConfig } from './runtime'
+export { CoreRuntimeEngine } from './engine'

@@ -52,15 +52,20 @@ export class HandlerChain<K extends HandlerName = HandlerName> {
         this.terminal = options?.terminal
     }
 
+    private getHandler(index: number): ChainHandler<K> | undefined {
+        return this.entries[index]?.handler as unknown as ChainHandler<K> | undefined
+    }
+
     execute = async (req: ChainReq<K>, ctx: ChainCtx<K>): Promise<ChainRes<K>> => {
         const run = async (index: number): Promise<ChainRes<K>> => {
-            const handler = this.entries[index]?.handler as unknown as ChainHandler<K> | undefined
+            const handler = this.getHandler(index)
             if (!handler) {
                 if (!this.terminal) {
                     throw new Error(`[Atoma] HandlerChain(${this.name}): missing terminal handler`)
                 }
                 return await this.terminal(req, ctx)
             }
+
             return await handler(req, ctx, () => run(index + 1))
         }
 

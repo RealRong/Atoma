@@ -4,6 +4,7 @@ import type { Draft, Patch } from 'immer'
 import type { StoreHandle } from './handleTypes'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from './persistenceTypes'
 import type { RuntimeHookRegistry } from './hooks'
+import type { RuntimeEngine } from './engineTypes'
 
 export type DataProcessor = Readonly<{
     process: <T>(mode: Types.DataProcessorMode, data: T, context: Types.DataProcessorBaseContext<T> & { dataProcessor?: Types.StoreDataProcessor<T> }) => Promise<T | undefined>
@@ -74,6 +75,7 @@ export type CoreRuntime = Readonly<{
     write: RuntimeWrite
     strategy: RuntimeStrategyRegistry
     transform: RuntimeTransform
+    engine: RuntimeEngine
 }>
 
 export type { StoreHandle }

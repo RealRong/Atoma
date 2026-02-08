@@ -19,7 +19,8 @@ export class WriteCommitFlow {
         const optimisticState = applyOptimisticCommit({
             handle: args.handle,
             intents,
-            writePolicy
+            writePolicy,
+            preserve: args.runtime.engine.preserveReferenceShallow
         })
 
         const { runtime, handle, opContext } = args

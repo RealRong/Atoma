@@ -1,4 +1,4 @@
-export { belongsTo, hasMany, hasOne } from './builders'
+export { belongsTo, hasMany, hasOne, variants } from './builders'
 export { compileRelationsMap } from './compile'
 export { RelationResolver } from './RelationResolver'
 export { collectRelationStoreTokens, projectRelationsBatch } from './projector'

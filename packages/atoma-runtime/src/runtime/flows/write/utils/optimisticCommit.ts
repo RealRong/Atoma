@@ -8,13 +8,14 @@ export function applyOptimisticCommit<T extends Entity>(args: {
     handle: StoreHandle<T>
     intents: Array<WriteIntent<T>>
     writePolicy: WritePolicy
+    preserve: (existing: T | undefined, incoming: T) => T
 }): OptimisticState<T> {
-    const { handle, intents, writePolicy } = args
+    const { handle, intents, writePolicy, preserve } = args
     const before = handle.state.getSnapshot() as Map<EntityId, T>
     const shouldOptimistic = writePolicy.optimistic !== false
 
     const optimistic = (shouldOptimistic && intents.length)
-        ? applyIntentsOptimistically(before, intents)
+        ? applyIntentsOptimistically(before, intents, preserve)
         : { optimisticState: before, changedIds: new Set<EntityId>() }
 
     const { optimisticState, changedIds } = optimistic

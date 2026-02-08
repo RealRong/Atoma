@@ -14,14 +14,14 @@ export class StringIndex<T> implements IIndex<T> {
         this.config = config
     }
 
-    add(id: EntityId, value: any): void {
+    add(id: EntityId, value: unknown): void {
         const str = validateString(value, this.config.field, id)
         const set = this.valueMap.get(str) || new Set<EntityId>()
         set.add(id)
         this.valueMap.set(str, set)
     }
 
-    remove(id: EntityId, value: any): void {
+    remove(id: EntityId, value: unknown): void {
         const str = validateString(value, this.config.field, id)
         const set = this.valueMap.get(str)
         if (set) {
@@ -36,18 +36,19 @@ export class StringIndex<T> implements IIndex<T> {
         this.valueMap.clear()
     }
 
-    queryCandidates(condition: any): CandidateResult {
-        if (condition && typeof condition === 'object' && !Array.isArray(condition) && (condition as any).eq !== undefined) {
-            if (typeof (condition as any).eq !== 'string') return { kind: 'empty' }
-            const set = this.valueMap.get((condition as any).eq)
+    queryCandidates(condition: unknown): CandidateResult {
+        if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
+            const conditionRecord = condition as { eq?: unknown; in?: unknown[] }
+            if (conditionRecord.eq !== undefined) {
+            if (typeof conditionRecord.eq !== 'string') return { kind: 'empty' }
+            const set = this.valueMap.get(conditionRecord.eq)
             if (!set || set.size === 0) return { kind: 'empty' }
             return { kind: 'candidates', ids: set, exactness: 'exact' }
         }
-
-        if (condition && typeof condition === 'object' && !Array.isArray(condition) && (condition as any).in) {
-            const values = (condition as any).in as any[]
+            if (conditionRecord.in !== undefined) {
+            const values = conditionRecord.in
             if (!Array.isArray(values)) return { kind: 'unsupported' }
-            const strs = values.filter((v: any) => typeof v === 'string') as string[]
+            const strs = values.filter((value): value is string => typeof value === 'string')
             if (strs.length === 0) return { kind: 'empty' }
             const result = new Set<EntityId>()
             strs.forEach(v => {
@@ -56,6 +57,7 @@ export class StringIndex<T> implements IIndex<T> {
             })
             if (result.size === 0) return { kind: 'empty' }
             return { kind: 'candidates', ids: result, exactness: 'exact' }
+            }
         }
 
         // Primitive equality

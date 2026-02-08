@@ -1,23 +1,20 @@
 import type { Entity, LifecycleHooks, OperationContext, PartialWithId, StoreOperationOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { mergeForUpdate, initBaseObject } from 'atoma-core/store'
-import { normalizeOperationContext } from 'atoma-core/operation'
-import type { StoreHandle } from 'atoma-types/runtime'
-import type { CoreRuntime } from 'atoma-types/runtime'
+import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
 
-export function ensureActionId(opContext?: OperationContext): OperationContext {
-    return normalizeOperationContext(opContext)
+export function ensureActionId(runtime: CoreRuntime, opContext?: OperationContext): OperationContext {
+    return runtime.engine.normalizeOperationContext(opContext)
 }
 
 export async function prepareForAdd<T extends Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, item: Partial<T>, opContext?: OperationContext): Promise<PartialWithId<T>> {
-    let initedObj = initBaseObject<T>(item, handle.config.idGenerator)
+    let initedObj = runtime.engine.initBaseObject<T>(item, handle.config.idGenerator)
     initedObj = await runBeforeSave(handle.config.hooks, initedObj, 'add')
     const processed = await runtime.transform.inbound(handle, initedObj as T, opContext)
     return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareForAdd')
 }
 
 export async function prepareForUpdate<T extends Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, base: PartialWithId<T>, patch: PartialWithId<T>, opContext?: OperationContext): Promise<PartialWithId<T>> {
-    let merged = mergeForUpdate(base, patch)
+    let merged = runtime.engine.mergeForUpdate(base, patch)
     merged = await runBeforeSave(handle.config.hooks, merged, 'update')
     const processed = await runtime.transform.inbound(handle, merged as T, opContext)
     return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareForUpdate')

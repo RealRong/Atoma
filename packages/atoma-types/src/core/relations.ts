@@ -4,8 +4,13 @@ import type { StoreToken } from './store'
 
 export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
 
-// Relations include 专用（仅支持 Top-N 预览，不含分页）
-export type RelationIncludeOptions<T, Include extends Record<string, any> = Record<string, any>> = Pick<Query<T>, 'sort' | 'page' | 'include' | 'select'> & {
+export type RelationIncludePage = {
+    limit?: number
+}
+
+// Relations include 专用（仅支持 Top-N 预览，不含 offset/cursor 分页）
+export type RelationIncludeOptions<T, Include extends Record<string, any> = Record<string, any>> = Omit<Pick<Query<T>, 'sort' | 'page' | 'include' | 'select'>, 'page'> & {
+    page?: RelationIncludePage
     /** live=true 订阅子 store 实时变化；false 则使用快照（默认 true） */
     live?: boolean
     /** 关系预取策略（默认：belongsTo/hasOne 为 on-change，hasMany 为 on-mount） */

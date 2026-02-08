@@ -1,14 +1,13 @@
-import type { IndexDefinition } from 'atoma-types/core'
+import type { CandidateResult, IndexDefinition, IndexStats } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CandidateResult, IndexStats } from 'atoma-types/core'
 
 export interface IIndex<T> {
-    readonly type: string
+    readonly type: IndexDefinition<T>['type']
     readonly config: IndexDefinition<T>
-    add(id: EntityId, value: any): void
-    remove(id: EntityId, value: any): void
+    add(id: EntityId, value: unknown): void
+    remove(id: EntityId, value: unknown): void
     clear(): void
-    queryCandidates(condition: any): CandidateResult
+    queryCandidates(condition: unknown): CandidateResult
     getStats(): IndexStats
     isDirty(): boolean
 }

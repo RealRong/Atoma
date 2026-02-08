@@ -18,7 +18,7 @@ export class NumberDateIndex<T> implements IIndex<T> {
         this.config = config
     }
 
-    add(id: EntityId, value: any): void {
+    add(id: EntityId, value: unknown): void {
         const num = normalizeNumber(value, this.config.field, this.type as IndexType, id)
         const set = this.valueMap.get(num) || new Set<EntityId>()
         set.add(id)
@@ -27,7 +27,7 @@ export class NumberDateIndex<T> implements IIndex<T> {
         this.dirty = true
     }
 
-    remove(id: EntityId, value: any): void {
+    remove(id: EntityId, value: unknown): void {
         const num = normalizeNumber(value, this.config.field, this.type as IndexType, id)
         const set = this.valueMap.get(num)
         if (set) {
@@ -46,11 +46,12 @@ export class NumberDateIndex<T> implements IIndex<T> {
         this.dirty = true
     }
 
-    queryCandidates(condition: any): CandidateResult {
+    queryCandidates(condition: unknown): CandidateResult {
         if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
-            if (condition.eq !== undefined) {
+            const conditionObj = condition as Record<string, unknown> & { in?: unknown[] }
+            if (conditionObj.eq !== undefined) {
                 try {
-                    const num = normalizeNumber(condition.eq, this.config.field, this.type as IndexType, 'eq')
+                    const num = normalizeNumber(conditionObj.eq, this.config.field, this.type as IndexType, 'eq')
                     const set = this.valueMap.get(num)
                     if (!set || set.size === 0) return { kind: 'empty' }
                     return { kind: 'candidates', ids: set, exactness: 'exact' }
@@ -58,11 +59,11 @@ export class NumberDateIndex<T> implements IIndex<T> {
                     return { kind: 'empty' }
                 }
             }
-            if (condition.in && Array.isArray(condition.in)) {
+            if (conditionObj.in && Array.isArray(conditionObj.in)) {
                 const result = new Set<EntityId>()
-                condition.in.forEach((v: any) => {
+                conditionObj.in.forEach((value) => {
                     try {
-                        const num = normalizeNumber(v, this.config.field, this.type as IndexType, 'in')
+                        const num = normalizeNumber(value, this.config.field, this.type as IndexType, 'in')
                         const set = this.valueMap.get(num)
                         if (set) set.forEach(id => result.add(id))
                     } catch { /* ignore invalid */ }
@@ -70,8 +71,8 @@ export class NumberDateIndex<T> implements IIndex<T> {
                 if (result.size === 0) return { kind: 'empty' }
                 return { kind: 'candidates', ids: result, exactness: 'exact' }
             }
-            if (condition.gt !== undefined || condition.gte !== undefined || condition.lt !== undefined || condition.lte !== undefined) {
-                const result = this.queryRange(condition)
+            if (conditionObj.gt !== undefined || conditionObj.gte !== undefined || conditionObj.lt !== undefined || conditionObj.lte !== undefined) {
+                const result = this.queryRange(conditionObj)
                 if (result.size === 0) return { kind: 'empty' }
                 return { kind: 'candidates', ids: result, exactness: 'exact' }
             }
@@ -115,7 +116,7 @@ export class NumberDateIndex<T> implements IIndex<T> {
         return this.dirty
     }
 
-    private queryRange(cond: any): Set<EntityId> {
+    private queryRange(cond: Record<string, unknown>): Set<EntityId> {
         const entries = this.buildSortedEntries()
         const { gt, gte, lt, lte } = cond ?? {}
 

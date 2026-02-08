@@ -2,21 +2,34 @@ import type { PartialWithId } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { defaultSnowflakeGenerator } from '../idGenerator'
 
+type EntityWithOptionalTimestamps = {
+    createdAt?: unknown
+}
+
+const toObjectRecord = (value: unknown): Record<string, unknown> | null => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+    return value as Record<string, unknown>
+}
+
 export function initBaseObject<T>(obj: Partial<T>, idGenerator?: () => EntityId): PartialWithId<T> {
     const generator = idGenerator || defaultSnowflakeGenerator
     const now = Date.now()
+    const base = obj as Partial<T> & { id?: EntityId }
+
     return {
-        ...(obj as any),
-        id: (obj as any).id || generator(),
+        ...obj,
+        id: base.id || generator(),
         updatedAt: now,
         createdAt: now
     } as PartialWithId<T>
 }
 
 export function mergeForUpdate<T>(base: PartialWithId<T>, patch: PartialWithId<T>): PartialWithId<T> {
+    const createdAt = (base as EntityWithOptionalTimestamps).createdAt
+
     return Object.assign({}, base, patch, {
         updatedAt: Date.now(),
-        createdAt: (base as any).createdAt ?? Date.now(),
+        createdAt: typeof createdAt === 'number' ? createdAt : Date.now(),
         id: patch.id
     }) as PartialWithId<T>
 }
@@ -38,8 +51,10 @@ export function bulkAdd<T>(items: PartialWithId<T>[], data: Map<EntityId, T>): M
         const id = item.id
         const had = next.has(id)
         const prev = next.get(id)
-        if (!had || prev !== (item as any)) {
-            ensure().set(id, item as any)
+        const nextItem = item as unknown as T
+
+        if (!had || prev !== nextItem) {
+            ensure().set(id, nextItem)
         }
     }
 
@@ -72,20 +87,18 @@ export function preserveReferenceShallow<T>(existing: T | undefined, incoming: T
     if (existing === undefined || existing === null) return incoming
     if (existing === incoming) return existing
 
-    if (typeof existing !== 'object' || existing === null) return incoming
-    if (typeof incoming !== 'object' || incoming === null) return incoming
-    if (Array.isArray(existing) || Array.isArray(incoming)) return incoming
+    const left = toObjectRecord(existing)
+    const right = toObjectRecord(incoming)
+    if (!left || !right) return incoming
 
-    const a = existing as any
-    const b = incoming as any
-
-    for (const k in a) {
-        if (!Object.prototype.hasOwnProperty.call(a, k)) continue
-        if (a[k] !== b[k]) return incoming
+    for (const key in left) {
+        if (!Object.prototype.hasOwnProperty.call(left, key)) continue
+        if (left[key] !== right[key]) return incoming
     }
-    for (const k in b) {
-        if (!Object.prototype.hasOwnProperty.call(b, k)) continue
-        if (b[k] !== a[k]) return incoming
+
+    for (const key in right) {
+        if (!Object.prototype.hasOwnProperty.call(right, key)) continue
+        if (right[key] !== left[key]) return incoming
     }
 
     return existing

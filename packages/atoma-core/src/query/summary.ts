@@ -1,43 +1,66 @@
 import type { Query } from 'atoma-types/core'
 
-function collectFilterFields(filter: any, out: Set<string>) {
-    if (!filter || typeof filter !== 'object') return
-    const op = (filter as any).op
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function collectFilterFields(filter: unknown, output: Set<string>) {
+    if (!isRecord(filter)) return
+
+    const op = filter.op
     if (op === 'and' || op === 'or') {
-        const args = (filter as any).args
-        if (Array.isArray(args)) args.forEach(a => collectFilterFields(a, out))
+        const args = filter.args
+        if (Array.isArray(args)) args.forEach(arg => collectFilterFields(arg, output))
         return
     }
+
     if (op === 'not') {
-        collectFilterFields((filter as any).arg, out)
+        collectFilterFields(filter.arg, output)
         return
     }
-    const field = (filter as any).field
-    if (typeof field === 'string' && field) out.add(field)
+
+    const field = filter.field
+    if (typeof field === 'string' && field) output.add(field)
 }
 
 export function summarizeQuery<T>(query?: Query<T>) {
     if (!query) return {}
 
     const fieldSet = new Set<string>()
-    collectFilterFields((query as any).filter, fieldSet)
+    collectFilterFields(query.filter, fieldSet)
     const filterFields = fieldSet.size ? Array.from(fieldSet) : undefined
 
-    const sortFields = Array.isArray((query as any).sort)
-        ? (query as any).sort.map((r: any) => String(r.field))
+    const sortFields = Array.isArray(query.sort)
+        ? query.sort.map(rule => String(rule.field))
         : undefined
 
-    const page = (query as any).page
+    const page = query.page
+
+    const offset = page?.mode === 'offset' && typeof page.offset === 'number'
+        ? page.offset
+        : undefined
+
+    const includeTotal = page?.mode === 'offset' && typeof page.includeTotal === 'boolean'
+        ? page.includeTotal
+        : undefined
+
+    const after = page?.mode === 'cursor' && typeof page.after === 'string'
+        ? page.after
+        : undefined
+
+    const before = page?.mode === 'cursor' && typeof page.before === 'string'
+        ? page.before
+        : undefined
 
     return {
         filterFields,
         sortFields,
         pageMode: page?.mode,
         limit: typeof page?.limit === 'number' ? page.limit : undefined,
-        offset: typeof page?.offset === 'number' ? page.offset : undefined,
-        after: typeof page?.after === 'string' ? page.after : undefined,
-        before: typeof page?.before === 'string' ? page.before : undefined,
-        includeTotal: typeof page?.includeTotal === 'boolean' ? page.includeTotal : undefined,
-        select: Array.isArray((query as any).select) ? (query as any).select : undefined
+        offset,
+        after,
+        before,
+        includeTotal,
+        select: Array.isArray(query.select) ? query.select : undefined
     }
 }

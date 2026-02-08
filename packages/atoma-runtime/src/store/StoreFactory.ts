@@ -1,7 +1,3 @@
-import { preserveReferenceShallow } from 'atoma-core/store'
-import { StoreIndexes } from 'atoma-core/indexes'
-import { buildQueryMatcherOptions } from 'atoma-core/query'
-import { compileRelationsMap } from 'atoma-core/relations'
 import type {
     Entity,
     IStore,
@@ -67,18 +63,17 @@ export class StoreFactory {
         const dataProcessor = this.mergeDataProcessor(this.dataProcessor as StoreDataProcessor<T> | undefined, storeSchema.dataProcessor)
 
         const relationsFactory = storeSchema.relations
-            ? () => compileRelationsMap(storeSchema.relations as Record<string, unknown>, name)
+            ? () => this.runtime.engine.compileRelationsMap(storeSchema.relations, name)
             : undefined
 
-        const indexes = storeSchema.indexes?.length
-            ? new StoreIndexes<T>(storeSchema.indexes)
-            : null
+        const indexes = this.runtime.engine.createIndexes<T>(storeSchema.indexes ?? null)
+        const matcher = this.runtime.engine.buildQueryMatcherOptions<T>(storeSchema.indexes ?? null)
 
-        const matcher = buildQueryMatcherOptions(storeSchema.indexes)
         const state = new SimpleStoreState<T>({
             initial: new Map<EntityId, T>(),
             indexes,
-            matcher
+            matcher,
+            engine: this.runtime.engine
         })
 
         const handle: StoreHandle<T> = {
@@ -179,10 +174,10 @@ export class StoreFactory {
             const changedIds = new Set<EntityId>()
 
             processed.forEach(item => {
-                const id = (item as { id: EntityId }).id
+                const id = item.id
                 const previous = before.get(id)
                 const preserved = previous !== undefined
-                    ? preserveReferenceShallow(previous, item)
+                    ? this.runtime.engine.preserveReferenceShallow(previous, item)
                     : item
                 after.set(id, preserved)
                 if (previous !== preserved) {
@@ -198,6 +193,7 @@ export class StoreFactory {
             name: storeName,
             cacheKey: this.runtime as unknown as object,
             source,
+            engine: this.runtime.engine,
             indexes: handle.state.indexes,
             matcher: handle.state.matcher,
             relations: () => handle.relations?.(),

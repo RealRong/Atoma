@@ -1,5 +1,6 @@
 import type * as Types from '../core'
 import type { EntityId } from '../protocol'
+import type { RuntimeEngine } from '../runtime'
 
 export const STORE_BINDINGS = Symbol.for('atoma.store.bindings')
 
@@ -12,6 +13,7 @@ export type StoreBindings<T extends Types.Entity = any> = Readonly<{
     name: string
     cacheKey: object
     source: StoreSource<T>
+    engine?: RuntimeEngine
     indexes?: Types.StoreIndexesLike<T> | null
     matcher?: Types.QueryMatcherOptions
     relations?: () => any | undefined

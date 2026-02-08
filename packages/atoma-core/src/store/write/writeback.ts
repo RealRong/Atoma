@@ -3,6 +3,10 @@ import type { EntityId } from 'atoma-types/protocol'
 import type { StoreWritebackArgs, StoreWritebackResult, StoreWritebackOptions } from 'atoma-types/core'
 import { preserveReferenceShallow } from './utils'
 
+type VersionedEntity = Entity & {
+    version?: unknown
+}
+
 class StoreMapEditor<T extends Entity> {
     private after: Map<EntityId, T> | null = null
     readonly changedIds = new Set<EntityId>()
@@ -27,7 +31,7 @@ class StoreMapEditor<T extends Entity> {
     }
 
     upsert = (item: T) => {
-        const id = (item as any).id as EntityId
+        const id = item.id
         if (id === undefined || id === null) return
 
         const mapRef = this.getMap()
@@ -41,12 +45,18 @@ class StoreMapEditor<T extends Entity> {
     }
 
     updateVersion = (id: EntityId, version: number) => {
-        const mapRef: any = this.getMap() as any
-        const cur = mapRef.get(id) as any
-        if (!cur || typeof cur !== 'object') return
-        if (cur.version === version) return
+        const current = this.getMap().get(id)
+        if (!current || typeof current !== 'object') return
 
-        this.ensureAfter().set(id, { ...cur, version } as any)
+        const currentVersion = (current as VersionedEntity).version
+        if (currentVersion === version) return
+
+        const next = {
+            ...(current as Record<string, unknown>),
+            version
+        } as unknown as T
+
+        this.ensureAfter().set(id, next)
         this.changedIds.add(id)
     }
 

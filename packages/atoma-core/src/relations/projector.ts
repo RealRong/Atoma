@@ -1,15 +1,15 @@
 import type {
     Entity,
-    Query,
-    KeySelector,
-    RelationConfig,
+    FilterExpr,
     RelationMap,
+    SortRule,
     StoreIndexesLike,
     StoreToken
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { executeLocalQuery } from '../query'
-import { getValueByPath } from './utils'
+import { getRelationDefaultValue } from './utils/defaultValue'
+import { extractKeyValue, pickFirstKey } from './utils/key'
 import {
     buildRelationPlan,
     collectRelationStoreTokensFromInclude,
@@ -17,31 +17,58 @@ import {
     type PlannedRelation
 } from './planner'
 
+type DynamicEntity = Entity & Record<string, unknown>
+
 export type StoreRuntime = {
-    map: Map<EntityId, any>
-    indexes?: StoreIndexesLike<any> | null
+    map: Map<EntityId, DynamicEntity>
+    indexes?: StoreIndexesLike<DynamicEntity> | null
 }
 
-export type GetStoreMap = (store: StoreToken) => Map<EntityId, any> | StoreRuntime | undefined
+export type GetStoreMap = (store: StoreToken) => Map<EntityId, DynamicEntity> | StoreRuntime | undefined
 
-const getDefaultValue = (config: RelationConfig<any, any> | undefined) => {
-    if (!config) return null
-    if (config.type === 'hasMany') return []
-    return null
+const DEFAULT_STABLE_SORT: SortRule[] = [{ field: 'id', dir: 'asc' }]
+
+const createEqFilter = (field: string, value: EntityId): FilterExpr => ({
+    op: 'eq',
+    field,
+    value
+})
+
+const setRelationValue = <T extends Entity>(item: T, relationName: string, value: unknown) => {
+    const target = item as unknown as Record<string, unknown>
+    target[relationName] = value
 }
 
-const extractKeyValue = <T>(item: T, selector: KeySelector<T>): EntityId | EntityId[] | undefined | null => {
-    if (typeof selector === 'function') return selector(item)
-    return getValueByPath(item, selector)
+const toEntityId = (value: unknown): EntityId | undefined => {
+    return typeof value === 'string' ? value : undefined
 }
 
-const pickFirstKey = (value: EntityId | EntityId[] | undefined | null): EntityId | undefined => {
-    if (value === undefined || value === null) return undefined
-    if (!Array.isArray(value)) return value
-    for (const v of value) {
-        if (v !== undefined && v !== null) return v
+const readField = (item: DynamicEntity, field: string): unknown => {
+    return item[field]
+}
+
+const resolveLookupMode = (
+    indexes: StoreIndexesLike<DynamicEntity> | null,
+    targetKeyField: string,
+    key: EntityId
+): 'index' | 'scan' => {
+    if (!indexes) return 'scan'
+    const probe = indexes.collectCandidates(createEqFilter(targetKeyField, key))
+    return probe.kind === 'unsupported' ? 'scan' : 'index'
+}
+
+const dedupeById = <T extends Entity>(items: T[]): T[] => {
+    const seen = new Set<EntityId>()
+    const output: T[] = []
+
+    for (const item of items) {
+        const id = item.id
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        output.push(item)
     }
-    return undefined
+
+    return output
 }
 
 export function collectRelationStoreTokens<T extends Entity>(
@@ -84,7 +111,7 @@ function projectPlanned<TSource extends Entity>(
 
     if (!map) {
         results.forEach(item => {
-            ;(item as any)[entry.relationName] = getDefaultValue(entry.relation)
+            setRelationValue(item, entry.relationName, getRelationDefaultValue(entry.relation))
         })
         return
     }
@@ -100,37 +127,37 @@ function projectPlanned<TSource extends Entity>(
 function projectBelongsTo<TSource extends Entity>(
     results: TSource[],
     entry: PlannedRelation<TSource>,
-    map: Map<EntityId, any>,
-    indexes: StoreIndexesLike<any> | null
+    map: Map<EntityId, DynamicEntity>,
+    indexes: StoreIndexesLike<DynamicEntity> | null
 ) {
     if (entry.targetKeyField === 'id') {
         results.forEach(item => {
             const fk = pickFirstKey(extractKeyValue(item, entry.sourceKeySelector))
             const target = fk !== undefined ? map.get(fk) : undefined
-            ;(item as any)[entry.relationName] = target ?? null
+            setRelationValue(item, entry.relationName, target ?? null)
         })
         return
     }
 
     let lookupMode: 'index' | 'scan' | undefined
-    const scannedIndex = new Map<EntityId, any>()
-    const pickedByKey = new Map<EntityId, any>()
+    const scannedIndex = new Map<EntityId, DynamicEntity>()
+    const pickedByKey = new Map<EntityId, DynamicEntity | null>()
 
-    const getTargetByKey = (key: EntityId): any | undefined => {
+    const getTargetByKey = (key: EntityId): DynamicEntity | undefined => {
         const cached = pickedByKey.get(key)
-        if (cached !== undefined) return cached
+        if (cached !== undefined) return cached ?? undefined
 
-        if (!lookupMode && indexes) {
-            const probe = indexes.collectCandidates({ [entry.targetKeyField]: { eq: key } } as any)
-            lookupMode = probe.kind === 'unsupported' ? 'scan' : 'index'
+        if (!lookupMode) {
+            lookupMode = resolveLookupMode(indexes, entry.targetKeyField, key)
         }
 
         if (lookupMode === 'index' && indexes) {
-            const res = indexes.collectCandidates({ [entry.targetKeyField]: { eq: key } } as any)
+            const res = indexes.collectCandidates(createEqFilter(entry.targetKeyField, key))
             if (res.kind !== 'candidates') {
                 pickedByKey.set(key, null)
                 return undefined
             }
+
             for (const id of res.ids) {
                 const target = map.get(id)
                 if (target) {
@@ -138,6 +165,7 @@ function projectBelongsTo<TSource extends Entity>(
                     return target
                 }
             }
+
             pickedByKey.set(key, null)
             return undefined
         }
@@ -145,11 +173,12 @@ function projectBelongsTo<TSource extends Entity>(
         if (lookupMode !== 'scan') lookupMode = 'scan'
         if (scannedIndex.size === 0) {
             map.forEach(target => {
-                const k = (target as any)?.[entry.targetKeyField] as EntityId | undefined | null
-                if (k === undefined || k === null) return
-                if (!scannedIndex.has(k)) scannedIndex.set(k, target)
+                const targetKey = toEntityId(readField(target, entry.targetKeyField))
+                if (!targetKey) return
+                if (!scannedIndex.has(targetKey)) scannedIndex.set(targetKey, target)
             })
         }
+
         const target = scannedIndex.get(key)
         pickedByKey.set(key, target ?? null)
         return target
@@ -158,99 +187,100 @@ function projectBelongsTo<TSource extends Entity>(
     results.forEach(item => {
         const fk = pickFirstKey(extractKeyValue(item, entry.sourceKeySelector))
         const target = fk !== undefined ? getTargetByKey(fk) : undefined
-        ;(item as any)[entry.relationName] = target ?? null
+        setRelationValue(item, entry.relationName, target ?? null)
     })
 }
 
 function projectHasManyOrHasOne<TSource extends Entity>(
     results: TSource[],
     entry: PlannedRelation<TSource>,
-    map: Map<EntityId, any>,
-    indexes: StoreIndexesLike<any> | null
+    map: Map<EntityId, DynamicEntity>,
+    indexes: StoreIndexesLike<DynamicEntity> | null
 ) {
     const isHasOne = entry.relationType === 'hasOne'
 
-    let bucket: Map<EntityId, any[]> | null = null
+    let bucket: Map<EntityId, DynamicEntity[]> | null = null
     let keyLookupMode: 'index' | 'scan' | undefined
-    const perKeyCache = new Map<EntityId, any[]>()
+    const perKeyCache = new Map<EntityId, DynamicEntity[]>()
 
-    const getTargetsByKey = (key: EntityId): any[] => {
+    const getTargetsByKey = (key: EntityId): DynamicEntity[] => {
         const cached = perKeyCache.get(key)
         if (cached) return cached
 
-        if (!keyLookupMode && indexes) {
-            const probe = indexes.collectCandidates({ [entry.targetKeyField]: { eq: key } } as any)
-            keyLookupMode = probe.kind === 'unsupported' ? 'scan' : 'index'
+        if (!keyLookupMode) {
+            keyLookupMode = resolveLookupMode(indexes, entry.targetKeyField, key)
         }
 
         if (keyLookupMode === 'index' && indexes) {
-            const res = indexes.collectCandidates({ [entry.targetKeyField]: { eq: key } } as any)
+            const res = indexes.collectCandidates(createEqFilter(entry.targetKeyField, key))
             if (res.kind !== 'candidates') {
                 perKeyCache.set(key, [])
                 return []
             }
-            const out: any[] = []
+
+            const output: DynamicEntity[] = []
             for (const id of res.ids) {
                 const target = map.get(id)
-                if (target) out.push(target)
+                if (target) output.push(target)
             }
-            perKeyCache.set(key, out)
-            return out
+            perKeyCache.set(key, output)
+            return output
         }
 
         if (keyLookupMode !== 'scan') keyLookupMode = 'scan'
         if (!bucket) {
-            const next = new Map<EntityId, any[]>()
+            const next = new Map<EntityId, DynamicEntity[]>()
             map.forEach(target => {
-                const k = (target as any)?.[entry.targetKeyField] as EntityId | undefined | null
-                if (k === undefined || k === null) return
-                const arr = next.get(k) || []
-                arr.push(target)
-                next.set(k, arr)
+                const targetKey = toEntityId(readField(target, entry.targetKeyField))
+                if (!targetKey) return
+                const list = next.get(targetKey) || []
+                list.push(target)
+                next.set(targetKey, list)
             })
             bucket = next
         }
-        const out = bucket.get(key) || []
-        perKeyCache.set(key, out)
-        return out
+
+        const output = bucket.get(key) || []
+        perKeyCache.set(key, output)
+        return output
     }
 
     results.forEach(item => {
         const keyValue = extractKeyValue(item, entry.sourceKeySelector)
         if (keyValue === undefined || keyValue === null) {
-            ;(item as any)[entry.relationName] = getDefaultValue(entry.relation)
+            setRelationValue(item, entry.relationName, getRelationDefaultValue(entry.relation))
             return
         }
 
         const keys = Array.isArray(keyValue) ? keyValue : [keyValue]
-        const matches: any[] = []
-        keys.forEach(k => {
-            if (k === undefined || k === null) return
-            const arr = getTargetsByKey(k)
-            if (arr.length) matches.push(...arr)
+        const merged: DynamicEntity[] = []
+        keys.forEach(key => {
+            if (key === undefined || key === null) return
+            const list = getTargetsByKey(key)
+            if (list.length) merged.push(...list)
         })
 
-        const sort = entry.projectionOptions.sort
-        if (isHasOne && !sort) {
-            ;(item as any)[entry.relationName] = matches[0] ?? null
+        const deduped = dedupeById(merged)
+        if (deduped.length === 0) {
+            setRelationValue(item, entry.relationName, isHasOne ? null : [])
             return
         }
 
         const limit = isHasOne ? 1 : entry.projectionOptions.limit
-        if (!sort) {
-            ;(item as any)[entry.relationName] = isHasOne
-                ? (matches[0] ?? null)
-                : (limit === undefined ? matches : matches.slice(0, limit))
-            return
-        }
+        const sortRules = entry.projectionOptions.sort?.length
+            ? entry.projectionOptions.sort
+            : DEFAULT_STABLE_SORT
 
-        const projected = executeLocalQuery(matches as any, {
-            sort: sort as any,
-            page: { mode: 'offset', limit }
-        } as any).data
+        const projected = executeLocalQuery(deduped, {
+            sort: sortRules,
+            page: {
+                mode: 'offset',
+                limit
+            }
+        }).data
 
-        ;(item as any)[entry.relationName] = isHasOne
+        setRelationValue(item, entry.relationName, isHasOne
             ? (projected[0] ?? null)
-            : projected
+            : projected)
     })
 }

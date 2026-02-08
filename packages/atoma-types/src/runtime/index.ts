@@ -33,3 +33,11 @@ export type {
     StrategyDescriptor,
     WritePolicy
 } from './persistenceTypes'
+
+export type {
+    RuntimeEngine,
+    RuntimeCacheWriteDecision,
+    RuntimeRelationInclude,
+    RuntimeRelationPrefetchOptions,
+    RuntimeStoreMap
+} from './engineTypes'
