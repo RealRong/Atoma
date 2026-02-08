@@ -1,7 +1,7 @@
 import type { Entity } from 'atoma-types/core'
 import type { ExecuteWriteRequest } from '../types'
 import { resolveWriteResultFromOperationResults } from '../utils/resolveWriteResult'
-import { applyOptimisticCommit, rollbackOptimisticCommit } from '../utils/optimisticCommit'
+import { applyOptimisticState, rollbackOptimisticState } from '../utils/optimisticCommit'
 import { WriteOpsPlanner } from './WriteOpsPlanner'
 
 export class WriteCommitFlow {
@@ -16,11 +16,11 @@ export class WriteCommitFlow {
     execute = async <T extends Entity>(args: ExecuteWriteRequest<T>): Promise<T | void> => {
         const intents = args.intents ?? []
         const writePolicy = args.runtime.strategy.resolveWritePolicy(args.writeStrategy)
-        const optimisticState = applyOptimisticCommit({
+        const optimisticState = applyOptimisticState({
             handle: args.handle,
             intents,
             writePolicy,
-            preserve: args.runtime.engine.preserveReferenceShallow
+            preserve: args.runtime.engine.mutation.preserveRef
         })
 
         const { runtime, handle, opContext } = args
@@ -67,7 +67,7 @@ export class WriteCommitFlow {
 
             return resolved.output ?? (primaryIntent?.value as T | undefined)
         } catch (error) {
-            rollbackOptimisticCommit({
+            rollbackOptimisticState({
                 handle,
                 optimisticState
             })

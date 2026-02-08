@@ -1,7 +1,7 @@
 import { errorStatus, toStandardError } from '../error'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import type { HandleResult } from './http'
-import { Protocol } from 'atoma-protocol'
+import { composeEnvelopeError } from 'atoma-types/protocol-tools'
 
 export function createTopLevelErrorFormatter<Ctx>(config: AtomaServerConfig<Ctx>) {
     return (args: { route?: AtomaServerRoute; ctx?: Ctx; requestId?: string; traceId?: string; error: unknown }): HandleResult => {
@@ -16,7 +16,7 @@ export function createTopLevelErrorFormatter<Ctx>(config: AtomaServerConfig<Ctx>
             ...(args.requestId ? { requestId: args.requestId } : {}),
             serverTimeMs: Date.now()
         }
-        return { status, body: Protocol.ops.compose.error(standard, meta) }
+        return { status, body: composeEnvelopeError(standard, meta) }
     }
 }
 

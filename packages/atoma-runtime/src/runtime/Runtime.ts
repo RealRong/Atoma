@@ -5,7 +5,7 @@
  */
 import type { StoreDataProcessor } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { Protocol } from 'atoma-protocol'
+import { createOpId } from 'atoma-types/protocol-tools'
 import type {
     CoreRuntime,
     RuntimeEngine,
@@ -54,7 +54,7 @@ export class Runtime implements CoreRuntime {
     private opSeqByStore = new Map<string, number>()
 
     constructor(config: RuntimeConfig) {
-        this.id = Protocol.ids.createOpId('client')
+        this.id = createOpId('client')
         this.now = config.now ?? (() => Date.now())
         this.nextOpId = (storeName: string, prefix: 'q' | 'w') => {
             const key = String(storeName)

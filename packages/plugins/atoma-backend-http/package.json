@@ -18,7 +18,6 @@
     },
     "dependencies": {
         "atoma-backend-shared": "workspace:*",
-        "atoma-protocol": "workspace:*",
         "atoma-shared": "workspace:*",
         "atoma-types": "workspace:*"
     }

@@ -31,7 +31,6 @@
     "dependencies": {
         "atoma": "workspace:*",
         "atoma-shared": "workspace:*",
-        "atoma-protocol": "workspace:*",
         "atoma-observability": "workspace:*"
     },
     "peerDependencies": {

@@ -61,7 +61,7 @@ export function Users() {
   - ops: `op.meta.traceId` / `op.meta.requestId` (op-scoped; supports mixed-trace batches)
   - subscribe (SSE): URL query `traceId` / `requestId` (for GET/SSE without JSON body)
 
-All of the above are defined by the shared `atoma-protocol` package, used by both client and server.
+All of the above are defined by shared `atoma-types/protocol` types and `atoma-types/protocol-tools` utilities, used by both client and server.
 
 ## Server (protocol core)
 

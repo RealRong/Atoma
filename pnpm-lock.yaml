@@ -87,9 +87,6 @@ importers:
 
   demo/server:
     dependencies:
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../../packages/atoma-protocol
       atoma-server:
         specifier: workspace:*
         version: link:../../packages/atoma-server
@@ -133,9 +130,6 @@ importers:
       atoma-observability:
         specifier: workspace:*
         version: link:../plugins/atoma-observability
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
       atoma-runtime:
         specifier: workspace:*
         version: link:../atoma-runtime
@@ -151,9 +145,6 @@ importers:
 
   packages/atoma-core:
     dependencies:
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
       atoma-shared:
         specifier: workspace:*
         version: link:../atoma-shared
@@ -164,20 +155,8 @@ importers:
         specifier: ^9.0.0 || ^10.0.0
         version: 10.2.0
 
-  packages/atoma-protocol:
-    dependencies:
-      atoma-types:
-        specifier: workspace:*
-        version: link:../atoma-types
-
   packages/atoma-react:
     dependencies:
-      atoma-core:
-        specifier: workspace:*
-        version: link:../atoma-core
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
       atoma-shared:
         specifier: workspace:*
         version: link:../atoma-shared
@@ -197,9 +176,6 @@ importers:
       atoma-core:
         specifier: workspace:*
         version: link:../atoma-core
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
       atoma-shared:
         specifier: workspace:*
         version: link:../atoma-shared
@@ -221,9 +197,6 @@ importers:
       atoma-observability:
         specifier: workspace:*
         version: link:../plugins/atoma-observability
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../atoma-protocol
       atoma-shared:
         specifier: workspace:*
         version: link:../atoma-shared
@@ -245,9 +218,9 @@ importers:
 
   packages/plugins/atoma-backend-http:
     dependencies:
-      atoma-protocol:
+      atoma-backend-shared:
         specifier: workspace:*
-        version: link:../../atoma-protocol
+        version: link:../atoma-backend-shared
       atoma-shared:
         specifier: workspace:*
         version: link:../../atoma-shared
@@ -257,12 +230,12 @@ importers:
 
   packages/plugins/atoma-backend-indexeddb:
     dependencies:
+      atoma-backend-shared:
+        specifier: workspace:*
+        version: link:../atoma-backend-shared
       atoma-core:
         specifier: workspace:*
         version: link:../../atoma-core
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../../atoma-protocol
       atoma-shared:
         specifier: workspace:*
         version: link:../../atoma-shared
@@ -275,12 +248,21 @@ importers:
 
   packages/plugins/atoma-backend-memory:
     dependencies:
+      atoma-backend-shared:
+        specifier: workspace:*
+        version: link:../atoma-backend-shared
       atoma-core:
         specifier: workspace:*
         version: link:../../atoma-core
-      atoma-protocol:
+      atoma-types:
         specifier: workspace:*
-        version: link:../../atoma-protocol
+        version: link:../../atoma-types
+
+  packages/plugins/atoma-backend-shared:
+    dependencies:
+      atoma-core:
+        specifier: workspace:*
+        version: link:../../atoma-core
       atoma-types:
         specifier: workspace:*
         version: link:../../atoma-types
@@ -293,9 +275,6 @@ importers:
       atoma-client:
         specifier: workspace:*
         version: link:../../atoma-client
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../../atoma-protocol
       atoma-types:
         specifier: workspace:*
         version: link:../../atoma-types
@@ -372,9 +351,6 @@ importers:
       atoma-core:
         specifier: workspace:*
         version: link:../../atoma-core
-      atoma-protocol:
-        specifier: workspace:*
-        version: link:../../atoma-protocol
       atoma-runtime:
         specifier: workspace:*
         version: link:../../atoma-runtime
@@ -1499,6 +1475,7 @@ packages:
 
   glob@10.5.0:
     resolution: {integrity: sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   glob@7.2.3:

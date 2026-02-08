@@ -16,7 +16,7 @@ export type {
     PersistContext,
     ReadContext,
     ReadRequest,
-    QueryResult,
+    PluginReadResult,
     ClientPlugin,
     PluginInitResult
 } from './plugins'
@@ -24,15 +24,12 @@ export type {
 export type { CapabilitiesRegistry } from './registry'
 
 export type {
-    OperationEnvelope,
-    ResultEnvelope
-} from './drivers/types'
-
-export type {
     ExecuteOpsInput,
     ExecuteOpsOutput,
+    OperationEnvelope,
+    ResultEnvelope,
     OpsClientLike
-} from './backend'
+} from './ops'
 
 export type {
     BelongsToSchema,

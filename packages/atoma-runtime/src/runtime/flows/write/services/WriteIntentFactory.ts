@@ -11,9 +11,9 @@ import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
 import { version } from 'atoma-shared'
 import {
-    prepareForAdd,
-    prepareForUpdate,
-    resolveBaseForWrite,
+    prepareCreateInput,
+    prepareUpdateInput,
+    resolveWriteBase,
     runBeforeSave
 } from '../utils/prepareWriteInput'
 import { buildUpsertIntentOptions } from '../utils/buildUpsertIntentOptions'
@@ -30,7 +30,7 @@ export class WriteIntentFactory {
         item: Partial<T>
         opContext: OperationContext
     }): Promise<{ intent: WriteIntent<T>; output: T }> => {
-        const prepared = await prepareForAdd(this.runtime, args.handle, args.item, args.opContext)
+        const prepared = await prepareCreateInput(this.runtime, args.handle, args.item, args.opContext)
         return {
             intent: {
                 action: 'create',
@@ -49,10 +49,10 @@ export class WriteIntentFactory {
         opContext: OperationContext
         options?: StoreOperationOptions
     }): Promise<{ intent: WriteIntent<T>; output: T; base: PartialWithId<T> }> => {
-        const base = await resolveBaseForWrite(this.runtime, args.handle, args.id, args.options)
+        const base = await resolveWriteBase(this.runtime, args.handle, args.id, args.options)
         const next = produce(base as T, draft => args.recipe(draft)) as PartialWithId<T>
         const patched = { ...next, id: args.id } as PartialWithId<T>
-        const prepared = await prepareForUpdate(this.runtime, args.handle, base, patched, args.opContext)
+        const prepared = await prepareUpdateInput(this.runtime, args.handle, base, patched, args.opContext)
         const baseVersion = version.requireBaseVersion(args.id, base)
 
         return {
@@ -79,11 +79,11 @@ export class WriteIntentFactory {
 
         const prepared = await (async () => {
             if (!base) {
-                return await prepareForAdd(this.runtime, args.handle, args.item as Partial<T>, args.opContext)
+                return await prepareCreateInput(this.runtime, args.handle, args.item as Partial<T>, args.opContext)
             }
 
             if (merge) {
-                return await prepareForUpdate(this.runtime, args.handle, base, args.item, args.opContext)
+                return await prepareUpdateInput(this.runtime, args.handle, base, args.item, args.opContext)
             }
 
             const now = this.runtime.now()
@@ -127,7 +127,7 @@ export class WriteIntentFactory {
         opContext: OperationContext
         options?: StoreOperationOptions
     }): Promise<{ intent: WriteIntent<T>; base: PartialWithId<T> }> => {
-        const base = await resolveBaseForWrite(this.runtime, args.handle, args.id, args.options)
+        const base = await resolveWriteBase(this.runtime, args.handle, args.id, args.options)
         const baseVersion = version.requireBaseVersion(args.id, base)
 
         if (args.options?.force) {

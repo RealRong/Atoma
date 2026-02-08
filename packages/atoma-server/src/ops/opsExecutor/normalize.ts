@@ -1,5 +1,5 @@
 import { throwError } from '../../error'
-import { Protocol } from 'atoma-protocol'
+import { wrapProtocolError, assertOpsRequest, assertOperation } from 'atoma-types/protocol-tools'
 import type { Meta, Operation, OpsRequest, StandardErrorDetails } from 'atoma-types/protocol'
 import type { Query } from 'atoma-types/protocol'
 
@@ -16,9 +16,9 @@ function toThrowDetails(details: unknown): StandardErrorDetails | undefined {
 
 export function normalizeOpsRequest(value: unknown): OpsRequest {
     try {
-        return Protocol.ops.validate.assertOpsRequest(value)
+        return assertOpsRequest(value)
     } catch (err) {
-        const standard = Protocol.error.wrap(err, { code: 'INVALID_REQUEST', message: 'Invalid request', kind: 'validation' })
+        const standard = wrapProtocolError(err, { code: 'INVALID_REQUEST', message: 'Invalid request', kind: 'validation' })
         const details = toThrowDetails(standard.details)
         throwError(standard.code, standard.message, { kind: standard.kind, ...(details ? details as any : {}) } as any)
     }
@@ -26,9 +26,9 @@ export function normalizeOpsRequest(value: unknown): OpsRequest {
 
 export function normalizeOperation(value: unknown): Operation {
     try {
-        return Protocol.ops.validate.assertOperation(value)
+        return assertOperation(value)
     } catch (err) {
-        const standard = Protocol.error.wrap(err, { code: 'INVALID_REQUEST', message: 'Invalid op', kind: 'validation' })
+        const standard = wrapProtocolError(err, { code: 'INVALID_REQUEST', message: 'Invalid op', kind: 'validation' })
         const details = toThrowDetails(standard.details)
         throwError(standard.code, standard.message, { kind: standard.kind, ...(details ? details as any : {}) } as any)
     }

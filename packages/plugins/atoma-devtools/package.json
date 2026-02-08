@@ -36,7 +36,6 @@
     "dependencies": {
         "atoma": "workspace:*",
         "atoma-client": "workspace:*",
-        "atoma-protocol": "workspace:*",
         "atoma-types": "workspace:*",
         "tailwindcss": "^4.1.18",
         "postcss": "^8.4.0",

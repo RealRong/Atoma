@@ -1,5 +1,5 @@
 import type { Envelope, Meta, Operation } from 'atoma-types/protocol'
-import { Protocol } from 'atoma-protocol'
+import { parseEnvelope } from 'atoma-types/protocol-tools'
 import type { OpsResponseData } from 'atoma-types/protocol'
 import type { HttpInterceptors } from './json-client'
 import { createJsonHttpClient } from './json-client'
@@ -34,7 +34,7 @@ export function createOpsHttpTransport(deps: {
         ? deps.interceptors.responseParser
         : async (_response: Response, json: unknown) => {
             const fallback = { v: 1 }
-            return Protocol.ops.parse.envelope(json, fallback) as any
+            return parseEnvelope(json, fallback) as any
         }
 
     const pipeline = createJsonHttpClient<OpsResponseData>({

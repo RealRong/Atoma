@@ -1,7 +1,7 @@
 import { byteLengthUtf8, throwError, toStandardError } from '../../error'
 import type { AtomaOpPlugin, AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerConfig, AtomaServerRoute } from '../../config'
 import type { ServerRuntime } from '../../runtime/createRuntime'
-import { Protocol } from 'atoma-protocol'
+import { composeEnvelopeOk, withErrorTrace, createErrorFromCode } from 'atoma-types/protocol-tools'
 import type {
     ChangesPullOp,
     OperationResult,
@@ -217,7 +217,7 @@ export function createOpsExecutor<Ctx>(args: {
                     continue
                 }
 
-                const standard = Protocol.error.withTrace(
+                const standard = withErrorTrace(
                     toStandardError(pluginResult.error, 'SYNC_PULL_FAILED'),
                     opTrace
                 )
@@ -230,8 +230,8 @@ export function createOpsExecutor<Ctx>(args: {
                 return {
                     opId: op.opId,
                     ok: false,
-                    error: Protocol.error.withTrace(
-                        Protocol.error.create('INTERNAL', 'Missing result'),
+                    error: withErrorTrace(
+                        createErrorFromCode('INTERNAL', 'Missing result'),
                         traceMetaForOpId(op.opId)
                     )
                 }
@@ -245,7 +245,7 @@ export function createOpsExecutor<Ctx>(args: {
 
             return {
                 status: 200,
-                body: Protocol.ops.compose.ok({ results }, metaOut)
+                body: composeEnvelopeOk({ results }, metaOut)
             }
         }
     }

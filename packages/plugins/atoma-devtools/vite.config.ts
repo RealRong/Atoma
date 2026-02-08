@@ -18,7 +18,7 @@ export default defineConfig({
         },
         sourcemap: true,
         rollupOptions: {
-            external: ['react', 'react-dom', 'atoma', 'atoma-client', 'atoma-protocol'],
+            external: ['react', 'react-dom', 'atoma', 'atoma-client'],
             output: {
                 globals: {
                     react: 'React',

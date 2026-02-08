@@ -1,9 +1,8 @@
-import { Protocol } from 'atoma-protocol'
+import { withTraceMeta, buildRequestMeta, assertOutgoingOps, assertOperationResults, wrapProtocolError } from 'atoma-types/protocol-tools'
 import type { Entity, Query } from 'atoma-types/core'
 import type { RuntimeIo, StoreHandle } from 'atoma-types/runtime'
-import type { OperationEnvelope, ResultEnvelope } from 'atoma-types/client'
+import type { IoContext, OperationEnvelope, PluginReadResult, ReadContext, ReadRequest, ResultEnvelope } from 'atoma-types/client'
 import type { HandlerChain } from './HandlerChain'
-import type { IoContext, QueryResult, ReadContext, ReadRequest } from 'atoma-types/client'
 
 export class PluginRuntimeIo implements RuntimeIo {
     private readonly ioChain: HandlerChain<'io'>
@@ -24,13 +23,13 @@ export class PluginRuntimeIo implements RuntimeIo {
     }
 
     executeOps: RuntimeIo['executeOps'] = async (input) => {
-        const opsWithTrace = Protocol.ops.build.withTraceMeta({
+        const opsWithTrace = withTraceMeta({
             ops: input.ops
         })
-        const meta = Protocol.ops.build.buildRequestMeta({
+        const meta = buildRequestMeta({
             now: this.now
         })
-        Protocol.ops.validate.assertOutgoingOps({ ops: opsWithTrace, meta })
+        assertOutgoingOps({ ops: opsWithTrace, meta })
 
         const req: OperationEnvelope = {
             ops: opsWithTrace,
@@ -42,7 +41,7 @@ export class PluginRuntimeIo implements RuntimeIo {
         const envelope = assertResultEnvelope(await this.ioChain.execute(req, ctx))
 
         try {
-            return Protocol.ops.validate.assertOperationResults(envelope.results)
+            return assertOperationResults(envelope.results)
         } catch (error) {
             throw toProtocolValidationError(error, 'Invalid ops response')
         }
@@ -52,7 +51,7 @@ export class PluginRuntimeIo implements RuntimeIo {
         handle: StoreHandle<T>,
         query: Query,
         signal?: AbortSignal
-    ): Promise<QueryResult> => {
+    ): Promise<PluginReadResult> => {
         const req: ReadRequest = {
             storeName: handle.storeName,
             query,
@@ -80,7 +79,7 @@ function assertResultEnvelope(value: unknown): ResultEnvelope {
 }
 
 function toProtocolValidationError(error: unknown, fallbackMessage: string): Error {
-    const standard = Protocol.error.wrap(error, {
+    const standard = wrapProtocolError(error, {
         code: 'INVALID_RESPONSE',
         message: fallbackMessage,
         kind: 'validation'

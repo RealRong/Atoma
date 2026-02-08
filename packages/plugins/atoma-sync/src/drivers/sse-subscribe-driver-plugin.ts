@@ -1,4 +1,4 @@
-import { Protocol } from 'atoma-protocol'
+import { HTTP_PATH_SYNC_SUBSCRIBE, SSE_EVENT_NOTIFY, parseNotifyMessage } from 'atoma-types/protocol-tools'
 import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
 import type { NotifyMessage, SyncSubscribeDriver } from 'atoma-types/sync'
 import { getSyncSubscribeDriver, registerSyncSubscribeDriver } from '#sync/capabilities'
@@ -10,7 +10,7 @@ export type SseSubscribeDriverPluginOptions = Readonly<{
     baseURL?: string
     /** Full subscribe URL override. */
     url?: string
-    /** Subscribe path (default: Protocol.http.paths.SYNC_SUBSCRIBE). */
+    /** Subscribe path (default: HTTP_PATH_SYNC_SUBSCRIBE). */
     path?: string
     /** Optional headers (for fetch-based SSE). */
     headers?: HeadersInput
@@ -109,7 +109,7 @@ function buildSubscribeUrl(options: SseSubscribeDriverPluginOptions, resources?:
     const baseURL = options.baseURL ? String(options.baseURL).trim() : ''
     const path = typeof options.path === 'string' && options.path.trim()
         ? options.path.trim()
-        : Protocol.http.paths.SYNC_SUBSCRIBE
+        : HTTP_PATH_SYNC_SUBSCRIBE
 
     if (!url && !baseURL) throw new Error('[Sync] subscribe url missing')
 
@@ -152,8 +152,8 @@ function tryUseEventSource(
     if (!factory) return null
     if (options.headers) return null
 
-    const eventName = Protocol.sse.events.NOTIFY
-    const parse = options.parse ?? ((data: string) => Protocol.sse.parse.notifyMessage(data))
+    const eventName = SSE_EVENT_NOTIFY
+    const parse = options.parse ?? ((data: string) => parseNotifyMessage(data))
     const es = factory(url, { withCredentials: options.withCredentials })
 
     const onMessage = (ev: MessageEvent) => {
@@ -213,7 +213,7 @@ async function runFetchStream(
     controller: AbortController,
     closeHandlers: Array<() => void>
 ): Promise<void> {
-    const parse = options.parse ?? ((data: string) => Protocol.sse.parse.notifyMessage(data))
+    const parse = options.parse ?? ((data: string) => parseNotifyMessage(data))
     const fetchFn = options.fetchFn ?? fetch.bind(globalThis)
     const headers = await resolveHeaders(options.headers)
     const reqHeaders = {
@@ -276,7 +276,7 @@ async function runFetchStream(
         dataLines = []
         const name = eventName
         eventName = undefined
-        if (name && name !== Protocol.sse.events.NOTIFY) return
+        if (name && name !== SSE_EVENT_NOTIFY) return
         try {
             const msg = parse(data)
             args.onMessage(msg)

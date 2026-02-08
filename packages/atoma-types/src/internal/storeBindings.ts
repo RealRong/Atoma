@@ -1,28 +1,28 @@
-import type * as Types from '../core'
-import type { EntityId } from '../protocol'
+import type { Entity, IStore, QueryMatcherOptions, StoreApi, StoreIndexesLike, StoreToken } from '../core'
+import type { EntityId } from '../shared'
 import type { RuntimeEngine } from '../runtime'
 
 export const STORE_BINDINGS = Symbol.for('atoma.store.bindings')
 
-export type StoreSource<T extends Types.Entity> = Readonly<{
+export type StoreSource<T extends Entity> = Readonly<{
     getSnapshot: () => ReadonlyMap<EntityId, T>
     subscribe: (listener: () => void) => () => void
 }>
 
-export type StoreBindings<T extends Types.Entity = any> = Readonly<{
+export type StoreBindings<T extends Entity = any> = Readonly<{
     name: string
     cacheKey: object
     source: StoreSource<T>
-    engine?: RuntimeEngine
-    indexes?: Types.StoreIndexesLike<T> | null
-    matcher?: Types.QueryMatcherOptions
+    engine: RuntimeEngine
+    indexes: StoreIndexesLike<T> | null
+    matcher?: QueryMatcherOptions
     relations?: () => any | undefined
-    ensureStore: (name: Types.StoreToken) => Types.IStore<any, any>
+    ensureStore: (name: StoreToken) => IStore<any, any>
     hydrate?: (items: T[]) => Promise<void>
 }>
 
-export function getStoreBindings<T extends Types.Entity, Relations = any>(
-    store: Types.StoreApi<T, Relations>,
+export function getStoreBindings<T extends Entity, Relations = any>(
+    store: StoreApi<T, Relations>,
     tag: string
 ): StoreBindings<T> {
     const bindings = (store as any)?.[STORE_BINDINGS] as StoreBindings<T> | undefined

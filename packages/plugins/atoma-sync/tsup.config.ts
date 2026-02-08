@@ -48,7 +48,6 @@ export default defineConfig({
         'atoma-runtime',
         'atoma-shared',
         'atoma-observability',
-        'atoma-protocol',
         'atoma-types',
     ]
 })

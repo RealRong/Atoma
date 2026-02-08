@@ -1,6 +1,6 @@
 import type { WriteIntent, WriteIntentOptions } from 'atoma-types/core'
 import type { EntityId, WriteAction, WriteItem, WriteItemMeta, WriteOp, WriteOptions } from 'atoma-types/protocol'
-import { Protocol } from 'atoma-protocol'
+import { buildWriteOp, createIdempotencyKey, ensureWriteItemMeta } from 'atoma-types/protocol-tools'
 
 export function buildWriteOperation(args: {
     opId: string
@@ -9,7 +9,7 @@ export function buildWriteOperation(args: {
     items: WriteItem[]
     options?: WriteOptions
 }): WriteOp {
-    return Protocol.ops.build.buildWriteOp({
+    return buildWriteOp({
         opId: args.opId,
         write: {
             resource: args.resource,
@@ -22,11 +22,11 @@ export function buildWriteOperation(args: {
 
 export function buildWriteItemMeta(args: { now: () => number }): WriteItemMeta {
     const meta: WriteItemMeta = {
-        idempotencyKey: Protocol.ids.createIdempotencyKey({ now: args.now }),
+        idempotencyKey: createIdempotencyKey({ now: args.now }),
         clientTimeMs: args.now()
     }
 
-    return Protocol.ops.meta.ensureWriteItemMeta({
+    return ensureWriteItemMeta({
         meta,
         now: args.now
     })

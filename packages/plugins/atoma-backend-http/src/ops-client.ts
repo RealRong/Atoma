@@ -1,4 +1,4 @@
-import { Protocol } from 'atoma-protocol'
+import { assertOutgoingOps, HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
 import type { Meta, OpsResponseData } from 'atoma-types/protocol'
 import { OpsClient } from './internal/ops-client-base'
 import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client'
@@ -50,7 +50,7 @@ export class HttpOpsClient extends OpsClient {
         super()
 
         this.baseURL = config.baseURL
-        this.opsPath = config.opsPath ?? Protocol.http.paths.OPS
+        this.opsPath = config.opsPath ?? HTTP_PATH_OPS
         this.fetchFn = config.fetchFn ?? fetch.bind(globalThis)
         this.retry = config.retry
 
@@ -117,7 +117,7 @@ export class HttpOpsClient extends OpsClient {
      */
     private async _executeOpsDirectly({ ops, meta, signal }: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
         const requestMeta = this.normalizeRequestMeta(meta)
-        Protocol.ops.validate.assertOutgoingOps({ ops, meta: requestMeta })
+        assertOutgoingOps({ ops, meta: requestMeta })
         const res = await this.transport.executeOps({
             baseURL: this.baseURL,
             opsPath: this.opsPath,

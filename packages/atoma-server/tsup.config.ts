@@ -15,7 +15,6 @@ export default defineConfig({
     treeshake: true,
     external: [
         'atoma',
-        'atoma-protocol',
         'atoma-shared',
         'atoma-observability',
         'typeorm',

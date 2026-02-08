@@ -13,7 +13,7 @@ import type {
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, RuntimeWrite, RuntimeWriteHookSource, StoreHandle } from 'atoma-types/runtime'
 import { buildWriteIntentsFromPatches } from './write/commit/buildWriteIntentsFromPatches'
-import { ensureActionId, runAfterSave } from './write/utils/prepareWriteInput'
+import { ensureOperationContext, runAfterSave } from './write/utils/prepareWriteInput'
 import { buildEntityRootPatches } from './write/utils/buildEntityRootPatches'
 import { runWriteBatch } from './write/utils/runWriteBatch'
 import { WriteIntentFactory } from './write/services/WriteIntentFactory'
@@ -47,9 +47,9 @@ export class WriteFlow implements RuntimeWrite {
         this.writeIntentFactory = new WriteIntentFactory(runtime)
     }
 
-    private resolveWriteContext = <T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions): WriteContext => {
+    private buildWriteContext = <T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions): WriteContext => {
         return {
-            opContext: ensureActionId(this.runtime, options?.opContext),
+            opContext: ensureOperationContext(this.runtime, options?.opContext),
             writeStrategy: options?.writeStrategy ?? handle.config.defaultWriteStrategy
         }
     }
@@ -80,7 +80,7 @@ export class WriteFlow implements RuntimeWrite {
         return { patches, inversePatches }
     }
 
-    private runMany = async <Input, Output>(args: {
+    private executeBatch = async <Input, Output>(args: {
         items: Input[]
         options?: StoreOperationOptions
         runner: (item: Input) => Promise<Output>
@@ -94,12 +94,12 @@ export class WriteFlow implements RuntimeWrite {
         })
     }
 
-    private runManyOrThrow = async <Input, Output>(args: {
+    private executeBatchOrThrow = async <Input, Output>(args: {
         items: Input[]
         options?: StoreOperationOptions
         runner: (item: Input) => Promise<Output>
     }): Promise<Output[]> => {
-        const results = await this.runMany(args)
+        const results = await this.executeBatch(args)
         const values: Output[] = []
 
         for (const result of results) {
@@ -112,7 +112,7 @@ export class WriteFlow implements RuntimeWrite {
         return values
     }
 
-    private executeSingleWrite = async <T extends Entity>(args: {
+    private commitWrite = async <T extends Entity>(args: {
         handle: StoreHandle<T>
         opContext: OperationContext
         writeStrategy?: string
@@ -160,8 +160,8 @@ export class WriteFlow implements RuntimeWrite {
         }
     }
 
-    private executePreparedWrite = async <T extends Entity>(args: PreparedWriteArgs<T>): Promise<T | void> => {
-        return await this.executeSingleWrite({
+    private commitPreparedWrite = async <T extends Entity>(args: PreparedWriteArgs<T>): Promise<T | void> => {
+        return await this.commitWrite({
             handle: args.handle,
             ...args.context,
             intents: args.intents,
@@ -172,7 +172,7 @@ export class WriteFlow implements RuntimeWrite {
         })
     }
 
-    private executeEntityWrite = async <T extends Entity>(args: {
+    private commitEntityWrite = async <T extends Entity>(args: {
         handle: StoreHandle<T>
         context: WriteContext
         intent: WriteIntent<T>
@@ -191,7 +191,7 @@ export class WriteFlow implements RuntimeWrite {
             remove: args.remove
         })
 
-        return await this.executePreparedWrite({
+        return await this.commitPreparedWrite({
             handle: args.handle,
             context: args.context,
             intents: [args.intent],
@@ -203,7 +203,7 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     addOne = async <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {
-        const context = this.resolveWriteContext(handle, options)
+        const context = this.buildWriteContext(handle, options)
         const { intent, output } = await this.writeIntentFactory.prepareAddIntent<T>({
             handle,
             item,
@@ -215,7 +215,7 @@ export class WriteFlow implements RuntimeWrite {
             ? handle.state.getSnapshot().get(entityId)
             : undefined
 
-        const committed = await this.executeEntityWrite({
+        const committed = await this.commitEntityWrite({
             handle,
             id: entityId,
             before,
@@ -231,7 +231,7 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     addMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]> => {
-        return await this.runManyOrThrow({
+        return await this.executeBatchOrThrow({
             items,
             options,
             runner: (entry) => this.addOne(handle, entry, options)
@@ -239,7 +239,7 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     updateOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, recipe: (draft: ImmerDraft<T>) => void, options?: StoreOperationOptions): Promise<T> => {
-        const context = this.resolveWriteContext(handle, options)
+        const context = this.buildWriteContext(handle, options)
         const { intent, output, base } = await this.writeIntentFactory.prepareUpdateIntent<T>({
             handle,
             id,
@@ -248,7 +248,7 @@ export class WriteFlow implements RuntimeWrite {
             options
         })
 
-        const committed = await this.executeEntityWrite({
+        const committed = await this.commitEntityWrite({
             handle,
             id,
             before: base as T,
@@ -264,7 +264,7 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     updateMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>, options?: StoreOperationOptions): Promise<WriteManyResult<T>> => {
-        return await this.runMany({
+        return await this.executeBatch({
             items,
             options,
             runner: (entry) => this.updateOne(handle, entry.id, entry.recipe, options)
@@ -272,7 +272,7 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     upsertOne = async <T extends Entity>(handle: StoreHandle<T>, item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T> => {
-        const context = this.resolveWriteContext(handle, options)
+        const context = this.buildWriteContext(handle, options)
         const { intent, output, afterSaveAction, base } = await this.writeIntentFactory.prepareUpsertIntent<T>({
             handle,
             item,
@@ -280,7 +280,7 @@ export class WriteFlow implements RuntimeWrite {
             options
         })
 
-        const committed = await this.executeEntityWrite({
+        const committed = await this.commitEntityWrite({
             handle,
             id: intent.entityId,
             before: base as T | undefined,
@@ -296,7 +296,7 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     upsertMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>> => {
-        return await this.runMany({
+        return await this.executeBatch({
             items,
             options,
             runner: (entry) => this.upsertOne(handle, entry, options)
@@ -304,7 +304,7 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     deleteOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<boolean> => {
-        const context = this.resolveWriteContext(handle, options)
+        const context = this.buildWriteContext(handle, options)
         const { intent, base } = await this.writeIntentFactory.prepareDeleteIntent<T>({
             handle,
             id,
@@ -312,7 +312,7 @@ export class WriteFlow implements RuntimeWrite {
             options
         })
 
-        await this.executeEntityWrite({
+        await this.commitEntityWrite({
             handle,
             id,
             before: base as T,
@@ -327,7 +327,7 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     deleteMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
-        return await this.runMany({
+        return await this.executeBatch({
             items: ids,
             options,
             runner: (idValue) => this.deleteOne(handle, idValue, options)
@@ -335,7 +335,7 @@ export class WriteFlow implements RuntimeWrite {
     }
 
     patches = async <T extends Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: StoreOperationOptions): Promise<void> => {
-        const context = this.resolveWriteContext(handle, options)
+        const context = this.buildWriteContext(handle, options)
         const before = handle.state.getSnapshot() as Map<EntityId, T>
         const intents = buildWriteIntentsFromPatches({
             baseState: before,
@@ -343,7 +343,7 @@ export class WriteFlow implements RuntimeWrite {
             inversePatches
         })
 
-        await this.executePreparedWrite({
+        await this.commitPreparedWrite({
             handle,
             context,
             intents,

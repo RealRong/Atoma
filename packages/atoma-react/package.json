@@ -20,8 +20,6 @@
         "atoma": "workspace:*"
     },
     "dependencies": {
-        "atoma-core": "workspace:*",
-        "atoma-protocol": "workspace:*",
         "atoma-shared": "workspace:*",
         "atoma-types": "workspace:*"
     },

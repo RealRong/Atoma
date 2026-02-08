@@ -6,12 +6,12 @@
     "main": "dist/index.js",
     "module": "dist/index.js",
     "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
     "imports": {
         "#sync/*": "./src/*"
     },
@@ -24,7 +24,6 @@
         "atoma-client": "workspace:*",
         "atoma-core": "workspace:*",
         "atoma-runtime": "workspace:*",
-        "atoma-protocol": "workspace:*",
         "atoma-types": "workspace:*",
         "idb": "^8.0.3"
     }

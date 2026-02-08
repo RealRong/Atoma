@@ -2,7 +2,7 @@ import { throwError } from '../error'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import type { ServerRuntime } from '../runtime/createRuntime'
 import type { HandleResult } from '../runtime/http'
-import { Protocol } from 'atoma-protocol'
+import { sseRetry, sseNotify, sseComment } from 'atoma-types/protocol-tools'
 
 function parseResourcesQuery(urlObj: URL): string[] | undefined {
     const values = urlObj.searchParams.getAll('resources')
@@ -50,8 +50,8 @@ export function createSubscribeExecutor<Ctx>(args: {
 
         const allow = args2.resources?.length ? new Set(args2.resources) : null
 
-        yield Protocol.sse.format.retry(args2.retryMs)
-        yield Protocol.sse.format.notify({})
+        yield sseRetry(args2.retryMs)
+        yield sseNotify({})
 
         while (true) {
             if (args2.incoming?.signal?.aborted === true) return
@@ -59,14 +59,14 @@ export function createSubscribeExecutor<Ctx>(args: {
             const now = Date.now()
             if (args2.heartbeatMs > 0 && now - lastBeat >= args2.heartbeatMs) {
                 lastBeat = now
-                yield Protocol.sse.format.comment('hb')
+                yield sseComment('hb')
             }
 
             if (notifyDueAtMs !== undefined && pendingResources.size > 0 && now >= notifyDueAtMs) {
                 const resources = Array.from(pendingResources)
                 pendingResources.clear()
                 notifyDueAtMs = undefined
-                yield Protocol.sse.format.notify({ resources })
+                yield sseNotify({ resources })
                 continue
             }
 

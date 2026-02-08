@@ -17,7 +17,6 @@ export default defineConfig({
     external: [
         'atoma-shared',
         'atoma-types',
-        'atoma-protocol',
         'immer'
     ]
 })

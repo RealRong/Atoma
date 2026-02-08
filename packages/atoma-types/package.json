@@ -12,6 +12,11 @@
             "import": "./dist/index.js",
             "source": "./src/index.ts"
         },
+        "./shared": {
+            "types": "./dist/shared/index.d.ts",
+            "import": "./dist/shared.js",
+            "source": "./src/shared/index.ts"
+        },
         "./core": {
             "types": "./dist/core/index.d.ts",
             "import": "./dist/core.js",
@@ -31,6 +36,11 @@
             "types": "./dist/protocol/index.d.ts",
             "import": "./dist/protocol.js",
             "source": "./src/protocol/index.ts"
+        },
+        "./protocol-tools": {
+            "types": "./dist/protocol-tools/index.d.ts",
+            "import": "./dist/protocol-tools.js",
+            "source": "./src/protocol-tools/index.ts"
         },
         "./observability": {
             "types": "./dist/observability/index.d.ts",

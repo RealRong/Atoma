@@ -1,4 +1,4 @@
-import { Protocol } from 'atoma-protocol'
+import { assertOperationResults, createOpId, buildWriteOp, buildChangesPullOp, assertWriteResultData } from 'atoma-types/protocol-tools'
 import type { Meta, Operation, OperationResult, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
 import type { SyncDriver, SyncOutboxItem, SyncPushOutcome } from 'atoma-types/sync'
 
@@ -16,8 +16,8 @@ export function createOpsSyncDriver(args: {
 
     return {
         pullChanges: async (input) => {
-            const op = Protocol.ops.build.buildChangesPullOp({
-                opId: Protocol.ids.createOpId('c', { now }),
+            const op = buildChangesPullOp({
+                opId: createOpId('c', { now }),
                 cursor: input.cursor,
                 limit: input.limit,
                 ...(input.resources?.length ? { resources: input.resources } : {})
@@ -29,7 +29,7 @@ export function createOpsSyncDriver(args: {
                 ...(input.signal ? { signal: input.signal } : {})
             })
 
-            const results = Protocol.ops.validate.assertOperationResults((res as any).results)
+            const results = assertOperationResults((res as any).results)
             const result = results[0]
             if (!result) throw new Error('[Sync] Missing changes.pull result')
             if (!(result as any).ok) {
@@ -78,8 +78,8 @@ export function createOpsSyncDriver(args: {
             }
 
             for (const group of groups) {
-                const op = Protocol.ops.build.buildWriteOp({
-                    opId: Protocol.ids.createOpId('w', { now }),
+                const op = buildWriteOp({
+                    opId: createOpId('w', { now }),
                     write: {
                         resource: group.resource,
                         action: group.action,
@@ -95,7 +95,7 @@ export function createOpsSyncDriver(args: {
                         meta: input.meta,
                         ...(input.signal ? { signal: input.signal } : {})
                     })
-                    const results = Protocol.ops.validate.assertOperationResults((res as any).results)
+                    const results = assertOperationResults((res as any).results)
                     result = results[0]
                 } catch (error) {
                     for (const e of group.entries) {
@@ -134,7 +134,7 @@ export function createOpsSyncDriver(args: {
 
                 let data: WriteResultData
                 try {
-                    data = Protocol.ops.validate.assertWriteResultData((result as any).data) as WriteResultData
+                    data = assertWriteResultData((result as any).data) as WriteResultData
                 } catch (error) {
                     for (const e of group.entries) {
                         outcomes[e.index] = { kind: 'retry', error }

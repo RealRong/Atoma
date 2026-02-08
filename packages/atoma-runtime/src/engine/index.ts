@@ -1,1 +1,6 @@
-export { CoreRuntimeEngine } from './local/CoreRuntimeEngine'
+export { CoreIndexEngine } from './core/CoreIndexEngine'
+export { CoreQueryEngine } from './core/CoreQueryEngine'
+export { CoreRelationEngine } from './core/CoreRelationEngine'
+export { CoreMutationEngine } from './core/CoreMutationEngine'
+export { CoreOperationEngine } from './core/CoreOperationEngine'
+export { CoreRuntimeEngine } from './core/CoreRuntimeEngine'

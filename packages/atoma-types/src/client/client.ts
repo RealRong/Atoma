@@ -1,18 +1,19 @@
-import type * as Types from '../core'
+import type { Entity, StoreApi } from '../core'
 import type { InferRelationsFromSchema } from './relations'
 import type { AtomaSchema } from './schema'
+
 export interface PluginCapableClient {
     dispose: () => void
 }
 
 export type AtomaStore<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities>,
     Name extends keyof Entities & string
-> = Types.StoreApi<Entities[Name], InferRelationsFromSchema<Entities, Schema, Name>>
+> = StoreApi<Entities[Name], InferRelationsFromSchema<Entities, Schema, Name>>
 
 export type AtomaStores<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities>
 > =
     & (<Name extends keyof Entities & string>(name: Name) => AtomaStore<Entities, Schema, Name>)
@@ -26,12 +27,8 @@ export type AtomaHistory = {
 }
 
 export type AtomaClient<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
 > = PluginCapableClient & {
-    /**
-     * Unified store accessor.
-     * - `client.stores('Todo')` (dynamic name)
-     */
     stores: AtomaStores<Entities, Schema>
 }

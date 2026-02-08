@@ -1,6 +1,6 @@
 import { toStandardError } from '../../error'
 import type { AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerPluginRuntime, AtomaServerRoute } from '../../config'
-import { Protocol } from 'atoma-protocol'
+import { withErrorTrace } from 'atoma-types/protocol-tools'
 import type { OperationResult, QueryOp, QueryResultData } from 'atoma-types/protocol'
 import type { IOrmAdapter, QueryResult } from '../../adapters/ports'
 
@@ -20,7 +20,7 @@ function toQueryFail(opId: string, err: unknown, trace: TraceMeta): OperationRes
     return {
         opId,
         ok: false,
-        error: Protocol.error.withTrace(toStandardError(err, 'QUERY_FAILED'), trace)
+        error: withErrorTrace(toStandardError(err, 'QUERY_FAILED'), trace)
     }
 }
 

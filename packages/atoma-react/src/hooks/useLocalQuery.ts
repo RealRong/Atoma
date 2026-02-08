@@ -1,12 +1,12 @@
 import { useMemo } from 'react'
-import { executeLocalQuery } from 'atoma-core/query'
 import { stableStringify } from 'atoma-shared'
 import type { Entity, Query as StoreQuery, StoreApi } from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/protocol'
 import { getStoreBindings } from 'atoma-types/internal'
 
 /**
  * Hook for pure client-side filtering and sorting of arrays.
- * Reuses the core query logic (executeLocalQuery) used by the sync engine.
+ * Reuses runtime query evaluation logic via RuntimeEngine.
  *
  * @param data Source array
  * @param query Query spec (filter/sort/page/select)
@@ -14,20 +14,51 @@ import { getStoreBindings } from 'atoma-types/internal'
  */
 export function useLocalQuery<T extends Entity>(
     data: T[],
+    query: StoreQuery<T>,
+    store: StoreApi<T, any>
+): T[]
+
+export function useLocalQuery<T extends Entity>(
+    data: T[],
+    query?: undefined,
+    store?: StoreApi<T, any>
+): T[]
+
+export function useLocalQuery<T extends Entity>(
+    data: T[],
     query?: StoreQuery<T>,
     store?: StoreApi<T, any>
 ): T[] {
     const queryKey = useMemo(() => stableStringify(query), [query])
 
-    const matcher = useMemo(() => {
-        if (!store) return undefined
-        return getStoreBindings(store, 'useLocalQuery').matcher
-    }, [store])
+    const bindings = useMemo(() => {
+        if (!query && !store) return undefined
+        if (!store) {
+            throw new Error('[Atoma] useLocalQuery: query 模式下必须提供 store（用于获取 RuntimeEngine 绑定）')
+        }
+        return getStoreBindings(store, 'useLocalQuery')
+    }, [store, query])
+
+    const matcher = bindings?.matcher
+    const engine = bindings?.engine
 
     return useMemo(() => {
         if (!data || !data.length) return []
         if (!query) return data
+        if (!engine) {
+            throw new Error('[Atoma] useLocalQuery: store 缺少 RuntimeEngine 绑定，无法执行 query')
+        }
 
-        return executeLocalQuery(data, query, matcher ? { matcher } : undefined).data as T[]
-    }, [data, queryKey, matcher])
+        const mapRef = new Map<EntityId, T>()
+        data.forEach(item => {
+            mapRef.set(item.id, item)
+        })
+
+        return engine.query.evaluate({
+            mapRef,
+            query,
+            indexes: null,
+            matcher
+        }).data as T[]
+    }, [data, engine, query, queryKey, matcher])
 }

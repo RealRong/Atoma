@@ -44,17 +44,10 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
             }
         }
 
-        if (!engine) {
-            return {
-                ids: source.map(item => item.id) as Array<T['id']>,
-                data: source
-            }
-        }
-
-        const result = engine.evaluateWithIndexes({
+        const result = engine.query.evaluate({
             mapRef: map as Map<EntityId, T>,
             query,
-            indexes: indexes ?? null,
+            indexes,
             matcher
         })
 

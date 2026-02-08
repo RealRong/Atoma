@@ -14,7 +14,6 @@ export default defineConfig({
         'atoma-backend-shared',
         'atoma-core',
         'atoma-shared',
-        'atoma-protocol',
         'atoma-types',
         'dexie'
     ]

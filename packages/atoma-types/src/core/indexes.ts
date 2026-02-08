@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type { EntityId } from '../protocol'
+import type { EntityId } from '../shared'
 import type { FilterExpr } from './query'
 import type { IndexDefinition } from './store'
 

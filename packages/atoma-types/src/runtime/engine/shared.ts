@@ -1,0 +1,21 @@
+import type { Entity, Query, StoreIndexesLike } from '../../core'
+import type { EntityId } from '../../shared'
+
+export type RuntimeCacheWriteDecision =
+    | { effectiveSkipStore: true; reason: 'select' | 'include' }
+    | { effectiveSkipStore: false; reason?: undefined }
+
+export type RuntimeRelationInclude = Record<string, boolean | Query<unknown>> | undefined
+
+export type RuntimeRelationPrefetchOptions = {
+    onError?: 'skip' | 'throw' | 'partial'
+    timeout?: number
+    maxConcurrency?: number
+}
+
+export type RuntimeStoreMap<T extends Entity = Entity> =
+    | Map<EntityId, T>
+    | {
+        map: Map<EntityId, T>
+        indexes: StoreIndexesLike<T> | null
+    }

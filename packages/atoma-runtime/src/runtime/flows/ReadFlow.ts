@@ -48,7 +48,7 @@ export class ReadFlow implements RuntimeRead {
             const item = remote[i]
             const id = item.id
             const existing = existingMap.get(id)
-            const preserved = this.runtime.engine.preserveReferenceShallow(existing, item)
+            const preserved = this.runtime.engine.mutation.preserveRef(existing, item)
             processed[i] = preserved
             if (existing === preserved) continue
             changedIds.add(id)
@@ -80,10 +80,10 @@ export class ReadFlow implements RuntimeRead {
             if (localCache) return localCache
 
             const map = state.getSnapshot() as Map<EntityId, T>
-            const localResult = runtime.engine.evaluateWithIndexes({
+            const localResult = runtime.engine.query.evaluate({
                 mapRef: map,
                 query: input,
-                indexes: indexes ?? null,
+                indexes,
                 matcher
             })
 
@@ -100,7 +100,7 @@ export class ReadFlow implements RuntimeRead {
             const fetched = Array.isArray(data) ? data : []
             const remote = await this.writebackArray(handle, fetched)
 
-            const cachePolicy = runtime.engine.resolveCachePolicy(input)
+            const cachePolicy = runtime.engine.query.cachePolicy(input)
             if (cachePolicy.effectiveSkipStore) {
                 const result = this.toQueryResult(remote, pageInfo)
                 hooks.emit.readFinish({ handle, query: input, result, durationMs })
@@ -164,14 +164,14 @@ export class ReadFlow implements RuntimeRead {
 
                 const id = processed.id
                 const existing = before.get(id)
-                const preserved = this.runtime.engine.preserveReferenceShallow(existing, processed)
+                const preserved = this.runtime.engine.mutation.preserveRef(existing, processed)
 
                 fetchedById.set(id, preserved)
                 if (cache) itemsToCache.push(preserved)
             }
 
             if (cache && itemsToCache.length) {
-                const after = this.runtime.engine.bulkAdd(itemsToCache, before)
+                const after = this.runtime.engine.mutation.addMany(itemsToCache, before)
                 if (after !== before) {
                     const changedIds = this.collectChangedIdsForItems(before, itemsToCache)
                     handle.state.commit({ before, after, changedIds })
@@ -238,7 +238,7 @@ export class ReadFlow implements RuntimeRead {
             }
 
             const existing = existingMap.get(id)
-            const preserved = this.runtime.engine.preserveReferenceShallow(existing, processed)
+            const preserved = this.runtime.engine.mutation.preserveRef(existing, processed)
             itemsToCache.push(preserved)
             output.push(preserved)
         }
@@ -248,9 +248,9 @@ export class ReadFlow implements RuntimeRead {
             if (!incomingIds.has(id)) toRemove.push(id)
         })
 
-        const withRemovals = this.runtime.engine.bulkRemove(toRemove, existingMap)
+        const withRemovals = this.runtime.engine.mutation.removeMany(toRemove, existingMap)
         const next = itemsToCache.length
-            ? this.runtime.engine.bulkAdd(itemsToCache, withRemovals)
+            ? this.runtime.engine.mutation.addMany(itemsToCache, withRemovals)
             : withRemovals
 
         const changedIds = new Set<EntityId>(toRemove)

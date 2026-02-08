@@ -1,6 +1,6 @@
 import type { Patch } from 'immer'
-import type * as Types from '../core'
-import type { StoreHandle } from './handleTypes'
+import type { OperationContext, Query, QueryResult, WriteIntent } from '../core'
+import type { StoreHandle } from './handle'
 
 export type RuntimeWriteHookSource =
     | 'addOne'
@@ -11,26 +11,26 @@ export type RuntimeWriteHookSource =
 
 export type RuntimeReadStartArgs = Readonly<{
     handle: StoreHandle<any>
-    query: Types.Query<any>
+    query: Query<any>
 }>
 
 export type RuntimeReadFinishArgs = Readonly<{
     handle: StoreHandle<any>
-    query: Types.Query<any>
-    result: Types.QueryResult<any>
+    query: Query<any>
+    result: QueryResult<any>
     durationMs?: number
 }>
 
 export type RuntimeWriteStartArgs = Readonly<{
     handle: StoreHandle<any>
-    opContext: Types.OperationContext
-    intents: Array<Types.WriteIntent<any>>
+    opContext: OperationContext
+    intents: Array<WriteIntent<any>>
     source: RuntimeWriteHookSource
 }>
 
 export type RuntimeWritePatchesArgs = Readonly<{
     handle: StoreHandle<any>
-    opContext: Types.OperationContext
+    opContext: OperationContext
     patches: Patch[]
     inversePatches: Patch[]
     source: RuntimeWriteHookSource
@@ -38,13 +38,13 @@ export type RuntimeWritePatchesArgs = Readonly<{
 
 export type RuntimeWriteCommittedArgs = Readonly<{
     handle: StoreHandle<any>
-    opContext: Types.OperationContext
+    opContext: OperationContext
     result?: unknown
 }>
 
 export type RuntimeWriteFailedArgs = Readonly<{
     handle: StoreHandle<any>
-    opContext: Types.OperationContext
+    opContext: OperationContext
     error: unknown
 }>
 

@@ -2,25 +2,41 @@ import type { Entity, LifecycleHooks, OperationContext, PartialWithId, StoreOper
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
 
-export function ensureActionId(runtime: CoreRuntime, opContext?: OperationContext): OperationContext {
-    return runtime.engine.normalizeOperationContext(opContext)
+export function ensureOperationContext(runtime: CoreRuntime, opContext?: OperationContext): OperationContext {
+    return runtime.engine.operation.normalizeContext(opContext)
 }
 
-export async function prepareForAdd<T extends Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, item: Partial<T>, opContext?: OperationContext): Promise<PartialWithId<T>> {
-    let initedObj = runtime.engine.initBaseObject<T>(item, handle.config.idGenerator)
-    initedObj = await runBeforeSave(handle.config.hooks, initedObj, 'add')
-    const processed = await runtime.transform.inbound(handle, initedObj as T, opContext)
-    return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareForAdd')
+export async function prepareCreateInput<T extends Entity>(
+    runtime: CoreRuntime,
+    handle: StoreHandle<T>,
+    item: Partial<T>,
+    opContext?: OperationContext
+): Promise<PartialWithId<T>> {
+    let initialized = runtime.engine.mutation.init<T>(item, handle.config.idGenerator)
+    initialized = await runBeforeSave(handle.config.hooks, initialized, 'add')
+    const processed = await runtime.transform.inbound(handle, initialized as T, opContext)
+    return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareCreateInput')
 }
 
-export async function prepareForUpdate<T extends Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, base: PartialWithId<T>, patch: PartialWithId<T>, opContext?: OperationContext): Promise<PartialWithId<T>> {
-    let merged = runtime.engine.mergeForUpdate(base, patch)
-    merged = await runBeforeSave(handle.config.hooks, merged, 'update')
-    const processed = await runtime.transform.inbound(handle, merged as T, opContext)
-    return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareForUpdate')
+export async function prepareUpdateInput<T extends Entity>(
+    runtime: CoreRuntime,
+    handle: StoreHandle<T>,
+    base: PartialWithId<T>,
+    patch: PartialWithId<T>,
+    opContext?: OperationContext
+): Promise<PartialWithId<T>> {
+    let mergedInput = runtime.engine.mutation.merge(base, patch)
+    mergedInput = await runBeforeSave(handle.config.hooks, mergedInput, 'update')
+    const processed = await runtime.transform.inbound(handle, mergedInput as T, opContext)
+    return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareUpdateInput')
 }
 
-export async function resolveBaseForWrite<T extends Entity>(runtime: CoreRuntime, handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<PartialWithId<T>> {
+export async function resolveWriteBase<T extends Entity>(
+    runtime: CoreRuntime,
+    handle: StoreHandle<T>,
+    id: EntityId,
+    options?: StoreOperationOptions
+): Promise<PartialWithId<T>> {
     const cached = handle.state.getSnapshot().get(id) as T | undefined
     if (cached) return cached as PartialWithId<T>
 
@@ -34,8 +50,8 @@ export async function resolveBaseForWrite<T extends Entity>(runtime: CoreRuntime
         filter: { op: 'eq', field: 'id', value: id },
         page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
     })
-    const one = data[0]
-    const fetched = one !== undefined ? (one as T) : undefined
+    const first = data[0]
+    const fetched = first !== undefined ? (first as T) : undefined
     if (!fetched) {
         throw new Error(`Item with id ${id} not found`)
     }

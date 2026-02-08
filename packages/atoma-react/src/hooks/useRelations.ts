@@ -134,7 +134,7 @@ export function useRelations<T extends Entity>(
 
         const storeName = normalizeStoreName(store, name)
         const query = typeof store.query === 'function' ? store.query.bind(store) : undefined
-        const getMany = typeof store.getMany === 'function' ? store.getMany.bind(store) : undefined
+        const getMany = store.getMany.bind(store)
 
         const wrapped: IStore<any, any> = {
             ...store,
@@ -144,15 +144,13 @@ export function useRelations<T extends Entity>(
                     return dedupePrefetch(key, () => Promise.resolve(query(q)))
                 }
                 : query,
-            getMany: getMany
-                ? (ids: any[], cache?: boolean, options?: any) => {
-                    const normalizedIds = Array.isArray(ids)
-                        ? [...new Set(ids.map(String))].sort()
-                        : []
-                    const key = `rel:getMany:${storeName}:${stableStringify(normalizedIds)}:${cache ? '1' : '0'}:${stableStringify(options)}`
-                    return dedupePrefetch(key, () => Promise.resolve(getMany(ids, cache, options)))
-                }
-                : getMany
+            getMany: (ids: any[], cache?: boolean, options?: any) => {
+                const normalizedIds = Array.isArray(ids)
+                    ? [...new Set(ids.map(String))].sort()
+                    : []
+                const key = `rel:getMany:${storeName}:${stableStringify(normalizedIds)}:${cache ? '1' : '0'}:${stableStringify(options)}`
+                return dedupePrefetch(key, () => Promise.resolve(getMany(ids, cache, options)))
+            }
         }
 
         const bindings = (store as any)?.[STORE_BINDINGS]
@@ -179,7 +177,6 @@ export function useRelations<T extends Entity>(
             const store = resolveStoreStable(token)
             if (!store) continue
             const bindings = getStoreBindings(store as any, 'useRelations')
-            if (!bindings.engine) continue
             engineRef.current = bindings.engine
             return bindings.engine
         }
@@ -217,7 +214,7 @@ export function useRelations<T extends Entity>(
         if (!store) return undefined
 
         const bindings = getStoreBindings(store as any, 'useRelations')
-        if (!engineRef.current && bindings.engine) {
+        if (!engineRef.current) {
             engineRef.current = bindings.engine
         }
 
@@ -233,7 +230,7 @@ export function useRelations<T extends Entity>(
         const engine = resolveEngine(liveInclude)
         if (!engine) return source
 
-        const projectedLive = engine.projectRelationsBatch(
+        const projectedLive = engine.relation.project(
             source,
             liveInclude,
             relations as any,
@@ -260,7 +257,7 @@ export function useRelations<T extends Entity>(
         const engine = resolveEngine(snapshotInclude)
         if (!engine) return
 
-        const projected = engine.projectRelationsBatch(
+        const projected = engine.relation.project(
             source,
             snapshotInclude,
             relations as any,
@@ -347,8 +344,8 @@ export function useRelations<T extends Entity>(
                     return
                 }
 
-                const includeArg = { [name]: value } as Record<string, unknown>
-                tasks.push(engine.prefetchRelations(
+                const includeArg = { [name]: value } as RuntimeRelationInclude
+                tasks.push(engine.relation.prefetch(
                     itemsForRelation,
                     includeArg,
                     relations as any,
@@ -393,9 +390,8 @@ export function useRelations<T extends Entity>(
         if (!liveInclude || !relations || !resolveStoreRef.current) return
 
         const engine = resolveEngine(liveInclude)
-        const tokens = engine
-            ? engine.collectRelationStoreTokens(liveInclude, relations as any)
-            : collectRelationTokensFromInclude(liveInclude, relationMap)
+        if (!engine) return
+        const tokens = engine.relation.collectStores(liveInclude, relations as any)
 
         if (!tokens.length) return
 
@@ -412,7 +408,7 @@ export function useRelations<T extends Entity>(
         return () => {
             unsubscribers.forEach(unsubscribe => unsubscribe())
         }
-    }, [includeKey, liveInclude, relations, relationMap, resolveEngine, resolveStoreStable])
+    }, [includeKey, liveInclude, relations, resolveEngine, resolveStoreStable])
 
     useEffect(() => {
         patchState({ data: project(stableItems) })

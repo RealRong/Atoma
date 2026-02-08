@@ -12,7 +12,7 @@ export type {
     PersistContext,
     ReadContext,
     ReadRequest,
-    QueryResult,
+    PluginReadResult,
     ClientPlugin,
     PluginInitResult
-} from './types'
+} from './contracts'

@@ -12,7 +12,6 @@ export default defineConfig({
     treeshake: true,
     external: [
         'atoma-core',
-        'atoma-protocol',
         'atoma-types'
     ]
 })

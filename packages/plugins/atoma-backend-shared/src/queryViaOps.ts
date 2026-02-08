@@ -1,9 +1,9 @@
-import { Protocol } from 'atoma-protocol'
+import { createOpId, buildQueryOp, assertQueryResultData } from 'atoma-types/protocol-tools'
 import type { PluginContext, ReadRequest } from 'atoma-types/client'
 
 export async function queryViaOps(ctx: PluginContext, req: ReadRequest) {
-    const opId = Protocol.ids.createOpId('q', { now: ctx.runtime.now })
-    const op = Protocol.ops.build.buildQueryOp({
+    const opId = createOpId('q', { now: ctx.runtime.now })
+    const op = buildQueryOp({
         opId,
         resource: String(req.storeName),
         query: req.query
@@ -20,7 +20,7 @@ export async function queryViaOps(ctx: PluginContext, req: ReadRequest) {
             : '[Atoma] Query failed'
         throw new Error(msg)
     }
-    const data = Protocol.ops.validate.assertQueryResultData((result as any).data)
+    const data = assertQueryResultData((result as any).data)
     return {
         data: Array.isArray((data as any)?.data) ? ((data as any).data as unknown[]) : [],
         pageInfo: (data as any)?.pageInfo

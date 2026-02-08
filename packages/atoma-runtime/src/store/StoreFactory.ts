@@ -63,11 +63,11 @@ export class StoreFactory {
         const dataProcessor = this.mergeDataProcessor(this.dataProcessor as StoreDataProcessor<T> | undefined, storeSchema.dataProcessor)
 
         const relationsFactory = storeSchema.relations
-            ? () => this.runtime.engine.compileRelationsMap(storeSchema.relations, name)
+            ? () => this.runtime.engine.relation.compileMap(storeSchema.relations, name)
             : undefined
 
-        const indexes = this.runtime.engine.createIndexes<T>(storeSchema.indexes ?? null)
-        const matcher = this.runtime.engine.buildQueryMatcherOptions<T>(storeSchema.indexes ?? null)
+        const indexes = this.runtime.engine.index.create<T>(storeSchema.indexes ?? null)
+        const matcher = this.runtime.engine.index.matcherOptions<T>(storeSchema.indexes ?? null)
 
         const state = new SimpleStoreState<T>({
             initial: new Map<EntityId, T>(),
@@ -177,7 +177,7 @@ export class StoreFactory {
                 const id = item.id
                 const previous = before.get(id)
                 const preserved = previous !== undefined
-                    ? this.runtime.engine.preserveReferenceShallow(previous, item)
+                    ? this.runtime.engine.mutation.preserveRef(previous, item)
                     : item
                 after.set(id, preserved)
                 if (previous !== preserved) {

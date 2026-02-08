@@ -1,5 +1,5 @@
 import type { Envelope } from 'atoma-types/protocol'
-import { Protocol } from 'atoma-protocol'
+import { parseEnvelope } from 'atoma-types/protocol-tools'
 
 export type HttpInterceptors<T> = {
     onRequest?: (request: Request) => Promise<Request | void> | Request | void
@@ -76,7 +76,7 @@ export function createJsonHttpClient<T>(deps: {
 
         const envelope = deps.interceptors?.responseParser
             ? await deps.interceptors.responseParser(response, json)
-            : Protocol.ops.parse.envelope<T>(json, { v: 1 })
+            : parseEnvelope<T>(json, { v: 1 })
 
         deps.interceptors?.onResponse?.({
             response,

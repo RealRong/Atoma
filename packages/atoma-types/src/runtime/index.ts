@@ -8,7 +8,7 @@ export type {
     StoreRegistry,
     StoreHandle,
     DataProcessor
-} from './runtimeTypes'
+} from './api'
 export type { StoreChangedIds, StoreListener, StoreSnapshot, StoreState } from './storeState'
 export type { RuntimeSchema, RuntimeStoreSchema } from './schema'
 export type {
@@ -32,12 +32,17 @@ export type {
     Persistence,
     StrategyDescriptor,
     WritePolicy
-} from './persistenceTypes'
+} from './persistence'
 
 export type {
-    RuntimeEngine,
     RuntimeCacheWriteDecision,
     RuntimeRelationInclude,
     RuntimeRelationPrefetchOptions,
     RuntimeStoreMap
-} from './engineTypes'
+} from './engine/shared'
+export type { RuntimeIndexes } from './engine/indexes'
+export type { RuntimeQuery } from './engine/query'
+export type { RuntimeRelations } from './engine/relations'
+export type { RuntimeMutation } from './engine/mutation'
+export type { RuntimeOperation } from './engine/operation'
+export type { RuntimeEngine } from './engine/api'

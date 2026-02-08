@@ -61,7 +61,7 @@ export function Users() {
   - ops：`op.meta.traceId` / `op.meta.requestId`（op-scoped，支持 batch mixed trace）
   - subscribe（SSE）：URL query `traceId` / `requestId`（用于无 body 的 GET/SSE）
 
-以上都由 `atoma-protocol` 包统一定义，client 与 server 共享同一份 parse/compose/type。
+以上由 `atoma-types/protocol`（类型）与 `atoma-types/protocol-tools`（运行时工具）统一定义，client 与 server 共享同一份协议语义。
 
 ## Server
 

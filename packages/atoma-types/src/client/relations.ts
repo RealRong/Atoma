@@ -1,8 +1,15 @@
-import type * as Types from '../core'
+import type {
+    BelongsToConfig,
+    Entity,
+    HasManyConfig,
+    HasOneConfig,
+    KeySelector,
+    RelationIncludeOptions,
+} from '../core'
 import type { AtomaSchema } from './schema'
 
 export type InferRelationsFromSchema<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities>,
     Name extends keyof Entities & string
 > = Schema[Name] extends { relations?: infer R }
@@ -12,43 +19,43 @@ export type InferRelationsFromSchema<
     : {}
 
 export type BelongsToSchema<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     SourceName extends keyof Entities & string,
     TargetName extends keyof Entities & string
 > = {
     type: 'belongsTo'
     to: TargetName
-    foreignKey: Types.KeySelector<Entities[SourceName]>
+    foreignKey: KeySelector<Entities[SourceName]>
     primaryKey?: keyof Entities[TargetName] & string
-    options?: Types.RelationIncludeOptions<Entities[TargetName], any>
+    options?: RelationIncludeOptions<Entities[TargetName], any>
 }
 
 export type HasManySchema<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     SourceName extends keyof Entities & string,
     TargetName extends keyof Entities & string
 > = {
     type: 'hasMany'
     to: TargetName
-    primaryKey?: Types.KeySelector<Entities[SourceName]>
+    primaryKey?: KeySelector<Entities[SourceName]>
     foreignKey: keyof Entities[TargetName] & string
-    options?: Types.RelationIncludeOptions<Entities[TargetName], any>
+    options?: RelationIncludeOptions<Entities[TargetName], any>
 }
 
 export type HasOneSchema<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     SourceName extends keyof Entities & string,
     TargetName extends keyof Entities & string
 > = {
     type: 'hasOne'
     to: TargetName
-    primaryKey?: Types.KeySelector<Entities[SourceName]>
+    primaryKey?: KeySelector<Entities[SourceName]>
     foreignKey: keyof Entities[TargetName] & string
-    options?: Types.RelationIncludeOptions<Entities[TargetName], any>
+    options?: RelationIncludeOptions<Entities[TargetName], any>
 }
 
 export type RelationSchemaItem<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     SourceName extends keyof Entities & string
 > =
     | { [TargetName in keyof Entities & string]: BelongsToSchema<Entities, SourceName, TargetName> }[keyof Entities & string]
@@ -56,27 +63,27 @@ export type RelationSchemaItem<
     | { [TargetName in keyof Entities & string]: HasOneSchema<Entities, SourceName, TargetName> }[keyof Entities & string]
 
 export type RelationsSchema<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     SourceName extends keyof Entities & string
 > = Readonly<Record<string, RelationSchemaItem<Entities, SourceName>>>
 
 export type RelationMapFromSchema<
-    Entities extends Record<string, Types.Entity>,
+    Entities extends Record<string, Entity>,
     SourceName extends keyof Entities & string,
     Schema extends RelationsSchema<Entities, SourceName>
 > = {
         readonly [K in keyof Schema]:
         Schema[K] extends { type: 'belongsTo'; to: infer TargetName }
         ? (TargetName extends keyof Entities & string
-            ? Types.BelongsToConfig<Entities[SourceName], Entities[TargetName], any>
+            ? BelongsToConfig<Entities[SourceName], Entities[TargetName], any>
             : never)
         : Schema[K] extends { type: 'hasMany'; to: infer TargetName }
         ? (TargetName extends keyof Entities & string
-            ? Types.HasManyConfig<Entities[SourceName], Entities[TargetName], any>
+            ? HasManyConfig<Entities[SourceName], Entities[TargetName], any>
             : never)
         : Schema[K] extends { type: 'hasOne'; to: infer TargetName }
         ? (TargetName extends keyof Entities & string
-            ? Types.HasOneConfig<Entities[SourceName], Entities[TargetName], any>
+            ? HasOneConfig<Entities[SourceName], Entities[TargetName], any>
             : never)
         : never
     }

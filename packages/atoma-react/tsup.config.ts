@@ -14,10 +14,8 @@ export default defineConfig({
         'react',
         'atoma',
         'atoma-client',
-        'atoma-core',
         'atoma-shared',
         'atoma-observability',
-        'atoma-protocol',
         'atoma-types',
         'atoma-types/internal',
     ]

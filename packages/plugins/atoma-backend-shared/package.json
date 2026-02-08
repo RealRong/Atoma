@@ -19,7 +19,6 @@
     },
     "dependencies": {
         "atoma-core": "workspace:*",
-        "atoma-protocol": "workspace:*",
         "atoma-types": "workspace:*"
     }
 }

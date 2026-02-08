@@ -1,7 +1,7 @@
 import pLimit from 'p-limit'
 import { createError, errorStatus, toStandardError } from '../../error'
 import type { AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerPluginRuntime, AtomaServerRoute } from '../../config'
-import { Protocol } from 'atoma-protocol'
+import { withErrorTrace } from 'atoma-types/protocol-tools'
 import type { OperationResult, WriteOp } from 'atoma-types/protocol'
 import type { IOrmAdapter, ISyncAdapter } from '../../adapters/ports'
 import { executeWriteItemWithSemantics } from '../writeSemantics'
@@ -101,7 +101,7 @@ function toFailItemResult(index: number, res: any, trace: TraceMeta) {
     return {
         index,
         ok: false,
-        error: Protocol.error.withTrace(res.error, trace),
+        error: withErrorTrace(res.error, trace),
         ...(currentValue !== undefined || currentVersion !== undefined
             ? { current: { ...(currentValue !== undefined ? { value: currentValue } : {}), ...(currentVersion !== undefined ? { version: currentVersion } : {}) } }
             : {})
@@ -112,7 +112,7 @@ function toUnhandledItemError(index: number, err: unknown, trace: TraceMeta) {
     return {
         index,
         ok: false,
-        error: Protocol.error.withTrace(toStandardError(err, 'WRITE_FAILED'), trace)
+        error: withErrorTrace(toStandardError(err, 'WRITE_FAILED'), trace)
     }
 }
 
@@ -630,7 +630,7 @@ export async function executeWriteOps<Ctx>(args: {
             action: op.write?.action,
             error: serializeErrorForLog(pluginResult.error)
         })
-        const standard = Protocol.error.withTrace(
+        const standard = withErrorTrace(
             toStandardError(pluginResult.error, 'WRITE_FAILED'),
             opTrace
         )

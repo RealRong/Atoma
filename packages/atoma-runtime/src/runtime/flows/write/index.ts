@@ -1,15 +1,15 @@
 export {
-    ensureActionId,
-    prepareForAdd,
-    prepareForUpdate,
-    resolveBaseForWrite,
+    ensureOperationContext,
+    prepareCreateInput,
+    prepareUpdateInput,
+    resolveWriteBase,
     runAfterSave,
     runBeforeSave
 } from './utils/prepareWriteInput'
 export { buildEntityRootPatches } from './utils/buildEntityRootPatches'
 export { buildUpsertIntentOptions } from './utils/buildUpsertIntentOptions'
 export { applyIntentsOptimistically } from './utils/applyIntentsOptimistically'
-export { applyOptimisticCommit, rollbackOptimisticCommit } from './utils/optimisticCommit'
+export { applyOptimisticState, rollbackOptimisticState } from './utils/optimisticCommit'
 export { resolveWriteResultFromOperationResults } from './utils/resolveWriteResult'
 export { runWriteBatch } from './utils/runWriteBatch'
 export { buildWriteIntentsFromPatches } from './commit/buildWriteIntentsFromPatches'

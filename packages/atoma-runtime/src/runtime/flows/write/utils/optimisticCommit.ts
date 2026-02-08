@@ -4,45 +4,45 @@ import type { StoreHandle, WritePolicy } from 'atoma-types/runtime'
 import { applyIntentsOptimistically } from './applyIntentsOptimistically'
 import type { OptimisticState } from '../types'
 
-export function applyOptimisticCommit<T extends Entity>(args: {
+export function applyOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
     intents: Array<WriteIntent<T>>
     writePolicy: WritePolicy
     preserve: (existing: T | undefined, incoming: T) => T
 }): OptimisticState<T> {
     const { handle, intents, writePolicy, preserve } = args
-    const before = handle.state.getSnapshot() as Map<EntityId, T>
+    const beforeState = handle.state.getSnapshot() as Map<EntityId, T>
     const shouldOptimistic = writePolicy.optimistic !== false
 
     const optimistic = (shouldOptimistic && intents.length)
-        ? applyIntentsOptimistically(before, intents, preserve)
-        : { optimisticState: before, changedIds: new Set<EntityId>() }
+        ? applyIntentsOptimistically(beforeState, intents, preserve)
+        : { afterState: beforeState, changedIds: new Set<EntityId>() }
 
-    const { optimisticState, changedIds } = optimistic
-    if (optimisticState !== before && changedIds.size) {
+    const { afterState, changedIds } = optimistic
+    if (afterState !== beforeState && changedIds.size) {
         handle.state.commit({
-            before,
-            after: optimisticState,
+            before: beforeState,
+            after: afterState,
             changedIds
         })
     }
 
     return {
-        before,
-        optimisticState,
+        beforeState,
+        afterState,
         changedIds
     }
 }
 
-export function rollbackOptimisticCommit<T extends Entity>(args: {
+export function rollbackOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
     optimisticState: OptimisticState<T>
 }) {
     const { handle, optimisticState } = args
-    if (optimisticState.optimisticState !== optimisticState.before && optimisticState.changedIds.size) {
+    if (optimisticState.afterState !== optimisticState.beforeState && optimisticState.changedIds.size) {
         handle.state.commit({
-            before: optimisticState.optimisticState,
-            after: optimisticState.before,
+            before: optimisticState.afterState,
+            after: optimisticState.beforeState,
             changedIds: optimisticState.changedIds
         })
     }

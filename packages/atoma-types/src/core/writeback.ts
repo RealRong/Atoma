@@ -1,5 +1,5 @@
 import type { Entity } from './entity'
-import type { EntityId } from '../protocol'
+import type { EntityId } from '../shared'
 
 export type StoreWritebackArgs<T extends Entity> = Readonly<{
     upserts?: T[]

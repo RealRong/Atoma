@@ -1,8 +1,44 @@
-export type Query<T = any> = import('../protocol').Query
-export type FilterExpr<T = any> = import('../protocol').FilterExpr
-export type SortRule<T = any> = import('../protocol').SortRule
-export type PageSpec = import('../protocol').PageSpec
-export type PageInfo = import('../protocol').PageInfo
+export type { CursorToken } from '../shared'
+
+import type { CursorToken } from '../shared'
+
+export type SortRule<T = any> = { field: keyof T & string | string; dir: 'asc' | 'desc' }
+
+export type PageSpec =
+    | { mode: 'offset'; limit?: number; offset?: number; includeTotal?: boolean }
+    | { mode: 'cursor'; limit?: number; after?: CursorToken; before?: CursorToken }
+
+export type FilterExpr<T = any> =
+    | { op: 'and'; args: FilterExpr<T>[] }
+    | { op: 'or'; args: FilterExpr<T>[] }
+    | { op: 'not'; arg: FilterExpr<T> }
+    | { op: 'eq'; field: keyof T & string | string; value: unknown }
+    | { op: 'in'; field: keyof T & string | string; values: unknown[] }
+    | { op: 'gt' | 'gte' | 'lt' | 'lte'; field: keyof T & string | string; value: number }
+    | { op: 'startsWith' | 'endsWith' | 'contains'; field: keyof T & string | string; value: string }
+    | { op: 'isNull'; field: keyof T & string | string }
+    | { op: 'exists'; field: keyof T & string | string }
+    | {
+        op: 'text'
+        field: keyof T & string | string
+        query: string
+        mode?: 'match' | 'fuzzy'
+        distance?: 0 | 1 | 2
+    }
+
+export type Query<T = any> = {
+    filter?: FilterExpr<T>
+    sort?: SortRule<T>[]
+    page?: PageSpec
+    select?: Array<keyof T & string> | string[]
+    include?: Record<string, Query<any>>
+}
+
+export type PageInfo = {
+    cursor?: CursorToken
+    hasNext?: boolean
+    total?: number
+}
 
 export type FetchPolicy = 'cache-only' | 'network-only' | 'cache-and-network'
 

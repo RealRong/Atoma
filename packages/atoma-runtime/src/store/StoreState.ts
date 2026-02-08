@@ -68,8 +68,8 @@ export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
 
     applyWriteback = (args: StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
         const before = this.snapshot as Map<EntityId, T>
-        const preserve = options?.preserve ?? this.engine.preserveReferenceShallow
-        const result = this.engine.applyWritebackToMap(before, args, { preserve })
+        const preserve = options?.preserve ?? this.engine.mutation.preserveRef
+        const result = this.engine.mutation.writeback(before, args, { preserve })
         if (!result) return
 
         this.commit({

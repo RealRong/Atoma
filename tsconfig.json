@@ -14,7 +14,6 @@
     "packages/atoma-core/src/**/*",
     "packages/atoma-runtime/src/**/*",
     "packages/atoma-shared/src/**/*",
-    "packages/atoma-protocol/src/**/*",
     "packages/plugins/atoma-observability/src/**/*"
   ],
   "exclude": [

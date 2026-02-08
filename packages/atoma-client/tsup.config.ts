@@ -44,7 +44,6 @@ export default defineConfig({
         'atoma-core',
         'atoma-runtime',
         'atoma-shared',
-        'atoma-protocol',
         'atoma-observability',
         'atoma-types',
         'immer'

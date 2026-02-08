@@ -17,7 +17,6 @@ export default defineConfig({
         'atoma-client',
         'atoma-core',
         'atoma-shared',
-        'atoma-protocol',
         'atoma-observability',
         'react',
         'immer',

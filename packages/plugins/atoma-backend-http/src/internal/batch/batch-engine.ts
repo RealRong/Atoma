@@ -1,4 +1,4 @@
-import { Protocol } from 'atoma-protocol'
+import { HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
 import type { Meta, Operation, OperationResult, QueryOp, WriteOp } from 'atoma-types/protocol'
 import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client'
 import { zod } from 'atoma-shared'
@@ -580,7 +580,7 @@ export class BatchEngine {
             { prefix: '' }
         ) as any
 
-        this.endpoint = (this.config.endpoint || Protocol.http.paths.OPS).replace(/\/$/, '')
+        this.endpoint = (this.config.endpoint || HTTP_PATH_OPS).replace(/\/$/, '')
         this.executeFn = this.config.executeFn
 
         this.queryLane = new QueryLane({

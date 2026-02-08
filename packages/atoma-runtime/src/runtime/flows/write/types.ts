@@ -3,8 +3,8 @@ import type { EntityId, WriteOp } from 'atoma-types/protocol'
 import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
 
 export type OptimisticState<T extends Entity> = Readonly<{
-    before: Map<EntityId, T>
-    optimisticState: Map<EntityId, T>
+    beforeState: Map<EntityId, T>
+    afterState: Map<EntityId, T>
     changedIds: Set<EntityId>
 }>
 

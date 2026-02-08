@@ -1,3 +1,4 @@
+export type * as Shared from './shared'
 export type * as Core from './core'
 export type * as Runtime from './runtime'
 export type * as Client from './client'

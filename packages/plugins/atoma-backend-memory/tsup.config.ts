@@ -13,7 +13,6 @@ export default defineConfig({
     external: [
         'atoma-backend-shared',
         'atoma-core',
-        'atoma-protocol',
         'atoma-types'
     ]
 })

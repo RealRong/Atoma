@@ -3,41 +3,114 @@
     "compilerOptions": {
         "baseUrl": ".",
         "paths": {
-            "atoma": ["packages/atoma/src/index.ts"],
-            "atoma-backend-indexeddb": ["packages/plugins/atoma-backend-indexeddb/src/index.ts"],
-            "atoma-backend-http": ["packages/plugins/atoma-backend-http/src/index.ts"],
-            "atoma-backend-memory": ["packages/plugins/atoma-backend-memory/src/index.ts"],
-            "atoma-backend-shared": ["packages/plugins/atoma-backend-shared/src/index.ts"],
-            "atoma-client": ["packages/atoma-client/src/index.ts"],
-            "atoma-core/store": ["packages/atoma-core/src/store/index.ts"],
-            "atoma-core/query": ["packages/atoma-core/src/query/index.ts"],
-            "atoma-core/relations": ["packages/atoma-core/src/relations/index.ts"],
-            "atoma-core/indexes": ["packages/atoma-core/src/indexes/index.ts"],
-            "atoma-core/operation": ["packages/atoma-core/src/operation.ts"],
-            "atoma-devtools": ["packages/plugins/atoma-devtools/src/index.ts"],
-            "atoma-history": ["packages/plugins/atoma-history/src/index.ts"],
-            "atoma-observability": ["packages/plugins/atoma-observability/src/index.ts"],
-            "atoma-protocol": ["packages/atoma-protocol/src/index.ts"],
-            "atoma-react": ["packages/atoma-react/src/index.ts"],
-            "atoma-runtime": ["packages/atoma-runtime/src/index.ts"],
-            "atoma-server": ["packages/atoma-server/src/index.ts"],
-            "atoma-server/adapters": ["packages/atoma-server/src/adapters/index.ts"],
-            "atoma-server/adapters/typeorm": ["packages/atoma-server/src/adapters/typeorm/index.ts"],
-            "atoma-server/adapters/prisma": ["packages/atoma-server/src/adapters/prisma/index.ts"],
-            "atoma-shared": ["packages/atoma-shared/src/index.ts"],
-            "atoma-sync": ["packages/plugins/atoma-sync/src/index.ts"],
-            "atoma-types": ["packages/atoma-types/src/index.ts"],
-            "atoma-types/internal": ["packages/atoma-types/src/internal/index.ts"],
-            "atoma-types/core": ["packages/atoma-types/src/core/index.ts"],
-            "atoma-types/runtime": ["packages/atoma-types/src/runtime/index.ts"],
-            "atoma-types/client": ["packages/atoma-types/src/client/index.ts"],
-            "atoma-types/protocol": ["packages/atoma-types/src/protocol/index.ts"],
-            "atoma-types/observability": ["packages/atoma-types/src/observability/index.ts"],
-            "atoma-types/sync": ["packages/atoma-types/src/sync/index.ts"],
-            "atoma-types/devtools": ["packages/atoma-types/src/devtools/index.ts"],
-            "#client": ["packages/atoma-client/src/index.ts"],
-            "#client/*": ["packages/atoma-client/src/*"],
-            "#sync/*": ["packages/plugins/atoma-sync/src/*"]
+            "#client": [
+                "packages/atoma-client/src/index.ts"
+            ],
+            "#client/*": [
+                "packages/atoma-client/src/*"
+            ],
+            "#sync/*": [
+                "packages/plugins/atoma-sync/src/*"
+            ],
+            "atoma": [
+                "packages/atoma/src/index.ts"
+            ],
+            "atoma-backend-http": [
+                "packages/plugins/atoma-backend-http/src/index.ts"
+            ],
+            "atoma-backend-indexeddb": [
+                "packages/plugins/atoma-backend-indexeddb/src/index.ts"
+            ],
+            "atoma-backend-memory": [
+                "packages/plugins/atoma-backend-memory/src/index.ts"
+            ],
+            "atoma-backend-shared": [
+                "packages/plugins/atoma-backend-shared/src/index.ts"
+            ],
+            "atoma-client": [
+                "packages/atoma-client/src/index.ts"
+            ],
+            "atoma-core/indexes": [
+                "packages/atoma-core/src/indexes/index.ts"
+            ],
+            "atoma-core/operation": [
+                "packages/atoma-core/src/operation.ts"
+            ],
+            "atoma-core/query": [
+                "packages/atoma-core/src/query/index.ts"
+            ],
+            "atoma-core/relations": [
+                "packages/atoma-core/src/relations/index.ts"
+            ],
+            "atoma-core/store": [
+                "packages/atoma-core/src/store/index.ts"
+            ],
+            "atoma-devtools": [
+                "packages/plugins/atoma-devtools/src/index.ts"
+            ],
+            "atoma-history": [
+                "packages/plugins/atoma-history/src/index.ts"
+            ],
+            "atoma-observability": [
+                "packages/plugins/atoma-observability/src/index.ts"
+            ],
+            "atoma-react": [
+                "packages/atoma-react/src/index.ts"
+            ],
+            "atoma-runtime": [
+                "packages/atoma-runtime/src/index.ts"
+            ],
+            "atoma-server": [
+                "packages/atoma-server/src/index.ts"
+            ],
+            "atoma-server/adapters": [
+                "packages/atoma-server/src/adapters/index.ts"
+            ],
+            "atoma-server/adapters/prisma": [
+                "packages/atoma-server/src/adapters/prisma/index.ts"
+            ],
+            "atoma-server/adapters/typeorm": [
+                "packages/atoma-server/src/adapters/typeorm/index.ts"
+            ],
+            "atoma-shared": [
+                "packages/atoma-shared/src/index.ts"
+            ],
+            "atoma-sync": [
+                "packages/plugins/atoma-sync/src/index.ts"
+            ],
+            "atoma-types": [
+                "packages/atoma-types/src/index.ts"
+            ],
+            "atoma-types/shared": [
+                "packages/atoma-types/src/shared/index.ts"
+            ],
+            "atoma-types/client": [
+                "packages/atoma-types/src/client/index.ts"
+            ],
+            "atoma-types/core": [
+                "packages/atoma-types/src/core/index.ts"
+            ],
+            "atoma-types/devtools": [
+                "packages/atoma-types/src/devtools/index.ts"
+            ],
+            "atoma-types/internal": [
+                "packages/atoma-types/src/internal/index.ts"
+            ],
+            "atoma-types/observability": [
+                "packages/atoma-types/src/observability/index.ts"
+            ],
+            "atoma-types/protocol": [
+                "packages/atoma-types/src/protocol/index.ts"
+            ],
+            "atoma-types/protocol-tools": [
+                "packages/atoma-types/src/protocol-tools/index.ts"
+            ],
+            "atoma-types/runtime": [
+                "packages/atoma-types/src/runtime/index.ts"
+            ],
+            "atoma-types/sync": [
+                "packages/atoma-types/src/sync/index.ts"
+            ]
         }
     }
 }

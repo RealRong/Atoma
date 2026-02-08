@@ -25,7 +25,6 @@
         "atoma-core": "workspace:*",
         "atoma-runtime": "workspace:*",
         "atoma-shared": "workspace:*",
-        "atoma-protocol": "workspace:*",
         "atoma-observability": "workspace:*",
         "atoma-types": "workspace:*"
     },
