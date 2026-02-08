@@ -3,15 +3,7 @@
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma shared type exports",
-    "main": "dist/index.js",
-    "module": "dist/index.js",
-    "types": "dist/index.d.ts",
     "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js",
-            "source": "./src/index.ts"
-        },
         "./shared": {
             "types": "./dist/shared/index.d.ts",
             "import": "./dist/shared.js",

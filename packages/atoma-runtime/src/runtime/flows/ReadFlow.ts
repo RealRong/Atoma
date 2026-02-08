@@ -70,7 +70,6 @@ export class ReadFlow implements RuntimeRead {
     query = async <T extends Entity>(handle: StoreHandle<T>, input: StoreQuery<T>): Promise<QueryResult<T>> => {
         const runtime = this.runtime
         const { state } = handle
-        const { indexes, matcher } = state
         const hooks = runtime.hooks
 
         hooks.emit.readStart({ handle, query: input })
@@ -79,12 +78,9 @@ export class ReadFlow implements RuntimeRead {
         const getLocalResult = (): { data: T[]; result: QueryResult<T> } => {
             if (localCache) return localCache
 
-            const map = state.getSnapshot() as Map<EntityId, T>
             const localResult = runtime.engine.query.evaluate({
-                mapRef: map,
-                query: input,
-                indexes,
-                matcher
+                state,
+                query: input
             })
 
             const result = this.toQueryResult(localResult.data, localResult.pageInfo)

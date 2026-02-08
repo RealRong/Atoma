@@ -1,13 +1,13 @@
 import type { Entity, Query, QueryMatcherOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { StoreIndexes } from '../../indexes/StoreIndexes'
+import type { Indexes } from '../../indexes'
 import { summarizeQuery } from '../summary'
 import { LocalQueryExecutor } from './LocalQueryExecutor'
 
 export function evaluateWithIndexes<T extends Entity>(params: {
     mapRef: Map<EntityId, T>
     query: Query<T>
-    indexes: StoreIndexes<T> | null
+    indexes: Indexes<T> | null
     matcher?: QueryMatcherOptions
     emit?: (type: string, payload: unknown) => void
 }): { data: T[]; pageInfo?: unknown } {

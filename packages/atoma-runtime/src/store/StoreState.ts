@@ -1,4 +1,4 @@
-import type { Entity, QueryMatcherOptions, StoreIndexesLike, StoreWritebackArgs } from 'atoma-types/core'
+import type { Entity, QueryMatcherOptions, IndexesLike, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { RuntimeEngine, StoreChangedIds, StoreSnapshot, StoreState } from 'atoma-types/runtime'
 
@@ -6,12 +6,12 @@ export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
     private snapshot: StoreSnapshot<T>
     private listeners = new Set<() => void>()
     private readonly engine: RuntimeEngine
-    readonly indexes: StoreIndexesLike<T> | null
+    readonly indexes: IndexesLike<T> | null
     readonly matcher?: QueryMatcherOptions
 
     constructor(args: {
         initial?: StoreSnapshot<T>
-        indexes?: StoreIndexesLike<T> | null
+        indexes?: IndexesLike<T> | null
         matcher?: QueryMatcherOptions
         engine: RuntimeEngine
     }) {

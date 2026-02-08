@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { stableStringify } from 'atoma-shared'
 import type { Entity, Query as StoreQuery, StoreApi } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { StoreState } from 'atoma-types/runtime'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 
@@ -44,11 +44,19 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
             }
         }
 
-        const result = engine.query.evaluate({
-            mapRef: map as Map<EntityId, T>,
-            query,
+        const queryState: StoreState<T> = {
+            getSnapshot: () => map,
+            setSnapshot: () => {},
+            subscribe: () => () => {},
             indexes,
-            matcher
+            matcher,
+            commit: () => {},
+            applyWriteback: () => {}
+        }
+
+        const result = engine.query.evaluate({
+            state: queryState,
+            query
         })
 
         const data = result.data as T[]

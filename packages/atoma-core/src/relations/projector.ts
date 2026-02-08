@@ -3,7 +3,7 @@ import type {
     FilterExpr,
     RelationMap,
     SortRule,
-    StoreIndexesLike,
+    IndexesLike,
     StoreToken
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
@@ -21,7 +21,7 @@ type DynamicEntity = Entity & Record<string, unknown>
 
 export type StoreRuntime = {
     map: Map<EntityId, DynamicEntity>
-    indexes?: StoreIndexesLike<DynamicEntity> | null
+    indexes?: IndexesLike<DynamicEntity> | null
 }
 
 export type GetStoreMap = (store: StoreToken) => Map<EntityId, DynamicEntity> | StoreRuntime | undefined
@@ -48,7 +48,7 @@ const readField = (item: DynamicEntity, field: string): unknown => {
 }
 
 const resolveLookupMode = (
-    indexes: StoreIndexesLike<DynamicEntity> | null,
+    indexes: IndexesLike<DynamicEntity> | null,
     targetKeyField: string,
     key: EntityId
 ): 'index' | 'scan' => {
@@ -128,7 +128,7 @@ function projectBelongsTo<TSource extends Entity>(
     results: TSource[],
     entry: PlannedRelation<TSource>,
     map: Map<EntityId, DynamicEntity>,
-    indexes: StoreIndexesLike<DynamicEntity> | null
+    indexes: IndexesLike<DynamicEntity> | null
 ) {
     if (entry.targetKeyField === 'id') {
         results.forEach(item => {
@@ -195,7 +195,7 @@ function projectHasManyOrHasOne<TSource extends Entity>(
     results: TSource[],
     entry: PlannedRelation<TSource>,
     map: Map<EntityId, DynamicEntity>,
-    indexes: StoreIndexesLike<DynamicEntity> | null
+    indexes: IndexesLike<DynamicEntity> | null
 ) {
     const isHasOne = entry.relationType === 'hasOne'
 

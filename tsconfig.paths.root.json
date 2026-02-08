@@ -78,9 +78,6 @@
             "atoma-sync": [
                 "packages/plugins/atoma-sync/src/index.ts"
             ],
-            "atoma-types": [
-                "packages/atoma-types/src/index.ts"
-            ],
             "atoma-types/shared": [
                 "packages/atoma-types/src/shared/index.ts"
             ],

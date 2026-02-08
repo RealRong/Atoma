@@ -22,7 +22,6 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-core": "workspace:*",
         "atoma-runtime": "workspace:*",
         "atoma-shared": "workspace:*",
         "atoma-observability": "workspace:*",

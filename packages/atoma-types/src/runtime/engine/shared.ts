@@ -1,4 +1,4 @@
-import type { Entity, Query, StoreIndexesLike } from '../../core'
+import type { Entity, Query, IndexesLike } from '../../core'
 import type { EntityId } from '../../shared'
 
 export type RuntimeCacheWriteDecision =
@@ -17,5 +17,5 @@ export type RuntimeStoreMap<T extends Entity = Entity> =
     | Map<EntityId, T>
     | {
         map: Map<EntityId, T>
-        indexes: StoreIndexesLike<T> | null
+        indexes: IndexesLike<T> | null
     }

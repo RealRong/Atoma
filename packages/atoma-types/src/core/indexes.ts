@@ -22,7 +22,7 @@ export type CandidateResult =
 
 export type IndexSnapshot<T> = { field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats
 
-export type StoreIndexesLike<T> = Readonly<{
+export type IndexesLike<T> = Readonly<{
     collectCandidates: (filter?: FilterExpr) => CandidateResult
     getStats: (field: string) => IndexStats | undefined
     getIndexSnapshots: () => IndexSnapshot<T>[]

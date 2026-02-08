@@ -1,8 +1,8 @@
 import type { IndexDefinition } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CandidateResult, IndexStats } from 'atoma-types/core'
-import { binarySearchPrefix, intersectAll } from '../utils'
-import { IIndex } from '../base/IIndex'
+import { binarySearchPrefix, intersectAll } from '../internal/search'
+import type { IndexDriver } from '../types'
 
 const normalize = (value: unknown): string => {
     if (value === undefined || value === null) return ''
@@ -23,7 +23,7 @@ const buildNgrams = (value: string, n: number): string[] => {
     return Array.from(grams)
 }
 
-export class SubstringIndex<T> implements IIndex<T> {
+export class SubstringIndex<T> implements IndexDriver<T> {
     readonly type = 'substring'
     readonly config: IndexDefinition<T>
 

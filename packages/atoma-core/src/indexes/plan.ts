@@ -1,7 +1,7 @@
 import type { CandidateExactness, CandidateResult, FilterExpr } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { IIndex } from '../base/IIndex'
-import { intersectAll } from '../utils'
+import { intersectAll } from './internal/search'
+import type { IndexDriver, IndexQueryPlan } from './types'
 
 type WhereCondition = {
     eq?: unknown
@@ -19,20 +19,8 @@ type WhereCondition = {
 
 type WhereMap = Record<string, WhereCondition>
 
-export type IndexQueryPlan = {
-    timestamp: number
-    whereFields: string[]
-    perField: Array<{
-        field: string
-        status: 'no_index' | 'unsupported' | 'empty' | 'candidates'
-        exactness?: CandidateExactness
-        candidates?: number
-    }>
-    result: { kind: CandidateResult['kind']; exactness?: CandidateExactness; candidates?: number }
-}
-
-export function collectCandidatesWithPlan<T>(args: {
-    indexes: Map<string, IIndex<T>>
+export function planCandidates<T>(args: {
+    indexes: Map<string, IndexDriver<T>>
     filter?: FilterExpr
 }): { result: CandidateResult; plan: IndexQueryPlan } {
     const where = filterToWhere(args.filter)

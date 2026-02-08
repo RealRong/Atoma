@@ -1,11 +1,11 @@
 import type { IndexDefinition, IndexType } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { binarySearchLeft, binarySearchRight } from '../utils'
-import { normalizeNumber } from '../validators'
+import { binarySearchLeft, binarySearchRight } from '../internal/search'
+import { normalizeNumber } from '../internal/value'
 import type { CandidateResult, IndexStats } from 'atoma-types/core'
-import { IIndex } from '../base/IIndex'
+import type { IndexDriver } from '../types'
 
-export class NumberDateIndex<T> implements IIndex<T> {
+export class NumberDateIndex<T> implements IndexDriver<T> {
     readonly type: 'number' | 'date'
     readonly config: IndexDefinition<T>
 

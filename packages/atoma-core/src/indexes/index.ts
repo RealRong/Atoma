@@ -1,1 +1,6 @@
-export { StoreIndexes } from './StoreIndexes'
+export { Indexes } from './Indexes'
+export { buildIndex } from './build'
+export { planCandidates } from './plan'
+export type { IndexQueryPlan } from './types'
+export { IndexSync } from './IndexSync'
+export type { IndexDriver } from './types'

@@ -1,10 +1,10 @@
 import type { IndexDefinition } from 'atoma-types/core'
 import type { CandidateResult, IndexStats } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { defaultTokenizer } from '../tokenizer'
-import { IIndex } from '../base/IIndex'
-import { intersectAll, levenshteinDistance } from '../utils'
-import { validateString } from '../validators'
+import { defaultTokenizer } from '../internal/tokenize'
+import type { IndexDriver } from '../types'
+import { intersectAll, levenshteinDistance } from '../internal/search'
+import { validateString } from '../internal/value'
 
 type TokenOperator = 'and' | 'or'
 
@@ -24,7 +24,7 @@ type TextCondition = {
     fuzzy?: string | FuzzySpec
 }
 
-export class TextIndex<T> implements IIndex<T> {
+export class TextIndex<T> implements IndexDriver<T> {
     readonly type = 'text'
     readonly config: IndexDefinition<T>
 

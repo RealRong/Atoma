@@ -3,6 +3,7 @@ ATOMA 核心层协议与约束（稳定版）
 目的
 - 固化核心层内部协议，作为 plugin 扩展与维护的基线
 - 明确哪些内容是“稳定不变”的，哪些可扩展
+- 在“无兼容负担”前提下，直接收敛到最优架构
 
 适用范围
 - atoma-core / atoma-runtime / atoma-client / atoma-react
@@ -41,7 +42,7 @@ ATOMA 核心层协议与约束（稳定版）
 - `subscribe(listener): () => void`
 - `commit({ before, after, changedIds? })`
 - `applyWriteback(args, options?)`
-- `indexes?: StoreIndexesLike | null`
+- `indexes: IndexesLike<T> | null`
 - `matcher?: QueryMatcherOptions`
 
 约束
@@ -62,7 +63,7 @@ ATOMA 核心层协议与约束（稳定版）
 - `name`
 - `cacheKey`
 - `source { getSnapshot, subscribe }`
-- `indexes?`
+- `indexes`
 - `matcher?`
 - `relations?`
 - `ensureStore`
@@ -104,7 +105,8 @@ ATOMA 核心层协议与约束（稳定版）
 
 稳定规则
 - StoreHandle / StoreState / StoreBindings / Runtime 的语义保持稳定
-- 协议演进仅允许“向后兼容”
+- 允许在明确收益下进行破坏式重构，但必须保持职责边界清晰
+- 默认不保留兼容层、不引入过渡别名
 
 禁止规则
 - 禁止新增 handle 字段
@@ -117,7 +119,7 @@ ATOMA 核心层协议与约束（稳定版）
 如需修改协议：
 1) 先在文档中说明变更意图
 2) 说明对 plugin/react/runtime 的影响
-3) 确保向后兼容（如必须破坏，需明确版本计划）
+3) 给出一步到位目标结构与迁移顺序（不保留兼容路径）
 
 
 8. 快速检查清单（日常维护）
@@ -126,3 +128,4 @@ ATOMA 核心层协议与约束（稳定版）
 - 是否绕过 bindings 直接访问内部状态？（禁止）
 - 是否将策略判断移到了 plugin？（禁止）
 - 是否在 StoreState 中嵌入业务逻辑？（禁止）
+- 是否引入了兼容层/别名导出？（默认禁止）

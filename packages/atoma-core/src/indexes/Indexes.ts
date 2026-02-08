@@ -1,10 +1,10 @@
 import type { Patch } from 'immer'
 import type { CandidateResult, FilterExpr, IndexDefinition, IndexStats } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { IIndex } from './base/IIndex'
-import { createIndex } from './factory/createIndex'
-import { collectCandidatesWithPlan, type IndexQueryPlan } from './planner/IndexQueryPlanner'
-import { IndexDeltaUpdater } from './updater/IndexDeltaUpdater'
+import { buildIndex } from './build'
+import { planCandidates } from './plan'
+import { IndexSync } from './IndexSync'
+import type { IndexDriver, IndexQueryPlan } from './types'
 
 function readEntityId<T>(item: T): EntityId {
     return (item as { id: EntityId }).id
@@ -14,18 +14,18 @@ function readFieldValue<T>(item: T, field: string): unknown {
     return (item as Record<string, unknown>)[field]
 }
 
-export class StoreIndexes<T> {
-    private readonly indexes = new Map<string, IIndex<T>>()
+export class Indexes<T> {
+    private readonly indexes = new Map<string, IndexDriver<T>>()
     private lastQueryPlan: IndexQueryPlan | undefined
 
-    constructor(defs: Array<IndexDefinition<T>>) {
+    constructor(definitions: Array<IndexDefinition<T>>) {
         const seen = new Set<string>()
-        defs.forEach(def => {
-            if (seen.has(def.field)) {
-                throw new Error(`[Atoma Index] Duplicate index field "${def.field}".`)
+        definitions.forEach(definition => {
+            if (seen.has(definition.field)) {
+                throw new Error(`[Atoma Index] Duplicate index field "${definition.field}".`)
             }
-            seen.add(def.field)
-            this.indexes.set(def.field, createIndex(def))
+            seen.add(definition.field)
+            this.indexes.set(definition.field, buildIndex(definition))
         })
     }
 
@@ -58,7 +58,7 @@ export class StoreIndexes<T> {
     }
 
     collectCandidates(filter?: FilterExpr): CandidateResult {
-        const planned = collectCandidatesWithPlan({ indexes: this.indexes, filter })
+        const planned = planCandidates({ indexes: this.indexes, filter })
         this.lastQueryPlan = planned.plan
         return planned.result
     }
@@ -86,7 +86,7 @@ export class StoreIndexes<T> {
     }
 
     applyPatches(before: Map<EntityId, T>, after: Map<EntityId, T>, patches: Patch[]) {
-        IndexDeltaUpdater.applyPatches({
+        IndexSync.applyPatches({
             before,
             after,
             patches,
@@ -98,7 +98,7 @@ export class StoreIndexes<T> {
     }
 
     applyChangedIds(before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: Iterable<EntityId>) {
-        IndexDeltaUpdater.applyChangedIds({
+        IndexSync.applyChangedIds({
             before,
             after,
             changedIds,
@@ -110,7 +110,7 @@ export class StoreIndexes<T> {
     }
 
     applyMapDiff(before: Map<EntityId, T>, after: Map<EntityId, T>) {
-        IndexDeltaUpdater.applyMapDiff({
+        IndexSync.applyMapDiff({
             before,
             after,
             handler: {

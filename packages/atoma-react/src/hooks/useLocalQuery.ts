@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { stableStringify } from 'atoma-shared'
 import type { Entity, Query as StoreQuery, StoreApi } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { StoreState } from 'atoma-types/runtime'
 import { getStoreBindings } from 'atoma-types/internal'
 
 /**
@@ -49,16 +49,24 @@ export function useLocalQuery<T extends Entity>(
             throw new Error('[Atoma] useLocalQuery: store 缺少 RuntimeEngine 绑定，无法执行 query')
         }
 
-        const mapRef = new Map<EntityId, T>()
+        const mapRef = new Map<T['id'], T>()
         data.forEach(item => {
             mapRef.set(item.id, item)
         })
 
-        return engine.query.evaluate({
-            mapRef,
-            query,
+        const queryState: StoreState<T> = {
+            getSnapshot: () => mapRef,
+            setSnapshot: () => {},
+            subscribe: () => () => {},
             indexes: null,
-            matcher
+            matcher,
+            commit: () => {},
+            applyWriteback: () => {}
+        }
+
+        return engine.query.evaluate({
+            state: queryState,
+            query
         }).data as T[]
     }, [data, engine, query, queryKey, matcher])
 }

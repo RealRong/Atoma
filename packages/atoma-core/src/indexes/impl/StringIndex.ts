@@ -1,10 +1,10 @@
 import type { IndexDefinition } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CandidateResult, IndexStats } from 'atoma-types/core'
-import { validateString } from '../validators'
-import { IIndex } from '../base/IIndex'
+import { validateString } from '../internal/value'
+import type { IndexDriver } from '../types'
 
-export class StringIndex<T> implements IIndex<T> {
+export class StringIndex<T> implements IndexDriver<T> {
     readonly type = 'string'
     readonly config: IndexDefinition<T>
 

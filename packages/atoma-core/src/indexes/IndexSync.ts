@@ -1,17 +1,17 @@
 import type { Patch } from 'immer'
 import type { EntityId } from 'atoma-types/protocol'
 
-type UpdateHandler<T> = {
+type SyncHandler<T> = {
     add: (item: T) => void
     remove: (item?: T) => void
 }
 
-export class IndexDeltaUpdater {
+export class IndexSync {
     static applyPatches<T>(args: {
         before: Map<EntityId, T>
         after: Map<EntityId, T>
         patches: Patch[]
-        handler: UpdateHandler<T>
+        handler: SyncHandler<T>
     }) {
         const changedIds = new Set<EntityId>()
 
@@ -33,7 +33,7 @@ export class IndexDeltaUpdater {
         before: Map<EntityId, T>
         after: Map<EntityId, T>
         changedIds: Iterable<EntityId>
-        handler: UpdateHandler<T>
+        handler: SyncHandler<T>
     }) {
         for (const id of args.changedIds) {
             const prev = args.before.get(id)
@@ -47,7 +47,7 @@ export class IndexDeltaUpdater {
     static applyMapDiff<T>(args: {
         before: Map<EntityId, T>
         after: Map<EntityId, T>
-        handler: UpdateHandler<T>
+        handler: SyncHandler<T>
     }) {
         args.before.forEach((prevItem, id) => {
             const nextItem = args.after.get(id)

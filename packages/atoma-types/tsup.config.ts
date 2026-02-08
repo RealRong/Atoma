@@ -2,7 +2,6 @@ import { defineConfig } from 'tsup'
 
 export default defineConfig({
     entry: {
-        index: 'src/index.ts',
         shared: 'src/shared/index.ts',
         core: 'src/core/index.ts',
         runtime: 'src/runtime/index.ts',
