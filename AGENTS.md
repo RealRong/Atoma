@@ -50,7 +50,7 @@
 ### 2.1 File Naming
 
 - If a file is class-led (its primary export is a class), use **PascalCase** file name.
-  - Example: `Indexes.ts`, `IndexSync.ts`, `TextIndex.ts`.
+  - Example: `Indexes.ts`, `NumberDateIndex.ts`, `TextIndex.ts`.
 - If a file is function/helper/type-led, use **camelCase** file name.
   - Example: `build.ts`, `plan.ts`, `tokenize.ts`, `types.ts`.
 - Keep file names short; prioritize domain semantics; avoid redundant suffixes.

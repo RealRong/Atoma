@@ -19,23 +19,35 @@ type WhereCondition = {
 
 type WhereMap = Record<string, WhereCondition>
 
+const STRING_LIKE_KEYS: Array<keyof WhereCondition> = ['startsWith', 'endsWith', 'contains']
+
+const WHERE_KEY_BY_OP = {
+    eq: 'eq',
+    in: 'in',
+    gt: 'gt',
+    gte: 'gte',
+    lt: 'lt',
+    lte: 'lte',
+    startsWith: 'startsWith',
+    endsWith: 'endsWith',
+    contains: 'contains'
+} as const
+
+type WhereSimpleOp = keyof typeof WHERE_KEY_BY_OP
+type WhereSimpleFilter = Extract<FilterExpr, { op: WhereSimpleOp }>
+
+function isWhereSimpleFilter(filter: FilterExpr): filter is WhereSimpleFilter {
+    return filter.op in WHERE_KEY_BY_OP
+}
+
 export function planCandidates<T>(args: {
     indexes: Map<string, IndexDriver<T>>
     filter?: FilterExpr
 }): { result: CandidateResult; plan: IndexQueryPlan } {
     const where = filterToWhere(args.filter)
-    if (!where) {
-        return {
-            result: { kind: 'unsupported' },
-            plan: {
-                timestamp: Date.now(),
-                whereFields: [],
-                perField: [],
-                result: { kind: 'unsupported' }
-            }
-        }
-    }
+    if (!where) return buildUnsupportedResult([])
 
+    const whereFields = Object.keys(where)
     const candidateSets: Set<EntityId>[] = []
     let hasUnsupportedCondition = false
     let exactness: CandidateExactness = 'exact'
@@ -75,33 +87,21 @@ export function planCandidates<T>(args: {
     })
 
     if (!candidateSets.length) {
-        return {
-            result: { kind: 'unsupported' },
-            plan: {
-                timestamp: Date.now(),
-                whereFields: Object.keys(where),
-                perField,
-                result: { kind: 'unsupported' }
-            }
-        }
+        return buildUnsupportedResult(whereFields, perField)
     }
 
     if (hasUnsupportedCondition) exactness = 'superset'
 
     const ids = intersectAll(candidateSets)
-    const result: CandidateResult = ids.size === 0
-        ? { kind: 'empty' }
-        : { kind: 'candidates', ids, exactness }
+    const result = toCandidateResult(ids, exactness)
 
     return {
         result,
         plan: {
             timestamp: Date.now(),
-            whereFields: Object.keys(where),
+            whereFields,
             perField,
-            result: result.kind === 'candidates'
-                ? { kind: 'candidates', exactness: result.exactness, candidates: result.ids.size }
-                : { kind: result.kind }
+            result: toPlanResult(result)
         }
     }
 }
@@ -127,38 +127,30 @@ function filterToWhere(filter?: FilterExpr): WhereMap | undefined {
         return Object.keys(output).length ? output : undefined
     }
 
-    switch (filter.op) {
-        case 'eq':
-            return { [filter.field]: { eq: filter.value } }
-        case 'in':
-            return { [filter.field]: { in: filter.values } }
-        case 'gt':
-            return { [filter.field]: { gt: filter.value } }
-        case 'gte':
-            return { [filter.field]: { gte: filter.value } }
-        case 'lt':
-            return { [filter.field]: { lt: filter.value } }
-        case 'lte':
-            return { [filter.field]: { lte: filter.value } }
-        case 'startsWith':
-            return { [filter.field]: { startsWith: filter.value } }
-        case 'endsWith':
-            return { [filter.field]: { endsWith: filter.value } }
-        case 'contains':
-            return { [filter.field]: { contains: filter.value } }
-        case 'text':
-            if (filter.mode === 'fuzzy') {
-                return { [filter.field]: { fuzzy: { q: filter.query, distance: filter.distance } } }
-            }
-            return { [filter.field]: { match: { q: filter.query } } }
-        default:
-            return undefined
+    if (isWhereSimpleFilter(filter)) {
+        const key = WHERE_KEY_BY_OP[filter.op]
+        if (filter.op === 'in') {
+            return singleCondition(filter.field, key, filter.values)
+        }
+        return singleCondition(filter.field, key, filter.value)
     }
+
+    if (filter.op === 'text') {
+        if (filter.mode === 'fuzzy') {
+            return singleCondition(filter.field, 'fuzzy', { q: filter.query, distance: filter.distance })
+        }
+        return singleCondition(filter.field, 'match', { q: filter.query })
+    }
+
+    return undefined
 }
 
-function assignWhereCondition(target: WhereCondition, key: keyof WhereCondition, value: unknown) {
-    const targetRecord = target as Record<string, unknown>
-    targetRecord[key] = value
+function singleCondition(field: string, key: keyof WhereCondition, value: unknown): WhereMap {
+    return {
+        [field]: {
+            [key]: value
+        } as WhereCondition
+    }
 }
 
 function mergeFieldCondition(existing: WhereCondition | undefined, incoming: WhereCondition): WhereCondition | undefined {
@@ -172,23 +164,20 @@ function mergeFieldCondition(existing: WhereCondition | undefined, incoming: Whe
             if (!Object.is(current, value)) return undefined
             continue
         }
-        assignWhereCondition(merged, key, value)
+        ;(merged as Record<string, unknown>)[key] = value
     }
 
     const keys = Object.keys(merged)
     if (keys.length <= 1) return merged
 
-    const hasEq = merged.eq !== undefined
-    const hasIn = merged.in !== undefined
-    if (hasEq || hasIn) return undefined
+    if (merged.eq !== undefined || merged.in !== undefined) return undefined
 
     if (merged.match !== undefined || merged.fuzzy !== undefined) {
         return keys.length === 1 ? merged : undefined
     }
 
     if (merged.startsWith !== undefined || merged.endsWith !== undefined || merged.contains !== undefined) {
-        const allowed = ['startsWith', 'endsWith', 'contains']
-        return keys.every(key => allowed.includes(key)) && keys.length === 1
+        return keys.every(key => STRING_LIKE_KEYS.includes(key as keyof WhereCondition)) && keys.length === 1
             ? merged
             : undefined
     }
@@ -270,4 +259,31 @@ function compareComparable(left: unknown, right: unknown): number | null {
     }
 
     return null
+}
+
+function buildUnsupportedResult(
+    whereFields: string[],
+    perField: IndexQueryPlan['perField'] = []
+): { result: CandidateResult; plan: IndexQueryPlan } {
+    return {
+        result: { kind: 'unsupported' },
+        plan: {
+            timestamp: Date.now(),
+            whereFields,
+            perField,
+            result: { kind: 'unsupported' }
+        }
+    }
+}
+
+function toCandidateResult(ids: Set<EntityId>, exactness: CandidateExactness): CandidateResult {
+    return ids.size === 0
+        ? { kind: 'empty' }
+        : { kind: 'candidates', ids, exactness }
+}
+
+function toPlanResult(result: CandidateResult): IndexQueryPlan['result'] {
+    return result.kind === 'candidates'
+        ? { kind: 'candidates', exactness: result.exactness, candidates: result.ids.size }
+        : { kind: result.kind }
 }

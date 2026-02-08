@@ -1,9 +1,11 @@
 import type { Patch } from 'immer'
 import type { CandidateResult, FilterExpr, IndexDefinition, IndexStats } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { buildIndex } from './build'
+import { NumberDateIndex } from './impl/NumberDateIndex'
+import { StringIndex } from './impl/StringIndex'
+import { SubstringIndex } from './impl/SubstringIndex'
+import { TextIndex } from './impl/TextIndex'
 import { planCandidates } from './plan'
-import { IndexSync } from './IndexSync'
 import type { IndexDriver, IndexQueryPlan } from './types'
 
 function readEntityId<T>(item: T): EntityId {
@@ -20,12 +22,34 @@ export class Indexes<T> {
 
     constructor(definitions: Array<IndexDefinition<T>>) {
         const seen = new Set<string>()
+
         definitions.forEach(definition => {
             if (seen.has(definition.field)) {
                 throw new Error(`[Atoma Index] Duplicate index field "${definition.field}".`)
             }
             seen.add(definition.field)
-            this.indexes.set(definition.field, buildIndex(definition))
+
+            const indexType = definition.type
+            switch (indexType) {
+                case 'number':
+                case 'date':
+                    this.indexes.set(
+                        definition.field,
+                        new NumberDateIndex<T>(definition as IndexDefinition<T> & { type: 'number' | 'date' })
+                    )
+                    return
+                case 'string':
+                    this.indexes.set(definition.field, new StringIndex<T>(definition))
+                    return
+                case 'substring':
+                    this.indexes.set(definition.field, new SubstringIndex<T>(definition))
+                    return
+                case 'text':
+                    this.indexes.set(definition.field, new TextIndex<T>(definition))
+                    return
+                default:
+                    throw new Error(`[Atoma Index] Unsupported index type "${String(indexType)}".`)
+            }
         })
     }
 
@@ -86,36 +110,49 @@ export class Indexes<T> {
     }
 
     applyPatches(before: Map<EntityId, T>, after: Map<EntityId, T>, patches: Patch[]) {
-        IndexSync.applyPatches({
-            before,
-            after,
-            patches,
-            handler: {
-                add: (item) => this.add(item),
-                remove: (item) => this.remove(item)
-            }
+        const changedIds = new Set<EntityId>()
+
+        patches.forEach(patch => {
+            const path = patch.path
+            if (!Array.isArray(path) || path.length < 1) return
+            changedIds.add(path[0] as EntityId)
+        })
+
+        changedIds.forEach(id => {
+            const prev = before.get(id)
+            const next = after.get(id)
+            if (prev) this.remove(prev)
+            if (next) this.add(next)
         })
     }
 
     applyChangedIds(before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: Iterable<EntityId>) {
-        IndexSync.applyChangedIds({
-            before,
-            after,
-            changedIds,
-            handler: {
-                add: (item) => this.add(item),
-                remove: (item) => this.remove(item)
-            }
-        })
+        for (const id of changedIds) {
+            const prev = before.get(id)
+            const next = after.get(id)
+            if (prev === next) continue
+            if (prev) this.remove(prev)
+            if (next) this.add(next)
+        }
     }
 
     applyMapDiff(before: Map<EntityId, T>, after: Map<EntityId, T>) {
-        IndexSync.applyMapDiff({
-            before,
-            after,
-            handler: {
-                add: (item) => this.add(item),
-                remove: (item) => this.remove(item)
+        before.forEach((prevItem, id) => {
+            const nextItem = after.get(id)
+            if (!nextItem) {
+                this.remove(prevItem)
+                return
+            }
+
+            if (nextItem !== prevItem) {
+                this.remove(prevItem)
+                this.add(nextItem)
+            }
+        })
+
+        after.forEach((nextItem, id) => {
+            if (!before.has(id)) {
+                this.add(nextItem)
             }
         })
     }

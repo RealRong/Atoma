@@ -39,7 +39,7 @@
 
 ### 2.2 硬规则（必须满足）
 
-- **类名必须使用 PascalCase**（如 `Indexes`、`TextIndex`、`IndexSync`）。
+- **类名必须使用 PascalCase**（如 `Indexes`、`TextIndex`、`NumberDateIndex`）。
 - **API 命名必须短而清晰**，避免路径语义重复前缀。
 - **职责分离必须可追踪**：
   - core：算法与数据结构
@@ -71,16 +71,14 @@ indexes/
 ```text
 indexes/
 ├─ index.ts                 # 公开导出（最小面）
-├─ indexes.ts               # 主索引容器（类：Indexes）
+├─ Indexes.ts               # 主索引容器（类：Indexes）
 ├─ types.ts                 # IndexDriver + 条件类型 + 计划类型
-├─ build.ts                 # 原 createIndex（不做入口 schema 校验）
 ├─ plan.ts                  # 原 IndexQueryPlanner
-├─ sync.ts                  # 原 IndexDeltaUpdater（类：IndexSync）
 ├─ impl/
-│  ├─ numberDate.ts
-│  ├─ string.ts
-│  ├─ substring.ts
-│  └─ text.ts
+│  ├─ NumberDateIndex.ts
+│  ├─ StringIndex.ts
+│  ├─ SubstringIndex.ts
+│  └─ TextIndex.ts
 └─ internal/
    ├─ tokenize.ts           # 原 tokenizer.ts
    ├─ search.ts             # 原 utils.ts（二分/编辑距离/交集）
@@ -90,7 +88,7 @@ indexes/
 说明：
 - 删除 `base/`、`factory/`、`planner/`、`updater/`。
 - 顶层仅保留“公开 API + 核心编排文件”，其余下沉到 `impl/internal`。
-- 文件名统一 camelCase，类名统一 PascalCase。
+- 类主导文件使用 PascalCase，函数/工具/类型文件使用 camelCase。
 
 ---
 
@@ -102,12 +100,12 @@ indexes/
 | `IIndex` | `IndexDriver` | 接口语义从“前缀习惯”改为“职责语义” |
 | `createIndex` | `buildIndex` | 与 `build.ts` 对齐，工厂语义清晰 |
 | `collectCandidatesWithPlan` | `planCandidates` | 动词优先，缩短且保留语义 |
-| `IndexDeltaUpdater` | `IndexSync` | 直观表达差量同步职责 |
+| `IndexDeltaUpdater` | `Indexes.apply*`（内联） | 差量同步逻辑内聚到索引容器，减少不必要抽象 |
 | `tokenizer.ts` | `internal/tokenize.ts` | 从名词工具转为动作语义，且内聚 |
 | `validators.ts` | `internal/value.ts` | 从入口校验语义收敛到值规整语义 |
 
 公开导出建议：
-- `atoma-core/indexes` 仅导出：`Indexes`、`buildIndex`、`planCandidates`、`IndexSync` 及必要类型。
+- `atoma-core/indexes` 仅导出：`Indexes`、`buildIndex`、`planCandidates` 及必要类型。
 - `impl/internal` 不直接对外暴露。
 
 ---
@@ -191,8 +189,9 @@ indexes/
 - `IIndex` 已收敛到统一类型文件并重命名为 `IndexDriver`。
 - `tokenizer/utils/validators` 已内聚到 `internal/`。
 - core 不再在 `buildIndex` 执行入口 schema 校验。
+- 差量同步逻辑已内联到 `Indexes`，不保留独立 `IndexSync` 抽象。
 - `indexes` 公开 API 命名已短化并语义清晰。
-- 类名全部符合 PascalCase，文件名全部符合 camelCase。
+- 类名全部符合 PascalCase，文件名遵循“类文件 PascalCase / 非类文件 camelCase”。
 - 全仓 `pnpm typecheck` 通过。
 
 ---
