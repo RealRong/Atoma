@@ -1,14 +1,51 @@
-import type { RuntimeEngine } from 'atoma-types/runtime'
-import { CoreIndexEngine } from './core/CoreIndexEngine'
-import { CoreMutationEngine } from './core/CoreMutationEngine'
-import { CoreOperationEngine } from './core/CoreOperationEngine'
-import { CoreQueryEngine } from './core/CoreQueryEngine'
-import { CoreRelationEngine } from './core/CoreRelationEngine'
+import type { RuntimeEngine, StoreState } from 'atoma-types/runtime'
+import { IndexDefinition } from 'atoma-types/core'
+import type { Entity, Query } from 'atoma-types/core'
+import type { IndexesLike } from 'atoma-types/core'
+import { Indexes } from 'atoma-core/indexes'
+import { init, merge, addMany, removeMany, preserveRef, upsertItems, writeback } from 'atoma-core/store'
+import { createOperationContext } from 'atoma-core/operation'
+import { runQuery } from 'atoma-core/query'
+import { projectRelationsBatch } from 'atoma-core/relations'
+import { prefetchRelations } from '../relations/prefetch'
 
 export class CoreRuntimeEngine implements RuntimeEngine {
-    readonly index = new CoreIndexEngine()
-    readonly query = new CoreQueryEngine()
-    readonly relation = new CoreRelationEngine()
-    readonly mutation = new CoreMutationEngine()
-    readonly operation = new CoreOperationEngine()
+    readonly index = {
+        create: <T extends Entity>(definitions?: IndexDefinition<T>[] | null): IndexesLike<T> | null => {
+            if (!definitions?.length) return null
+            return new Indexes<T>(definitions)
+        }
+    }
+
+    readonly query = {
+        evaluate: <T extends Entity>({state, query}: {
+            state: StoreState<T>
+            query: Query<T>
+        }) => {
+            return runQuery({
+                snapshot: state.getSnapshot(),
+                query,
+                indexes: state.indexes
+            })
+        }
+    }
+
+    readonly relation = {
+        project: projectRelationsBatch,
+        prefetch: prefetchRelations
+    }
+
+    readonly mutation = {
+        init,
+        merge,
+        addMany,
+        removeMany,
+        preserveRef,
+        upsertItems,
+        writeback
+    }
+
+    readonly operation = {
+        createContext: createOperationContext
+    }
 }

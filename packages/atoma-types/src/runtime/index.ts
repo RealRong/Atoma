@@ -9,7 +9,7 @@ export type {
     StoreHandle,
     DataProcessor
 } from './api'
-export type { StoreChangedIds, StoreListener, StoreSnapshot, StoreState } from './storeState'
+export type { StoreListener, StoreSnapshot, StoreState } from './storeState'
 export type { RuntimeSchema, RuntimeStoreSchema } from './schema'
 export type {
     RuntimeHooks,

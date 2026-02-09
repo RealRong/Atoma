@@ -1,7 +1,6 @@
 import type {
     Entity,
     StoreWritebackArgs,
-    StoreWritebackOptions,
     StoreWritebackResult
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
@@ -13,8 +12,7 @@ type VersionedEntity = Entity & {
 
 export function writeback<T extends Entity>(
     before: Map<EntityId, T>,
-    args: StoreWritebackArgs<T>,
-    options?: StoreWritebackOptions<T>
+    args: StoreWritebackArgs<T>
 ): StoreWritebackResult<T> | null {
     const upserts = args.upserts ?? []
     const deletes = args.deletes ?? []
@@ -22,7 +20,6 @@ export function writeback<T extends Entity>(
 
     if (!upserts.length && !deletes.length && !versionUpdates.length) return null
 
-    const preserve = options?.preserve ?? preserveRef
     let after: Map<EntityId, T> = before
     let changed = false
     const changedIds = new Set<EntityId>()
@@ -49,7 +46,7 @@ export function writeback<T extends Entity>(
 
         const existed = after.has(id)
         const existing = after.get(id)
-        const next = existing ? preserve(existing, item) : item
+        const next = existing ? preserveRef(existing, item) : item
         if (existed && existing === next) continue
 
         ensureWritable().set(id, next)

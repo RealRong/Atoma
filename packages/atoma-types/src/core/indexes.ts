@@ -29,5 +29,4 @@ export type IndexesLike<T> = Readonly<{
     getLastQueryPlan: () => any
     applyPatches: (before: Map<EntityId, T>, after: Map<EntityId, T>, patches: Patch[]) => void
     applyChangedIds: (before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: Iterable<EntityId>) => void
-    applyMapDiff: (before: Map<EntityId, T>, after: Map<EntityId, T>) => void
 }>

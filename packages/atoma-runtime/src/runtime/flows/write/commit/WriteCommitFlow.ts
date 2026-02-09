@@ -22,9 +22,8 @@ function applyIntentsOptimistically<T extends Entity>(
     baseState: Map<EntityId, T>,
     intents: Array<WriteIntent<T>>,
     preserve: (existing: T | undefined, incoming: T) => T
-): { afterState: Map<EntityId, T>; changedIds: Set<EntityId> } {
+): { afterState: Map<EntityId, T> } {
     let nextState = baseState
-    const changedIds = new Set<EntityId>()
 
     const ensureMutableState = () => {
         if (nextState === baseState) {
@@ -39,14 +38,12 @@ function applyIntentsOptimistically<T extends Entity>(
         const preserved = preserve(current, value)
         if (currentState.has(id) && current === preserved) return
         ensureMutableState().set(id, preserved)
-        changedIds.add(id)
     }
 
     const remove = (id: EntityId) => {
         const currentState = nextState === baseState ? baseState : nextState
         if (!currentState.has(id)) return
         ensureMutableState().delete(id)
-        changedIds.add(id)
     }
 
     for (const intent of intents) {
@@ -63,7 +60,7 @@ function applyIntentsOptimistically<T extends Entity>(
         }
     }
 
-    return { afterState: nextState, changedIds }
+    return { afterState: nextState }
 }
 
 function applyOptimisticState<T extends Entity>(args: {
@@ -78,21 +75,19 @@ function applyOptimisticState<T extends Entity>(args: {
 
     const optimistic = (shouldOptimistic && intents.length)
         ? applyIntentsOptimistically(beforeState, intents, preserve)
-        : { afterState: beforeState, changedIds: new Set<EntityId>() }
+        : { afterState: beforeState }
 
-    const { afterState, changedIds } = optimistic
-    if (afterState !== beforeState && changedIds.size) {
+    const { afterState } = optimistic
+    if (afterState !== beforeState) {
         handle.state.commit({
             before: beforeState,
-            after: afterState,
-            changedIds
+            after: afterState
         })
     }
 
     return {
         beforeState,
-        afterState,
-        changedIds
+        afterState
     }
 }
 
@@ -101,11 +96,10 @@ function rollbackOptimisticState<T extends Entity>(args: {
     optimisticState: OptimisticState<T>
 }) {
     const { handle, optimisticState } = args
-    if (optimisticState.afterState !== optimisticState.beforeState && optimisticState.changedIds.size) {
+    if (optimisticState.afterState !== optimisticState.beforeState) {
         handle.state.commit({
             before: optimisticState.afterState,
-            after: optimisticState.beforeState,
-            changedIds: optimisticState.changedIds
+            after: optimisticState.beforeState
         })
     }
 }

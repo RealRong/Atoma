@@ -27,44 +27,15 @@ export class ReadFlow implements RuntimeRead {
         return output
     }
 
-    private collectChangedIdsForItems = <T extends Entity>(before: Map<EntityId, T>, items: T[]): Set<EntityId> => {
-        const changedIds = new Set<EntityId>()
-        for (const item of items) {
-            const id = item.id
-            if (!before.has(id) || before.get(id) !== item) {
-                changedIds.add(id)
-            }
-        }
-        return changedIds
-    }
-
     private applyQueryWriteback = <T extends Entity>(handle: StoreHandle<T>, remote: T[]): T[] => {
         const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
-        const changedIds = new Set<EntityId>()
-        let next: Map<EntityId, T> | null = null
-        const processed: T[] = new Array(remote.length)
+        const result = this.runtime.engine.mutation.upsertItems(existingMap, remote)
 
-        for (let i = 0; i < remote.length; i++) {
-            const item = remote[i]
-            const id = item.id
-            const existing = existingMap.get(id)
-            const preserved = this.runtime.engine.mutation.preserveRef(existing, item)
-            processed[i] = preserved
-            if (existing === preserved) continue
-            changedIds.add(id)
-            if (!next) next = new Map(existingMap)
-            next.set(id, preserved)
+        if (result.after !== existingMap) {
+            handle.state.commit({ before: existingMap, after: result.after })
         }
 
-        if (next && changedIds.size) {
-            handle.state.commit({
-                before: existingMap,
-                after: next,
-                changedIds
-            })
-        }
-
-        return processed
+        return result.items
     }
 
     query = async <T extends Entity>(handle: StoreHandle<T>, input: StoreQuery<T>): Promise<QueryResult<T>> => {
@@ -169,8 +140,7 @@ export class ReadFlow implements RuntimeRead {
             if (cache && itemsToCache.length) {
                 const after = this.runtime.engine.mutation.addMany(itemsToCache, before)
                 if (after !== before) {
-                    const changedIds = this.collectChangedIdsForItems(before, itemsToCache)
-                    handle.state.commit({ before, after, changedIds })
+                    handle.state.commit({ before, after })
                 }
             }
 
@@ -249,11 +219,7 @@ export class ReadFlow implements RuntimeRead {
             ? this.runtime.engine.mutation.addMany(itemsToCache, withRemovals)
             : withRemovals
 
-        const changedIds = new Set<EntityId>(toRemove)
-        const upsertChangedIds = this.collectChangedIdsForItems(existingMap, itemsToCache)
-        upsertChangedIds.forEach(id => changedIds.add(id))
-
-        handle.state.commit({ before: existingMap, after: next, changedIds })
+        handle.state.commit({ before: existingMap, after: next })
         return output
     }
 }

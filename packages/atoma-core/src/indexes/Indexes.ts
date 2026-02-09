@@ -135,25 +135,4 @@ export class Indexes<T> {
             if (next) this.add(next)
         }
     }
-
-    applyMapDiff(before: Map<EntityId, T>, after: Map<EntityId, T>) {
-        before.forEach((prevItem, id) => {
-            const nextItem = after.get(id)
-            if (!nextItem) {
-                this.remove(prevItem)
-                return
-            }
-
-            if (nextItem !== prevItem) {
-                this.remove(prevItem)
-                this.add(nextItem)
-            }
-        })
-
-        after.forEach((nextItem, id) => {
-            if (!before.has(id)) {
-                this.add(nextItem)
-            }
-        })
-    }
 }

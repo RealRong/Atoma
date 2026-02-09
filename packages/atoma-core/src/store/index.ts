@@ -3,6 +3,7 @@ export {
     merge,
     addMany,
     removeMany,
-    preserveRef
+    preserveRef,
+    upsertItems
 } from './mutation'
 export { writeback } from './writeback'

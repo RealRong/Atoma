@@ -12,7 +12,3 @@ export type StoreWritebackResult<T extends Entity> = Readonly<{
     after: Map<EntityId, T>
     changedIds: Set<EntityId>
 }>
-
-export type StoreWritebackOptions<T extends Entity> = Readonly<{
-    preserve?: (existing: T, incoming: T) => T
-}>

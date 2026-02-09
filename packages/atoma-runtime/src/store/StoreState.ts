@@ -1,6 +1,6 @@
 import type { Entity, IndexesLike, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { RuntimeEngine, StoreChangedIds, StoreSnapshot, StoreState } from 'atoma-types/runtime'
+import type { RuntimeEngine, StoreSnapshot, StoreState } from 'atoma-types/runtime'
 
 export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T> {
     private snapshot: StoreSnapshot<T>
@@ -42,43 +42,58 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         }
     }
 
+    private collectChangedIds = (
+        before: Map<EntityId, T>,
+        after: Map<EntityId, T>
+    ): Set<EntityId> => {
+        const output = new Set<EntityId>()
+
+        before.forEach((beforeItem, id) => {
+            if (!after.has(id)) {
+                output.add(id)
+                return
+            }
+
+            if (after.get(id) !== beforeItem) {
+                output.add(id)
+            }
+        })
+
+        after.forEach((_afterItem, id) => {
+            if (!before.has(id)) {
+                output.add(id)
+            }
+        })
+
+        return output
+    }
+
     commit = (params: {
         before: Map<EntityId, T>
         after: Map<EntityId, T>
-        changedIds?: StoreChangedIds
     }) => {
-        const { before, after, changedIds } = params
+        const { before, after } = params
         const indexes = this.indexes
 
         if (before === after) return
 
-        if (changedIds) {
-            const size = Array.isArray(changedIds)
-                ? changedIds.length
-                : (changedIds as ReadonlySet<EntityId>).size
-            if (size === 0) return
-        }
+        const changedIds = this.collectChangedIds(before, after)
+        if (!changedIds.size) return
 
-        if (changedIds) {
-            indexes?.applyChangedIds(before, after, changedIds)
-        } else {
-            indexes?.applyMapDiff(before, after)
-        }
+        indexes?.applyChangedIds(before, after, changedIds)
 
         this.snapshot = after
         this.notifyListeners()
     }
 
-    applyWriteback = (args: StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {
+    applyWriteback = (args: StoreWritebackArgs<T>) => {
         const before = this.snapshot as Map<EntityId, T>
-        const preserve = options?.preserve ?? this.engine.mutation.preserveRef
-        const result = this.engine.mutation.writeback(before, args, { preserve })
+        const result = this.engine.mutation.writeback(before, args)
         if (!result) return
 
         this.commit({
             before: result.before,
-            after: result.after,
-            changedIds: result.changedIds
+            after: result.after
         })
     }
 }

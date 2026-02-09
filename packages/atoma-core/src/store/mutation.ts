@@ -119,3 +119,38 @@ export function preserveRef<T>(existing: T | undefined, incoming: T): T {
 
     return existing
 }
+
+export function upsertItems<T extends { id: EntityId }>(
+    before: Map<EntityId, T>,
+    items: ReadonlyArray<T>
+): { after: Map<EntityId, T>; items: T[] } {
+    let after = before
+    let changed = false
+
+    const output: T[] = new Array(items.length)
+
+    const ensureWritable = () => {
+        if (!changed) {
+            after = new Map(before)
+            changed = true
+        }
+        return after
+    }
+
+    for (let index = 0; index < items.length; index++) {
+        const item = items[index]
+        const id = item.id
+        const existing = before.get(id)
+        const preserved = preserveRef(existing, item)
+        output[index] = preserved
+
+        if (existing === preserved) continue
+
+        ensureWritable().set(id, preserved)
+    }
+
+    return {
+        after,
+        items: output
+    }
+}

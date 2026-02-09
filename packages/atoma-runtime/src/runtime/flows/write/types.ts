@@ -5,7 +5,6 @@ import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
 export type OptimisticState<T extends Entity> = Readonly<{
     beforeState: Map<EntityId, T>
     afterState: Map<EntityId, T>
-    changedIds: Set<EntityId>
 }>
 
 export type PersistPlanEntry<T extends Entity> = Readonly<{
