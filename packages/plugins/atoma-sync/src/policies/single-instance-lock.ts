@@ -1,3 +1,4 @@
+import { createId } from 'atoma-shared'
 import { createKVStore } from '#sync/internal/kv-store'
 import { AbortError } from '#sync/internal/abort'
 import { computeBackoffDelayMs, resolveRetryBackoff } from '#sync/internal/backoff'
@@ -17,13 +18,10 @@ function parseLockRecord(raw: unknown): LockRecord | null {
 }
 
 function randomOwnerId(): string {
-    const cryptoAny = typeof crypto !== 'undefined' ? (crypto as any) : undefined
-    const randomUUID = cryptoAny && typeof cryptoAny.randomUUID === 'function' ? cryptoAny.randomUUID.bind(cryptoAny) : undefined
-    if (randomUUID) {
-        const id = randomUUID()
-        if (typeof id === 'string' && id) return id
-    }
-    return `sync_${Date.now()}_${Math.random().toString(16).slice(2)}`
+    return createId({
+        kind: 'replica',
+        prefix: 'sync'
+    })
 }
 
 export class SingleInstanceLock {

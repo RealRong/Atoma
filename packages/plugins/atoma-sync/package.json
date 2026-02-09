@@ -24,6 +24,7 @@
         "atoma-client": "workspace:*",
         "atoma-core": "workspace:*",
         "atoma-runtime": "workspace:*",
+        "atoma-shared": "workspace:*",
         "atoma-types": "workspace:*",
         "idb": "^8.0.3"
     }

@@ -1,10 +1,10 @@
 import {
-    applyWritebackToMap,
-    bulkAdd,
-    bulkRemove,
-    initBaseObject,
-    mergeForUpdate,
-    preserveReferenceShallow
+    addMany as coreAddMany,
+    init as coreInit,
+    merge as coreMerge,
+    preserveRef as corePreserveRef,
+    removeMany as coreRemoveMany,
+    writeback as coreWriteback
 } from 'atoma-core/store'
 import type {
     Entity,
@@ -18,23 +18,23 @@ import type { RuntimeMutation } from 'atoma-types/runtime'
 
 export class CoreMutationEngine implements RuntimeMutation {
     init = <T>(obj: Partial<T>, idGenerator?: () => EntityId): PartialWithId<T> => {
-        return initBaseObject(obj, idGenerator)
+        return coreInit(obj, idGenerator)
     }
 
     merge = <T>(base: PartialWithId<T>, patch: PartialWithId<T>): PartialWithId<T> => {
-        return mergeForUpdate(base, patch)
+        return coreMerge(base, patch)
     }
 
     addMany = <T>(items: PartialWithId<T>[], data: Map<EntityId, T>): Map<EntityId, T> => {
-        return bulkAdd(items, data)
+        return coreAddMany(items, data)
     }
 
     removeMany = <T>(ids: EntityId[], data: Map<EntityId, T>): Map<EntityId, T> => {
-        return bulkRemove(ids, data)
+        return coreRemoveMany(ids, data)
     }
 
     preserveRef = <T>(existing: T | undefined, incoming: T): T => {
-        return preserveReferenceShallow(existing, incoming)
+        return corePreserveRef(existing, incoming)
     }
 
     writeback = <T extends Entity>(
@@ -42,6 +42,6 @@ export class CoreMutationEngine implements RuntimeMutation {
         args: StoreWritebackArgs<T>,
         options?: StoreWritebackOptions<T>
     ): StoreWritebackResult<T> | null => {
-        return applyWritebackToMap(before, args, options)
+        return coreWriteback(before, args, options)
     }
 }

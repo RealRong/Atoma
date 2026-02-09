@@ -1,13 +1,11 @@
+import { createId } from 'atoma-shared'
 import { Observability } from 'atoma-observability'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import { createNoopLogger } from '../logger'
 import type { ObservabilityContext } from 'atoma-types/observability'
 
 function createDefaultRequestId() {
-    const cryptoAny = globalThis.crypto as any
-    const uuid = cryptoAny?.randomUUID?.()
-    if (typeof uuid === 'string' && uuid) return `r_${uuid}`
-    return `r_${Date.now()}_${Math.random().toString(16).slice(2)}`
+    return createId({ kind: 'request' })
 }
 
 export function createRuntimeFactory<Ctx>(args: {

@@ -60,6 +60,7 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
+        "atoma-shared": "workspace:*",
         "immer": "^10.1.1"
     }
 }

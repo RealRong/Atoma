@@ -35,6 +35,7 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
+        "atoma-shared": "workspace:*",
         "atoma-types": "workspace:*"
     },
     "peerDependencies": {

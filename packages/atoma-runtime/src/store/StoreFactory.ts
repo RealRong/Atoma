@@ -1,3 +1,4 @@
+import { createId } from 'atoma-shared'
 import type {
     Entity,
     IStore,
@@ -60,7 +61,9 @@ export class StoreFactory {
         const name = String(storeName)
         const storeSchema = (this.schema?.[name] ?? {}) as RuntimeStoreSchema<T>
 
-        const idGenerator = storeSchema.idGenerator ?? this.defaults?.idGenerator
+        const idGenerator = storeSchema.idGenerator
+            ?? this.defaults?.idGenerator
+            ?? (() => createId({ kind: 'entity', sortable: true, now: this.runtime.now }))
         const dataProcessor = this.mergeDataProcessor(this.dataProcessor as StoreDataProcessor<T> | undefined, storeSchema.dataProcessor)
 
         const relationsFactory = storeSchema.relations

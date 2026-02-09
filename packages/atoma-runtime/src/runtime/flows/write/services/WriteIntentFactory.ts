@@ -5,7 +5,8 @@ import type {
     PartialWithId,
     StoreOperationOptions,
     UpsertWriteOptions,
-    WriteIntent
+    WriteIntent,
+    WriteIntentOptions
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
@@ -16,7 +17,18 @@ import {
     resolveWriteBase,
     runBeforeSave
 } from '../utils/prepareWriteInput'
-import { buildUpsertIntentOptions } from '../utils/buildUpsertIntentOptions'
+
+function buildUpsertIntentOptions(options?: UpsertWriteOptions): WriteIntentOptions | undefined {
+    if (!options) return undefined
+
+    const out: WriteIntentOptions = {}
+    if (typeof options.merge === 'boolean') out.merge = options.merge
+    if (options.mode === 'strict' || options.mode === 'loose') {
+        out.upsert = { mode: options.mode }
+    }
+
+    return Object.keys(out).length ? out : undefined
+}
 
 export class WriteIntentFactory {
     private readonly runtime: CoreRuntime
@@ -124,7 +136,6 @@ export class WriteIntentFactory {
     prepareDeleteIntent = async <T extends Entity>(args: {
         handle: StoreHandle<T>
         id: EntityId
-        opContext: OperationContext
         options?: StoreOperationOptions
     }): Promise<{ intent: WriteIntent<T>; base: PartialWithId<T> }> => {
         const base = await resolveWriteBase(this.runtime, args.handle, args.id, args.options)

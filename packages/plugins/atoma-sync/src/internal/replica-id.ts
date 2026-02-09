@@ -1,14 +1,11 @@
+import { createId } from 'atoma-shared'
+
 function defaultReplicaId(now: () => number): string {
-    const cryptoAny = (globalThis as any)?.crypto
-    const uuid = cryptoAny?.randomUUID?.bind(cryptoAny)
-    if (typeof uuid === 'function') {
-        try {
-            return String(uuid())
-        } catch {
-            // ignore
-        }
-    }
-    return `${now().toString(36)}_${Math.random().toString(16).slice(2)}`
+    return createId({
+        kind: 'replica',
+        sortable: true,
+        now
+    })
 }
 
 const REPLICA_ID_STORAGE_KEY = 'atoma-sync:replicaId'

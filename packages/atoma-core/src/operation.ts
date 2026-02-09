@@ -1,37 +1,17 @@
+import { createActionId } from 'atoma-shared'
 import type { OperationContext, OperationOrigin } from 'atoma-types/core'
-
-type CryptoLike = {
-    randomUUID?: () => string
-}
-
-const createFallbackId = () =>
-    `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
-
-export const createActionId = (): string => {
-    const cryptoObject = (globalThis as { crypto?: CryptoLike }).crypto
-    const uuid = cryptoObject?.randomUUID
-
-    if (typeof uuid === 'function') {
-        try {
-            return String(uuid.call(cryptoObject))
-        } catch {
-            // ignore
-        }
-    }
-
-    return createFallbackId()
-}
 
 export type CreateOperationContextInput = Readonly<Partial<OperationContext>>
 
 export function createOperationContext(
     input?: CreateOperationContextInput,
-    options?: { defaultScope?: string; defaultOrigin?: OperationOrigin }
+    options?: { defaultScope?: string; defaultOrigin?: OperationOrigin; now?: () => number }
 ): OperationContext {
+    const now = options?.now ?? Date.now
     const scope = String(input?.scope ?? options?.defaultScope ?? 'default')
     const origin = (input?.origin ?? options?.defaultOrigin ?? 'user') as OperationOrigin
-    const actionId = input?.actionId ?? createActionId()
-    const timestamp = input?.timestamp ?? Date.now()
+    const actionId = input?.actionId ?? createActionId(now)
+    const timestamp = input?.timestamp ?? now()
 
     return {
         scope,

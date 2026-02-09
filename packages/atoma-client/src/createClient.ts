@@ -80,17 +80,6 @@ function ensureDevtoolsRegistry(capabilities: CapabilitiesRegistry): (() => void
     return capabilities.register(DEVTOOLS_REGISTRY_KEY, registry)
 }
 
-function createNotReadyIo(): RuntimeIo {
-    return {
-        executeOps: async () => {
-            throw new Error('[Atoma] io not ready')
-        },
-        query: async () => {
-            throw new Error('[Atoma] io not ready')
-        }
-    }
-}
-
 function safeDispose(dispose: (() => void) | undefined): void {
     if (typeof dispose !== 'function') return
     try {
@@ -250,12 +239,20 @@ export function createClient<
     })
 
     const pluginRegistry = new PluginRegistry()
+    const chains = createHandlerChains(pluginRegistry)
     const capabilities = new CapabilitiesRegistry()
     const runtime = new Runtime({
         schema: args.schema as RuntimeSchema,
-        io: createNotReadyIo()
+        io: {} as RuntimeIo
     })
 
+    runtime.io = new PluginRuntimeIo({
+        io: chains.io,
+        read: chains.read,
+        now: runtime.now,
+        clientId: runtime.id
+    })
+    
     const context: PluginContext = {
         clientId: runtime.id,
         capabilities,
@@ -282,14 +279,6 @@ export function createClient<
     }
 
     registerPluginHandlers(plugins, context, register)
-
-    const chains = createHandlerChains(pluginRegistry)
-    runtime.io = new PluginRuntimeIo({
-        io: chains.io,
-        read: chains.read,
-        now: runtime.now,
-        clientId: runtime.id
-    })
 
     const unregisterDirectStrategy = runtime.strategy.register('direct', {
         persist: async <T extends Entity>({ req }: { req: PersistRequest<T> }): Promise<PersistResult<T>> => {

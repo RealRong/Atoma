@@ -1,9 +1,12 @@
 import type { PartialWithId } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { defaultSnowflakeGenerator } from '../idGenerator'
 
 type EntityWithOptionalTimestamps = {
     createdAt?: unknown
+}
+
+type MutationTimeOptions = {
+    now?: () => number
 }
 
 const toObjectRecord = (value: unknown): Record<string, unknown> | null => {
@@ -11,30 +14,43 @@ const toObjectRecord = (value: unknown): Record<string, unknown> | null => {
     return value as Record<string, unknown>
 }
 
-export function initBaseObject<T>(obj: Partial<T>, idGenerator?: () => EntityId): PartialWithId<T> {
-    const generator = idGenerator || defaultSnowflakeGenerator
-    const now = Date.now()
+export function init<T>(
+    obj: Partial<T>,
+    idGenerator?: () => EntityId,
+    options?: MutationTimeOptions
+): PartialWithId<T> {
+    const nowMs = (options?.now ?? Date.now)()
     const base = obj as Partial<T> & { id?: EntityId }
+    const hasId = typeof base.id === 'string' && base.id.length > 0
+
+    if (!hasId && typeof idGenerator !== 'function') {
+        throw new Error('[Atoma] init: id missing and idGenerator is required')
+    }
 
     return {
         ...obj,
-        id: base.id || generator(),
-        updatedAt: now,
-        createdAt: now
+        id: hasId ? base.id : idGenerator!(),
+        updatedAt: nowMs,
+        createdAt: nowMs
     } as PartialWithId<T>
 }
 
-export function mergeForUpdate<T>(base: PartialWithId<T>, patch: PartialWithId<T>): PartialWithId<T> {
+export function merge<T>(
+    base: PartialWithId<T>,
+    patch: PartialWithId<T>,
+    options?: MutationTimeOptions
+): PartialWithId<T> {
+    const nowMs = (options?.now ?? Date.now)()
     const createdAt = (base as EntityWithOptionalTimestamps).createdAt
 
     return Object.assign({}, base, patch, {
-        updatedAt: Date.now(),
-        createdAt: typeof createdAt === 'number' ? createdAt : Date.now(),
+        updatedAt: nowMs,
+        createdAt: typeof createdAt === 'number' ? createdAt : nowMs,
         id: patch.id
     }) as PartialWithId<T>
 }
 
-export function bulkAdd<T>(items: PartialWithId<T>[], data: Map<EntityId, T>): Map<EntityId, T> {
+export function addMany<T>(items: PartialWithId<T>[], data: Map<EntityId, T>): Map<EntityId, T> {
     if (!items.length) return data
 
     let next = data
@@ -61,7 +77,7 @@ export function bulkAdd<T>(items: PartialWithId<T>[], data: Map<EntityId, T>): M
     return next
 }
 
-export function bulkRemove<T>(ids: EntityId[], data: Map<EntityId, T>): Map<EntityId, T> {
+export function removeMany<T>(ids: EntityId[], data: Map<EntityId, T>): Map<EntityId, T> {
     if (!ids.length) return data
 
     let next = data
@@ -83,7 +99,7 @@ export function bulkRemove<T>(ids: EntityId[], data: Map<EntityId, T>): Map<Enti
     return next
 }
 
-export function preserveReferenceShallow<T>(existing: T | undefined, incoming: T): T {
+export function preserveRef<T>(existing: T | undefined, incoming: T): T {
     if (existing === undefined || existing === null) return incoming
     if (existing === incoming) return existing
 

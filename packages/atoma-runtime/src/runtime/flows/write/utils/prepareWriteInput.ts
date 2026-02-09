@@ -2,10 +2,6 @@ import type { Entity, LifecycleHooks, OperationContext, PartialWithId, StoreOper
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
 
-export function ensureOperationContext(runtime: CoreRuntime, opContext?: OperationContext): OperationContext {
-    return runtime.engine.operation.createContext(opContext)
-}
-
 export async function prepareCreateInput<T extends Entity>(
     runtime: CoreRuntime,
     handle: StoreHandle<T>,

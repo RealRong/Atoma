@@ -43,9 +43,11 @@ function isWhereSimpleFilter(filter: FilterExpr): filter is WhereSimpleFilter {
 export function planCandidates<T>(args: {
     indexes: Map<string, IndexDriver<T>>
     filter?: FilterExpr
+    now?: () => number
 }): { result: CandidateResult; plan: IndexQueryPlan } {
+    const now = args.now ?? Date.now
     const where = filterToWhere(args.filter)
-    if (!where) return buildUnsupportedResult([])
+    if (!where) return buildUnsupportedResult([], [], now)
 
     const whereFields = Object.keys(where)
     const candidateSets: Set<EntityId>[] = []
@@ -87,7 +89,7 @@ export function planCandidates<T>(args: {
     })
 
     if (!candidateSets.length) {
-        return buildUnsupportedResult(whereFields, perField)
+        return buildUnsupportedResult(whereFields, perField, now)
     }
 
     if (hasUnsupportedCondition) exactness = 'superset'
@@ -98,7 +100,7 @@ export function planCandidates<T>(args: {
     return {
         result,
         plan: {
-            timestamp: Date.now(),
+            timestamp: now(),
             whereFields,
             perField,
             result: toPlanResult(result)
@@ -263,12 +265,13 @@ function compareComparable(left: unknown, right: unknown): number | null {
 
 function buildUnsupportedResult(
     whereFields: string[],
-    perField: IndexQueryPlan['perField'] = []
+    perField: IndexQueryPlan['perField'] = [],
+    now: () => number = Date.now
 ): { result: CandidateResult; plan: IndexQueryPlan } {
     return {
         result: { kind: 'unsupported' },
         plan: {
-            timestamp: Date.now(),
+            timestamp: now(),
             whereFields,
             perField,
             result: { kind: 'unsupported' }

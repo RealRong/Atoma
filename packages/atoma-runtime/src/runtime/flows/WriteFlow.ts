@@ -1,4 +1,5 @@
-import type { Draft as ImmerDraft, Patch } from 'immer'
+import { applyPatches, type Draft as ImmerDraft, type Patch } from 'immer'
+import { version } from 'atoma-shared'
 import type {
     Entity,
     OperationContext,
@@ -12,12 +13,9 @@ import type {
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, RuntimeWrite, RuntimeWriteHookSource, StoreHandle } from 'atoma-types/runtime'
-import { buildWriteIntentsFromPatches } from './write/commit/buildWriteIntentsFromPatches'
-import { ensureOperationContext, runAfterSave } from './write/utils/prepareWriteInput'
-import { buildEntityRootPatches } from './write/utils/buildEntityRootPatches'
-import { runWriteBatch } from './write/utils/runWriteBatch'
-import { WriteIntentFactory } from './write/services/WriteIntentFactory'
 import { WriteCommitFlow } from './write/commit/WriteCommitFlow'
+import { WriteIntentFactory } from './write/services/WriteIntentFactory'
+import { runAfterSave } from './write/utils/prepareWriteInput'
 
 type WritePatchPayload = { patches: Patch[]; inversePatches: Patch[] } | null
 
@@ -26,7 +24,7 @@ type WriteContext = {
     writeStrategy?: string
 }
 
-type PreparedWriteArgs<T extends Entity> = {
+type GroupedWriteArgs<T extends Entity> = {
     handle: StoreHandle<T>
     context: WriteContext
     intents: Array<WriteIntent<T>>
@@ -34,6 +32,78 @@ type PreparedWriteArgs<T extends Entity> = {
     patchPayload: WritePatchPayload
     output?: T
     afterSaveAction?: 'add' | 'update'
+}
+
+function collectInverseRootAdds(inversePatches: Patch[]): Map<EntityId, unknown> {
+    const out = new Map<EntityId, unknown>()
+    if (!Array.isArray(inversePatches)) return out
+
+    for (const patch of inversePatches) {
+        if ((patch as any)?.op !== 'add') continue
+        const path = (patch as any)?.path
+        if (!Array.isArray(path) || path.length !== 1) continue
+
+        const root = path[0]
+        if (typeof root !== 'string' && typeof root !== 'number') continue
+        out.set(String(root), (patch as any).value)
+    }
+
+    return out
+}
+
+function buildWriteIntentsFromPatches<T extends Entity>(args: {
+    baseState: Map<EntityId, T>
+    patches: Patch[]
+    inversePatches: Patch[]
+}): WriteIntent<T>[] {
+    const optimisticState = applyPatches(args.baseState, args.patches) as Map<EntityId, T>
+    const touchedIds = new Set<EntityId>()
+
+    for (const patch of args.patches) {
+        const root = patch.path?.[0]
+        if (typeof root === 'string' || typeof root === 'number') {
+            const id = String(root)
+            if (id.length > 0) {
+                touchedIds.add(id)
+            }
+        }
+    }
+
+    const inverseRootAdds = collectInverseRootAdds(args.inversePatches)
+    const baseVersionByDeletedId = new Map<EntityId, number>()
+    inverseRootAdds.forEach((value, id) => {
+        baseVersionByDeletedId.set(id, version.requireBaseVersion(id, value))
+    })
+
+    const intents: WriteIntent<T>[] = []
+    for (const id of touchedIds.values()) {
+        const next = optimisticState.get(id)
+
+        if (next) {
+            const baseVersion = version.resolvePositiveVersion(next)
+            intents.push({
+                action: 'upsert',
+                entityId: id,
+                ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
+                value: next,
+                options: { merge: false, upsert: { mode: 'loose' } }
+            })
+            continue
+        }
+
+        const baseVersion = baseVersionByDeletedId.get(id)
+        if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
+            throw new Error(`[Atoma] restore/replace delete requires baseVersion (id=${String(id)})`)
+        }
+
+        intents.push({
+            action: 'delete',
+            entityId: id,
+            baseVersion
+        })
+    }
+
+    return intents
 }
 
 export class WriteFlow implements RuntimeWrite {
@@ -47,9 +117,9 @@ export class WriteFlow implements RuntimeWrite {
         this.writeIntentFactory = new WriteIntentFactory(runtime)
     }
 
-    private buildWriteContext = <T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions): WriteContext => {
+    private buildWriteContext = (handle: StoreHandle<any>, options?: StoreOperationOptions): WriteContext => {
         return {
-            opContext: ensureOperationContext(this.runtime, options?.opContext),
+            opContext: this.runtime.engine.operation.createContext(options?.opContext),
             writeStrategy: options?.writeStrategy ?? handle.config.defaultWriteStrategy
         }
     }
@@ -67,12 +137,33 @@ export class WriteFlow implements RuntimeWrite {
         if (!this.shouldEmitWritePatches()) return null
         if (!args.id) return null
 
-        return buildEntityRootPatches<T>({
-            id: args.id,
-            before: args.before,
-            after: args.after,
-            remove: args.remove
-        })
+        const path: Patch['path'] = [args.id as string | number]
+        const hasBefore = args.before !== undefined
+        const hasAfter = args.after !== undefined
+
+        if (args.remove) {
+            const patches: Patch[] = [{ op: 'remove', path }]
+            const inversePatches: Patch[] = hasBefore
+                ? [{ op: 'add', path, value: args.before }]
+                : []
+            return { patches, inversePatches }
+        }
+
+        if (!hasAfter) {
+            return { patches: [], inversePatches: [] }
+        }
+
+        if (hasBefore) {
+            return {
+                patches: [{ op: 'replace', path, value: args.after }],
+                inversePatches: [{ op: 'replace', path, value: args.before }]
+            }
+        }
+
+        return {
+            patches: [{ op: 'add', path, value: args.after }],
+            inversePatches: [{ op: 'remove', path }]
+        }
     }
 
     private buildRawPatchPayload = (patches: Patch[], inversePatches: Patch[]): WritePatchPayload => {
@@ -85,13 +176,49 @@ export class WriteFlow implements RuntimeWrite {
         options?: StoreOperationOptions
         runner: (item: Input) => Promise<Output>
     }): Promise<WriteManyResult<Output>> => {
-        return await runWriteBatch<Input, Output, WriteManyItemOk<Output> | WriteManyItemErr>({
-            items: args.items,
-            options: args.options,
-            runner: args.runner,
-            onSuccess: ({ index, value }) => ({ index, ok: true, value }),
-            onError: ({ index, error }) => ({ index, ok: false, error })
-        })
+        const { items, runner } = args
+        const rawConcurrency = args.options?.batch?.concurrency
+        const concurrency = (typeof rawConcurrency === 'number' && Number.isFinite(rawConcurrency))
+            ? Math.max(1, Math.floor(rawConcurrency))
+            : 1
+
+        const results: WriteManyResult<Output> = new Array(items.length)
+        if (!items.length) return results
+
+        const onSuccess = (index: number, value: Output): WriteManyItemOk<Output> => ({ index, ok: true, value })
+        const onError = (index: number, error: unknown): WriteManyItemErr => ({ index, ok: false, error })
+
+        if (concurrency <= 1 || items.length <= 1) {
+            for (let index = 0; index < items.length; index++) {
+                try {
+                    const value = await runner(items[index])
+                    results[index] = onSuccess(index, value)
+                } catch (error) {
+                    results[index] = onError(index, error)
+                }
+            }
+            return results
+        }
+
+        let cursor = 0
+        const worker = async () => {
+            while (true) {
+                const index = cursor
+                cursor += 1
+                if (index >= items.length) return
+
+                try {
+                    const value = await runner(items[index])
+                    results[index] = onSuccess(index, value)
+                } catch (error) {
+                    results[index] = onError(index, error)
+                }
+            }
+        }
+
+        const workerCount = Math.min(concurrency, items.length)
+        await Promise.all(new Array(workerCount).fill(null).map(() => worker()))
+        return results
     }
 
     private executeBatchOrThrow = async <Input, Output>(args: {
@@ -160,18 +287,6 @@ export class WriteFlow implements RuntimeWrite {
         }
     }
 
-    private commitPreparedWrite = async <T extends Entity>(args: PreparedWriteArgs<T>): Promise<T | void> => {
-        return await this.commitWrite({
-            handle: args.handle,
-            ...args.context,
-            intents: args.intents,
-            source: args.source,
-            output: args.output,
-            patchPayload: args.patchPayload,
-            afterSaveAction: args.afterSaveAction
-        })
-    }
-
     private commitEntityWrite = async <T extends Entity>(args: {
         handle: StoreHandle<T>
         context: WriteContext
@@ -191,12 +306,24 @@ export class WriteFlow implements RuntimeWrite {
             remove: args.remove
         })
 
-        return await this.commitPreparedWrite({
+        return await this.commitWrite({
             handle: args.handle,
-            context: args.context,
+            ...args.context,
             intents: [args.intent],
             source: args.source,
             patchPayload,
+            output: args.output,
+            afterSaveAction: args.afterSaveAction
+        })
+    }
+
+    private commitGroupedWrite = async <T extends Entity>(args: GroupedWriteArgs<T>): Promise<T | void> => {
+        return await this.commitWrite({
+            handle: args.handle,
+            ...args.context,
+            intents: args.intents,
+            source: args.source,
+            patchPayload: args.patchPayload,
             output: args.output,
             afterSaveAction: args.afterSaveAction
         })
@@ -263,7 +390,11 @@ export class WriteFlow implements RuntimeWrite {
         return (committed ?? output) as T
     }
 
-    updateMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>, options?: StoreOperationOptions): Promise<WriteManyResult<T>> => {
+    updateMany = async <T extends Entity>(
+        handle: StoreHandle<T>,
+        items: Array<{ id: EntityId; recipe: (draft: ImmerDraft<T>) => void }>,
+        options?: StoreOperationOptions
+    ): Promise<WriteManyResult<T>> => {
         return await this.executeBatch({
             items,
             options,
@@ -308,7 +439,6 @@ export class WriteFlow implements RuntimeWrite {
         const { intent, base } = await this.writeIntentFactory.prepareDeleteIntent<T>({
             handle,
             id,
-            opContext: context.opContext,
             options
         })
 
@@ -334,7 +464,12 @@ export class WriteFlow implements RuntimeWrite {
         })
     }
 
-    patches = async <T extends Entity>(handle: StoreHandle<T>, patches: Patch[], inversePatches: Patch[], options?: StoreOperationOptions): Promise<void> => {
+    patches = async <T extends Entity>(
+        handle: StoreHandle<T>,
+        patches: Patch[],
+        inversePatches: Patch[],
+        options?: StoreOperationOptions
+    ): Promise<void> => {
         const context = this.buildWriteContext(handle, options)
         const before = handle.state.getSnapshot() as Map<EntityId, T>
         const intents = buildWriteIntentsFromPatches({
@@ -343,7 +478,7 @@ export class WriteFlow implements RuntimeWrite {
             inversePatches
         })
 
-        await this.commitPreparedWrite({
+        await this.commitGroupedWrite({
             handle,
             context,
             intents,

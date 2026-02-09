@@ -56,22 +56,25 @@ Rationale:
 - Busy-wait sequence overflow path is undesirable in browser/node mixed runtime.
 - UUIDv7-style IDs provide better global uniqueness and good ordering behavior.
 
-## 3.2 Shared ID API (proposed)
-In `atoma-shared/src/id.ts` (new):
-- `tryRandomUUID(): string | undefined`
-- `createRandomId(prefix?: string): string`
-- `createSortableId(prefix?: string, now?: () => number): string`
-- `createActionId(now?: () => number): string`
-- `createEntityId(now?: () => number): string`
-- `createRequestId(now?: () => number): string`
-- `createReplicaId(now?: () => number): string`
+## 3.2 Shared ID API (proposed, minimal surface)
+In `atoma-shared/src/id.ts` (new), expose one primary API:
+- `createId(args?: { kind?: 'action' | 'entity' | 'request' | 'replica'; sortable?: boolean; prefix?: string; now?: () => number }): string`
+
+Optional thin aliases (high-frequency only):
+- `createEntityId()`
+- `createActionId()`
+
+Internal-only (not exported):
+- random UUID probing/fallback helpers
+- low-level random/sortable builders
 
 Notes:
 - All packages must call shared APIs, no direct `Math.random` fallback in package-local code.
-- Prefixes are semantic and short (`a_`, `e_`, `r_`, etc).
+- Prefixes remain semantic and short, but should be controlled by `createId` strategy defaults.
+- Avoid over-exposing many near-duplicate APIs; keep one canonical entry.
 
 ## 3.3 Protocol tools integration
-`atoma-types/protocol-tools/ids.ts` should become protocol-facing wrappers around the shared ID primitives (not independent random implementation).
+`atoma-types/protocol-tools/ids.ts` should delegate to shared `createId` (or thin aliases), not maintain an independent random implementation.
 
 ---
 
@@ -90,7 +93,7 @@ Core store APIs become policy-free pure functions.
 - `bulkAdd`, `bulkRemove`, `preserveReferenceShallow`, `applyWritebackToMap` remain pure.
 
 Runtime decides defaults:
-- `schema.idGenerator` > `runtime.defaults.idGenerator` > shared default (`createEntityId`).
+- `schema.idGenerator` > `runtime.defaults.idGenerator` > shared default (`createId({ kind: 'entity', sortable: true })`).
 
 ---
 
@@ -143,5 +146,5 @@ Phase D: Runtime wiring
 
 - Class-led files: PascalCase.
 - Function/type-led files: camelCase.
-- API names short and semantic (`createEntityId`, `createActionId`, `createRequestId`).
+- API names short and semantic (`createId`, `createEntityId`, `createActionId`).
 - Avoid redundant suffixes (`*Engine`, `*Utils`) unless semantically necessary.

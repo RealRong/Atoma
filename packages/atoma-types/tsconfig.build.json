@@ -6,7 +6,43 @@
         "declaration": true,
         "declarationMap": true,
         "rootDir": "src",
-        "outDir": "dist"
+        "outDir": "dist",
+        "baseUrl": ".",
+        "paths": {
+            "atoma-shared": [
+                "../atoma-shared/dist/index.d.ts"
+            ],
+            "atoma-types/shared": [
+                "src/shared/index.ts"
+            ],
+            "atoma-types/core": [
+                "src/core/index.ts"
+            ],
+            "atoma-types/runtime": [
+                "src/runtime/index.ts"
+            ],
+            "atoma-types/client": [
+                "src/client/index.ts"
+            ],
+            "atoma-types/protocol": [
+                "src/protocol/index.ts"
+            ],
+            "atoma-types/protocol-tools": [
+                "src/protocol-tools/index.ts"
+            ],
+            "atoma-types/observability": [
+                "src/observability/index.ts"
+            ],
+            "atoma-types/sync": [
+                "src/sync/index.ts"
+            ],
+            "atoma-types/devtools": [
+                "src/devtools/index.ts"
+            ],
+            "atoma-types/internal": [
+                "src/internal/index.ts"
+            ]
+        }
     },
     "include": [
         "src/**/*"

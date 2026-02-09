@@ -1,14 +1,11 @@
+import { createId as createSharedId } from 'atoma-shared'
 import type { RequestSequencer } from './types'
 
-const randomIdFallback = () => {
-    return `${Date.now()}_${Math.random().toString(16).slice(2)}`
-}
-
 export function createId(): string {
-    const cryptoAny = globalThis.crypto as any
-    const uuid = cryptoAny?.randomUUID?.()
-    const base = typeof uuid === 'string' && uuid ? uuid : randomIdFallback()
-    return `t_${base}`
+    return createSharedId({
+        kind: 'request',
+        prefix: 't'
+    })
 }
 
 export function requestId(traceId: string, seq: number): string {

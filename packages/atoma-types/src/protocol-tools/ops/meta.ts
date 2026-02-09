@@ -1,4 +1,4 @@
-import { ids } from '../ids'
+import { createIdempotencyKey } from '../ids'
 import type { WriteItemMeta } from 'atoma-types/protocol'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -26,7 +26,7 @@ export function ensureWriteItemMeta(args: {
 
     const idempotencyKey = existingIdempotencyKey
         ?? readNonEmptyString(args.defaults?.idempotencyKey)
-        ?? ids.createIdempotencyKey({ now })
+        ?? createIdempotencyKey({ now })
 
     const clientTimeMs = existingClientTimeMs
         ?? readFiniteNumber(args.defaults?.clientTimeMs)
