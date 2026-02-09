@@ -1,4 +1,5 @@
-import { queryItems } from 'atoma-core/query'
+import { runQuery } from 'atoma-core/query'
+import type { Entity, Query as CoreQuery } from 'atoma-types/core'
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma-types/client'
 import type {
     ChangeBatch,
@@ -167,7 +168,12 @@ export class StorageOpsClient implements OpsClientLike {
 
     private async executeQuery(resource: string, query: Query): Promise<QueryResultData> {
         const items = await this.adapter.list(resource)
-        const result = queryItems(items as any, query as any)
+        const snapshot = new Map(items.map((item, index) => [String(index), item as Entity] as const))
+        const result = runQuery({
+            snapshot,
+            query: query as CoreQuery<Entity>,
+            indexes: null
+        })
         return {
             data: result.data,
             ...(result.pageInfo ? { pageInfo: result.pageInfo } : {})

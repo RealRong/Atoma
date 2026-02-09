@@ -1,5 +1,5 @@
 import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client'
-import type { Query } from 'atoma-types/core'
+import type { Entity, Query } from 'atoma-types/core'
 import type { Operation, OperationResult, QueryResultData } from 'atoma-types/protocol'
 import { isTerminalResult } from '../plugins/HandlerChain'
 
@@ -11,15 +11,6 @@ function toQueryResultData(data: unknown[], pageInfo?: unknown): QueryResultData
         data,
         pageInfo: pageInfo as QueryResultData['pageInfo']
     }
-}
-
-function queryLocal(ctx: PluginContext, storeName: string, query: Query): QueryResultData {
-    const handle = ctx.runtime.stores.resolveHandle(storeName, 'LocalBackendPlugin.query')
-    const local = ctx.runtime.engine.query.evaluate({
-        state: handle.state,
-        query: query as Query<any>
-    })
-    return toQueryResultData(local.data as unknown[], local.pageInfo)
 }
 
 function toUnsupportedOpsResults(ops: Operation[]): OperationResult[] {
@@ -46,7 +37,12 @@ export function localBackendPlugin(): ClientPlugin {
                 const results: OperationResult[] = []
                 for (const op of req.ops) {
                     if (op.kind === 'query') {
-                        const data = queryLocal(ctx, op.query.resource, op.query.query)
+                        const handle = ctx.runtime.stores.resolveHandle(op.query.resource, 'LocalBackendPlugin.io.query')
+                        const local = ctx.runtime.engine.query.evaluate({
+                            state: handle.state,
+                            query: op.query.query as Query<Entity>
+                        })
+                        const data = toQueryResultData(local.data as unknown[], local.pageInfo)
                         results.push({ opId: op.opId, ok: true, data })
                         continue
                     }
@@ -58,7 +54,13 @@ export function localBackendPlugin(): ClientPlugin {
             const readHandler: ReadHandler = async (req, _ctx, next) => {
                 const upstream = await next()
                 if (!isTerminalResult(upstream)) return upstream
-                return queryLocal(ctx, String(req.storeName), req.query)
+
+                const handle = ctx.runtime.stores.resolveHandle(String(req.storeName), 'LocalBackendPlugin.read.query')
+                const local = ctx.runtime.engine.query.evaluate({
+                    state: handle.state,
+                    query: req.query as Query<Entity>
+                })
+                return toQueryResultData(local.data as unknown[], local.pageInfo)
             }
 
             const persistHandler: PersistHandler = async (_req, _ctx, next) => {

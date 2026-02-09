@@ -8,7 +8,7 @@ export type PersistRequest<T extends Entity> = Readonly<{
     storeName: StoreToken
     writeStrategy?: WriteStrategy
     handle: StoreHandle<T>
-    opContext?: OperationContext
+    opContext: OperationContext
     writeOps: Array<WriteOp>
     signal?: AbortSignal
 }>

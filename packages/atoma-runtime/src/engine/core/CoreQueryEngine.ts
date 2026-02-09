@@ -1,4 +1,4 @@
-import { queryMap } from 'atoma-core/query'
+import { runQuery } from 'atoma-core/query'
 import type { Entity, PageInfo, Query } from 'atoma-types/core'
 import type { RuntimeQuery, StoreState } from 'atoma-types/runtime'
 
@@ -7,8 +7,8 @@ export class CoreQueryEngine implements RuntimeQuery {
         state: StoreState<T>
         query: Query<T>
     }): { data: T[]; pageInfo?: PageInfo } => {
-        const result = queryMap({
-            mapRef: args.state.getSnapshot(),
+        const result = runQuery({
+            snapshot: args.state.getSnapshot(),
             query: args.query,
             indexes: args.state.indexes
         })

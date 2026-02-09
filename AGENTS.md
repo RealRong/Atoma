@@ -45,6 +45,22 @@
 
 ---
 
+### 1.5 atoma-shared and atoma-types/shared Boundaries
+
+- atoma-types/shared is type-only (scalar contracts only).
+- atoma-shared is runtime utility foundation (ids/random/time/error/url/stable serialization/zod helpers).
+- Runtime helper logic must not be duplicated across packages; prefer atoma-shared single-source utilities.
+- atoma-core domain modules must not implement package-local random/uuid fallback logic.
+- Default entity-id policy must be runtime-configurable; core may expose optional algorithms but must not hardcode one as the domain default.
+- If a utility is used by 2+ packages and has no business semantics, it belongs in atoma-shared.
+
+### 1.6 ID and Context Generation Principles
+
+- Use one canonical runtime ID utility path for actionId/entityId/requestId/replicaId.
+- Avoid ad-hoc Date.now() + Math.random() composition in feature packages.
+- createOperationContext is responsible for context shaping (scope/origin/label/timestamp), not crypto fallback implementation.
+- Snowflake-like generators are optional strategies only; they must not be the implicit global default.
+
 ## 2. File and Type Naming Conventions
 
 ### 2.1 File Naming

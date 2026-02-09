@@ -8,8 +8,8 @@ export type OperationOrigin = 'user' | 'history' | 'sync' | 'system'
 
 export type OperationContext = Readonly<{
     scope: string
-    actionId?: string
+    actionId: string
     origin: OperationOrigin
     label?: string
-    timestamp?: number
+    timestamp: number
 }>

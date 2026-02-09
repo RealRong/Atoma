@@ -22,36 +22,22 @@ export const createActionId = (): string => {
     return createFallbackId()
 }
 
-export type CreateOpContextArgs = Readonly<{
-    scope: string
-    origin?: OperationOrigin
-    label?: string
-}>
+export type CreateOperationContextInput = Readonly<Partial<OperationContext>>
 
-export function createOpContext(args: CreateOpContextArgs): OperationContext {
-    return {
-        scope: String(args.scope || 'default'),
-        origin: args.origin ?? 'user',
-        actionId: createActionId(),
-        label: args.label,
-        timestamp: Date.now()
-    }
-}
-
-export const normalizeOperationContext = (
-    ctx: OperationContext | undefined,
+export function createOperationContext(
+    input?: CreateOperationContextInput,
     options?: { defaultScope?: string; defaultOrigin?: OperationOrigin }
-): OperationContext => {
-    const scope = (ctx?.scope ?? options?.defaultScope ?? 'default') as string
-    const origin = (ctx?.origin ?? options?.defaultOrigin ?? 'user') as OperationOrigin
-    const actionId = ctx?.actionId ?? createActionId()
-    const timestamp = ctx?.timestamp ?? Date.now()
+): OperationContext {
+    const scope = String(input?.scope ?? options?.defaultScope ?? 'default')
+    const origin = (input?.origin ?? options?.defaultOrigin ?? 'user') as OperationOrigin
+    const actionId = input?.actionId ?? createActionId()
+    const timestamp = input?.timestamp ?? Date.now()
 
     return {
         scope,
         origin,
         actionId,
-        label: ctx?.label,
+        label: input?.label,
         timestamp
     }
 }

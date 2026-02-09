@@ -7,7 +7,7 @@ import type {
     StoreToken
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { queryItems } from '../query'
+import { runQuery } from '../query'
 import { extractKeyValue, pickFirstKey } from './key'
 import { buildRelationPlan, type IncludeInput, type PlannedRelation } from './plan'
 
@@ -256,12 +256,16 @@ function projectHasManyOrHasOne<TSource extends Entity>(
             ? entry.projectionOptions.sort
             : DEFAULT_STABLE_SORT
 
-        const projected = queryItems(deduped, {
-            sort: sortRules,
-            page: {
-                mode: 'offset',
-                limit
-            }
+        const projected = runQuery({
+            snapshot: new Map(deduped.map(item => [item.id, item] as const)),
+            query: {
+                sort: sortRules,
+                page: {
+                    mode: 'offset',
+                    limit
+                }
+            },
+            indexes: null
         }).data
 
         setRelationValue(item, entry.relationName, isHasOne

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { stableStringify } from 'atoma-shared'
-import { queryItems } from 'atoma-core/query'
+import { runQuery } from 'atoma-core/query'
 import type { Entity, Query as StoreQuery } from 'atoma-types/core'
 
 /**
@@ -30,6 +30,11 @@ export function useLocalQuery<T extends Entity>(
         if (!data || !data.length) return []
         if (!query) return data
 
-        return queryItems(data, query).data as T[]
+        const snapshot = new Map(data.map((item, index) => [String(index), item] as const))
+        return runQuery({
+            snapshot,
+            query,
+            indexes: null
+        }).data as T[]
     }, [data, query, queryKey])
 }

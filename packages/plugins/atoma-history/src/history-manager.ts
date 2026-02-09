@@ -1,6 +1,6 @@
 import type { Patch } from 'immer'
 import type { OperationContext } from 'atoma-types/core'
-import { createActionId } from 'atoma-core/operation'
+import { createOperationContext } from 'atoma-core/operation'
 import type { ActionRecord, ChangeRecord, UndoStack } from './types'
 
 export type HistoryRecordArgs = Readonly<{
@@ -49,25 +49,22 @@ export class HistoryManager {
     }
 
     beginAction(args: { scope: string; label?: string; origin?: OperationContext['origin'] }): OperationContext {
-        return {
+        return createOperationContext({
             scope: String(args.scope || 'default'),
             origin: args.origin ?? 'user',
-            actionId: createActionId(),
-            label: args.label,
-            timestamp: Date.now()
-        }
+            label: args.label
+        })
     }
 
     async undo(args: { scope: string; apply: HistoryApply }): Promise<boolean> {
         const action = this.history.popUndo(args.scope)
         if (!action) return false
 
-        const opContext: OperationContext = {
+        const opContext: OperationContext = createOperationContext({
             scope: String(args.scope || 'default'),
             origin: 'history',
-            actionId: createActionId(),
             label: action.label
-        }
+        })
 
         try {
             for (let i = action.changes.length - 1; i >= 0; i--) {
@@ -91,12 +88,11 @@ export class HistoryManager {
         const action = this.history.popRedo(args.scope)
         if (!action) return false
 
-        const opContext: OperationContext = {
+        const opContext: OperationContext = createOperationContext({
             scope: String(args.scope || 'default'),
             origin: 'history',
-            actionId: createActionId(),
             label: action.label
-        }
+        })
 
         try {
             for (let i = 0; i < action.changes.length; i++) {
@@ -143,7 +139,6 @@ class InMemoryHistory {
 
         const scope = change.ctx.scope || 'default'
         const actionId = change.ctx.actionId
-        if (!actionId) return
 
         const stack = this.getStack(scope)
         const last = stack.undo[stack.undo.length - 1]

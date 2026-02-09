@@ -38,8 +38,8 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
     const readContextByQuery = new WeakMap<object, ObservabilityContext>()
     const writeContextByAction = new Map<string, WriteContextEntry>()
 
-    const getWriteContext = (storeName: string, actionId?: string): WriteContextEntry => {
-        const key = String(actionId ?? 'unknown')
+    const getWriteContext = (storeName: string, actionId: string): WriteContextEntry => {
+        const key = String(actionId)
         const existing = writeContextByAction.get(key)
         if (existing) return existing
         const ctxInstance = storeObs.createContext(storeName, { traceId: actionId })
@@ -48,16 +48,15 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         return created
     }
 
-    const releaseWriteContext = (actionId?: string) => {
-        const key = String(actionId ?? 'unknown')
+    const releaseWriteContext = (actionId: string) => {
+        const key = String(actionId)
         if (!writeContextByAction.has(key)) return
         writeContextByAction.delete(key)
     }
 
     const attachWriteTraceMeta = (req: PersistRequest<any>) => {
         if (!injectTraceMeta) return
-        const actionId = req.opContext?.actionId
-        if (!actionId) return
+        const actionId = req.opContext.actionId
         const entry = writeContextByAction.get(String(actionId))
         const ctxInstance = entry?.ctx ?? storeObs.createContext(String(req.storeName), { traceId: actionId })
         const traceId = ctxInstance.traceId
