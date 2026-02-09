@@ -96,7 +96,7 @@ export class ReadFlow implements RuntimeRead {
             const fetched = Array.isArray(data) ? data : []
             const remote = await this.writebackArray(handle, fetched)
 
-            const cachePolicy = runtime.engine.query.cachePolicy(input)
+            const cachePolicy = decideQueryCacheWrite(input)
             if (cachePolicy.effectiveSkipStore) {
                 const result = this.toQueryResult(remote, pageInfo)
                 hooks.emit.readFinish({ handle, query: input, result, durationMs })
@@ -256,4 +256,19 @@ export class ReadFlow implements RuntimeRead {
         handle.state.commit({ before: existingMap, after: next, changedIds })
         return output
     }
+}
+
+const decideQueryCacheWrite = <T extends Entity>(query?: StoreQuery<T>) => {
+    const hasSelect = Boolean(Array.isArray(query?.select) && query.select.length)
+    if (hasSelect) {
+        return { effectiveSkipStore: true, reason: 'select' }
+    }
+
+    const include = query?.include
+    const hasInclude = Boolean(include && typeof include === 'object' && Object.keys(include).length)
+    if (hasInclude) {
+        return { effectiveSkipStore: true, reason: 'include' }
+    }
+
+    return { effectiveSkipStore: false }
 }

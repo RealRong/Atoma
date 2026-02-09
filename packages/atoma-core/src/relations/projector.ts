@@ -7,7 +7,7 @@ import type {
     StoreToken
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { queryLocal } from '../query'
+import { queryItems } from '../query'
 import { getRelationDefaultValue } from './utils/defaultValue'
 import { extractKeyValue, pickFirstKey } from './utils/key'
 import {
@@ -271,7 +271,7 @@ function projectHasManyOrHasOne<TSource extends Entity>(
             ? entry.projectionOptions.sort
             : DEFAULT_STABLE_SORT
 
-        const projected = queryLocal(deduped, {
+        const projected = queryItems(deduped, {
             sort: sortRules,
             page: {
                 mode: 'offset',

@@ -1,4 +1,4 @@
-import { cachePolicy, queryMap } from 'atoma-core/query'
+import { queryMap } from 'atoma-core/query'
 import type { Entity, PageInfo, Query } from 'atoma-types/core'
 import type { RuntimeQuery, StoreState } from 'atoma-types/runtime'
 
@@ -10,8 +10,7 @@ export class CoreQueryEngine implements RuntimeQuery {
         const result = queryMap({
             mapRef: args.state.getSnapshot(),
             query: args.query,
-            indexes: args.state.indexes,
-            matcher: args.state.matcher
+            indexes: args.state.indexes
         })
 
         return {
@@ -19,6 +18,4 @@ export class CoreQueryEngine implements RuntimeQuery {
             pageInfo: result.pageInfo
         }
     }
-
-    cachePolicy = cachePolicy
 }

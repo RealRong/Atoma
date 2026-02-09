@@ -35,7 +35,6 @@ export type {
 } from './persistence'
 
 export type {
-    RuntimeCacheWriteDecision,
     RuntimeRelationInclude,
     RuntimeRelationPrefetchOptions,
     RuntimeStoreMap

@@ -29,7 +29,6 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
     const map = useStoreSnapshot(store, 'useStoreQuery')
     const bindings = getStoreBindings(store, 'useStoreQuery')
     const indexes = bindings.indexes
-    const matcher = bindings.matcher
     const engine = bindings.engine
 
     const query = stripResult(options)
@@ -49,7 +48,6 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
             setSnapshot: () => {},
             subscribe: () => () => {},
             indexes,
-            matcher,
             commit: () => {},
             applyWriteback: () => {}
         }
@@ -64,7 +62,7 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
             ids: data.map(item => item.id) as Array<T['id']>,
             data
         }
-    }, [engine, indexes, map, matcher, queryKey])
+    }, [engine, indexes, map, queryKey])
 }
 
 export function useStoreQuery<T extends Entity, Relations = {}>(

@@ -1,4 +1,4 @@
-import type { Entity, IStore, QueryMatcherOptions, StoreApi, IndexesLike, StoreToken } from '../core'
+import type { Entity, IStore, IndexesLike, StoreApi, StoreToken } from '../core'
 import type { EntityId } from '../shared'
 import type { RuntimeEngine } from '../runtime'
 
@@ -15,7 +15,6 @@ export type StoreBindings<T extends Entity = any> = Readonly<{
     source: StoreSource<T>
     engine: RuntimeEngine
     indexes: IndexesLike<T> | null
-    matcher?: QueryMatcherOptions
     relations?: () => any | undefined
     ensureStore: (name: StoreToken) => IStore<any, any>
     hydrate?: (items: T[]) => Promise<void>

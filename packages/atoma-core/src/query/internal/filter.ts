@@ -1,4 +1,5 @@
-import type { FilterExpr, FuzzyDefaults, MatchDefaults, QueryMatcherOptions } from 'atoma-types/core'
+import type { FilterExpr } from 'atoma-types/core'
+import type { FuzzyDefaults, MatchDefaults } from './types'
 import { defaultTokenizer, levenshteinDistance } from './text'
 
 const normalizeString = (value: unknown) => {
@@ -52,23 +53,22 @@ const matchesFuzzy = (fieldValue: unknown, query: string, defaults?: FuzzyDefaul
 
 export function matchesFilter<T extends object>(
     item: T,
-    filter: FilterExpr,
-    opts?: QueryMatcherOptions
+    filter: FilterExpr
 ): boolean {
     const op = filter.op
 
     switch (op) {
         case 'and':
             return Array.isArray(filter.args)
-                ? filter.args.every((child) => matchesFilter(item, child, opts))
+                ? filter.args.every((child) => matchesFilter(item, child))
                 : true
         case 'or':
             return Array.isArray(filter.args)
-                ? filter.args.some((child) => matchesFilter(item, child, opts))
+                ? filter.args.some((child) => matchesFilter(item, child))
                 : false
         case 'not':
             return filter.arg
-                ? !matchesFilter(item, filter.arg, opts)
+                ? !matchesFilter(item, filter.arg)
                 : true
         case 'eq':
             return readField(item, filter.field) === filter.value
@@ -105,12 +105,11 @@ export function matchesFilter<T extends object>(
             return value !== undefined && value !== null
         }
         case 'text': {
-            const defaults = opts?.fields?.[filter.field]
             const fieldValue = readField(item, filter.field)
             if (filter.mode === 'fuzzy') {
-                return matchesFuzzy(fieldValue, filter.query, defaults?.fuzzy, filter.distance)
+                return matchesFuzzy(fieldValue, filter.query, undefined, filter.distance)
             }
-            return matchesMatch(fieldValue, filter.query, defaults?.match)
+            return matchesMatch(fieldValue, filter.query)
         }
         default:
             return false

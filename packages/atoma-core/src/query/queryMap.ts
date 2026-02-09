@@ -1,32 +1,16 @@
-import type { Entity, IndexesLike, PageInfo, Query, QueryMatcherOptions } from 'atoma-types/core'
+import type { Entity, IndexesLike, PageInfo, Query } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import { summarizeQuery } from './internal/summary'
-import { runQuery } from './internal/run'
+import { queryItems } from './queryItems'
 
 export function queryMap<T extends Entity>(params: {
     mapRef: ReadonlyMap<EntityId, T>
     query: Query<T>
     indexes: IndexesLike<T> | null
-    matcher?: QueryMatcherOptions
-    emit?: (type: string, payload: unknown) => void
 }): { data: T[]; pageInfo?: PageInfo } {
-    const { mapRef, query, indexes, matcher } = params
-    const emit = params.emit ?? (() => {})
+    const { mapRef, query, indexes } = params
 
-    const paramsSummary = summarizeQuery(query)
     const candidateRes = indexes ? indexes.collectCandidates(query.filter) : { kind: 'unsupported' as const }
-    const plan = indexes?.getLastQueryPlan()
-
-    emit('query:index', {
-        params: { filterFields: paramsSummary.filterFields },
-        result: candidateRes.kind === 'candidates'
-            ? { kind: 'candidates', exactness: candidateRes.exactness, count: candidateRes.ids.size }
-            : { kind: candidateRes.kind },
-        plan
-    })
-
     if (candidateRes.kind === 'empty') {
-        emit('query:finalize', { inputCount: 0, outputCount: 0, params: paramsSummary })
         return { data: [] }
     }
 
@@ -42,9 +26,5 @@ export function queryMap<T extends Entity>(params: {
             })()
             : Array.from(mapRef.values())
 
-    const output = runQuery(source, query, { preSorted: false, matcher })
-
-    emit('query:finalize', { inputCount: source.length, outputCount: output.data.length, params: paramsSummary })
-
-    return output
+    return queryItems(source, query)
 }

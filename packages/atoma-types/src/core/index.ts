@@ -1,7 +1,6 @@
 export * from './entity'
 export * from './operation'
 export * from './query'
-export * from './matcher'
 export * from './processor'
 export * from './observability'
 export * from './relations'

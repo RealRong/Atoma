@@ -12,12 +12,3 @@ export type FuzzyDefaults = {
     minTokenLength?: number
     tokenizer?: (text: string) => string[]
 }
-
-export type FieldMatcherOptions = {
-    match?: MatchDefaults
-    fuzzy?: FuzzyDefaults
-}
-
-export type QueryMatcherOptions = {
-    fields?: Record<string, FieldMatcherOptions>
-}

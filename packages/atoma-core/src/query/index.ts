@@ -1,4 +1,2 @@
-export { queryLocal, type QueryLocalOptions } from './queryLocal'
+export { queryItems } from './queryItems'
 export { queryMap } from './queryMap'
-export { buildMatcher } from './matcher'
-export { cachePolicy, type CacheWriteDecision } from './cachePolicy'

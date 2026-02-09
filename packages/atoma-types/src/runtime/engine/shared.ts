@@ -1,10 +1,6 @@
 import type { Entity, Query, IndexesLike } from '../../core'
 import type { EntityId } from '../../shared'
 
-export type RuntimeCacheWriteDecision =
-    | { effectiveSkipStore: true; reason: 'select' | 'include' }
-    | { effectiveSkipStore: false; reason?: undefined }
-
 export type RuntimeRelationInclude = Record<string, boolean | Query<unknown>> | undefined
 
 export type RuntimeRelationPrefetchOptions = {

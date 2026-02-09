@@ -1,6 +1,5 @@
-import type { Entity, IndexDefinition, QueryMatcherOptions, IndexesLike } from '../../core'
+import type { Entity, IndexDefinition, IndexesLike } from '../../core'
 
 export type RuntimeIndexes = Readonly<{
     create: <T extends Entity>(definitions?: IndexDefinition<T>[] | null) => IndexesLike<T> | null
-    matcher: <T extends Entity>(definitions?: IndexDefinition<T>[] | null) => QueryMatcherOptions | undefined
 }>
