@@ -3,7 +3,7 @@
  * - Owns all subsystems (io, strategy, transform, stores).
  * - Exposes runtime.read/runtime.write as the only flow entrypoints.
  */
-import type { StoreDataProcessor } from 'atoma-types/core'
+import type { Entity, StoreDataProcessor } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { createOpId } from 'atoma-types/protocol-tools'
 import type {
@@ -29,7 +29,7 @@ import { CoreRuntimeEngine } from '../engine'
 export interface RuntimeConfig {
     schema: RuntimeSchema
     io: RuntimeIo
-    dataProcessor?: StoreDataProcessor<any>
+    dataProcessor?: StoreDataProcessor<Entity>
     defaults?: {
         idGenerator?: () => EntityId
     }

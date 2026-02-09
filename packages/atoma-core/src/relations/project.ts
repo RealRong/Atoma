@@ -8,7 +8,6 @@ import type {
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { queryItems } from '../query'
-import { getRelationDefaultValue } from './defaultValue'
 import { extractKeyValue, pickFirstKey } from './key'
 import { buildRelationPlan, type IncludeInput, type PlannedRelation } from './plan'
 
@@ -26,6 +25,10 @@ const createEqFilter = (field: string, value: EntityId): FilterExpr => ({
     field,
     value
 })
+
+const getDefaultRelationValue = (relationType: PlannedRelation<Entity>['relationType']): null | [] => {
+    return relationType === 'hasMany' ? [] : null
+}
 
 const setRelationValue = <T extends Entity>(item: T, relationName: string, value: unknown) => {
     const target = item as unknown as Record<string, unknown>
@@ -93,7 +96,7 @@ function projectPlanned<TSource extends Entity>(
 
     if (!map) {
         results.forEach(item => {
-            setRelationValue(item, entry.relationName, getRelationDefaultValue(entry.relation))
+            setRelationValue(item, entry.relationName, getDefaultRelationValue(entry.relationType))
         })
         return
     }
@@ -230,7 +233,7 @@ function projectHasManyOrHasOne<TSource extends Entity>(
     results.forEach(item => {
         const keyValue = extractKeyValue(item, entry.sourceKeySelector)
         if (keyValue === undefined || keyValue === null) {
-            setRelationValue(item, entry.relationName, getRelationDefaultValue(entry.relation))
+            setRelationValue(item, entry.relationName, isHasOne ? null : [])
             return
         }
 

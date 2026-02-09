@@ -1,40 +1,57 @@
-import type { RuntimeHookEventName, RuntimeHookRegistry, RuntimeHooks } from 'atoma-types/runtime'
+import type { Entity } from 'atoma-types/core'
+import type {
+    RuntimeHookEventName,
+    RuntimeHookRegistry,
+    RuntimeHooks,
+    RuntimeReadStartArgs,
+    RuntimeReadFinishArgs,
+    RuntimeStoreCreatedArgs,
+    RuntimeWriteCommittedArgs,
+    RuntimeWriteFailedArgs,
+    RuntimeWritePatchesArgs,
+    RuntimeWriteStartArgs
+} from 'atoma-types/runtime'
 
-type StoreCreatedArgs = Parameters<RuntimeHookRegistry['emit']['storeCreated']>[0]
-type ReadStartArgs = Parameters<RuntimeHookRegistry['emit']['readStart']>[0]
-type ReadFinishArgs = Parameters<RuntimeHookRegistry['emit']['readFinish']>[0]
-type WriteStartArgs = Parameters<RuntimeHookRegistry['emit']['writeStart']>[0]
-type WritePatchesArgs = Parameters<RuntimeHookRegistry['emit']['writePatches']>[0]
-type WriteCommittedArgs = Parameters<RuntimeHookRegistry['emit']['writeCommitted']>[0]
-type WriteFailedArgs = Parameters<RuntimeHookRegistry['emit']['writeFailed']>[0]
-
-type HookEventMap = Readonly<{
-    readStart: (args: ReadStartArgs) => void
-    readFinish: (args: ReadFinishArgs) => void
-    writeStart: (args: WriteStartArgs) => void
-    writePatches: (args: WritePatchesArgs) => void
-    writeCommitted: (args: WriteCommittedArgs) => void
-    writeFailed: (args: WriteFailedArgs) => void
-    storeCreated: (args: StoreCreatedArgs) => void
-}>
-
-type HookEventName = keyof HookEventMap
+type ReadStartHandler = NonNullable<NonNullable<RuntimeHooks['read']>['onStart']>
+type ReadFinishHandler = NonNullable<NonNullable<RuntimeHooks['read']>['onFinish']>
+type WriteStartHandler = NonNullable<NonNullable<RuntimeHooks['write']>['onStart']>
+type WritePatchesHandler = NonNullable<NonNullable<RuntimeHooks['write']>['onPatches']>
+type WriteCommittedHandler = NonNullable<NonNullable<RuntimeHooks['write']>['onCommitted']>
+type WriteFailedHandler = NonNullable<NonNullable<RuntimeHooks['write']>['onFailed']>
+type StoreCreatedHandler = NonNullable<NonNullable<RuntimeHooks['store']>['onCreated']>
 
 export class HookRegistry implements RuntimeHookRegistry {
-    private readonly handlers: { [K in HookEventName]: Set<HookEventMap[K]> } = {
-        readStart: new Set(),
-        readFinish: new Set(),
-        writeStart: new Set(),
-        writePatches: new Set(),
-        writeCommitted: new Set(),
-        writeFailed: new Set(),
-        storeCreated: new Set()
-    }
+    private readonly readStartHandlers = new Set<ReadStartHandler>()
+    private readonly readFinishHandlers = new Set<ReadFinishHandler>()
+    private readonly writeStartHandlers = new Set<WriteStartHandler>()
+    private readonly writePatchesHandlers = new Set<WritePatchesHandler>()
+    private readonly writeCommittedHandlers = new Set<WriteCommittedHandler>()
+    private readonly writeFailedHandlers = new Set<WriteFailedHandler>()
+    private readonly storeCreatedHandlers = new Set<StoreCreatedHandler>()
 
     get has() {
         return {
-            event: (name: RuntimeHookEventName) => this.handlers[name].size > 0,
-            writePatches: this.handlers.writePatches.size > 0
+            event: (name: RuntimeHookEventName) => {
+                switch (name) {
+                    case 'readStart':
+                        return this.readStartHandlers.size > 0
+                    case 'readFinish':
+                        return this.readFinishHandlers.size > 0
+                    case 'writeStart':
+                        return this.writeStartHandlers.size > 0
+                    case 'writePatches':
+                        return this.writePatchesHandlers.size > 0
+                    case 'writeCommitted':
+                        return this.writeCommittedHandlers.size > 0
+                    case 'writeFailed':
+                        return this.writeFailedHandlers.size > 0
+                    case 'storeCreated':
+                        return this.storeCreatedHandlers.size > 0
+                    default:
+                        return false
+                }
+            },
+            writePatches: this.writePatchesHandlers.size > 0
         }
     }
 
@@ -43,21 +60,21 @@ export class HookRegistry implements RuntimeHookRegistry {
 
         const cleanups: Array<() => void> = []
 
-        const add = <K extends HookEventName>(name: K, fn?: HookEventMap[K]) => {
+        const add = <H>(set: Set<H>, fn?: H) => {
             if (!fn) return
-            this.handlers[name].add(fn)
+            set.add(fn)
             cleanups.push(() => {
-                this.handlers[name].delete(fn)
+                set.delete(fn)
             })
         }
 
-        add('readStart', hooks.read?.onStart)
-        add('readFinish', hooks.read?.onFinish)
-        add('writeStart', hooks.write?.onStart)
-        add('writePatches', hooks.write?.onPatches)
-        add('writeCommitted', hooks.write?.onCommitted)
-        add('writeFailed', hooks.write?.onFailed)
-        add('storeCreated', hooks.store?.onCreated)
+        add(this.readStartHandlers, hooks.read?.onStart)
+        add(this.readFinishHandlers, hooks.read?.onFinish)
+        add(this.writeStartHandlers, hooks.write?.onStart)
+        add(this.writePatchesHandlers, hooks.write?.onPatches)
+        add(this.writeCommittedHandlers, hooks.write?.onCommitted)
+        add(this.writeFailedHandlers, hooks.write?.onFailed)
+        add(this.storeCreatedHandlers, hooks.store?.onCreated)
 
         let active = true
         return () => {
@@ -68,37 +85,67 @@ export class HookRegistry implements RuntimeHookRegistry {
     }
 
     readonly emit = {
-        readStart: (args: ReadStartArgs) => {
-            this.dispatch('readStart', args)
+        readStart: <T extends Entity>(args: RuntimeReadStartArgs<T>) => {
+            for (const fn of this.readStartHandlers) {
+                try {
+                    fn(args)
+                } catch {
+                    // ignore
+                }
+            }
         },
-        readFinish: (args: ReadFinishArgs) => {
-            this.dispatch('readFinish', args)
+        readFinish: <T extends Entity>(args: RuntimeReadFinishArgs<T>) => {
+            for (const fn of this.readFinishHandlers) {
+                try {
+                    fn(args)
+                } catch {
+                    // ignore
+                }
+            }
         },
-        writeStart: (args: WriteStartArgs) => {
-            this.dispatch('writeStart', args)
+        writeStart: <T extends Entity>(args: RuntimeWriteStartArgs<T>) => {
+            for (const fn of this.writeStartHandlers) {
+                try {
+                    fn(args)
+                } catch {
+                    // ignore
+                }
+            }
         },
-        writePatches: (args: WritePatchesArgs) => {
-            this.dispatch('writePatches', args)
+        writePatches: <T extends Entity>(args: RuntimeWritePatchesArgs<T>) => {
+            for (const fn of this.writePatchesHandlers) {
+                try {
+                    fn(args)
+                } catch {
+                    // ignore
+                }
+            }
         },
-        writeCommitted: (args: WriteCommittedArgs) => {
-            this.dispatch('writeCommitted', args)
+        writeCommitted: <T extends Entity>(args: RuntimeWriteCommittedArgs<T>) => {
+            for (const fn of this.writeCommittedHandlers) {
+                try {
+                    fn(args)
+                } catch {
+                    // ignore
+                }
+            }
         },
-        writeFailed: (args: WriteFailedArgs) => {
-            this.dispatch('writeFailed', args)
+        writeFailed: <T extends Entity>(args: RuntimeWriteFailedArgs<T>) => {
+            for (const fn of this.writeFailedHandlers) {
+                try {
+                    fn(args)
+                } catch {
+                    // ignore
+                }
+            }
         },
-        storeCreated: (args: StoreCreatedArgs) => {
-            this.dispatch('storeCreated', args)
-        }
-    }
-
-    private dispatch = <K extends HookEventName>(name: K, args: Parameters<HookEventMap[K]>[0]) => {
-        const list = this.handlers[name] as Set<(payload: Parameters<HookEventMap[K]>[0]) => void>
-        if (!list.size) return
-        for (const fn of list) {
-            try {
-                fn(args)
-            } catch {
-                // ignore
+        storeCreated: <T extends Entity>(args: RuntimeStoreCreatedArgs<T>) => {
+            for (const fn of this.storeCreatedHandlers) {
+                try {
+                    fn(args)
+                } catch {
+                    // ignore
+                }
             }
         }
     }

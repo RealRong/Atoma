@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type { OperationContext, Query, QueryResult, WriteIntent } from '../core'
+import type { Entity, OperationContext, Query, QueryResult, WriteIntent } from '../core'
 import type { StoreHandle } from './handle'
 
 export type RuntimeWriteHookSource =
@@ -9,43 +9,48 @@ export type RuntimeWriteHookSource =
     | 'deleteOne'
     | 'patches'
 
-export type RuntimeReadStartArgs = Readonly<{
-    handle: StoreHandle<any>
-    query: Query<any>
+export type RuntimeReadStartArgs<T extends Entity = Entity> = Readonly<{
+    handle: StoreHandle<T>
+    query: Query<T>
 }>
 
-export type RuntimeReadFinishArgs = Readonly<{
-    handle: StoreHandle<any>
-    query: Query<any>
-    result: QueryResult<any>
+export type RuntimeReadFinishArgs<T extends Entity = Entity> = Readonly<{
+    handle: StoreHandle<T>
+    query: Query<T>
+    result: QueryResult<T>
     durationMs?: number
 }>
 
-export type RuntimeWriteStartArgs = Readonly<{
-    handle: StoreHandle<any>
+export type RuntimeWriteStartArgs<T extends Entity = Entity> = Readonly<{
+    handle: StoreHandle<T>
     opContext: OperationContext
-    intents: Array<WriteIntent<any>>
+    intents: Array<WriteIntent<T>>
     source: RuntimeWriteHookSource
 }>
 
-export type RuntimeWritePatchesArgs = Readonly<{
-    handle: StoreHandle<any>
+export type RuntimeWritePatchesArgs<T extends Entity = Entity> = Readonly<{
+    handle: StoreHandle<T>
     opContext: OperationContext
     patches: Patch[]
     inversePatches: Patch[]
     source: RuntimeWriteHookSource
 }>
 
-export type RuntimeWriteCommittedArgs = Readonly<{
-    handle: StoreHandle<any>
+export type RuntimeWriteCommittedArgs<T extends Entity = Entity> = Readonly<{
+    handle: StoreHandle<T>
     opContext: OperationContext
     result?: unknown
 }>
 
-export type RuntimeWriteFailedArgs = Readonly<{
-    handle: StoreHandle<any>
+export type RuntimeWriteFailedArgs<T extends Entity = Entity> = Readonly<{
+    handle: StoreHandle<T>
     opContext: OperationContext
     error: unknown
+}>
+
+export type RuntimeStoreCreatedArgs<T extends Entity = Entity> = Readonly<{
+    handle: StoreHandle<T>
+    storeName: string
 }>
 
 export type RuntimeHookEventName =
@@ -59,20 +64,17 @@ export type RuntimeHookEventName =
 
 export type RuntimeHooks = Readonly<{
     read?: Readonly<{
-        onStart?: (args: RuntimeReadStartArgs) => void
-        onFinish?: (args: RuntimeReadFinishArgs) => void
+        onStart?: <T extends Entity>(args: RuntimeReadStartArgs<T>) => void
+        onFinish?: <T extends Entity>(args: RuntimeReadFinishArgs<T>) => void
     }>
     write?: Readonly<{
-        onStart?: (args: RuntimeWriteStartArgs) => void
-        onPatches?: (args: RuntimeWritePatchesArgs) => void
-        onCommitted?: (args: RuntimeWriteCommittedArgs) => void
-        onFailed?: (args: RuntimeWriteFailedArgs) => void
+        onStart?: <T extends Entity>(args: RuntimeWriteStartArgs<T>) => void
+        onPatches?: <T extends Entity>(args: RuntimeWritePatchesArgs<T>) => void
+        onCommitted?: <T extends Entity>(args: RuntimeWriteCommittedArgs<T>) => void
+        onFailed?: <T extends Entity>(args: RuntimeWriteFailedArgs<T>) => void
     }>
     store?: Readonly<{
-        onCreated?: (args: {
-            handle: StoreHandle<any>
-            storeName: string
-        }) => void
+        onCreated?: <T extends Entity>(args: RuntimeStoreCreatedArgs<T>) => void
     }>
 }>
 
@@ -83,15 +85,12 @@ export type RuntimeHookRegistry = Readonly<{
         writePatches: boolean
     }>
     emit: Readonly<{
-        readStart: (args: RuntimeReadStartArgs) => void
-        readFinish: (args: RuntimeReadFinishArgs) => void
-        writeStart: (args: RuntimeWriteStartArgs) => void
-        writePatches: (args: RuntimeWritePatchesArgs) => void
-        writeCommitted: (args: RuntimeWriteCommittedArgs) => void
-        writeFailed: (args: RuntimeWriteFailedArgs) => void
-        storeCreated: (args: {
-            handle: StoreHandle<any>
-            storeName: string
-        }) => void
+        readStart: <T extends Entity>(args: RuntimeReadStartArgs<T>) => void
+        readFinish: <T extends Entity>(args: RuntimeReadFinishArgs<T>) => void
+        writeStart: <T extends Entity>(args: RuntimeWriteStartArgs<T>) => void
+        writePatches: <T extends Entity>(args: RuntimeWritePatchesArgs<T>) => void
+        writeCommitted: <T extends Entity>(args: RuntimeWriteCommittedArgs<T>) => void
+        writeFailed: <T extends Entity>(args: RuntimeWriteFailedArgs<T>) => void
+        storeCreated: <T extends Entity>(args: RuntimeStoreCreatedArgs<T>) => void
     }>
 }>

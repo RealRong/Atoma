@@ -23,6 +23,7 @@ import {
     getEntityId,
     normalizeInclude,
     normalizeStoreName,
+    type RelationConfigLike,
     resolvePrefetchMode
 } from './internal/relationInclude'
 
@@ -32,6 +33,17 @@ const PREFETCH_DEDUP_TTL_MS = 300
 type PrefetchEntry = {
     promise: Promise<unknown>
     doneAt: number
+}
+
+type StoreStatesCacheEntry = {
+    includeKey: string
+    liveTick: number
+    states: ReadonlyMap<StoreToken, RuntimeStoreMap>
+}
+
+type RelationTokensCacheEntry = {
+    includeKey: string
+    tokens: StoreToken[]
 }
 
 type RelationStore = IStore<Entity>
@@ -65,9 +77,13 @@ export function useRelations<T extends Entity>(
 ): UseRelationsResult<T> {
     const resolveStoreRef = useRef(resolveStore)
     const engineRef = useRef<RuntimeEngine | undefined>(undefined)
+    const storeStatesCacheRef = useRef<{ live?: StoreStatesCacheEntry; snapshot?: StoreStatesCacheEntry }>({})
+    const relationTokensCacheRef = useRef<{ live?: RelationTokensCacheEntry; snapshot?: RelationTokensCacheEntry }>({})
 
     useEffect(() => {
         resolveStoreRef.current = resolveStore
+        storeStatesCacheRef.current = {}
+        relationTokensCacheRef.current = {}
     }, [resolveStore])
 
     const prefetchCacheRef = useRef<Map<string, PrefetchEntry>>(new Map())
@@ -163,6 +179,7 @@ export function useRelations<T extends Entity>(
 
     type State = { data: T[]; loading: boolean; error?: Error }
     const [state, setState] = useState<State>(() => ({ data: stableItems, loading: false, error: undefined }))
+    const [liveTick, setLiveTick] = useState(0)
     const patchState = (patch: Partial<State>) => setState(prev => ({ ...prev, ...patch }))
 
     const snapshotRef = useRef<Map<EntityId, Record<string, unknown>>>(new Map())
@@ -178,13 +195,40 @@ export function useRelations<T extends Entity>(
 
     useEffect(() => {
         prefetchDoneRef.current = new Set()
+        storeStatesCacheRef.current = {}
+        relationTokensCacheRef.current = {}
     }, [includeKey, relations])
 
-    const collectStoreStates = (includeArg: RuntimeRelationInclude): ReadonlyMap<StoreToken, RuntimeStoreMap> => {
-        if (!resolveStoreRef.current || !relationMap) return new Map()
+    const collectRelationTokens = (includeArg: RuntimeRelationInclude, mode: 'live' | 'snapshot'): StoreToken[] => {
+        if (!relationMap) return []
+
+        const cached = relationTokensCacheRef.current[mode]
+        if (cached && cached.includeKey === includeKey) {
+            return cached.tokens
+        }
 
         const tokens = collectRelationStoreTokens(includeArg, relationMap)
-        if (!tokens.length) return new Map()
+        relationTokensCacheRef.current[mode] = { includeKey, tokens }
+        return tokens
+    }
+
+    const collectStoreStates = (
+        includeArg: RuntimeRelationInclude,
+        mode: 'live' | 'snapshot'
+    ): ReadonlyMap<StoreToken, RuntimeStoreMap> => {
+        if (!resolveStoreRef.current || !relationMap) return new Map()
+
+        const cached = storeStatesCacheRef.current[mode]
+        if (cached && cached.includeKey === includeKey && cached.liveTick === liveTick) {
+            return cached.states
+        }
+
+        const tokens = collectRelationTokens(includeArg, mode)
+        if (!tokens.length) {
+            const empty = new Map<StoreToken, RuntimeStoreMap>()
+            storeStatesCacheRef.current[mode] = { includeKey, liveTick, states: empty }
+            return empty
+        }
 
         const states = new Map<StoreToken, RuntimeStoreMap>()
         tokens.forEach(token => {
@@ -202,6 +246,7 @@ export function useRelations<T extends Entity>(
             })
         })
 
+        storeStatesCacheRef.current[mode] = { includeKey, liveTick, states }
         return states
     }
 
@@ -215,7 +260,7 @@ export function useRelations<T extends Entity>(
             source,
             liveInclude,
             relationMap,
-            collectStoreStates(liveInclude)
+            collectStoreStates(liveInclude, 'live')
         )
 
         const names = snapshotNamesRef.current
@@ -242,7 +287,7 @@ export function useRelations<T extends Entity>(
             source,
             snapshotInclude,
             relationMap,
-            collectStoreStates(snapshotInclude)
+            collectStoreStates(snapshotInclude, 'snapshot')
         )
 
         const next = new Map<EntityId, Record<string, unknown>>()
@@ -300,7 +345,7 @@ export function useRelations<T extends Entity>(
             entries.forEach(([name, value]) => {
                 if (value === false || value === undefined || value === null) return
 
-                const relConfig = relationMap?.[name]
+                const relConfig = relationMap?.[name] as RelationConfigLike | undefined
                 if (!relConfig) return
 
                 const mode = resolvePrefetchMode(relConfig, value)
@@ -367,13 +412,12 @@ export function useRelations<T extends Entity>(
         return () => { cancelled = true }
     }, [stableItems, includeKey, relations, resolveStoreStable, resolveEngine])
 
-    const [liveTick, setLiveTick] = useState(0)
     useEffect(() => {
         if (!liveInclude || !relations || !resolveStoreRef.current) return
 
         const engine = resolveEngine(liveInclude)
         if (!engine) return
-        const tokens = collectRelationStoreTokens(liveInclude, relationMap)
+        const tokens = collectRelationTokens(liveInclude, 'live')
 
         if (!tokens.length) return
 

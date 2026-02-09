@@ -2,7 +2,7 @@ import type { Entity, IndexesLike, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { RuntimeEngine, StoreChangedIds, StoreSnapshot, StoreState } from 'atoma-types/runtime'
 
-export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
+export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T> {
     private snapshot: StoreSnapshot<T>
     private listeners = new Set<() => void>()
     private readonly engine: RuntimeEngine
@@ -20,8 +20,7 @@ export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
 
     getSnapshot = () => this.snapshot
 
-    setSnapshot = (next: StoreSnapshot<T>) => {
-        this.snapshot = next
+    private notifyListeners = () => {
         this.listeners.forEach(listener => {
             try {
                 listener()
@@ -29,6 +28,11 @@ export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
                 // ignore
             }
         })
+    }
+
+    setSnapshot = (next: StoreSnapshot<T>) => {
+        this.snapshot = next
+        this.notifyListeners()
     }
 
     subscribe = (listener: () => void) => {
@@ -55,12 +59,14 @@ export class SimpleStoreState<T extends Entity = any> implements StoreState<T> {
             if (size === 0) return
         }
 
-        this.setSnapshot(after)
         if (changedIds) {
             indexes?.applyChangedIds(before, after, changedIds)
         } else {
             indexes?.applyMapDiff(before, after)
         }
+
+        this.snapshot = after
+        this.notifyListeners()
     }
 
     applyWriteback = (args: StoreWritebackArgs<T>, options?: { preserve?: (existing: T, incoming: T) => T }) => {

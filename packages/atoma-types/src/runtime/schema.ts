@@ -1,7 +1,7 @@
 import type { Entity, StoreConfig } from '../core'
 
-export type RuntimeStoreSchema<T extends Entity = any> = {
-    relations?: Record<string, any>
+export type RuntimeStoreSchema<T extends Entity = Entity> = {
+    relations?: Record<string, unknown>
     [key: string]: unknown
 } & Partial<Pick<StoreConfig<T>, 'indexes' | 'hooks' | 'idGenerator' | 'dataProcessor' | 'write'>>
 

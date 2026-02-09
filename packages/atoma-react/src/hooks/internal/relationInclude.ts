@@ -11,6 +11,47 @@ export type IncludeBucket = Readonly<{
 }>
 
 export type PrefetchMode = 'on-mount' | 'on-change' | 'manual'
+export type RelationConfigLike = {
+    type?: unknown
+}
+
+type IncludeOptions = {
+    live?: boolean
+    prefetch?: PrefetchMode
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const warnInvalidIncludeOption = (name: string, key: string, expected: string, received: unknown) => {
+    console.warn(`[Atoma] include.${name}.${key} 应为 ${expected}，已忽略非法值:`, received)
+}
+
+const normalizeIncludeOptions = (name: string, value: unknown): IncludeOptions => {
+    if (!isRecord(value)) return {}
+
+    const options: IncludeOptions = {}
+
+    if ('live' in value) {
+        if (typeof value.live === 'boolean') {
+            options.live = value.live
+        } else if (value.live !== undefined) {
+            warnInvalidIncludeOption(name, 'live', 'boolean', value.live)
+        }
+    }
+
+    if ('prefetch' in value) {
+        const mode = value.prefetch
+        if (mode === 'on-mount' || mode === 'on-change' || mode === 'manual') {
+            options.prefetch = mode
+        } else if (mode !== undefined) {
+            warnInvalidIncludeOption(name, 'prefetch', "'on-mount' | 'on-change' | 'manual'", mode)
+        }
+    }
+
+    return options
+}
 
 export function getEntityId(item: any): EntityId | undefined {
     const id = item?.id
@@ -36,7 +77,8 @@ export function normalizeInclude(include?: Record<string, any>): IncludeBucket {
 
     Object.entries(effectiveInclude).forEach(([name, opts]) => {
         if (opts === false || opts === undefined || opts === null) return
-        const isLive = typeof opts === 'object' ? (opts as any).live !== false : true
+        const normalized = normalizeIncludeOptions(name, opts)
+        const isLive = normalized.live !== false
         ;(isLive ? live : snapshot)[name] = opts
     })
 
@@ -50,10 +92,10 @@ export function normalizeInclude(include?: Record<string, any>): IncludeBucket {
     }
 }
 
-export function resolvePrefetchMode(relConfig: any, includeValue: any): PrefetchMode {
-    if (includeValue && typeof includeValue === 'object') {
-        const mode = includeValue.prefetch
-        if (mode === 'on-mount' || mode === 'on-change' || mode === 'manual') return mode
+export function resolvePrefetchMode(relConfig: RelationConfigLike, includeValue: unknown): PrefetchMode {
+    if (isRecord(includeValue)) {
+        const mode = normalizeIncludeOptions('_', includeValue).prefetch
+        if (mode) return mode
     }
     return relConfig?.type === 'hasMany' ? 'on-mount' : 'on-change'
 }
@@ -64,7 +106,7 @@ export function buildPrefetchDoneKey(args: { includeKey: string; relationName: s
 
 export function filterStableItemsForRelation<T extends Entity>(args: {
     items: T[]
-    relationConfig: any
+    relationConfig: RelationConfigLike
     mode: PrefetchMode
     newIds: Set<EntityId>
     force?: boolean
@@ -104,6 +146,8 @@ export function collectCurrentAndNewIds<T extends Entity>(
     return { currentIds, newIds }
 }
 
-export function normalizeStoreName(store: any, fallback: StoreToken): string {
-    return String(store?.name ?? fallback ?? '')
+export function normalizeStoreName(store: unknown, fallback: StoreToken): string {
+    if (!isRecord(store)) return String(fallback ?? '')
+    const name = store.name
+    return String(name ?? fallback ?? '')
 }

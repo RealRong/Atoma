@@ -21,6 +21,7 @@ export type {
     RuntimeWritePatchesArgs,
     RuntimeWriteCommittedArgs,
     RuntimeWriteFailedArgs,
+    RuntimeStoreCreatedArgs,
     RuntimeWriteHookSource
 } from './hooks'
 

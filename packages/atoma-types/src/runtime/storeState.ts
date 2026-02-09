@@ -7,7 +7,7 @@ export type StoreListener = () => void
 
 export type StoreChangedIds = ReadonlyArray<EntityId> | ReadonlySet<EntityId>
 
-export type StoreState<T extends Entity = any> = Readonly<{
+export type StoreState<T extends Entity = Entity> = Readonly<{
     getSnapshot: () => StoreSnapshot<T>
     setSnapshot: (next: StoreSnapshot<T>) => void
     subscribe: (listener: StoreListener) => () => void

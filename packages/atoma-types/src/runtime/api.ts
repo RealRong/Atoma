@@ -32,11 +32,11 @@ export type DataProcessor = Readonly<{
 }>
 
 export type StoreRegistry = Readonly<{
-    resolve: (name: StoreToken) => IStore<any> | undefined
-    ensure: (name: StoreToken) => IStore<any>
-    list: () => Iterable<IStore<any>>
-    onCreated: (listener: (store: IStore<any>) => void, options?: { replay?: boolean }) => () => void
-    resolveHandle: (name: StoreToken, tag?: string) => StoreHandle<any>
+    resolve: (name: StoreToken) => IStore<Entity> | undefined
+    ensure: (name: StoreToken) => IStore<Entity>
+    list: () => Iterable<IStore<Entity>>
+    onCreated: (listener: (store: IStore<Entity>) => void, options?: { replay?: boolean }) => () => void
+    resolveHandle: (name: StoreToken, tag?: string) => StoreHandle<Entity>
 }>
 
 export type RuntimeIo = Readonly<{
