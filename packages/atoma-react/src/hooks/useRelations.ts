@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { stableStringify } from 'atoma-shared'
-import type { Entity, IStore, RelationIncludeInput, StoreToken, WithRelations } from 'atoma-types/core'
+import { collectRelationStoreTokens } from 'atoma-core/relations'
+import type {
+    Entity,
+    IStore,
+    Query,
+    RelationIncludeInput,
+    RelationMap,
+    StoreReadOptions,
+    StoreToken,
+    WithRelations
+} from 'atoma-types/core'
 import type { RuntimeEngine, RuntimeRelationInclude, RuntimeStoreMap } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/protocol'
 import { STORE_BINDINGS, getStoreBindings } from 'atoma-types/internal'
@@ -24,44 +34,7 @@ type PrefetchEntry = {
     doneAt: number
 }
 
-type RelationConfigLike = {
-    type?: unknown
-    store?: unknown
-    branches?: Array<{
-        relation?: {
-            store?: unknown
-        }
-    }>
-}
-
-function collectRelationTokensFromInclude(
-    include: RuntimeRelationInclude,
-    relations: Record<string, unknown> | undefined
-): StoreToken[] {
-    if (!include || !relations) return []
-
-    const output = new Set<StoreToken>()
-    Object.entries(include).forEach(([name, value]) => {
-        if (value === false || value === undefined || value === null) return
-
-        const relation = relations[name] as RelationConfigLike | undefined
-        if (!relation || typeof relation !== 'object') return
-
-        if (relation.type === 'variants') {
-            relation.branches?.forEach(branch => {
-                const store = branch.relation?.store
-                if (typeof store === 'string' && store) output.add(store)
-            })
-            return
-        }
-
-        if (typeof relation.store === 'string' && relation.store) {
-            output.add(relation.store)
-        }
-    })
-
-    return Array.from(output)
-}
+type RelationStore = IStore<Entity>
 
 export interface UseRelationsResult<T extends Entity> {
     data: T[]
@@ -74,22 +47,22 @@ export function useRelations<T extends Entity, Relations>(
     items: T[],
     include: undefined,
     relations: Relations | undefined,
-    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
+    resolveStore?: (name: StoreToken) => RelationStore | undefined
 ): UseRelationsResult<T>
 
 export function useRelations<T extends Entity, Relations, const Include extends RelationIncludeInput<Relations>>(
     items: T[],
     include: Include,
     relations: Relations | undefined,
-    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
+    resolveStore?: (name: StoreToken) => RelationStore | undefined
 ): UseRelationsResult<keyof Include extends never ? T : WithRelations<T, Relations, Include>>
 
 export function useRelations<T extends Entity>(
     items: T[],
-    include: Record<string, any> | undefined,
-    relations: any | undefined,
-    resolveStore?: (name: StoreToken) => IStore<any, any> | undefined
-): UseRelationsResult<any> {
+    include: Record<string, unknown> | undefined,
+    relations: RelationMap<T> | undefined,
+    resolveStore?: (name: StoreToken) => RelationStore | undefined
+): UseRelationsResult<T> {
     const resolveStoreRef = useRef(resolveStore)
     const engineRef = useRef<RuntimeEngine | undefined>(undefined)
 
@@ -98,7 +71,7 @@ export function useRelations<T extends Entity>(
     }, [resolveStore])
 
     const prefetchCacheRef = useRef<Map<string, PrefetchEntry>>(new Map())
-    const wrappedStoreCacheRef = useRef<WeakMap<object, IStore<any, any>>>(new WeakMap())
+    const wrappedStoreCacheRef = useRef<WeakMap<object, RelationStore>>(new WeakMap())
     const prevIdsRef = useRef<Set<EntityId>>(new Set())
     const prefetchDoneRef = useRef<Set<string>>(new Set())
 
@@ -125,7 +98,7 @@ export function useRelations<T extends Entity>(
         return promise
     }, [])
 
-    const resolveStoreStable = useCallback((name: StoreToken): IStore<any, any> | undefined => {
+    const resolveStoreStable = useCallback((name: StoreToken): RelationStore | undefined => {
         const store = resolveStoreRef.current?.(name)
         if (!store) return store
 
@@ -136,15 +109,15 @@ export function useRelations<T extends Entity>(
         const query = typeof store.query === 'function' ? store.query.bind(store) : undefined
         const getMany = store.getMany.bind(store)
 
-        const wrapped: IStore<any, any> = {
+        const wrapped: RelationStore = {
             ...store,
             query: query
-                ? (q: any) => {
-                    const key = `rel:query:${storeName}:${stableStringify(q)}`
-                    return dedupePrefetch(key, () => Promise.resolve(query(q)))
+                ? (queryInput: Query<Entity>) => {
+                    const key = `rel:query:${storeName}:${stableStringify(queryInput)}`
+                    return dedupePrefetch(key, () => Promise.resolve(query(queryInput)))
                 }
                 : query,
-            getMany: (ids: any[], cache?: boolean, options?: any) => {
+            getMany: (ids: EntityId[], cache?: boolean, options?: StoreReadOptions) => {
                 const normalizedIds = Array.isArray(ids)
                     ? [...new Set(ids.map(String))].sort()
                     : []
@@ -153,7 +126,7 @@ export function useRelations<T extends Entity>(
             }
         }
 
-        const bindings = (store as any)?.[STORE_BINDINGS]
+        const bindings = (store as unknown as Record<PropertyKey, unknown>)?.[STORE_BINDINGS]
         if (bindings) {
             Object.defineProperty(wrapped, STORE_BINDINGS, {
                 value: bindings,
@@ -166,17 +139,17 @@ export function useRelations<T extends Entity>(
         return wrapped
     }, [dedupePrefetch])
 
-    const relationMap = relations as Record<string, unknown> | undefined
+    const relationMap = relations
 
     const resolveEngine = useCallback((includeArg: RuntimeRelationInclude): RuntimeEngine | undefined => {
         if (engineRef.current) return engineRef.current
         if (!includeArg || !relationMap || !resolveStoreRef.current) return undefined
 
-        const tokens = collectRelationTokensFromInclude(includeArg, relationMap)
+        const tokens = collectRelationStoreTokens(includeArg, relationMap)
         for (const token of tokens) {
             const store = resolveStoreStable(token)
             if (!store) continue
-            const bindings = getStoreBindings(store as any, 'useRelations')
+            const bindings = getStoreBindings(store, 'useRelations')
             engineRef.current = bindings.engine
             return bindings.engine
         }
@@ -207,21 +180,29 @@ export function useRelations<T extends Entity>(
         prefetchDoneRef.current = new Set()
     }, [includeKey, relations])
 
-    const getStoreMap = (storeToken: StoreToken): RuntimeStoreMap | undefined => {
-        if (!resolveStoreRef.current) return undefined
+    const collectStoreStates = (includeArg: RuntimeRelationInclude): ReadonlyMap<StoreToken, RuntimeStoreMap> => {
+        if (!resolveStoreRef.current || !relationMap) return new Map()
 
-        const store = resolveStoreStable(storeToken)
-        if (!store) return undefined
+        const tokens = collectRelationStoreTokens(includeArg, relationMap)
+        if (!tokens.length) return new Map()
 
-        const bindings = getStoreBindings(store as any, 'useRelations')
-        if (!engineRef.current) {
-            engineRef.current = bindings.engine
-        }
+        const states = new Map<StoreToken, RuntimeStoreMap>()
+        tokens.forEach(token => {
+            const store = resolveStoreStable(token)
+            if (!store) return
 
-        return {
-            map: bindings.source.getSnapshot() as Map<EntityId, Entity>,
-            indexes: bindings.indexes
-        }
+            const bindings = getStoreBindings(store, 'useRelations')
+            if (!engineRef.current) {
+                engineRef.current = bindings.engine
+            }
+
+            states.set(token, {
+                map: bindings.source.getSnapshot(),
+                indexes: bindings.indexes
+            })
+        })
+
+        return states
     }
 
     const project = (source: T[]): T[] => {
@@ -233,16 +214,16 @@ export function useRelations<T extends Entity>(
         const projectedLive = engine.relation.project(
             source,
             liveInclude,
-            relations as any,
-            getStoreMap
-        ) as T[]
+            relationMap,
+            collectStoreStates(liveInclude)
+        )
 
         const names = snapshotNamesRef.current
         if (!names.length) return projectedLive
 
         const snapshot = snapshotRef.current
         return projectedLive.map(item => {
-            const id = getEntityId(item as any)
+            const id = getEntityId(item)
             if (!id) return item
             const cached = snapshot.get(id)
             if (!cached) return item
@@ -260,18 +241,19 @@ export function useRelations<T extends Entity>(
         const projected = engine.relation.project(
             source,
             snapshotInclude,
-            relations as any,
-            getStoreMap
-        ) as Array<T & Record<string, unknown>>
+            relationMap,
+            collectStoreStates(snapshotInclude)
+        )
 
         const next = new Map<EntityId, Record<string, unknown>>()
         projected.forEach(item => {
             const id = getEntityId(item)
             if (!id) return
 
+            const record = item as unknown as Record<string, unknown>
             const values: Record<string, unknown> = {}
             snapshotNames.forEach(name => {
-                values[name] = item[name]
+                values[name] = record[name]
             })
             next.set(id, values)
         })
@@ -348,7 +330,7 @@ export function useRelations<T extends Entity>(
                 tasks.push(engine.relation.prefetch(
                     itemsForRelation,
                     includeArg,
-                    relations as any,
+                    relationMap,
                     resolveStoreStable,
                     DEFAULT_PREFETCH_OPTIONS
                 ))
@@ -391,7 +373,7 @@ export function useRelations<T extends Entity>(
 
         const engine = resolveEngine(liveInclude)
         if (!engine) return
-        const tokens = engine.relation.collectStores(liveInclude, relations as any)
+        const tokens = collectRelationStoreTokens(liveInclude, relationMap)
 
         if (!tokens.length) return
 
@@ -399,7 +381,7 @@ export function useRelations<T extends Entity>(
         tokens.forEach(token => {
             const store = resolveStoreStable(token)
             if (!store) return
-            const source = getStoreBindings(store as any, 'useRelations').source
+            const source = getStoreBindings(store, 'useRelations').source
             const subscribe = createBatchedSubscribe((listener: () => void) => source.subscribe(listener))
             const unsubscribe = subscribe(() => setLiveTick(current => current + 1))
             unsubscribers.push(unsubscribe)

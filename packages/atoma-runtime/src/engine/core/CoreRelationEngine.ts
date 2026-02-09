@@ -1,46 +1,31 @@
-import {
-    RelationResolver,
-    collectRelationStoreTokens,
-    compileRelationsMap,
-    projectRelationsBatch
-} from 'atoma-core/relations'
+import { projectRelationsBatch } from 'atoma-core/relations'
 import type { Entity, IStore, RelationMap, StoreToken } from 'atoma-types/core'
 import type {
+    RuntimeStoreMap,
     RuntimeRelations,
     RuntimeRelationInclude,
-    RuntimeRelationPrefetchOptions,
-    RuntimeStoreMap
+    RuntimeRelationPrefetchOptions
 } from 'atoma-types/runtime'
+import { prefetchRelations } from '../../relations/prefetch'
 
 export class CoreRelationEngine implements RuntimeRelations {
-    compileMap = (relationsRaw: unknown, storeName: string): Record<string, unknown> => {
-        return compileRelationsMap(relationsRaw, storeName)
-    }
-
-    collectStores = <T extends Entity>(
-        include: RuntimeRelationInclude,
-        relations: RelationMap<T> | undefined
-    ): StoreToken[] => {
-        return collectRelationStoreTokens(include, relations)
-    }
-
     project = <T extends Entity>(
         items: T[],
         include: RuntimeRelationInclude,
         relations: RelationMap<T> | undefined,
-        getStoreMap: (store: StoreToken) => RuntimeStoreMap | undefined
+        storeStates: ReadonlyMap<StoreToken, RuntimeStoreMap<Entity>>
     ): T[] => {
-        return projectRelationsBatch(items, include, relations, getStoreMap as (store: StoreToken) => any)
+        return projectRelationsBatch(items, include, relations, storeStates)
     }
 
     prefetch = async <T extends Entity>(
         items: T[],
         include: RuntimeRelationInclude,
         relations: RelationMap<T> | undefined,
-        resolveStore: (name: StoreToken) => IStore<any> | undefined,
+        resolveStore: (name: StoreToken) => IStore<unknown> | undefined,
         options?: RuntimeRelationPrefetchOptions
     ): Promise<void> => {
-        await RelationResolver.prefetchBatch(
+        await prefetchRelations(
             items,
             include,
             relations,

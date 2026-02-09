@@ -1,5 +1,10 @@
 export { belongsTo, hasMany, hasOne, variants } from './builders'
 export { compileRelationsMap } from './compile'
-export { RelationResolver } from './RelationResolver'
-export { collectRelationStoreTokens, projectRelationsBatch } from './projector'
-export { buildRelationPlan, collectRelationStoreTokensFromInclude } from './planner'
+export {
+    buildRelationPlan,
+    collectRelationStoreTokens,
+    type IncludeInput,
+    type PlannedRelation,
+    type StandardRelationConfig
+} from './plan'
+export { projectRelationsBatch, type RelationStoreState, type RelationStoreStates } from './project'

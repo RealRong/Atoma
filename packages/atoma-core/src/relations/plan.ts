@@ -9,8 +9,8 @@ import type {
     VariantsConfig
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { mergeIncludeQuery, resolveLimit } from './utils/includeQuery'
-import { collectUniqueKeys } from './utils/key'
+import { mergeIncludeQuery, resolveLimit } from './include'
+import { collectUniqueKeys } from './key'
 
 export type IncludeInput = Record<string, boolean | Query<unknown>> | undefined
 
@@ -37,7 +37,7 @@ function getRelationOptions<T extends Entity>(relation: StandardRelationConfig<T
     return (relation as { options?: Query<unknown> }).options
 }
 
-export function collectRelationStoreTokensFromInclude<T extends Entity>(
+export function collectRelationStoreTokens<T extends Entity>(
     include: IncludeInput,
     relations: RelationMap<T> | undefined
 ): StoreToken[] {

@@ -1,30 +1,23 @@
 import type {
     Entity,
     FilterExpr,
+    IndexesLike,
     RelationMap,
     SortRule,
-    IndexesLike,
     StoreToken
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { queryItems } from '../query'
-import { getRelationDefaultValue } from './utils/defaultValue'
-import { extractKeyValue, pickFirstKey } from './utils/key'
-import {
-    buildRelationPlan,
-    collectRelationStoreTokensFromInclude,
-    type IncludeInput,
-    type PlannedRelation
-} from './planner'
+import { getRelationDefaultValue } from './defaultValue'
+import { extractKeyValue, pickFirstKey } from './key'
+import { buildRelationPlan, type IncludeInput, type PlannedRelation } from './plan'
 
-type DynamicEntity = Entity & Record<string, unknown>
-
-export type StoreRuntime = {
-    map: Map<EntityId, DynamicEntity>
-    indexes?: IndexesLike<DynamicEntity> | null
+export type RelationStoreState = {
+    map: ReadonlyMap<EntityId, Entity>
+    indexes: IndexesLike<Entity> | null
 }
 
-export type GetStoreMap = (store: StoreToken) => Map<EntityId, DynamicEntity> | StoreRuntime | undefined
+export type RelationStoreStates = ReadonlyMap<StoreToken, RelationStoreState>
 
 const DEFAULT_STABLE_SORT: SortRule[] = [{ field: 'id', dir: 'asc' }]
 
@@ -43,12 +36,12 @@ const toEntityId = (value: unknown): EntityId | undefined => {
     return typeof value === 'string' ? value : undefined
 }
 
-const readField = (item: DynamicEntity, field: string): unknown => {
-    return item[field]
+const readField = (item: Entity, field: string): unknown => {
+    return (item as unknown as Record<string, unknown>)[field]
 }
 
 const resolveLookupMode = (
-    indexes: IndexesLike<DynamicEntity> | null,
+    indexes: IndexesLike<Entity> | null,
     targetKeyField: string,
     key: EntityId
 ): 'index' | 'scan' => {
@@ -71,18 +64,11 @@ const dedupeById = <T extends Entity>(items: T[]): T[] => {
     return output
 }
 
-export function collectRelationStoreTokens<T extends Entity>(
-    include: IncludeInput,
-    relations: RelationMap<T> | undefined
-): StoreToken[] {
-    return collectRelationStoreTokensFromInclude(include, relations)
-}
-
 export function projectRelationsBatch<T extends Entity>(
     items: T[],
     include: IncludeInput,
     relations: RelationMap<T> | undefined,
-    getStoreMap: GetStoreMap
+    storeStates: RelationStoreStates
 ): T[] {
     if (!items.length || !include || !relations) return items
 
@@ -90,7 +76,7 @@ export function projectRelationsBatch<T extends Entity>(
     const plan = buildRelationPlan(results, include, relations)
 
     plan.forEach(entry => {
-        projectPlanned(results, entry, getStoreMap)
+        projectPlanned(results, entry, storeStates)
     })
 
     return results
@@ -99,15 +85,11 @@ export function projectRelationsBatch<T extends Entity>(
 function projectPlanned<TSource extends Entity>(
     results: TSource[],
     entry: PlannedRelation<TSource>,
-    getStoreMap: GetStoreMap
+    storeStates: RelationStoreStates
 ) {
-    const runtime = getStoreMap(entry.store)
-    const map = runtime instanceof Map
-        ? runtime
-        : runtime?.map
-    const indexes = runtime instanceof Map
-        ? null
-        : runtime?.indexes ?? null
+    const runtime = storeStates.get(entry.store)
+    const map = runtime?.map
+    const indexes = runtime?.indexes ?? null
 
     if (!map) {
         results.forEach(item => {
@@ -127,8 +109,8 @@ function projectPlanned<TSource extends Entity>(
 function projectBelongsTo<TSource extends Entity>(
     results: TSource[],
     entry: PlannedRelation<TSource>,
-    map: Map<EntityId, DynamicEntity>,
-    indexes: IndexesLike<DynamicEntity> | null
+    map: ReadonlyMap<EntityId, Entity>,
+    indexes: IndexesLike<Entity> | null
 ) {
     if (entry.targetKeyField === 'id') {
         results.forEach(item => {
@@ -140,10 +122,10 @@ function projectBelongsTo<TSource extends Entity>(
     }
 
     let lookupMode: 'index' | 'scan' | undefined
-    const scannedIndex = new Map<EntityId, DynamicEntity>()
-    const pickedByKey = new Map<EntityId, DynamicEntity | null>()
+    const scannedIndex = new Map<EntityId, Entity>()
+    const pickedByKey = new Map<EntityId, Entity | null>()
 
-    const getTargetByKey = (key: EntityId): DynamicEntity | undefined => {
+    const getTargetByKey = (key: EntityId): Entity | undefined => {
         const cached = pickedByKey.get(key)
         if (cached !== undefined) return cached ?? undefined
 
@@ -194,16 +176,16 @@ function projectBelongsTo<TSource extends Entity>(
 function projectHasManyOrHasOne<TSource extends Entity>(
     results: TSource[],
     entry: PlannedRelation<TSource>,
-    map: Map<EntityId, DynamicEntity>,
-    indexes: IndexesLike<DynamicEntity> | null
+    map: ReadonlyMap<EntityId, Entity>,
+    indexes: IndexesLike<Entity> | null
 ) {
     const isHasOne = entry.relationType === 'hasOne'
 
-    let bucket: Map<EntityId, DynamicEntity[]> | null = null
+    let bucket: Map<EntityId, Entity[]> | null = null
     let keyLookupMode: 'index' | 'scan' | undefined
-    const perKeyCache = new Map<EntityId, DynamicEntity[]>()
+    const perKeyCache = new Map<EntityId, Entity[]>()
 
-    const getTargetsByKey = (key: EntityId): DynamicEntity[] => {
+    const getTargetsByKey = (key: EntityId): Entity[] => {
         const cached = perKeyCache.get(key)
         if (cached) return cached
 
@@ -218,7 +200,7 @@ function projectHasManyOrHasOne<TSource extends Entity>(
                 return []
             }
 
-            const output: DynamicEntity[] = []
+            const output: Entity[] = []
             for (const id of res.ids) {
                 const target = map.get(id)
                 if (target) output.push(target)
@@ -229,7 +211,7 @@ function projectHasManyOrHasOne<TSource extends Entity>(
 
         if (keyLookupMode !== 'scan') keyLookupMode = 'scan'
         if (!bucket) {
-            const next = new Map<EntityId, DynamicEntity[]>()
+            const next = new Map<EntityId, Entity[]>()
             map.forEach(target => {
                 const targetKey = toEntityId(readField(target, entry.targetKeyField))
                 if (!targetKey) return
@@ -253,7 +235,7 @@ function projectHasManyOrHasOne<TSource extends Entity>(
         }
 
         const keys = Array.isArray(keyValue) ? keyValue : [keyValue]
-        const merged: DynamicEntity[] = []
+        const merged: Entity[] = []
         keys.forEach(key => {
             if (key === undefined || key === null) return
             const list = getTargetsByKey(key)

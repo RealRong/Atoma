@@ -8,6 +8,7 @@ import type {
     StoreDataProcessor,
     StoreToken
 } from 'atoma-types/core'
+import { compileRelationsMap } from 'atoma-core/relations'
 import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime } from 'atoma-types/runtime'
@@ -63,7 +64,7 @@ export class StoreFactory {
         const dataProcessor = this.mergeDataProcessor(this.dataProcessor as StoreDataProcessor<T> | undefined, storeSchema.dataProcessor)
 
         const relationsFactory = storeSchema.relations
-            ? () => this.runtime.engine.relation.compileMap(storeSchema.relations, name)
+            ? () => compileRelationsMap(storeSchema.relations, name)
             : undefined
 
         const indexes = this.runtime.engine.index.create<T>(storeSchema.indexes ?? null)
