@@ -1,4 +1,4 @@
-import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client'
+import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client/plugins'
 import type { PersistResult } from 'atoma-types/runtime'
 import { persistViaOps, queryViaOps } from 'atoma-backend-shared'
 import { MemoryOpsClient } from './ops-client'

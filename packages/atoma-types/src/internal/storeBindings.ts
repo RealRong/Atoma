@@ -1,4 +1,4 @@
-import type { Entity, IStore, IndexesLike, StoreApi, StoreToken } from '../core'
+import type { Entity, IStore, IndexesLike, StoreToken } from '../core'
 import type { EntityId } from '../shared'
 import type { RuntimeEngine } from '../runtime'
 
@@ -21,7 +21,7 @@ export type StoreBindings<T extends Entity = any> = Readonly<{
 }>
 
 export function getStoreBindings<T extends Entity, Relations = any>(
-    store: StoreApi<T, Relations>,
+    store: IStore<T, Relations>,
     tag: string
 ): StoreBindings<T> {
     const bindings = (store as any)?.[STORE_BINDINGS] as StoreBindings<T> | undefined

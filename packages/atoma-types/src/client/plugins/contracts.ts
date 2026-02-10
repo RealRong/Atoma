@@ -85,5 +85,3 @@ export type PluginContext = Readonly<{
     runtime: CoreRuntime
     hooks: RuntimeHookRegistry
 }>
-
-export type ClientPluginContext = PluginContext

@@ -22,9 +22,7 @@ export type {
     NotifyMessage,
     SyncSubscribe,
     SyncTransport,
-    SyncDriver,
     SyncSubscribeTransport,
-    SyncSubscribeDriver
 } from './transport'
 
 export type {

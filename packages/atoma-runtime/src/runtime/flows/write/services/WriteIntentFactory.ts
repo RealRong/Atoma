@@ -10,7 +10,7 @@ import type {
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
-import { version } from 'atoma-shared'
+import { requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
 import {
     prepareCreateInput,
     prepareUpdateInput,
@@ -65,7 +65,7 @@ export class WriteIntentFactory {
         const next = produce(base as T, draft => args.recipe(draft)) as PartialWithId<T>
         const patched = { ...next, id: args.id } as PartialWithId<T>
         const prepared = await prepareUpdateInput(this.runtime, args.handle, base, patched, args.opContext)
-        const baseVersion = version.requireBaseVersion(args.id, base)
+        const baseVersion = requireBaseVersion(args.id, base)
 
         return {
             intent: {
@@ -116,7 +116,7 @@ export class WriteIntentFactory {
             return processed as PartialWithId<T>
         })()
 
-        const baseVersion = version.resolvePositiveVersion(prepared)
+        const baseVersion = resolvePositiveVersion(prepared)
         const intentOptions = buildUpsertIntentOptions(args.options)
 
         return {
@@ -139,7 +139,7 @@ export class WriteIntentFactory {
         options?: StoreOperationOptions
     }): Promise<{ intent: WriteIntent<T>; base: PartialWithId<T> }> => {
         const base = await resolveWriteBase(this.runtime, args.handle, args.id, args.options)
-        const baseVersion = version.requireBaseVersion(args.id, base)
+        const baseVersion = requireBaseVersion(args.id, base)
 
         if (args.options?.force) {
             return {

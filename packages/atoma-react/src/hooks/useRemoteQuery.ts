@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { stableStringify } from 'atoma-shared'
-import type { Entity, PageInfo, Query, StoreApi } from 'atoma-types/core'
+import type { Entity, IStore, PageInfo, Query } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 
 type RemoteState<T extends Entity> = Readonly<{
@@ -67,7 +67,7 @@ function publish<T extends Entity>(entry: CacheEntry<T>, patch: Partial<RemoteSt
 }
 
 export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
-    store: StoreApi<T, Relations>
+    store: IStore<T, Relations>
     options?: Query<T>
     behavior: RemoteBehavior
     enabled?: boolean

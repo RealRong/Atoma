@@ -1,4 +1,4 @@
-import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
+import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry, type DevtoolsMeta } from 'atoma-types/devtools'
 import type { HistoryProvider, SyncProvider } from './types'
 import { createClientInspector } from './runtime/create-client-inspector'
@@ -25,7 +25,7 @@ export type DevtoolsPluginOptions = Readonly<{
     syncDevtools?: SyncProvider
 }>
 
-function readRuntimeMeta(ctx: ClientPluginContext): DevtoolsMeta | undefined {
+function readRuntimeMeta(ctx: PluginContext): DevtoolsMeta | undefined {
     const meta = ctx.capabilities.get<DevtoolsMeta>(DEVTOOLS_META_KEY)
     const storeBackend = meta?.storeBackend
     if (!storeBackend) return
@@ -42,11 +42,11 @@ function readRuntimeMeta(ctx: ClientPluginContext): DevtoolsMeta | undefined {
     }
 }
 
-function defaultMeta(ctx: ClientPluginContext): DevtoolsMeta {
+function defaultMeta(ctx: PluginContext): DevtoolsMeta {
     return readRuntimeMeta(ctx) ?? { storeBackend: { role: 'local', kind: 'custom' } }
 }
 
-function ensureRegistry(ctx: ClientPluginContext): DevtoolsRegistry {
+function ensureRegistry(ctx: PluginContext): DevtoolsRegistry {
     const existing = ctx.capabilities.get<DevtoolsRegistry>(DEVTOOLS_REGISTRY_KEY)
     if (existing && typeof existing.get === 'function' && typeof existing.register === 'function') {
         return existing
@@ -107,7 +107,7 @@ function asSyncProvider(input: unknown): SyncProvider | undefined {
 export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugin {
     return {
         id: 'atoma-devtools',
-        init: (ctx: ClientPluginContext) => {
+        init: (ctx: PluginContext) => {
             const runtime = ctx.runtime as any
             const registry = ensureRegistry(ctx)
 

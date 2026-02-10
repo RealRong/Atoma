@@ -1,6 +1,6 @@
 import { HTTP_PATH_SYNC_SUBSCRIBE, SSE_EVENT_NOTIFY, parseNotifyMessage } from 'atoma-types/protocol-tools'
-import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
-import type { NotifyMessage, SyncSubscribeDriver } from 'atoma-types/sync'
+import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
+import type { NotifyMessage, SyncSubscribeTransport } from 'atoma-types/sync'
 import { getSyncSubscribeDriver, registerSyncSubscribeDriver } from '#sync/capabilities'
 
 type HeadersInput = () => Promise<Record<string, string>> | Record<string, string>
@@ -36,10 +36,10 @@ type EventSourceLike = {
 export function sseSubscribeDriverPlugin(options: SseSubscribeDriverPluginOptions = {}): ClientPlugin {
     return {
         id: 'sync.subscribe:sse',
-        init: (ctx: ClientPluginContext) => {
+        init: (ctx: PluginContext) => {
             if (!options?.overwrite && getSyncSubscribeDriver(ctx)) return
 
-            const driver: SyncSubscribeDriver = {
+            const driver: SyncSubscribeTransport = {
                 subscribe: (args) => {
                     const url = buildSubscribeUrl(options, args.resources)
                     const closeHandlers: Array<() => void> = []

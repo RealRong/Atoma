@@ -1,4 +1,4 @@
-import type { ClientRuntime } from 'atoma-types/client'
+import type { ClientRuntime } from 'atoma-types/client/client'
 import type { EntityId } from 'atoma-types/protocol'
 import type { DevtoolsEvent, SyncProvider, HistoryProvider } from './types'
 import type { ClientEntry } from './registry'

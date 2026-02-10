@@ -1,4 +1,4 @@
-import type { PluginContext } from 'atoma-types/client'
+import type { PluginContext } from 'atoma-types/client/plugins'
 import type { PersistRequest, PersistResult } from 'atoma-types/runtime'
 
 export async function persistViaOps(ctx: PluginContext, req: PersistRequest<any>): Promise<PersistResult<any>> {

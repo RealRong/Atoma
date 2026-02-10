@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { Entity, FetchPolicy, PageInfo, Query, RelationIncludeInput, StoreApi, WithRelations } from 'atoma-types/core'
+import type { Entity, FetchPolicy, IStore, PageInfo, Query, RelationIncludeInput, WithRelations } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'
@@ -47,17 +47,17 @@ const stripRuntimeOptions = (options?: any) => {
 }
 
 export function useQuery<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreApi<T, Relations>,
+    store: IStore<T, Relations>,
     options?: UseQueryOptions<T, Relations, Include> & { result?: 'entities' }
 ): UseQueryEntitiesResult<T, Relations, Include>
 
 export function useQuery<T extends Entity, Relations = {}>(
-    store: StoreApi<T, Relations>,
+    store: IStore<T, Relations>,
     options: UseQueryOptions<T, Relations, any> & { include?: never; result: 'ids' }
 ): UseQueryIdsResult<T>
 
 export function useQuery<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreApi<T, Relations>,
+    store: IStore<T, Relations>,
     options?: UseQueryOptions<T, Relations, Include>
 ): UseQueryEntitiesResult<T, Relations, Include> | UseQueryIdsResult<T> {
     const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'cache-and-network'

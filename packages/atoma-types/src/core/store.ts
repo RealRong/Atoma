@@ -117,5 +117,3 @@ export interface IStore<T, Relations = {}> {
     query?(query: Query<T>): Promise<QueryResult<T>>
     queryOne?(query: Query<T>): Promise<QueryOneResult<T>>
 }
-
-export type StoreApi<T extends Entity, Relations = {}> = IStore<T, Relations>

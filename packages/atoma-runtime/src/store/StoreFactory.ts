@@ -5,7 +5,6 @@ import type {
     Query,
     QueryOneResult,
     QueryResult,
-    StoreApi,
     StoreDataProcessor,
     StoreToken
 } from 'atoma-types/core'
@@ -27,7 +26,7 @@ export type StoreEngine<T extends Entity = Entity, Relations = {}> = Readonly<{
     api: StoreEngineApi<T, Relations>
 }>
 
-export type StoreFacade<T extends Entity = Entity, Relations = {}> = StoreApi<T, Relations> & { name: string }
+export type StoreFacade<T extends Entity = Entity, Relations = {}> = IStore<T, Relations> & { name: string }
 
 export type StoreFactoryResult<T extends Entity = Entity, Relations = {}> = Readonly<{
     handle: StoreHandle<T>

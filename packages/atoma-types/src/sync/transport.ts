@@ -69,12 +69,8 @@ export interface SyncTransport {
     }) => Promise<SyncPushOutcome[]>
 }
 
-export type SyncDriver = SyncTransport
-
 export interface SyncSubscribeTransport {
     subscribe: SyncSubscribe
 }
-
-export type SyncSubscribeDriver = SyncSubscribeTransport
 
 export type { NotifyMessage }

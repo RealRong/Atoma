@@ -84,6 +84,27 @@
             "atoma-types/client": [
                 "packages/atoma-types/src/client/index.ts"
             ],
+            "atoma-types/client/client": [
+                "packages/atoma-types/src/client/client.ts"
+            ],
+            "atoma-types/client/options": [
+                "packages/atoma-types/src/client/options.ts"
+            ],
+            "atoma-types/client/plugins": [
+                "packages/atoma-types/src/client/plugins/index.ts"
+            ],
+            "atoma-types/client/registry": [
+                "packages/atoma-types/src/client/registry.ts"
+            ],
+            "atoma-types/client/ops": [
+                "packages/atoma-types/src/client/ops.ts"
+            ],
+            "atoma-types/client/relations": [
+                "packages/atoma-types/src/client/relations.ts"
+            ],
+            "atoma-types/client/schema": [
+                "packages/atoma-types/src/client/schema.ts"
+            ],
             "atoma-types/core": [
                 "packages/atoma-types/src/core/index.ts"
             ],

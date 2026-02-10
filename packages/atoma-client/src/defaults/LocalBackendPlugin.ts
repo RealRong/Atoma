@@ -1,4 +1,4 @@
-import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client'
+import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client/plugins'
 import type { Entity, Query } from 'atoma-types/core'
 import type { Operation, OperationResult, QueryResultData } from 'atoma-types/protocol'
 import { isTerminalResult } from '../plugins/HandlerChain'

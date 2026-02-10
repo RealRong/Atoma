@@ -5,12 +5,9 @@ import type {
     AtomaClient,
     AtomaSchema,
     CreateClientOptions,
-    ClientPlugin,
-    PluginContext,
-    PluginInitResult,
-    Register
 } from 'atoma-types/client'
-import { zod } from 'atoma-shared'
+import type { ClientPlugin, PluginContext, PluginInitResult, Register } from 'atoma-types/client/plugins'
+import { parseOrThrow } from 'atoma-shared'
 import { createClientBuildArgsSchema } from '#client/schemas/createClient'
 import { CapabilitiesRegistry } from './plugins/CapabilitiesRegistry'
 import { HandlerChain } from './plugins/HandlerChain'
@@ -19,8 +16,6 @@ import { PluginRuntimeIo } from './plugins/PluginRuntimeIo'
 import { markTerminalResult } from './plugins/HandlerChain'
 import { localBackendPlugin } from './defaults/LocalBackendPlugin'
 import { DEVTOOLS_META_KEY, DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry } from 'atoma-types/devtools'
-
-const { parseOrThrow } = zod
 
 const LOCAL_BACKEND_PLUGIN_ID = 'defaults:local-backend'
 

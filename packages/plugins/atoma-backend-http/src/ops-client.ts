@@ -1,7 +1,7 @@
 import { assertOutgoingOps, HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
 import type { Meta, OpsResponseData } from 'atoma-types/protocol'
 import { OpsClient } from './internal/ops-client-base'
-import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client'
+import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client/ops'
 import { BatchEngine } from './internal/batch/batch-engine'
 import { createOpsHttpTransport } from './internal/transport/ops-transport'
 import type { HttpInterceptors } from './internal/transport/json-client'

@@ -1,6 +1,4 @@
-import { zod } from 'atoma-shared'
-
-const { z } = zod
+import { z } from 'atoma-shared'
 
 type CreateClientSchemaInput = Readonly<{
     schema?: unknown

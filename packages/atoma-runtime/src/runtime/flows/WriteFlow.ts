@@ -1,5 +1,5 @@
 import { applyPatches, type Draft as ImmerDraft, type Patch } from 'immer'
-import { version } from 'atoma-shared'
+import { requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
 import type {
     Entity,
     OperationContext,
@@ -72,7 +72,7 @@ function buildWriteIntentsFromPatches<T extends Entity>(args: {
     const inverseRootAdds = collectInverseRootAdds(args.inversePatches)
     const baseVersionByDeletedId = new Map<EntityId, number>()
     inverseRootAdds.forEach((value, id) => {
-        baseVersionByDeletedId.set(id, version.requireBaseVersion(id, value))
+        baseVersionByDeletedId.set(id, requireBaseVersion(id, value))
     })
 
     const intents: WriteIntent<T>[] = []
@@ -80,7 +80,7 @@ function buildWriteIntentsFromPatches<T extends Entity>(args: {
         const next = optimisticState.get(id)
 
         if (next) {
-            const baseVersion = version.resolvePositiveVersion(next)
+            const baseVersion = resolvePositiveVersion(next)
             intents.push({
                 action: 'upsert',
                 entityId: id,

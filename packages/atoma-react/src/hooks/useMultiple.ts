@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { Entity, RelationIncludeInput, StoreApi, WithRelations } from 'atoma-types/core'
+import type { Entity, IStore, RelationIncludeInput, WithRelations } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'
@@ -13,7 +13,7 @@ interface UseMultipleOptions<T, Relations = {}> {
 }
 
 export function useMany<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreApi<T, Relations>,
+    store: IStore<T, Relations>,
     ids: Array<T['id']> = [],
     options?: UseMultipleOptions<T, Relations> & { include?: Include }
 ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {

@@ -1,4 +1,4 @@
-import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
+import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import { DEVTOOLS_REGISTRY_KEY } from 'atoma-types/devtools'
 import type { SyncClient, SyncMode, SyncPhase, SyncRuntimeConfig } from 'atoma-types/sync'
 import { SyncEngine } from '#sync/engine/sync-engine'
@@ -13,11 +13,11 @@ import type { SyncExtension, SyncPluginOptions } from './types'
 export function syncPlugin(opts: SyncPluginOptions = {}): ClientPlugin<SyncExtension> {
     return {
         id: 'sync',
-        init: (ctx: ClientPluginContext) => setupSyncPlugin(ctx, opts)
+        init: (ctx: PluginContext) => setupSyncPlugin(ctx, opts)
     }
 }
 
-function setupSyncPlugin(ctx: ClientPluginContext, opts: SyncPluginOptions): { extension: SyncExtension; dispose: () => void } {
+function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extension: SyncExtension; dispose: () => void } {
     const now = opts.now ?? (() => Date.now())
     const modeDefault: SyncMode = opts.mode ?? 'full'
     const resources = opts.resources

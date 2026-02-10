@@ -5,9 +5,7 @@ import { createTopLevelErrorFormatter } from './runtime/errors'
 import { readJsonBodyWithLimit } from './runtime/http'
 import { createOpsExecutor } from './ops/opsExecutor'
 import { createSubscribeExecutor } from './ops/subscribeExecutor'
-import { zod } from 'atoma-shared'
-
-const { parseOrThrow, z } = zod
+import { parseOrThrow, z } from 'atoma-shared'
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
     return Boolean(value && typeof value === 'object' && typeof (value as any)[Symbol.asyncIterator] === 'function')

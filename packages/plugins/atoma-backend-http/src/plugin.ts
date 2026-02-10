@@ -1,6 +1,6 @@
 import type { PersistResult } from 'atoma-types/runtime'
 import { HttpOpsClient } from './ops-client'
-import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client'
+import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client/plugins'
 import { persistViaOps, queryViaOps } from 'atoma-backend-shared'
 import type { HttpBackendPluginOptions } from './types'
 

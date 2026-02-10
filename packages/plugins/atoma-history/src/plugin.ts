@@ -1,4 +1,5 @@
-import type { AtomaHistory, ClientPlugin, ClientPluginContext } from 'atoma-types/client'
+import type { AtomaHistory } from 'atoma-types/client'
+import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import { DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry } from 'atoma-types/devtools'
 import { HistoryManager } from './history-manager'
 
@@ -17,7 +18,7 @@ const buildSnapshot = (manager: HistoryManager) => {
 export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
     return {
         id: 'atoma-history',
-        init: (ctx: ClientPluginContext) => {
+        init: (ctx: PluginContext) => {
             const manager = new HistoryManager()
 
             const registry = ctx.capabilities.get<DevtoolsRegistry>(DEVTOOLS_REGISTRY_KEY)

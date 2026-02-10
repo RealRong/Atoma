@@ -24,6 +24,41 @@
             "import": "./dist/client.js",
             "source": "./src/client/index.ts"
         },
+        "./client/client": {
+            "types": "./dist/client/client.d.ts",
+            "import": "./dist/client/client.js",
+            "source": "./src/client/client.ts"
+        },
+        "./client/options": {
+            "types": "./dist/client/options.d.ts",
+            "import": "./dist/client/options.js",
+            "source": "./src/client/options.ts"
+        },
+        "./client/plugins": {
+            "types": "./dist/client/plugins/index.d.ts",
+            "import": "./dist/client/plugins.js",
+            "source": "./src/client/plugins/index.ts"
+        },
+        "./client/registry": {
+            "types": "./dist/client/registry.d.ts",
+            "import": "./dist/client/registry.js",
+            "source": "./src/client/registry.ts"
+        },
+        "./client/ops": {
+            "types": "./dist/client/ops.d.ts",
+            "import": "./dist/client/ops.js",
+            "source": "./src/client/ops.ts"
+        },
+        "./client/relations": {
+            "types": "./dist/client/relations.d.ts",
+            "import": "./dist/client/relations.js",
+            "source": "./src/client/relations.ts"
+        },
+        "./client/schema": {
+            "types": "./dist/client/schema.d.ts",
+            "import": "./dist/client/schema.js",
+            "source": "./src/client/schema.ts"
+        },
         "./protocol": {
             "types": "./dist/protocol/index.d.ts",
             "import": "./dist/protocol.js",

@@ -44,9 +44,55 @@
     - `packages/atoma-client/src/plugins/index.ts`
     - `packages/atoma-client/src/defaults/index.ts`
 
+- **P0-5 统一 atoma-shared 导出风格**
+  - 已将 `atoma-shared` 根入口收敛为 named-only：
+    - 删除 namespace 导出：`errors` / `id` / `version` / `zod`
+    - 保留并补全命名导出：
+      - `toError` / `toErrorWithFallback`
+      - `createId` / `createEntityId` / `createActionId`
+      - `resolveFiniteVersion` / `resolvePositiveVersion` / `requireBaseVersion`
+      - `z` / `parseOrThrow` / `formatZodErrorMessage`
+      - `stableStringify`
+      - `type IdKind` / `type CreateIdArgs`
+  - 已完成调用侧迁移（`version.*` / `zod.*` → 直接 named import）：
+    - `packages/atoma-runtime/src/runtime/flows/WriteFlow.ts`
+    - `packages/atoma-runtime/src/runtime/flows/write/services/WriteIntentFactory.ts`
+    - `packages/atoma-client/src/createClient.ts`
+    - `packages/atoma-client/src/schemas/createClient.ts`
+    - `packages/atoma-server/src/createAtomaHandlers.ts`
+    - `packages/plugins/atoma-backend-http/src/internal/batch/batch-engine.ts`
+    - `packages/plugins/atoma-backend-indexeddb/src/ops-client.ts`
+
+- **P1-1 `atoma-types/core` 改显式导出**
+  - 已将 `packages/atoma-types/src/core/index.ts` 从 `export *` 改为显式命名导出。
+  - 已按模块列出 `entity/operation/query/processor/observability/relations/store/events/indexes/writeback` 全部导出项。
+
+- **P1-2 收窄 `atoma-types/client` 根入口**
+  - 已收窄 `packages/atoma-types/src/client/index.ts`：
+    - 根入口保留：`CreateClientOptions`、`AtomaSchema`、`AtomaClient`、`AtomaStore`、`AtomaHistory`、`PluginCapableClient`
+    - 移除：`plugins/ops/relations/registry` 聚合导出
+  - 已新增并启用子入口 exports：
+    - `atoma-types/client/client`
+    - `atoma-types/client/options`
+    - `atoma-types/client/plugins`
+    - `atoma-types/client/registry`
+    - `atoma-types/client/ops`
+    - `atoma-types/client/relations`
+    - `atoma-types/client/schema`
+  - 已完成调用侧迁移（按职责导入对应子入口）。
+
+- **P1-3 清理别名型类型 API**
+  - 已移除并收敛到单一命名：
+    - `StoreApi` → `IStore`
+    - `ClientPluginContext` → `PluginContext`
+    - `SyncDriver` → `SyncTransport`
+    - `SyncSubscribeDriver` → `SyncSubscribeTransport`
+  - 已同步迁移 `atoma-types` 与调用侧（runtime/react/plugins/atoma 聚合入口）相关类型引用。
+
 ### 未完成（下一步）
 
-- `P0-5` 统一 `atoma-shared` 导出风格
+- `P1-4` 收窄 `IndexesLike` 对外能力
+- `P1-5` HookRegistry 事件模型去重复
 
 ## 1. 审计范围
 
@@ -150,7 +196,7 @@
 
 ---
 
-## P0-5 统一 atoma-shared 导出风格
+## P0-5 统一 atoma-shared 导出风格（已完成 ✅）
 
 ### 现状
 
@@ -170,7 +216,7 @@
 
 ## 4. P1（中风险，建议尽快）
 
-## P1-1 `atoma-types/core` 改显式导出
+## P1-1 `atoma-types/core` 改显式导出（已完成 ✅）
 
 ### 现状
 
@@ -186,7 +232,7 @@
 
 ---
 
-## P1-2 收窄 `atoma-types/client` 根入口
+## P1-2 收窄 `atoma-types/client` 根入口（已完成 ✅）
 
 ### 现状
 
@@ -202,7 +248,7 @@
 
 ---
 
-## P1-3 清理别名型类型 API
+## P1-3 清理别名型类型 API（已完成 ✅）
 
 ### 现状
 

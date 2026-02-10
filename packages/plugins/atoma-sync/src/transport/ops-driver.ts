@@ -1,6 +1,6 @@
 import { assertOperationResults, createOpId, buildWriteOp, buildChangesPullOp, assertWriteResultData } from 'atoma-types/protocol-tools'
 import type { Meta, Operation, OperationResult, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
-import type { SyncDriver, SyncOutboxItem, SyncPushOutcome } from 'atoma-types/sync'
+import type { SyncOutboxItem, SyncPushOutcome, SyncTransport } from 'atoma-types/sync'
 
 type ExecuteOps = (input: {
     ops: Operation[]
@@ -11,7 +11,7 @@ type ExecuteOps = (input: {
 export function createOpsSyncDriver(args: {
     executeOps: ExecuteOps
     now?: () => number
-}): SyncDriver {
+}): SyncTransport {
     const now = args.now ?? (() => Date.now())
 
     return {

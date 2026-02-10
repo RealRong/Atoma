@@ -1,7 +1,8 @@
 import { withTraceMeta, buildRequestMeta, assertOutgoingOps, assertOperationResults, wrapProtocolError } from 'atoma-types/protocol-tools'
 import type { Entity, Query } from 'atoma-types/core'
 import type { RuntimeIo, StoreHandle } from 'atoma-types/runtime'
-import type { IoContext, OperationEnvelope, PluginReadResult, ReadContext, ReadRequest, ResultEnvelope } from 'atoma-types/client'
+import type { IoContext, PluginReadResult, ReadContext, ReadRequest } from 'atoma-types/client/plugins'
+import type { OperationEnvelope, ResultEnvelope } from 'atoma-types/client/ops'
 import type { HandlerChain } from './HandlerChain'
 
 export class PluginRuntimeIo implements RuntimeIo {

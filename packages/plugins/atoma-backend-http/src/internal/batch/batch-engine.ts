@@ -1,9 +1,7 @@
 import { HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
 import type { Meta, Operation, OperationResult, QueryOp, WriteOp } from 'atoma-types/protocol'
-import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client'
-import { zod } from 'atoma-shared'
-
-const { parseOrThrow, z } = zod
+import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client/ops'
+import { parseOrThrow, z } from 'atoma-shared'
 
 type Deferred<T> = {
     resolve: (value: T extends void ? undefined : T) => void

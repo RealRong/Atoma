@@ -1,5 +1,5 @@
 import { createOpId, buildQueryOp, assertQueryResultData } from 'atoma-types/protocol-tools'
-import type { PluginContext, ReadRequest } from 'atoma-types/client'
+import type { PluginContext, ReadRequest } from 'atoma-types/client/plugins'
 
 export async function queryViaOps(ctx: PluginContext, req: ReadRequest) {
     const opId = createOpId('q', { now: ctx.runtime.now })

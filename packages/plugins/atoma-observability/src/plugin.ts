@@ -1,6 +1,15 @@
-import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
+import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
+import type { Entity } from 'atoma-types/core'
 import type { Operation } from 'atoma-types/protocol'
-import type { PersistRequest } from 'atoma-types/runtime'
+import type {
+    PersistRequest,
+    RuntimeReadFinishArgs,
+    RuntimeReadStartArgs,
+    RuntimeWriteCommittedArgs,
+    RuntimeWriteFailedArgs,
+    RuntimeWritePatchesArgs,
+    RuntimeWriteStartArgs,
+} from 'atoma-types/runtime'
 import type { ObservabilityContext } from 'atoma-types/observability'
 import { StoreObservability } from './store-observability'
 import type { ObservabilityExtension, ObservabilityPluginOptions } from './types'
@@ -100,7 +109,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
 
     return {
         id: 'atoma-observability',
-        register: (_ctx: ClientPluginContext, register) => {
+        register: (_ctx: PluginContext, register) => {
             if (!injectTraceMeta) return
 
             register('io', async (req, _ctx, next) => {
@@ -113,10 +122,11 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 return await next()
             }, { priority: 100 })
         },
-        init: (ctx: ClientPluginContext) => {
+        init: (ctx: PluginContext) => {
             const stop = ctx.hooks.register({
                 read: {
-                    onStart: ({ handle, query }) => {
+                    onStart: <T extends Entity>(args: RuntimeReadStartArgs<T>) => {
+                        const { handle, query } = args
                         const ctxInstance = storeObs.createContext(String(handle.storeName))
                         if (query && typeof query === 'object') {
                             readContextByQuery.set(query as object, ctxInstance)
@@ -126,7 +136,8 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                             query
                         })
                     },
-                    onFinish: ({ handle, query, result, durationMs }) => {
+                    onFinish: <T extends Entity>(args: RuntimeReadFinishArgs<T>) => {
+                        const { handle, query, result, durationMs } = args
                         const ctxInstance = (query && typeof query === 'object')
                             ? (readContextByQuery.get(query as object) ?? storeObs.createContext(String(handle.storeName)))
                             : storeObs.createContext(String(handle.storeName))
@@ -141,7 +152,8 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                     }
                 },
                 write: {
-                    onStart: ({ handle, opContext, intents }) => {
+                    onStart: <T extends Entity>(args: RuntimeWriteStartArgs<T>) => {
+                        const { handle, opContext, intents } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:start`, {
                             storeName: entry.storeName,
@@ -151,7 +163,8 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                             intentCount: intents.length
                         })
                     },
-                    onPatches: ({ handle, opContext, patches }) => {
+                    onPatches: <T extends Entity>(args: RuntimeWritePatchesArgs<T>) => {
+                        const { handle, opContext, patches } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:patches`, {
                             storeName: entry.storeName,
@@ -159,7 +172,8 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                             patchCount: Array.isArray(patches) ? patches.length : 0
                         })
                     },
-                    onCommitted: ({ handle, opContext }) => {
+                    onCommitted: <T extends Entity>(args: RuntimeWriteCommittedArgs<T>) => {
+                        const { handle, opContext } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:finish`, {
                             storeName: entry.storeName,
@@ -167,7 +181,8 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                         })
                         releaseWriteContext(opContext.actionId)
                     },
-                    onFailed: ({ handle, opContext, error }) => {
+                    onFailed: <T extends Entity>(args: RuntimeWriteFailedArgs<T>) => {
+                        const { handle, opContext, error } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:failed`, {
                             storeName: entry.storeName,

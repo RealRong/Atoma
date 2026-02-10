@@ -1,6 +1,6 @@
 import { runQuery } from 'atoma-core/query'
 import type { Entity, Query as CoreQuery } from 'atoma-types/core'
-import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma-types/client'
+import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma-types/client/ops'
 import type {
     ChangeBatch,
     Operation,

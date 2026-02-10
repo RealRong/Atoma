@@ -1,5 +1,5 @@
-import type { ClientPlugin, ClientPluginContext } from 'atoma-types/client'
-import type { SyncDriver } from 'atoma-types/sync'
+import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
+import type { SyncTransport } from 'atoma-types/sync'
 import { createOpsSyncDriver } from '#sync/transport'
 import { getSyncDriver, registerSyncDriver } from '#sync/capabilities'
 
@@ -13,10 +13,10 @@ export type SyncOpsDriverPluginOptions = Readonly<{
 export function syncOpsDriverPlugin(options: SyncOpsDriverPluginOptions = {}): ClientPlugin {
     return {
         id: 'sync.ops-driver',
-        init: (ctx: ClientPluginContext) => {
+        init: (ctx: PluginContext) => {
             if (!options.overwrite && getSyncDriver(ctx)) return
 
-            const driver: SyncDriver = createOpsSyncDriver({
+            const driver: SyncTransport = createOpsSyncDriver({
                 executeOps: async (input) => {
                     const results = await ctx.runtime.io.executeOps({
                         ops: input.ops as any,

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { Entity, RelationIncludeInput, StoreApi, WithRelations } from 'atoma-types/core'
+import type { Entity, IStore, RelationIncludeInput, WithRelations } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useStoreSelector } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
@@ -9,7 +9,7 @@ import { useRelations } from './useRelations'
  * Uses store selector for fine-grained updates - only re-renders when this specific item changes
  */
 export function useOne<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: StoreApi<T, Relations>,
+    store: IStore<T, Relations>,
     id?: T['id'],
     options?: { include?: RelationIncludeInput<Relations> & Include }
 ): (keyof Include extends never ? T | undefined : WithRelations<T, Relations, Include> | undefined) {

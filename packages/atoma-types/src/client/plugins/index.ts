@@ -7,7 +7,6 @@ export type {
     HandlerEntry,
     Register,
     PluginContext,
-    ClientPluginContext,
     IoContext,
     PersistContext,
     ReadContext,

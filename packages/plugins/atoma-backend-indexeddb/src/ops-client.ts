@@ -1,8 +1,6 @@
 import type { Table } from 'dexie'
 import { StorageOpsClient } from 'atoma-backend-shared'
-import { zod } from 'atoma-shared'
-
-const { parseOrThrow, z } = zod
+import { parseOrThrow, z } from 'atoma-shared'
 
 function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)

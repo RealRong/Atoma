@@ -1,4 +1,4 @@
-import type { HandlerEntry, HandlerMap, HandlerName } from 'atoma-types/client'
+import type { HandlerEntry, HandlerMap, HandlerName } from 'atoma-types/client/plugins'
 
 const TERMINAL_RESULT_SYMBOL = Symbol.for('atoma.client.handler-chain.terminal-result')
 
