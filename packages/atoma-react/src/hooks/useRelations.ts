@@ -7,7 +7,6 @@ import type {
     Query,
     RelationIncludeInput,
     RelationMap,
-    StoreReadOptions,
     StoreToken,
     WithRelations
 } from 'atoma-types/core'
@@ -133,12 +132,12 @@ export function useRelations<T extends Entity>(
                     return dedupePrefetch(key, () => Promise.resolve(query(queryInput)))
                 }
                 : query,
-            getMany: (ids: EntityId[], cache?: boolean, options?: StoreReadOptions) => {
+            getMany: (ids: EntityId[], cache?: boolean) => {
                 const normalizedIds = Array.isArray(ids)
                     ? [...new Set(ids.map(String))].sort()
                     : []
-                const key = `rel:getMany:${storeName}:${stableStringify(normalizedIds)}:${cache ? '1' : '0'}:${stableStringify(options)}`
-                return dedupePrefetch(key, () => Promise.resolve(getMany(ids, cache, options)))
+                const key = `rel:getMany:${storeName}:${stableStringify(normalizedIds)}:${cache ? '1' : '0'}`
+                return dedupePrefetch(key, () => Promise.resolve(getMany(ids, cache)))
             }
         }
 

@@ -51,23 +51,13 @@ export type WriteIntent<T = any> = Readonly<{
     intent?: 'created'
 }>
 
-export type WriteConfirmation = 'optimistic' | 'strict'
-
-export type WriteTimeoutBehavior = 'reject' | 'resolve-enqueued'
-
 export interface StoreOperationOptions {
     force?: boolean
     batch?: {
         concurrency?: number
     }
     writeStrategy?: WriteStrategy
-    confirmation?: WriteConfirmation
-    timeoutMs?: number
-    timeoutBehavior?: WriteTimeoutBehavior
     opContext?: OperationContext
-}
-
-export interface StoreReadOptions {
 }
 
 export type IndexType = 'number' | 'date' | 'string' | 'substring' | 'text'
@@ -119,11 +109,11 @@ export interface IStore<T, Relations = {}> {
     deleteMany(ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>>
     upsertOne(item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T>
     upsertMany(items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>>
-    getOne(id: EntityId, options?: StoreReadOptions): Promise<T | undefined>
-    fetchOne(id: EntityId, options?: StoreReadOptions): Promise<T | undefined>
-    getAll(filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions): Promise<T[]>
+    getOne(id: EntityId): Promise<T | undefined>
+    fetchOne(id: EntityId): Promise<T | undefined>
+    getAll(filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean): Promise<T[]>
     fetchAll?(): Promise<T[]>
-    getMany(ids: EntityId[], cache?: boolean, options?: StoreReadOptions): Promise<T[]>
+    getMany(ids: EntityId[], cache?: boolean): Promise<T[]>
     query?(query: Query<T>): Promise<QueryResult<T>>
     queryOne?(query: Query<T>): Promise<QueryOneResult<T>>
 }

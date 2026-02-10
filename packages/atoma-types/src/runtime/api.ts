@@ -11,7 +11,6 @@ import type {
     QueryResult,
     StoreDataProcessor,
     StoreOperationOptions,
-    StoreReadOptions,
     StoreToken,
     UpsertWriteOptions,
     WriteManyResult,
@@ -53,11 +52,11 @@ export type RuntimeTransform = Readonly<{
 export type RuntimeRead = Readonly<{
     query: <T extends Entity>(handle: StoreHandle<T>, query: Query<T>) => Promise<QueryResult<T>>
     queryOne: <T extends Entity>(handle: StoreHandle<T>, query: Query<T>) => Promise<QueryOneResult<T>>
-    getMany: <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], cache?: boolean, options?: StoreReadOptions) => Promise<T[]>
-    getOne: <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreReadOptions) => Promise<T | undefined>
-    fetchOne: <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreReadOptions) => Promise<T | undefined>
-    fetchAll: <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions) => Promise<T[]>
-    getAll: <T extends Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean, options?: StoreReadOptions) => Promise<T[]>
+    getMany: <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], cache?: boolean) => Promise<T[]>
+    getOne: <T extends Entity>(handle: StoreHandle<T>, id: EntityId) => Promise<T | undefined>
+    fetchOne: <T extends Entity>(handle: StoreHandle<T>, id: EntityId) => Promise<T | undefined>
+    fetchAll: <T extends Entity>(handle: StoreHandle<T>) => Promise<T[]>
+    getAll: <T extends Entity>(handle: StoreHandle<T>, filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean) => Promise<T[]>
 }>
 
 export type RuntimeWrite = Readonly<{

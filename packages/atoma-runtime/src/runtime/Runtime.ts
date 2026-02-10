@@ -17,10 +17,12 @@ import type {
     RuntimeTransform,
     RuntimeWrite
 } from 'atoma-types/runtime'
-import { DataProcessor } from './transform'
-import { Stores } from '../store'
-import { HookRegistry, StrategyRegistry } from './registry'
-import { ReadFlow, WriteFlow } from './flows'
+import { DataProcessor } from './transform/DataProcessor'
+import { Stores } from '../store/Stores'
+import { HookRegistry } from './registry/HookRegistry'
+import { StrategyRegistry } from './registry/StrategyRegistry'
+import { ReadFlow } from './flows/ReadFlow'
+import { WriteFlow } from './flows/WriteFlow'
 import { CoreRuntimeEngine } from '../engine'
 
 /**
