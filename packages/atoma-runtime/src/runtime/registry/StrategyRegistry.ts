@@ -3,19 +3,19 @@
  */
 import type { Entity, WriteStrategy } from 'atoma-types/core'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from 'atoma-types/runtime'
-import type { CoreRuntime, RuntimeStrategyRegistry } from 'atoma-types/runtime'
+import type { Runtime, StrategyRegistry as StrategyRegistryType } from 'atoma-types/runtime'
 
 const DEFAULT_WRITE_POLICY: WritePolicy = {
     implicitFetch: true,
     optimistic: true
 }
 
-export class StrategyRegistry implements RuntimeStrategyRegistry {
+export class StrategyRegistry implements StrategyRegistryType {
     private readonly strategies = new Map<WriteStrategy, StrategyDescriptor>()
-    private readonly runtime: CoreRuntime
+    private readonly runtime: Runtime
     private defaultStrategy?: WriteStrategy
 
-    constructor(runtime: CoreRuntime) {
+    constructor(runtime: Runtime) {
         this.runtime = runtime
     }
 
@@ -41,41 +41,36 @@ export class StrategyRegistry implements RuntimeStrategyRegistry {
         }
     }
 
-    resolveWritePolicy = (key?: WriteStrategy): WritePolicy => {
-        const k = (typeof key === 'string' && key) ? key : this.defaultStrategy
-        if (!k) {
-            throw new Error('[Atoma] strategy.resolveWritePolicy: 未设置默认 writeStrategy')
-        }
-        const policy = this.strategies.get(k)?.write
-        if (!policy) return DEFAULT_WRITE_POLICY
+    resolveWritePolicy = (strategy?: WriteStrategy): WritePolicy => {
+        const key = String(strategy ?? this.defaultStrategy ?? '')
+        if (!key) return DEFAULT_WRITE_POLICY
+
+        const descriptor = this.strategies.get(key)
+        if (!descriptor?.write) return DEFAULT_WRITE_POLICY
+
         return {
             ...DEFAULT_WRITE_POLICY,
-            ...policy
+            ...descriptor.write
         }
     }
 
     persist = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-        const key = this.normalizeStrategy(req.writeStrategy)
-        const handler = this.strategies.get(key)?.persist
-        if (!handler) {
-            throw new Error(`[Atoma] strategy.persist: 未注册 writeStrategy="${String(key)}"`)
-        }
-        return await handler({ req, next: this.persistViaOps })
-    }
+        const key = String(req.writeStrategy ?? this.defaultStrategy ?? '')
+        const descriptor = key ? this.strategies.get(key) : undefined
 
-    private persistViaOps = async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-        const results = await this.runtime.io.executeOps({ ops: req.writeOps })
-        return {
-            status: 'confirmed',
-            ...(results.length ? { results } : {})
+        if (!descriptor?.persist) {
+            return { status: 'confirmed' }
         }
-    }
 
-    private normalizeStrategy = (key?: WriteStrategy): WriteStrategy => {
-        const normalized = (typeof key === 'string' && key) ? key : this.defaultStrategy
-        if (!normalized) {
-            throw new Error('[Atoma] strategy.persist: 未设置默认 writeStrategy')
-        }
-        return normalized
+        return await descriptor.persist({
+            req,
+            next: async (nextReq) => {
+                void this.runtime
+                return {
+                    status: 'confirmed',
+                    ...(nextReq ? {} : {})
+                }
+            }
+        })
     }
 }

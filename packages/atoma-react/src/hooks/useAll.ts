@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { Entity, IStore, RelationIncludeInput, WithRelations } from 'atoma-types/core'
+import type { Entity, Store, RelationIncludeInput, WithRelations } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 import { useRelations } from './useRelations'
@@ -9,7 +9,7 @@ import { useRelations } from './useRelations'
  * Returns all items as an array
  */
 export function useAll<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: IStore<T, Relations>,
+    store: Store<T, Relations>,
     options?: { include?: RelationIncludeInput<Relations> & Include }
 ): (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]) {
     type Result = keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]

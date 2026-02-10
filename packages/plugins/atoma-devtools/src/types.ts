@@ -1,1 +1,10 @@
-export type { HistoryProvider, SyncProvider } from './runtime/types'
+export type {
+    DevtoolsStoreSnapshot,
+    DevtoolsIndexManagerSnapshot,
+    DevtoolsSyncSnapshot,
+    DevtoolsHistorySnapshot,
+    DevtoolsClientSnapshot,
+    DevtoolsEvent,
+    DevtoolsClientInspector,
+    DevtoolsGlobalInspector
+} from './runtime/types'

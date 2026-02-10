@@ -61,31 +61,44 @@
 - createOperationContext is responsible for context shaping (scope/origin/label/timestamp), not crypto fallback implementation.
 - Snowflake-like generators are optional strategies only; they must not be the implicit global default.
 
-## 2. File and Type Naming Conventions
+## 2. Naming Design Principles
 
-### 2.1 File Naming
+### 2.1 Naming Method (How to design names)
 
-- If a file is class-led (its primary export is a class), use **PascalCase** file name.
-  - Example: `Indexes.ts`, `NumberDateIndex.ts`, `TextIndex.ts`.
-- If a file is function/helper/type-led, use **camelCase** file name.
-  - Example: `build.ts`, `plan.ts`, `tokenize.ts`, `types.ts`.
-- Keep file names short; prioritize domain semantics; avoid redundant suffixes.
-- Avoid repeated suffixes inside semantic directories:
-  - No `*Engine.ts` under `runtime/engine/*` unless the file is truly a class-led engine module.
-  - Avoid `*Types.ts` (prefer concise names like `types.ts`, `api.ts`, `handle.ts`, `persistence.ts`, `contracts.ts`).
+- Start from responsibility boundaries first, then pick names.
+- Name by domain intent, not by implementation detail.
+- Prefer the shortest name that remains unambiguous in its module scope.
+- Remove context already encoded by path/layer; do not duplicate it in symbol names.
+- Keep one concept mapped to one term across the whole repo.
 
-### 2.2 Type Naming
+### 2.2 Cross-layer Consistency
 
-- Avoid “same name, different meaning”.
-  - Example: plugin read result must use `PluginReadResult`, not conflict with core `QueryResult<T>`.
-- Public type names should express semantics, not implementation details.
+- Type names represent contracts; implementation names represent executors/holders of behavior.
+- The same concept should keep the same lexical root across packages.
+- If type and class concepts overlap, resolve local collisions at import sites (type aliasing), not by globally polluting names.
+- Do not add suffixes/prefixes solely for historical compatibility.
 
-### 2.3 API Naming (Hard Constraint)
+### 2.3 File Naming Strategy
 
-- Public API names must be **short, semantic, and industry-readable**.
-- Prefer concise verb/noun forms (`buildIndex`, `planCandidates`, `applyWriteback`) over long redundant names.
-- Avoid repeating context already encoded by module path (e.g., avoid `Index*` prefixes everywhere under `indexes/`).
-- Avoid ambiguous generic names (`doThing`, `handler2`, `utilsFn`).
+- If the primary export is a class, file name uses **PascalCase**.
+- If the primary export is function/type/helper-oriented, file name uses **camelCase**.
+- File names must follow primary responsibility, not secondary helper content.
+- Keep file names concise and semantic; avoid structural redundancy.
+
+### 2.4 Public API Naming Strategy
+
+- Public API names must be concise, semantic, and stable.
+- Use clear action semantics (read/write/query/plan/apply/build) consistently across modules.
+- Avoid overloaded generic words and hidden abbreviations.
+- Option/config fields must describe behavior and intent, not internal mechanics.
+
+### 2.5 Naming Quality Gates (must pass before merge)
+
+- Can a reader infer responsibility from the name alone?
+- Is any part of the name redundant with folder/module context?
+- Is the term consistent with existing domain vocabulary?
+- Will the name still be valid after foreseeable feature expansion?
+- Is there a shorter form with equal clarity?
 
 ---
 

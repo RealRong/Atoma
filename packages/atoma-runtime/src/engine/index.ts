@@ -1,7 +1,5 @@
-import type { RuntimeEngine, StoreState } from 'atoma-types/runtime'
-import { IndexDefinition } from 'atoma-types/core'
-import type { Entity, Query } from 'atoma-types/core'
-import type { IndexesLike } from 'atoma-types/core'
+import type { Engine as EngineType, StoreState } from 'atoma-types/runtime'
+import type { Entity, Query, IndexesLike, IndexDefinition } from 'atoma-types/core'
 import { Indexes } from 'atoma-core/indexes'
 import { init, merge, addMany, removeMany, preserveRef, upsertItems, writeback } from 'atoma-core/store'
 import { createOperationContext } from 'atoma-core/operation'
@@ -9,7 +7,7 @@ import { runQuery } from 'atoma-core/query'
 import { projectRelationsBatch } from 'atoma-core/relations'
 import { prefetchRelations } from '../relations/prefetch'
 
-export class CoreRuntimeEngine implements RuntimeEngine {
+export class Engine implements EngineType {
     readonly index = {
         create: <T extends Entity>(definitions?: IndexDefinition<T>[] | null): IndexesLike<T> | null => {
             if (!definitions?.length) return null
@@ -18,7 +16,7 @@ export class CoreRuntimeEngine implements RuntimeEngine {
     }
 
     readonly query = {
-        evaluate: <T extends Entity>({state, query}: {
+        evaluate: <T extends Entity>({ state, query }: {
             state: StoreState<T>
             query: Query<T>
         }) => {

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { stableStringify } from 'atoma-shared'
-import type { Entity, IStore, Query as StoreQuery } from 'atoma-types/core'
+import type { Entity, Store, Query as StoreQuery } from 'atoma-types/core'
 import type { StoreState } from 'atoma-types/runtime'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useStoreSnapshot } from './internal/useStoreSelector'
@@ -23,7 +23,7 @@ function stripResult<T extends Entity>(options?: UseStoreQueryOptions<T>): Store
 }
 
 function useStoreQueryInternal<T extends Entity, Relations = {}>(
-    store: IStore<T, Relations>,
+    store: Store<T, Relations>,
     options?: UseStoreQueryOptions<T>
 ): StoreQueryResult<T> {
     const map = useStoreSnapshot(store, 'useStoreQuery')
@@ -66,12 +66,12 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
 }
 
 export function useStoreQuery<T extends Entity, Relations = {}>(
-    store: IStore<T, Relations>,
+    store: Store<T, Relations>,
     options: UseStoreQueryOptions<T> & { result: 'ids' }
 ): Array<T['id']>
 
 export function useStoreQuery<T extends Entity, Relations = {}>(
-    store: IStore<T, Relations>,
+    store: Store<T, Relations>,
     options?: UseStoreQueryOptions<T>
 ): T[] {
     const resultMode: UseStoreQueryResultMode = options?.result ?? 'entities'

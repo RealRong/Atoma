@@ -1,4 +1,3 @@
-import type { Patch } from 'immer'
 import type { CandidateResult, FilterExpr, IndexDefinition, IndexStats } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { NumberDateIndex } from './impl/NumberDateIndex'
@@ -87,43 +86,23 @@ export class Indexes<T> {
         return planned.result
     }
 
-    getStats(field: string): IndexStats | undefined {
-        return this.indexes.get(field)?.getStats()
-    }
+    debugIndexSnapshots(): Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> {
+        const snapshots: Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> = []
 
-    getIndexSnapshots(): Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> {
-        const list: Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> = []
         this.indexes.forEach((index, field) => {
-            const stats = index.getStats()
-            list.push({
+            snapshots.push({
                 field,
                 type: index.type,
                 dirty: index.isDirty(),
-                ...stats
+                ...index.getStats()
             })
         })
-        return list
+
+        return snapshots
     }
 
-    getLastQueryPlan() {
+    debugLastQueryPlan() {
         return this.lastQueryPlan
-    }
-
-    applyPatches(before: Map<EntityId, T>, after: Map<EntityId, T>, patches: Patch[]) {
-        const changedIds = new Set<EntityId>()
-
-        patches.forEach(patch => {
-            const path = patch.path
-            if (!Array.isArray(path) || path.length < 1) return
-            changedIds.add(path[0] as EntityId)
-        })
-
-        changedIds.forEach(id => {
-            const prev = before.get(id)
-            const next = after.get(id)
-            if (prev) this.remove(prev)
-            if (next) this.add(next)
-        })
     }
 
     applyChangedIds(before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: Iterable<EntityId>) {

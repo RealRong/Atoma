@@ -4,8 +4,8 @@ import {
     type PlannedRelation,
     type StandardRelationConfig
 } from 'atoma-core/relations'
-import type { Entity, FilterExpr, IStore, Query, RelationMap, StoreToken } from 'atoma-types/core'
-import type { RuntimeRelationPrefetchOptions } from 'atoma-types/runtime'
+import type { Entity, FilterExpr, Store, Query, RelationMap, StoreToken } from 'atoma-types/core'
+import type { RelationPrefetchOptions } from 'atoma-types/runtime'
 
 type RelationOptionsCarrier = {
     options?: Query<unknown>
@@ -19,8 +19,8 @@ export async function prefetchRelations<T extends Entity>(
     items: T[],
     include: IncludeInput,
     relations: RelationMap<T> | undefined,
-    resolveStore: (name: StoreToken) => IStore<unknown> | undefined,
-    options: RuntimeRelationPrefetchOptions = {}
+    resolveStore: (name: StoreToken) => Store<unknown> | undefined,
+    options: RelationPrefetchOptions = {}
 ): Promise<void> {
     if (!items.length || !include || !relations) return
 
@@ -47,7 +47,7 @@ export async function prefetchRelations<T extends Entity>(
 
 async function prefetchPlanEntry<T extends Entity>(
     entry: PlannedRelation<T>,
-    resolveStore: (name: StoreToken) => IStore<unknown> | undefined,
+    resolveStore: (name: StoreToken) => Store<unknown> | undefined,
     signal: AbortSignal
 ): Promise<void> {
     if (signal.aborted) return

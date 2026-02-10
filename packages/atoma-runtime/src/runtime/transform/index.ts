@@ -9,7 +9,7 @@ import type {
     SchemaValidator,
     StoreDataProcessor
 } from 'atoma-types/core'
-import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 
 const STAGE_ORDER: DataProcessorStage[] = [
     'deserialize',
@@ -88,16 +88,16 @@ async function runStage<T>(
     return await handler(value, context)
 }
 
-export class DataProcessor {
-    private readonly runtime: CoreRuntime
+export class TransformPipeline {
+    private readonly runtime: Runtime
 
-    constructor(runtime: CoreRuntime) {
+    constructor(runtime: Runtime) {
         this.runtime = runtime
     }
 
     async process<T>(mode: DataProcessorMode, data: T, context: {
         storeName: string
-        runtime: CoreRuntime
+        runtime: Runtime
         opContext?: OperationContext
         adapter?: unknown
         dataProcessor?: StoreDataProcessor<T>

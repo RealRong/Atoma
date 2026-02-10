@@ -1,23 +1,23 @@
-import type { Entity, IStore, StoreDataProcessor, StoreToken } from 'atoma-types/core'
+import type { Entity, Store, StoreDataProcessor, StoreToken } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CoreRuntime, RuntimeSchema, StoreHandle, StoreRegistry } from 'atoma-types/runtime'
+import type { Runtime, Schema, StoreHandle, StoreCatalog } from 'atoma-types/runtime'
 import { StoreFactory, type StoreEngine, type StoreFacade } from './StoreFactory'
 
-type StoreListener = (store: IStore<Entity>) => void
+type StoreListener = (store: Store<Entity>) => void
 
 const toStoreName = (name: unknown) => String(name)
 
-export class Stores implements StoreRegistry {
+export class Stores implements StoreCatalog {
     private readonly engineByName = new Map<string, StoreEngine>()
     private readonly facadeByName = new Map<string, StoreFacade>()
-    private readonly created: IStore<Entity>[] = []
+    private readonly created: Store<Entity>[] = []
     private readonly listeners = new Set<StoreListener>()
     private readonly storeFactory: StoreFactory
 
     constructor(
-        private readonly runtime: CoreRuntime,
+        private readonly runtime: Runtime,
         private readonly args: {
-            schema: RuntimeSchema
+            schema: Schema
             dataProcessor?: StoreDataProcessor<Entity>
             defaults?: {
                 idGenerator?: () => EntityId
@@ -66,12 +66,12 @@ export class Stores implements StoreRegistry {
         return engine
     }
 
-    resolve = (name: StoreToken): IStore<Entity> | undefined => {
+    resolve = (name: StoreToken): Store<Entity> | undefined => {
         const key = toStoreName(name)
         return this.facadeByName.get(key)
     }
 
-    ensure = (name: StoreToken): IStore<Entity> => {
+    ensure = (name: StoreToken): Store<Entity> => {
         const key = toStoreName(name)
         this.ensureEngine(key)
 

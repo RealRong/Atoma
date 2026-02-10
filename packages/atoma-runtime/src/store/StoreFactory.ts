@@ -1,7 +1,7 @@
 import { createId } from 'atoma-shared'
 import type {
     Entity,
-    IStore,
+    Store,
     Query,
     QueryOneResult,
     QueryResult,
@@ -11,11 +11,11 @@ import type {
 import { compileRelationsMap } from 'atoma-core/relations'
 import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CoreRuntime } from 'atoma-types/runtime'
-import type { RuntimeSchema, RuntimeStoreSchema, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime } from 'atoma-types/runtime'
+import type { Schema, StoreSchema, StoreHandle } from 'atoma-types/runtime'
 import { SimpleStoreState } from './StoreState'
 
-export type StoreEngineApi<T extends Entity = Entity, Relations = {}> = IStore<T, Relations> & Readonly<{
+export type StoreEngineApi<T extends Entity = Entity, Relations = {}> = Store<T, Relations> & Readonly<{
     fetchAll: () => Promise<T[]>
     query: (query: Query<T>) => Promise<QueryResult<T>>
     queryOne: (query: Query<T>) => Promise<QueryOneResult<T>>
@@ -26,7 +26,7 @@ export type StoreEngine<T extends Entity = Entity, Relations = {}> = Readonly<{
     api: StoreEngineApi<T, Relations>
 }>
 
-export type StoreFacade<T extends Entity = Entity, Relations = {}> = IStore<T, Relations> & { name: string }
+export type StoreFacade<T extends Entity = Entity, Relations = {}> = Store<T, Relations> & { name: string }
 
 export type StoreFactoryResult<T extends Entity = Entity, Relations = {}> = Readonly<{
     handle: StoreHandle<T>
@@ -35,16 +35,16 @@ export type StoreFactoryResult<T extends Entity = Entity, Relations = {}> = Read
 }>
 
 export class StoreFactory {
-    private readonly runtime: CoreRuntime
-    private readonly schema: RuntimeSchema
+    private readonly runtime: Runtime
+    private readonly schema: Schema
     private readonly defaults?: {
         idGenerator?: () => EntityId
     }
     private readonly dataProcessor?: StoreDataProcessor<Entity>
 
     constructor(args: {
-        runtime: CoreRuntime
-        schema: RuntimeSchema
+        runtime: Runtime
+        schema: Schema
         defaults?: {
             idGenerator?: () => EntityId
         }
@@ -58,7 +58,7 @@ export class StoreFactory {
 
     build = <T extends Entity = Entity>(storeName: string): StoreFactoryResult<T> => {
         const name = String(storeName)
-        const storeSchema = (this.schema?.[name] ?? {}) as RuntimeStoreSchema<T>
+        const storeSchema = (this.schema?.[name] ?? {}) as StoreSchema<T>
 
         const idGenerator = storeSchema.idGenerator
             ?? this.defaults?.idGenerator

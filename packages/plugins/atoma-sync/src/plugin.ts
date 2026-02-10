@@ -1,5 +1,5 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { DEVTOOLS_REGISTRY_KEY } from 'atoma-types/devtools'
+import { DEBUG_HUB_CAPABILITY } from 'atoma-types/devtools'
 import type { SyncClient, SyncMode, SyncPhase, SyncRuntimeConfig } from 'atoma-types/sync'
 import { SyncEngine } from '#sync/engine/sync-engine'
 import { createStores } from '#sync/storage'
@@ -189,10 +189,31 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
 
     const extension: SyncExtension = { sync }
 
-    const registry = ctx.capabilities.get<any>(DEVTOOLS_REGISTRY_KEY)
-    const unregisterDevtools = registry?.register?.('sync', {
-        snapshot: devtools.snapshot,
-        subscribe: devtools.subscribe
+    const debugHub = ctx.capabilities.get(DEBUG_HUB_CAPABILITY)
+    const syncProviderId = `sync.${runtime.id}`
+    const unregisterDebugProvider = debugHub?.register({
+        id: syncProviderId,
+        kind: 'sync',
+        clientId: runtime.id,
+        priority: 40,
+        snapshot: () => {
+            const base = devtools.snapshot()
+            return {
+                version: 1,
+                providerId: syncProviderId,
+                kind: 'sync',
+                clientId: runtime.id,
+                timestamp: now(),
+                scope: { tab: 'sync' },
+                data: {
+                    ...base,
+                    status: {
+                        configured: isConfigured(currentMode),
+                        started: base.status?.started ?? devtools.getStarted()
+                    }
+                }
+            }
+        }
     })
 
     const dispose = () => {
@@ -204,7 +225,7 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
         engine = null
 
         try {
-            unregisterDevtools?.()
+            unregisterDebugProvider?.()
         } catch {
             // ignore
         }

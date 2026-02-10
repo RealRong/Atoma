@@ -1,6 +1,6 @@
 import type { AtomaHistory } from 'atoma-types/client'
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { DEVTOOLS_REGISTRY_KEY, type DevtoolsRegistry } from 'atoma-types/devtools'
+import { DEBUG_HUB_CAPABILITY } from 'atoma-types/devtools'
 import { HistoryManager } from './history-manager'
 
 const toScope = (scope?: string) => String(scope ?? 'default')
@@ -21,9 +21,24 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
         init: (ctx: PluginContext) => {
             const manager = new HistoryManager()
 
-            const registry = ctx.capabilities.get<DevtoolsRegistry>(DEVTOOLS_REGISTRY_KEY)
-            const unregisterDevtools = registry?.register?.('history', {
-                snapshot: () => buildSnapshot(manager)
+            const debugHub = ctx.capabilities.get(DEBUG_HUB_CAPABILITY)
+            const historyProviderId = `history.${ctx.runtime.id}`
+            const unregisterDebugProvider = debugHub?.register({
+                id: historyProviderId,
+                kind: 'history',
+                clientId: ctx.runtime.id,
+                priority: 50,
+                snapshot: () => {
+                    return {
+                        version: 1,
+                        providerId: historyProviderId,
+                        kind: 'history',
+                        clientId: ctx.runtime.id,
+                        timestamp: ctx.runtime.now(),
+                        scope: { tab: 'history' },
+                        data: buildSnapshot(manager)
+                    }
+                }
             })
 
             const stopHooks = ctx.hooks.register({
@@ -84,7 +99,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                         // ignore
                     }
                     try {
-                        unregisterDevtools?.()
+                        unregisterDebugProvider?.()
                     } catch {
                         // ignore
                     }

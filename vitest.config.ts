@@ -4,9 +4,6 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
     resolve: {
         alias: [
-            { find: /^#client$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/index.ts') },
-            { find: /^#client\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/$1') },
-
             { find: /^atoma-client$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/index.ts') },
             { find: /^atoma-core\/store$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/store/index.ts') },
             { find: /^atoma-core\/query$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/query/index.ts') },

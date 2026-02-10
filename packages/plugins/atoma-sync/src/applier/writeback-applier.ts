@@ -1,10 +1,10 @@
-import type { CoreRuntime } from 'atoma-types/runtime'
+import type { Runtime } from 'atoma-types/runtime'
 import type { Change, EntityId } from 'atoma-types/protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from 'atoma-types/sync'
 
 export class WritebackApplier implements SyncApplier {
     constructor(private readonly deps: {
-        runtime: CoreRuntime
+        runtime: Runtime
     }) {}
 
     applyPullChanges = async (changes: Change[]) => {

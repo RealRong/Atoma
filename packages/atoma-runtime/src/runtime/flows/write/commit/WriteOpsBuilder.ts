@@ -13,7 +13,7 @@ import {
     createIdempotencyKey,
     ensureWriteItemMeta
 } from 'atoma-types/protocol-tools'
-import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 import type { PersistPlan } from '../types'
 
 type Group<T extends Entity> = {
@@ -24,7 +24,7 @@ type Group<T extends Entity> = {
 
 export class WriteOpsBuilder {
     buildWriteOps = async <T extends Entity>(args: {
-        runtime: CoreRuntime
+        runtime: Runtime
         handle: StoreHandle<T>
         intents: Array<WriteIntent<T>>
         opContext: OperationContext
@@ -70,7 +70,7 @@ export class WriteOpsBuilder {
     }
 
     private buildGroupPlan = <T extends Entity>(args: {
-        runtime: CoreRuntime
+        runtime: Runtime
         handle: StoreHandle<T>
         group: Group<T>
     }): PersistPlan<T>[number] => {

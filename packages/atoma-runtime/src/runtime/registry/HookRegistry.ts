@@ -1,26 +1,26 @@
 import type { Entity } from 'atoma-types/core'
 import type {
-    RuntimeHookEventName,
-    RuntimeHookRegistry,
-    RuntimeHooks,
-    RuntimeReadStartArgs,
-    RuntimeReadFinishArgs,
-    RuntimeStoreCreatedArgs,
-    RuntimeWriteCommittedArgs,
-    RuntimeWriteFailedArgs,
-    RuntimeWritePatchesArgs,
-    RuntimeWriteStartArgs
+    HookEventName,
+    HookRegistry as HookRegistryType,
+    Hooks,
+    ReadStartArgs,
+    ReadFinishArgs,
+    StoreCreatedArgs,
+    WriteCommittedArgs,
+    WriteFailedArgs,
+    WritePatchesArgs,
+    WriteStartArgs
 } from 'atoma-types/runtime'
 
-type ReadStartHandler = NonNullable<NonNullable<RuntimeHooks['read']>['onStart']>
-type ReadFinishHandler = NonNullable<NonNullable<RuntimeHooks['read']>['onFinish']>
-type WriteStartHandler = NonNullable<NonNullable<RuntimeHooks['write']>['onStart']>
-type WritePatchesHandler = NonNullable<NonNullable<RuntimeHooks['write']>['onPatches']>
-type WriteCommittedHandler = NonNullable<NonNullable<RuntimeHooks['write']>['onCommitted']>
-type WriteFailedHandler = NonNullable<NonNullable<RuntimeHooks['write']>['onFailed']>
-type StoreCreatedHandler = NonNullable<NonNullable<RuntimeHooks['store']>['onCreated']>
+type ReadStartHandler = NonNullable<NonNullable<Hooks['read']>['onStart']>
+type ReadFinishHandler = NonNullable<NonNullable<Hooks['read']>['onFinish']>
+type WriteStartHandler = NonNullable<NonNullable<Hooks['write']>['onStart']>
+type WritePatchesHandler = NonNullable<NonNullable<Hooks['write']>['onPatches']>
+type WriteCommittedHandler = NonNullable<NonNullable<Hooks['write']>['onCommitted']>
+type WriteFailedHandler = NonNullable<NonNullable<Hooks['write']>['onFailed']>
+type StoreCreatedHandler = NonNullable<NonNullable<Hooks['store']>['onCreated']>
 
-export class HookRegistry implements RuntimeHookRegistry {
+export class HookRegistry implements HookRegistryType {
     private readonly readStartHandlers = new Set<ReadStartHandler>()
     private readonly readFinishHandlers = new Set<ReadFinishHandler>()
     private readonly writeStartHandlers = new Set<WriteStartHandler>()
@@ -31,7 +31,7 @@ export class HookRegistry implements RuntimeHookRegistry {
 
     get has() {
         return {
-            event: (name: RuntimeHookEventName) => {
+            event: (name: HookEventName) => {
                 switch (name) {
                     case 'readStart':
                         return this.readStartHandlers.size > 0
@@ -55,7 +55,7 @@ export class HookRegistry implements RuntimeHookRegistry {
         }
     }
 
-    register = (hooks: RuntimeHooks) => {
+    register = (hooks: Hooks) => {
         if (!hooks) return () => {}
 
         const cleanups: Array<() => void> = []
@@ -85,7 +85,7 @@ export class HookRegistry implements RuntimeHookRegistry {
     }
 
     readonly emit = {
-        readStart: <T extends Entity>(args: RuntimeReadStartArgs<T>) => {
+        readStart: <T extends Entity>(args: ReadStartArgs<T>) => {
             for (const fn of this.readStartHandlers) {
                 try {
                     fn(args)
@@ -94,7 +94,7 @@ export class HookRegistry implements RuntimeHookRegistry {
                 }
             }
         },
-        readFinish: <T extends Entity>(args: RuntimeReadFinishArgs<T>) => {
+        readFinish: <T extends Entity>(args: ReadFinishArgs<T>) => {
             for (const fn of this.readFinishHandlers) {
                 try {
                     fn(args)
@@ -103,7 +103,7 @@ export class HookRegistry implements RuntimeHookRegistry {
                 }
             }
         },
-        writeStart: <T extends Entity>(args: RuntimeWriteStartArgs<T>) => {
+        writeStart: <T extends Entity>(args: WriteStartArgs<T>) => {
             for (const fn of this.writeStartHandlers) {
                 try {
                     fn(args)
@@ -112,7 +112,7 @@ export class HookRegistry implements RuntimeHookRegistry {
                 }
             }
         },
-        writePatches: <T extends Entity>(args: RuntimeWritePatchesArgs<T>) => {
+        writePatches: <T extends Entity>(args: WritePatchesArgs<T>) => {
             for (const fn of this.writePatchesHandlers) {
                 try {
                     fn(args)
@@ -121,7 +121,7 @@ export class HookRegistry implements RuntimeHookRegistry {
                 }
             }
         },
-        writeCommitted: <T extends Entity>(args: RuntimeWriteCommittedArgs<T>) => {
+        writeCommitted: <T extends Entity>(args: WriteCommittedArgs<T>) => {
             for (const fn of this.writeCommittedHandlers) {
                 try {
                     fn(args)
@@ -130,7 +130,7 @@ export class HookRegistry implements RuntimeHookRegistry {
                 }
             }
         },
-        writeFailed: <T extends Entity>(args: RuntimeWriteFailedArgs<T>) => {
+        writeFailed: <T extends Entity>(args: WriteFailedArgs<T>) => {
             for (const fn of this.writeFailedHandlers) {
                 try {
                     fn(args)
@@ -139,7 +139,7 @@ export class HookRegistry implements RuntimeHookRegistry {
                 }
             }
         },
-        storeCreated: <T extends Entity>(args: RuntimeStoreCreatedArgs<T>) => {
+        storeCreated: <T extends Entity>(args: StoreCreatedArgs<T>) => {
             for (const fn of this.storeCreatedHandlers) {
                 try {
                     fn(args)

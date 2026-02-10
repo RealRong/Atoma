@@ -6,7 +6,7 @@ import type {
 } from '../../core'
 import type { EntityId } from '../../shared'
 
-export type RuntimeMutation = Readonly<{
+export type MutationEngine = Readonly<{
     init: <T>(obj: Partial<T>, idGenerator?: () => EntityId) => PartialWithId<T>
     merge: <T>(base: PartialWithId<T>, patch: PartialWithId<T>) => PartialWithId<T>
     addMany: <T>(items: PartialWithId<T>[], data: Map<EntityId, T>) => Map<EntityId, T>

@@ -9,14 +9,12 @@ export type KeySelector<T> =
     | string
     | ((item: T) => EntityId | EntityId[] | undefined | null)
 
-export interface IBase extends Entity {
+export interface Base extends Entity {
     createdAt: number
     updatedAt: number
     deleted?: boolean
     deletedAt?: number
     version?: number
 }
-
-export type BaseEntity = IBase
 
 export type PartialWithId<T> = Partial<T> & { id: EntityId }

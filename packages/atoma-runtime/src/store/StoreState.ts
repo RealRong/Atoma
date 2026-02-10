@@ -1,17 +1,17 @@
 import type { Entity, IndexesLike, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { RuntimeEngine, StoreSnapshot, StoreState } from 'atoma-types/runtime'
+import type { Engine, StoreSnapshot, StoreState } from 'atoma-types/runtime'
 
 export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T> {
     private snapshot: StoreSnapshot<T>
     private listeners = new Set<() => void>()
-    private readonly engine: RuntimeEngine
+    private readonly engine: Engine
     readonly indexes: IndexesLike<T> | null
 
     constructor(args: {
         initial?: StoreSnapshot<T>
         indexes?: IndexesLike<T> | null
-        engine: RuntimeEngine
+        engine: Engine
     }) {
         this.snapshot = args.initial ?? new Map<EntityId, T>()
         this.indexes = args.indexes ?? null

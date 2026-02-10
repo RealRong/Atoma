@@ -1,18 +1,18 @@
-import type { Entity, IStore, RelationMap, StoreToken } from '../../core'
-import type { RuntimeRelationInclude, RuntimeRelationPrefetchOptions, RuntimeStoreMap } from './shared'
+import type { Entity, Store, RelationMap, StoreToken } from '../../core'
+import type { RelationInclude, RelationPrefetchOptions, StoreMap } from './shared'
 
-export type RuntimeRelations = Readonly<{
+export type RelationEngine = Readonly<{
     project: <T extends Entity>(
         items: T[],
-        include: RuntimeRelationInclude,
+        include: RelationInclude,
         relations: RelationMap<T> | undefined,
-        storeStates: ReadonlyMap<StoreToken, RuntimeStoreMap>
+        storeStates: ReadonlyMap<StoreToken, StoreMap>
     ) => T[]
     prefetch: <T extends Entity>(
         items: T[],
-        include: RuntimeRelationInclude,
+        include: RelationInclude,
         relations: RelationMap<T> | undefined,
-        resolveStore: (name: StoreToken) => IStore<unknown> | undefined,
-        options?: RuntimeRelationPrefetchOptions
+        resolveStore: (name: StoreToken) => Store<unknown> | undefined,
+        options?: RelationPrefetchOptions
     ) => Promise<void>
 }>

@@ -2,13 +2,13 @@ export type { CursorToken } from '../shared'
 
 import type { CursorToken } from '../shared'
 
-export type SortRule<T = any> = { field: keyof T & string | string; dir: 'asc' | 'desc' }
+export type SortRule<T = unknown> = { field: keyof T & string | string; dir: 'asc' | 'desc' }
 
 export type PageSpec =
     | { mode: 'offset'; limit?: number; offset?: number; includeTotal?: boolean }
     | { mode: 'cursor'; limit?: number; after?: CursorToken; before?: CursorToken }
 
-export type FilterExpr<T = any> =
+export type FilterExpr<T = unknown> =
     | { op: 'and'; args: FilterExpr<T>[] }
     | { op: 'or'; args: FilterExpr<T>[] }
     | { op: 'not'; arg: FilterExpr<T> }
@@ -26,12 +26,12 @@ export type FilterExpr<T = any> =
         distance?: 0 | 1 | 2
     }
 
-export type Query<T = any> = {
+export type Query<T = unknown> = {
     filter?: FilterExpr<T>
     sort?: SortRule<T>[]
     page?: PageSpec
     select?: Array<keyof T & string> | string[]
-    include?: Record<string, Query<any>>
+    include?: Record<string, Query<unknown>>
 }
 
 export type PageInfo = {

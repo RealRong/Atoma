@@ -13,10 +13,6 @@
             "source": "./src/index.ts"
         }
     },
-    "imports": {
-        "#client": "./src/index.ts",
-        "#client/*": "./src/*"
-    },
     "scripts": {
         "build": "tsup",
         "typecheck": "tsc -p tsconfig.json --noEmit"

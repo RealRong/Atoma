@@ -1,15 +1,56 @@
-export const DEVTOOLS_REGISTRY_KEY = 'devtools.registry'
-export const DEVTOOLS_META_KEY = 'devtools.meta'
+import { defineCapability } from '../client/registry'
 
-export type DevtoolsRegistry = Readonly<{
-    get: (key: string) => any
-    register: (key: string, value: any) => () => void
-    subscribe: (fn: (e: { type: 'register' | 'unregister'; key: string }) => void) => () => void
+export type DebugKind = 'store' | 'index' | 'sync' | 'history' | 'trace' | 'custom'
+
+export type DebugProviderSnapshotArgs = Readonly<{
+    storeName?: string
 }>
 
-export type DevtoolsMeta = Readonly<{
-    storeBackend: {
-        role: 'local' | 'remote'
-        kind: 'http' | 'indexeddb' | 'memory' | 'localServer' | 'custom'
+export type DebugSnapshotArgs = Readonly<{
+    kind?: DebugKind
+    clientId?: string
+    storeName?: string
+}>
+
+export type DebugPayload = Readonly<{
+    version: 1
+    providerId: string
+    kind: DebugKind
+    clientId: string
+    timestamp: number
+    scope?: {
+        storeName?: string
+        tab?: string
+    }
+    data: unknown
+    meta?: {
+        title?: string
+        tags?: string[]
+        capabilities?: string[]
     }
 }>
+
+export type DebugProvider = Readonly<{
+    id: string
+    kind: DebugKind
+    clientId: string
+    priority?: number
+    snapshot: (args?: DebugProviderSnapshotArgs) => DebugPayload
+}>
+
+export type DebugHubEvent = Readonly<{
+    type: 'register' | 'unregister'
+    providerId: string
+    kind: DebugKind
+    clientId: string
+}>
+
+export type DebugHub = Readonly<{
+    register: (provider: DebugProvider) => () => void
+    get: (providerId: string) => DebugProvider | undefined
+    list: (filter?: { kind?: DebugKind; clientId?: string }) => DebugProvider[]
+    snapshotAll: (args?: DebugSnapshotArgs) => DebugPayload[]
+    subscribe: (fn: (e: DebugHubEvent) => void) => () => void
+}>
+
+export const DEBUG_HUB_CAPABILITY = defineCapability<DebugHub>('debug.hub')

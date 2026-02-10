@@ -1,2 +1,12 @@
 export { devtoolsPlugin } from './plugin'
-export type { HistoryProvider, SyncProvider } from './types'
+
+export type {
+    DevtoolsStoreSnapshot,
+    DevtoolsIndexManagerSnapshot,
+    DevtoolsSyncSnapshot,
+    DevtoolsHistorySnapshot,
+    DevtoolsClientSnapshot,
+    DevtoolsEvent,
+    DevtoolsClientInspector,
+    DevtoolsGlobalInspector
+} from './types'

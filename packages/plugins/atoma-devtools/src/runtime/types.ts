@@ -36,7 +36,7 @@ export type DevtoolsIndexManagerSnapshot = {
 
 export type DevtoolsSyncSnapshot = {
     status: { configured: boolean; started: boolean }
-    queue?: { pending: number; failed: number }
+    queue?: { pending?: number; failed?: number; inFlight?: number; total?: number }
     lastEventAt?: number
     lastError?: string
 }
@@ -50,9 +50,6 @@ export type DevtoolsClientSnapshot = {
     label?: string
     createdAt: number
     updatedAt: number
-    config: {
-        storeBackend: { role: 'local' | 'remote'; kind: 'http' | 'indexeddb' | 'memory' | 'localServer' | 'custom' }
-    }
     stores: DevtoolsStoreSnapshot[]
     indexes: DevtoolsIndexManagerSnapshot[]
     sync?: DevtoolsSyncSnapshot
@@ -91,15 +88,4 @@ export type DevtoolsGlobalInspector = {
         get: (id: string) => DevtoolsClientInspector
         snapshot: () => { clients: DevtoolsClientSnapshot[] }
     }
-}
-
-export type ClientMeta = import('atoma-types/devtools').DevtoolsMeta
-
-export type SyncProvider = {
-    snapshot: () => DevtoolsSyncSnapshot
-    subscribe: (fn: (e: DevtoolsEvent) => void) => () => void
-}
-
-export type HistoryProvider = {
-    snapshot: () => DevtoolsHistorySnapshot
 }

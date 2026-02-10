@@ -42,7 +42,7 @@ export type WriteIntentOptions = {
     }
 }
 
-export type WriteIntent<T = any> = Readonly<{
+export type WriteIntent<T = unknown> = Readonly<{
     action: 'create' | 'update' | 'upsert' | 'delete'
     entityId?: EntityId
     value?: T
@@ -95,7 +95,7 @@ export type WriteStrategy = string
 
 declare const RELATIONS_BRAND: unique symbol
 
-export interface IStore<T, Relations = {}> {
+export interface Store<T, Relations = {}> {
     readonly [RELATIONS_BRAND]?: Relations
 
     addOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>

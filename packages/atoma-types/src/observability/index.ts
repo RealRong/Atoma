@@ -35,12 +35,12 @@ export type Explain = {
         kind: 'unsupported' | 'empty' | 'candidates'
         exactness?: 'exact' | 'superset'
         candidates?: number
-        lastQueryPlan?: any
+        lastQueryPlan?: unknown
     }
     finalize?: {
         inputCount: number
         outputCount: number
-        paramsSummary?: any
+        paramsSummary?: unknown
     }
     cacheWrite?: { writeToCache: boolean; reason?: 'skipStore' | 'sparseFields' | 'other' }
     dataSource?: { requestId?: string; opId?: string; durationMs?: number; ok?: boolean; status?: number }
@@ -62,6 +62,4 @@ export type DebugEmitMeta = Partial<Pick<TraceContext, 'requestId' | 'opId'>> & 
 
 export type EmitFn = (type: string, payload?: unknown, meta?: DebugEmitMeta) => void
 
-export type AtomaDebugEventMap = Record<string, unknown>
 
-export type QueryParamsSummary = Record<string, unknown>

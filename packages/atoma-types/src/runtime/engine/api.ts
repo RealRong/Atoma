@@ -1,13 +1,13 @@
-import type { RuntimeIndexes } from './indexes'
-import type { RuntimeMutation } from './mutation'
-import type { RuntimeOperation } from './operation'
-import type { RuntimeQuery } from './query'
-import type { RuntimeRelations } from './relations'
+import type { IndexEngine } from './indexes'
+import type { MutationEngine } from './mutation'
+import type { OperationEngine } from './operation'
+import type { QueryEngine } from './query'
+import type { RelationEngine } from './relations'
 
-export type RuntimeEngine = Readonly<{
-    index: RuntimeIndexes
-    query: RuntimeQuery
-    relation: RuntimeRelations
-    mutation: RuntimeMutation
-    operation: RuntimeOperation
+export type Engine = Readonly<{
+    index: IndexEngine
+    query: QueryEngine
+    relation: RelationEngine
+    mutation: MutationEngine
+    operation: OperationEngine
 }>

@@ -12,7 +12,7 @@ import type {
     WriteManyResult
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CoreRuntime, RuntimeWrite, RuntimeWriteHookSource, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, Write, WriteHookSource, StoreHandle } from 'atoma-types/runtime'
 import { WriteCommitFlow } from './write/commit/WriteCommitFlow'
 import { WriteIntentFactory } from './write/services/WriteIntentFactory'
 import { runAfterSave } from './write/utils/prepareWriteInput'
@@ -28,7 +28,7 @@ type GroupedWriteArgs<T extends Entity> = {
     handle: StoreHandle<T>
     context: WriteContext
     intents: Array<WriteIntent<T>>
-    source: RuntimeWriteHookSource
+    source: WriteHookSource
     patchPayload: WritePatchPayload
     output?: T
     afterSaveAction?: 'add' | 'update'
@@ -106,12 +106,12 @@ function buildWriteIntentsFromPatches<T extends Entity>(args: {
     return intents
 }
 
-export class WriteFlow implements RuntimeWrite {
-    private readonly runtime: CoreRuntime
+export class WriteFlow implements Write {
+    private readonly runtime: Runtime
     private readonly writeCommitFlow: WriteCommitFlow
     private readonly writeIntentFactory: WriteIntentFactory
 
-    constructor(runtime: CoreRuntime) {
+    constructor(runtime: Runtime) {
         this.runtime = runtime
         this.writeCommitFlow = new WriteCommitFlow()
         this.writeIntentFactory = new WriteIntentFactory(runtime)
@@ -244,7 +244,7 @@ export class WriteFlow implements RuntimeWrite {
         opContext: OperationContext
         writeStrategy?: string
         intents: Array<WriteIntent<T>>
-        source: RuntimeWriteHookSource
+        source: WriteHookSource
         output?: T
         patchPayload: WritePatchPayload
         afterSaveAction?: 'add' | 'update'
@@ -291,7 +291,7 @@ export class WriteFlow implements RuntimeWrite {
         handle: StoreHandle<T>
         context: WriteContext
         intent: WriteIntent<T>
-        source: RuntimeWriteHookSource
+        source: WriteHookSource
         id?: EntityId
         before?: T
         after?: T

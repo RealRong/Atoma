@@ -1,11 +1,11 @@
 import { withTraceMeta, buildRequestMeta, assertOutgoingOps, assertOperationResults, wrapProtocolError } from 'atoma-types/protocol-tools'
 import type { Entity, Query } from 'atoma-types/core'
-import type { RuntimeIo, StoreHandle } from 'atoma-types/runtime'
+import type { Io, StoreHandle } from 'atoma-types/runtime'
 import type { IoContext, PluginReadResult, ReadContext, ReadRequest } from 'atoma-types/client/plugins'
 import type { OperationEnvelope, ResultEnvelope } from 'atoma-types/client/ops'
 import type { HandlerChain } from './HandlerChain'
 
-export class PluginRuntimeIo implements RuntimeIo {
+export class PluginRuntimeIo implements Io {
     private readonly ioChain: HandlerChain<'io'>
     private readonly readChain: HandlerChain<'read'>
     private readonly now: () => number
@@ -23,7 +23,7 @@ export class PluginRuntimeIo implements RuntimeIo {
         this.clientId = args.clientId
     }
 
-    executeOps: RuntimeIo['executeOps'] = async (input) => {
+    executeOps: Io['executeOps'] = async (input) => {
         const opsWithTrace = withTraceMeta({
             ops: input.ops
         })
@@ -48,7 +48,7 @@ export class PluginRuntimeIo implements RuntimeIo {
         }
     }
 
-    query: RuntimeIo['query'] = async <T extends Entity>(
+    query: Io['query'] = async <T extends Entity>(
         handle: StoreHandle<T>,
         query: Query,
         signal?: AbortSignal

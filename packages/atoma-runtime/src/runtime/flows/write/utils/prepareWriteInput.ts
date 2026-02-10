@@ -1,9 +1,9 @@
 import type { Entity, LifecycleHooks, OperationContext, PartialWithId, StoreOperationOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 
 export async function prepareCreateInput<T extends Entity>(
-    runtime: CoreRuntime,
+    runtime: Runtime,
     handle: StoreHandle<T>,
     item: Partial<T>,
     opContext?: OperationContext
@@ -15,7 +15,7 @@ export async function prepareCreateInput<T extends Entity>(
 }
 
 export async function prepareUpdateInput<T extends Entity>(
-    runtime: CoreRuntime,
+    runtime: Runtime,
     handle: StoreHandle<T>,
     base: PartialWithId<T>,
     patch: PartialWithId<T>,
@@ -28,7 +28,7 @@ export async function prepareUpdateInput<T extends Entity>(
 }
 
 export async function resolveWriteBase<T extends Entity>(
-    runtime: CoreRuntime,
+    runtime: Runtime,
     handle: StoreHandle<T>,
     id: EntityId,
     options?: StoreOperationOptions

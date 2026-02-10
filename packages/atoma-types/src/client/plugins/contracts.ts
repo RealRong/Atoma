@@ -1,5 +1,5 @@
-import type { Query, StoreToken } from '../../core'
-import type { CoreRuntime, PersistRequest, PersistResult, RuntimeHookRegistry } from '../../runtime'
+import type { Entity, Query, StoreToken } from '../../core'
+import type { Runtime, PersistRequest, PersistResult, HookRegistry } from '../../runtime'
 import type { OperationEnvelope, ResultEnvelope } from '../ops'
 import type { CapabilitiesRegistry } from '../registry'
 
@@ -37,11 +37,11 @@ export type IoHandler = (
     next: Next<ResultEnvelope>
 ) => Promise<ResultEnvelope>
 
-export type PersistHandler = (
-    req: PersistRequest<any>,
+export type PersistHandler = <T extends Entity>(
+    req: PersistRequest<T>,
     ctx: PersistContext,
-    next: Next<PersistResult<any>>
-) => Promise<PersistResult<any>>
+    next: Next<PersistResult<T>>
+) => Promise<PersistResult<T>>
 
 export type ReadHandler = (
     req: ReadRequest,
@@ -82,6 +82,6 @@ export type ClientPlugin<Ext = unknown> = Readonly<{
 export type PluginContext = Readonly<{
     clientId: string
     capabilities: CapabilitiesRegistry
-    runtime: CoreRuntime
-    hooks: RuntimeHookRegistry
+    runtime: Runtime
+    hooks: HookRegistry
 }>

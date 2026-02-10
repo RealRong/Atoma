@@ -1,28 +1,31 @@
 export type {
-    CoreRuntime,
-    RuntimeIo,
-    RuntimeStrategyRegistry,
-    RuntimeRead,
-    RuntimeTransform,
-    RuntimeWrite,
-    StoreRegistry,
+    Runtime,
+    Io,
+    StrategyRegistry,
+    Read,
+    Transform,
+    Write,
+    StoreCatalog,
     StoreHandle,
-    DataProcessor
+    TransformPipeline,
+    StoreDebugSnapshot,
+    IndexDebugSnapshot,
+    Debug
 } from './api'
 export type { StoreListener, StoreSnapshot, StoreState } from './storeState'
-export type { RuntimeSchema, RuntimeStoreSchema } from './schema'
+export type { Schema, StoreSchema } from './schema'
 export type {
-    RuntimeHooks,
-    RuntimeHookEventName,
-    RuntimeHookRegistry,
-    RuntimeReadStartArgs,
-    RuntimeReadFinishArgs,
-    RuntimeWriteStartArgs,
-    RuntimeWritePatchesArgs,
-    RuntimeWriteCommittedArgs,
-    RuntimeWriteFailedArgs,
-    RuntimeStoreCreatedArgs,
-    RuntimeWriteHookSource
+    Hooks,
+    HookEventName,
+    HookRegistry,
+    ReadStartArgs,
+    ReadFinishArgs,
+    WriteStartArgs,
+    WritePatchesArgs,
+    WriteCommittedArgs,
+    WriteFailedArgs,
+    StoreCreatedArgs,
+    WriteHookSource
 } from './hooks'
 
 export type {
@@ -36,13 +39,13 @@ export type {
 } from './persistence'
 
 export type {
-    RuntimeRelationInclude,
-    RuntimeRelationPrefetchOptions,
-    RuntimeStoreMap
+    RelationInclude,
+    RelationPrefetchOptions,
+    StoreMap
 } from './engine/shared'
-export type { RuntimeIndexes } from './engine/indexes'
-export type { RuntimeQuery } from './engine/query'
-export type { RuntimeRelations } from './engine/relations'
-export type { RuntimeMutation } from './engine/mutation'
-export type { RuntimeOperation } from './engine/operation'
-export type { RuntimeEngine } from './engine/api'
+export type { IndexEngine } from './engine/indexes'
+export type { QueryEngine } from './engine/query'
+export type { RelationEngine } from './engine/relations'
+export type { MutationEngine } from './engine/mutation'
+export type { OperationEngine } from './engine/operation'
+export type { Engine } from './engine/api'

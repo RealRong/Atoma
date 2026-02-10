@@ -3,12 +3,12 @@ import type { Entity } from 'atoma-types/core'
 import type { Operation } from 'atoma-types/protocol'
 import type {
     PersistRequest,
-    RuntimeReadFinishArgs,
-    RuntimeReadStartArgs,
-    RuntimeWriteCommittedArgs,
-    RuntimeWriteFailedArgs,
-    RuntimeWritePatchesArgs,
-    RuntimeWriteStartArgs,
+    ReadFinishArgs,
+    ReadStartArgs,
+    WriteCommittedArgs,
+    WriteFailedArgs,
+    WritePatchesArgs,
+    WriteStartArgs,
 } from 'atoma-types/runtime'
 import type { ObservabilityContext } from 'atoma-types/observability'
 import { StoreObservability } from './store-observability'
@@ -125,7 +125,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         init: (ctx: PluginContext) => {
             const stop = ctx.hooks.register({
                 read: {
-                    onStart: <T extends Entity>(args: RuntimeReadStartArgs<T>) => {
+                    onStart: <T extends Entity>(args: ReadStartArgs<T>) => {
                         const { handle, query } = args
                         const ctxInstance = storeObs.createContext(String(handle.storeName))
                         if (query && typeof query === 'object') {
@@ -136,7 +136,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                             query
                         })
                     },
-                    onFinish: <T extends Entity>(args: RuntimeReadFinishArgs<T>) => {
+                    onFinish: <T extends Entity>(args: ReadFinishArgs<T>) => {
                         const { handle, query, result, durationMs } = args
                         const ctxInstance = (query && typeof query === 'object')
                             ? (readContextByQuery.get(query as object) ?? storeObs.createContext(String(handle.storeName)))
@@ -152,7 +152,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                     }
                 },
                 write: {
-                    onStart: <T extends Entity>(args: RuntimeWriteStartArgs<T>) => {
+                    onStart: <T extends Entity>(args: WriteStartArgs<T>) => {
                         const { handle, opContext, intents } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:start`, {
@@ -163,7 +163,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                             intentCount: intents.length
                         })
                     },
-                    onPatches: <T extends Entity>(args: RuntimeWritePatchesArgs<T>) => {
+                    onPatches: <T extends Entity>(args: WritePatchesArgs<T>) => {
                         const { handle, opContext, patches } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:patches`, {
@@ -172,7 +172,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                             patchCount: Array.isArray(patches) ? patches.length : 0
                         })
                     },
-                    onCommitted: <T extends Entity>(args: RuntimeWriteCommittedArgs<T>) => {
+                    onCommitted: <T extends Entity>(args: WriteCommittedArgs<T>) => {
                         const { handle, opContext } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:finish`, {
@@ -181,7 +181,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                         })
                         releaseWriteContext(opContext.actionId)
                     },
-                    onFailed: <T extends Entity>(args: RuntimeWriteFailedArgs<T>) => {
+                    onFailed: <T extends Entity>(args: WriteFailedArgs<T>) => {
                         const { handle, opContext, error } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:failed`, {

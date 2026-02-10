@@ -1,12 +1,12 @@
 import type { Entity, Query as StoreQuery, QueryOneResult, QueryResult } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { toErrorWithFallback as toError } from 'atoma-shared'
-import type { CoreRuntime, RuntimeRead, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, Read, StoreHandle } from 'atoma-types/runtime'
 
-export class ReadFlow implements RuntimeRead {
-    private readonly runtime: CoreRuntime
+export class ReadFlow implements Read {
+    private readonly runtime: Runtime
 
-    constructor(runtime: CoreRuntime) {
+    constructor(runtime: Runtime) {
         this.runtime = runtime
     }
 

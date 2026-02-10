@@ -1,8 +1,7 @@
 export type {
     Entity,
     KeySelector,
-    IBase,
-    BaseEntity,
+    Base,
     PartialWithId,
 } from './entity'
 
@@ -73,12 +72,12 @@ export type {
     StoreConfig,
     StoreToken,
     WriteStrategy,
-    IStore,
+    Store,
 } from './store'
 
 export type {
     EventHandler,
-    IEventEmitter,
+    EventEmitter,
 } from './events'
 
 export type {

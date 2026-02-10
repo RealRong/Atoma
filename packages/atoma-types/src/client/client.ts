@@ -1,9 +1,9 @@
-import type { Entity, IStore } from '../core'
-import type { CoreRuntime } from '../runtime'
+import type { Entity, Store } from '../core'
+import type { Runtime } from '../runtime'
 import type { InferRelationsFromSchema } from './relations'
 import type { AtomaSchema } from './schema'
 
-export type ClientRuntime = CoreRuntime
+export type ClientRuntime = Runtime
 
 export interface PluginCapableClient {
     dispose: () => void
@@ -13,7 +13,7 @@ export type AtomaStore<
     Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities>,
     Name extends keyof Entities & string
-> = IStore<Entities[Name], InferRelationsFromSchema<Entities, Schema, Name>>
+> = Store<Entities[Name], InferRelationsFromSchema<Entities, Schema, Name>>
 
 export type AtomaStores<
     Entities extends Record<string, Entity>,

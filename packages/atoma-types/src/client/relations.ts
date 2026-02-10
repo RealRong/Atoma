@@ -27,7 +27,7 @@ export type BelongsToSchema<
     to: TargetName
     foreignKey: KeySelector<Entities[SourceName]>
     primaryKey?: keyof Entities[TargetName] & string
-    options?: RelationIncludeOptions<Entities[TargetName], any>
+    options?: RelationIncludeOptions<Entities[TargetName], Record<string, unknown>>
 }
 
 export type HasManySchema<
@@ -39,7 +39,7 @@ export type HasManySchema<
     to: TargetName
     primaryKey?: KeySelector<Entities[SourceName]>
     foreignKey: keyof Entities[TargetName] & string
-    options?: RelationIncludeOptions<Entities[TargetName], any>
+    options?: RelationIncludeOptions<Entities[TargetName], Record<string, unknown>>
 }
 
 export type HasOneSchema<
@@ -51,7 +51,7 @@ export type HasOneSchema<
     to: TargetName
     primaryKey?: KeySelector<Entities[SourceName]>
     foreignKey: keyof Entities[TargetName] & string
-    options?: RelationIncludeOptions<Entities[TargetName], any>
+    options?: RelationIncludeOptions<Entities[TargetName], Record<string, unknown>>
 }
 
 export type RelationSchemaItem<
@@ -75,15 +75,15 @@ export type RelationMapFromSchema<
         readonly [K in keyof Schema]:
         Schema[K] extends { type: 'belongsTo'; to: infer TargetName }
         ? (TargetName extends keyof Entities & string
-            ? BelongsToConfig<Entities[SourceName], Entities[TargetName], any>
+            ? BelongsToConfig<Entities[SourceName], Entities[TargetName], Record<string, unknown>>
             : never)
         : Schema[K] extends { type: 'hasMany'; to: infer TargetName }
         ? (TargetName extends keyof Entities & string
-            ? HasManyConfig<Entities[SourceName], Entities[TargetName], any>
+            ? HasManyConfig<Entities[SourceName], Entities[TargetName], Record<string, unknown>>
             : never)
         : Schema[K] extends { type: 'hasOne'; to: infer TargetName }
         ? (TargetName extends keyof Entities & string
-            ? HasOneConfig<Entities[SourceName], Entities[TargetName], any>
+            ? HasOneConfig<Entities[SourceName], Entities[TargetName], Record<string, unknown>>
             : never)
         : never
     }

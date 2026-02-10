@@ -9,7 +9,7 @@ import type {
     WriteIntentOptions
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CoreRuntime, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 import { requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
 import {
     prepareCreateInput,
@@ -31,9 +31,9 @@ function buildUpsertIntentOptions(options?: UpsertWriteOptions): WriteIntentOpti
 }
 
 export class WriteIntentFactory {
-    private readonly runtime: CoreRuntime
+    private readonly runtime: Runtime
 
-    constructor(runtime: CoreRuntime) {
+    constructor(runtime: Runtime) {
         this.runtime = runtime
     }
 

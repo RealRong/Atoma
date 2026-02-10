@@ -3,14 +3,14 @@ import { stableStringify } from 'atoma-shared'
 import { collectRelationStoreTokens } from 'atoma-core/relations'
 import type {
     Entity,
-    IStore,
+    Store,
     Query,
     RelationIncludeInput,
     RelationMap,
     StoreToken,
     WithRelations
 } from 'atoma-types/core'
-import type { RuntimeEngine, RuntimeRelationInclude, RuntimeStoreMap } from 'atoma-types/runtime'
+import type { Engine, RelationInclude, StoreMap } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/protocol'
 import { STORE_BINDINGS, getStoreBindings } from 'atoma-types/internal'
 import { useShallowStableArray } from './useShallowStableArray'
@@ -37,7 +37,7 @@ type PrefetchEntry = {
 type StoreStatesCacheEntry = {
     includeKey: string
     liveTick: number
-    states: ReadonlyMap<StoreToken, RuntimeStoreMap>
+    states: ReadonlyMap<StoreToken, StoreMap>
 }
 
 type RelationTokensCacheEntry = {
@@ -45,7 +45,7 @@ type RelationTokensCacheEntry = {
     tokens: StoreToken[]
 }
 
-type RelationStore = IStore<Entity>
+type RelationStore = Store<Entity>
 
 export interface UseRelationsResult<T extends Entity> {
     data: T[]
@@ -75,7 +75,7 @@ export function useRelations<T extends Entity>(
     resolveStore?: (name: StoreToken) => RelationStore | undefined
 ): UseRelationsResult<T> {
     const resolveStoreRef = useRef(resolveStore)
-    const engineRef = useRef<RuntimeEngine | undefined>(undefined)
+    const engineRef = useRef<Engine | undefined>(undefined)
     const storeStatesCacheRef = useRef<{ live?: StoreStatesCacheEntry; snapshot?: StoreStatesCacheEntry }>({})
     const relationTokensCacheRef = useRef<{ live?: RelationTokensCacheEntry; snapshot?: RelationTokensCacheEntry }>({})
 
@@ -156,7 +156,7 @@ export function useRelations<T extends Entity>(
 
     const relationMap = relations
 
-    const resolveEngine = useCallback((includeArg: RuntimeRelationInclude): RuntimeEngine | undefined => {
+    const resolveEngine = useCallback((includeArg: RelationInclude): Engine | undefined => {
         if (engineRef.current) return engineRef.current
         if (!includeArg || !relationMap || !resolveStoreRef.current) return undefined
 
@@ -198,7 +198,7 @@ export function useRelations<T extends Entity>(
         relationTokensCacheRef.current = {}
     }, [includeKey, relations])
 
-    const collectRelationTokens = (includeArg: RuntimeRelationInclude, mode: 'live' | 'snapshot'): StoreToken[] => {
+    const collectRelationTokens = (includeArg: RelationInclude, mode: 'live' | 'snapshot'): StoreToken[] => {
         if (!relationMap) return []
 
         const cached = relationTokensCacheRef.current[mode]
@@ -212,9 +212,9 @@ export function useRelations<T extends Entity>(
     }
 
     const collectStoreStates = (
-        includeArg: RuntimeRelationInclude,
+        includeArg: RelationInclude,
         mode: 'live' | 'snapshot'
-    ): ReadonlyMap<StoreToken, RuntimeStoreMap> => {
+    ): ReadonlyMap<StoreToken, StoreMap> => {
         if (!resolveStoreRef.current || !relationMap) return new Map()
 
         const cached = storeStatesCacheRef.current[mode]
@@ -224,12 +224,12 @@ export function useRelations<T extends Entity>(
 
         const tokens = collectRelationTokens(includeArg, mode)
         if (!tokens.length) {
-            const empty = new Map<StoreToken, RuntimeStoreMap>()
+            const empty = new Map<StoreToken, StoreMap>()
             storeStatesCacheRef.current[mode] = { includeKey, liveTick, states: empty }
             return empty
         }
 
-        const states = new Map<StoreToken, RuntimeStoreMap>()
+        const states = new Map<StoreToken, StoreMap>()
         tokens.forEach(token => {
             const store = resolveStoreStable(token)
             if (!store) return
@@ -318,7 +318,7 @@ export function useRelations<T extends Entity>(
         }
 
         if (!resolveStoreRef.current) {
-            const err = new Error('[Atoma] useRelations: 缺少 resolveStore（StoreToken -> IStore），无法解析 include 关系')
+            const err = new Error('[Atoma] useRelations: 缺少 resolveStore（StoreToken -> Store），无法解析 include 关系')
             setState({ data: stableItems, loading: false, error: err })
             prevIdsRef.current = currentIds
             return stableItems
@@ -326,7 +326,7 @@ export function useRelations<T extends Entity>(
 
         const engine = resolveEngine(effectiveInclude)
         if (!engine) {
-            const err = new Error('[Atoma] useRelations: store 缺少 RuntimeEngine 绑定，无法执行关系预取/投影')
+            const err = new Error('[Atoma] useRelations: store 缺少 Engine 绑定，无法执行关系预取/投影')
             setState({ data: stableItems, loading: false, error: err })
             prevIdsRef.current = currentIds
             return stableItems
@@ -370,7 +370,7 @@ export function useRelations<T extends Entity>(
                     return
                 }
 
-                const includeArg = { [name]: value } as RuntimeRelationInclude
+                const includeArg = { [name]: value } as RelationInclude
                 tasks.push(engine.relation.prefetch(
                     itemsForRelation,
                     includeArg,

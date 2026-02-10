@@ -1,4 +1,4 @@
-import type { CoreRuntime } from 'atoma-types/runtime'
+import type { Runtime } from 'atoma-types/runtime'
 import type { Entity } from 'atoma-types/core'
 import type { PersistRequest, PersistResult } from 'atoma-types/runtime'
 import type { WriteAction, WriteItem, WriteOptions } from 'atoma-types/protocol'
@@ -52,7 +52,7 @@ export class SyncPersistHandlers {
     private readonly unregister: Array<() => void> = []
     private disposed = false
 
-    constructor(private readonly deps: { runtime: CoreRuntime; outbox: OutboxStore }) {
+    constructor(private readonly deps: { runtime: Runtime; outbox: OutboxStore }) {
         this.register()
     }
 
