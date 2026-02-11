@@ -1,7 +1,6 @@
 import type { Entity } from 'atoma-types/core'
 import type { AtomaClient, AtomaSchema } from 'atoma-types/client'
 import type { PluginContext, Register } from 'atoma-types/client/plugins'
-import { createHandlerChains } from './handlerChains'
 import { buildPluginList, initPlugins, normalizePlugins, registerPluginHandlers } from './pluginLifecycle'
 import { PluginRegistry } from './PluginRegistry'
 
@@ -15,7 +14,6 @@ function safeDispose(dispose: (() => void) | undefined): void {
 }
 
 export type PluginsSetup = Readonly<{
-    chains: ReturnType<typeof createHandlerChains>
     init: <E extends Record<string, Entity>, S extends AtomaSchema<E>>(client: AtomaClient<E, S>) => Array<() => void>
     dispose: () => void
 }>
@@ -23,8 +21,9 @@ export type PluginsSetup = Readonly<{
 export function setupPlugins(args: {
     context: PluginContext
     rawPlugins: ReadonlyArray<unknown>
+    pluginRegistry?: PluginRegistry
 }): PluginsSetup {
-    const pluginRegistry = new PluginRegistry()
+    const pluginRegistry = args.pluginRegistry ?? new PluginRegistry()
     const registerDisposers: Array<() => void> = []
 
     const plugins = buildPluginList(normalizePlugins(args.rawPlugins))
@@ -36,8 +35,6 @@ export function setupPlugins(args: {
     }
 
     registerPluginHandlers(plugins, args.context, register)
-
-    const chains = createHandlerChains(pluginRegistry)
 
     const init: PluginsSetup['init'] = (client) => {
         return initPlugins(plugins, args.context, client)
@@ -52,7 +49,6 @@ export function setupPlugins(args: {
     }
 
     return {
-        chains,
         init,
         dispose
     }

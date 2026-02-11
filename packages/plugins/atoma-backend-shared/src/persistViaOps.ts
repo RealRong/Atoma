@@ -1,16 +1,16 @@
 import { getOpsClient } from 'atoma-types/client/ops'
-import { buildWriteOp, assertWriteResultData } from 'atoma-types/protocol-tools'
+import { buildWriteOp } from 'atoma-types/protocol-tools'
 import type { PluginContext } from 'atoma-types/client/plugins'
-import type { WriteEntry, WriteItemResult } from 'atoma-types/protocol'
+import type { WriteEntry } from 'atoma-types/protocol'
 import type { PersistRequest, PersistResult } from 'atoma-types/runtime'
+import { parseWriteOpResults } from './opsResult'
 
 type Group = {
     action: WriteEntry['action']
-    optionsKey: string
     entries: WriteEntry[]
 }
 
-function buildOptionsKey(options: unknown): string {
+function buildOptionsKey(options: WriteEntry['options']): string {
     if (!options || typeof options !== 'object') return ''
     return JSON.stringify(options)
 }
@@ -21,12 +21,12 @@ function groupWriteEntries(entries: ReadonlyArray<WriteEntry>): Group[] {
 
     for (const entry of entries) {
         const action = entry.action
-        const optionsKey = buildOptionsKey((entry as any).options)
+        const optionsKey = buildOptionsKey(entry.options)
         const key = `${action}::${optionsKey}`
 
         let group = groupsByKey.get(key)
         if (!group) {
-            group = { action, optionsKey, entries: [] }
+            group = { action, entries: [] }
             groupsByKey.set(key, group)
             groups.push(group)
         }
@@ -35,44 +35,6 @@ function groupWriteEntries(entries: ReadonlyArray<WriteEntry>): Group[] {
     }
 
     return groups
-}
-
-function toWriteItemResults(args: {
-    groups: Group[]
-    opResults: Array<{ ok: boolean; error?: unknown; data?: unknown }>
-}): WriteItemResult[] {
-    const results: WriteItemResult[] = []
-
-    for (let index = 0; index < args.groups.length; index++) {
-        const group = args.groups[index]
-        const opResult = args.opResults[index] as any
-
-        if (!opResult) {
-            throw new Error('[Atoma] persistViaOps: missing op result')
-        }
-
-        if (opResult.ok !== true) {
-            for (const entry of group.entries) {
-                results.push({
-                    entryId: entry.entryId,
-                    ok: false,
-                    error: (opResult.error && typeof opResult.error === 'object')
-                        ? opResult.error
-                        : {
-                            code: 'WRITE_FAILED',
-                            message: '[Atoma] write op failed',
-                            kind: 'internal'
-                        }
-                } as WriteItemResult)
-            }
-            continue
-        }
-
-        const writeData = assertWriteResultData(opResult.data)
-        results.push(...writeData.results)
-    }
-
-    return results
 }
 
 export async function persistViaOps(ctx: PluginContext, req: PersistRequest<any>): Promise<PersistResult<any>> {
@@ -95,7 +57,7 @@ export async function persistViaOps(ctx: PluginContext, req: PersistRequest<any>
     }))
 
     const output = await opsClient.executeOps({
-        ops: ops as any,
+        ops,
         ...(req.signal ? { signal: req.signal } : {}),
         meta: {
             v: 1,
@@ -105,10 +67,13 @@ export async function persistViaOps(ctx: PluginContext, req: PersistRequest<any>
         }
     })
 
+    const results = parseWriteOpResults({
+        results: output.results,
+        entryGroups: groups.map(group => group.entries)
+    })
+
     return {
         status: 'confirmed',
-        ...(output.results.length
-            ? { results: toWriteItemResults({ groups, opResults: output.results as any }) }
-            : {})
+        ...(results.length ? { results } : {})
     }
 }

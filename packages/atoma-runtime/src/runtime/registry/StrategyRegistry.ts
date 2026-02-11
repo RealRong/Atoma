@@ -3,7 +3,7 @@
  */
 import type { Entity, WriteStrategy } from 'atoma-types/core'
 import type { PersistRequest, PersistResult, StrategyDescriptor, WritePolicy } from 'atoma-types/runtime'
-import type { Runtime, StrategyRegistry as StrategyRegistryType } from 'atoma-types/runtime'
+import type { StrategyRegistry as StrategyRegistryType } from 'atoma-types/runtime'
 
 const DEFAULT_WRITE_POLICY: WritePolicy = {
     implicitFetch: true,
@@ -12,12 +12,7 @@ const DEFAULT_WRITE_POLICY: WritePolicy = {
 
 export class StrategyRegistry implements StrategyRegistryType {
     private readonly strategies = new Map<WriteStrategy, StrategyDescriptor>()
-    private readonly runtime: Runtime
     private defaultStrategy?: WriteStrategy
-
-    constructor(runtime: Runtime) {
-        this.runtime = runtime
-    }
 
     register = (key: WriteStrategy, descriptor: StrategyDescriptor) => {
         const k = String(key)
@@ -62,15 +57,6 @@ export class StrategyRegistry implements StrategyRegistryType {
             return { status: 'confirmed' }
         }
 
-        return await descriptor.persist({
-            req,
-            next: async (nextReq) => {
-                void this.runtime
-                return {
-                    status: 'confirmed',
-                    ...(nextReq ? {} : {})
-                }
-            }
-        })
+        return await descriptor.persist(req)
     }
 }

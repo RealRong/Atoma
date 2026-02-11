@@ -18,10 +18,7 @@ export type PersistResult<T extends Entity> = Readonly<{
     results?: ReadonlyArray<WriteItemResult>
 }>
 
-export type PersistHandler = <T extends Entity>(args: {
-    req: PersistRequest<T>
-    next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
-}) => Promise<PersistResult<T>>
+export type PersistHandler = <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
 
 export type WritePolicy = Readonly<{
     implicitFetch?: boolean

@@ -1,6 +1,7 @@
 import type { Entity } from 'atoma-types/core'
 import { registerOpsClient } from 'atoma-types/client/ops'
-import type { PersistRequest, PersistResult, Io, Schema } from 'atoma-types/runtime'
+import { createOpId } from 'atoma-types/protocol-tools'
+import type { PersistRequest, PersistResult, Schema } from 'atoma-types/runtime'
 import { Runtime } from 'atoma-runtime'
 import type {
     AtomaClient,
@@ -12,7 +13,9 @@ import { createDebugHub } from './debug/debugHub'
 import { registerRuntimeDebugProviders } from './debug/registerRuntimeDebugProviders'
 import { setupPlugins } from './plugins'
 import { CapabilitiesRegistry } from './plugins/CapabilitiesRegistry'
+import { markTerminalResult } from './plugins/HandlerChain'
 import { PluginOpsClient } from './plugins/PluginOpsClient'
+import { PluginRegistry } from './plugins/PluginRegistry'
 import { PluginRuntimeIo } from './plugins/PluginRuntimeIo'
 
 function ensureDebugHub(capabilities: CapabilitiesRegistry): (() => void) | undefined {
@@ -39,9 +42,18 @@ export function createClient<
     }
 
     const capabilities = new CapabilitiesRegistry()
+    const clientId = createOpId('client')
+
+    const pluginRegistry = new PluginRegistry()
+    const runtimeIo = new PluginRuntimeIo({
+        clientId,
+        pluginRegistry
+    })
+
     const runtime = new Runtime({
+        id: clientId,
         schema: (input.schema ?? {}) as Schema,
-        io: {} as Io
+        io: runtimeIo
     })
 
     const context = {
@@ -53,16 +65,12 @@ export function createClient<
 
     const plugins = setupPlugins({
         context,
-        rawPlugins: Array.isArray(input.plugins) ? input.plugins : []
+        rawPlugins: Array.isArray(input.plugins) ? input.plugins : [],
+        pluginRegistry
     })
 
     const opsClient = new PluginOpsClient({
-        ops: plugins.chains.ops,
-        clientId: runtime.id
-    })
-
-    runtime.io = new PluginRuntimeIo({
-        read: plugins.chains.read,
+        pluginRegistry,
         clientId: runtime.id
     })
 
@@ -83,10 +91,15 @@ export function createClient<
     disposers.push(plugins.dispose)
 
     const unregisterDirectStrategy = runtime.strategy.register('direct', {
-        persist: async <T extends Entity>({ req }: { req: PersistRequest<T> }): Promise<PersistResult<T>> => {
-            return await plugins.chains.persist.execute(req as unknown as PersistRequest<Entity>, {
-                clientId: runtime.id,
-                storeName: String(req.storeName)
+        persist: async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
+            return await pluginRegistry.execute({
+                name: 'persist',
+                req: req as unknown as PersistRequest<Entity>,
+                ctx: {
+                    clientId: runtime.id,
+                    storeName: String(req.storeName)
+                },
+                terminal: () => markTerminalResult({ status: 'confirmed' as const })
             }) as PersistResult<T>
         }
     })

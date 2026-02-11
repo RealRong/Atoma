@@ -1,18 +1,19 @@
 import type { Entity, Query } from 'atoma-types/core'
 import type { Io, StoreHandle } from 'atoma-types/runtime'
 import type { PluginReadResult, ReadContext, ReadRequest } from 'atoma-types/client/plugins'
-import type { HandlerChain } from './HandlerChain'
+import { markTerminalResult } from './HandlerChain'
+import { PluginRegistry } from './PluginRegistry'
 
 export class PluginRuntimeIo implements Io {
-    private readonly readChain: HandlerChain<'read'>
     private readonly clientId: string
+    private readonly pluginRegistry: PluginRegistry
 
     constructor(args: {
-        read: HandlerChain<'read'>
         clientId: string
+        pluginRegistry: PluginRegistry
     }) {
-        this.readChain = args.read
         this.clientId = args.clientId
+        this.pluginRegistry = args.pluginRegistry
     }
 
     query: Io['query'] = async <T extends Entity>(
@@ -29,6 +30,12 @@ export class PluginRuntimeIo implements Io {
             clientId: this.clientId,
             storeName: String(handle.storeName)
         }
-        return await this.readChain.execute(req, ctx)
+
+        return await this.pluginRegistry.execute({
+            name: 'read',
+            req,
+            ctx,
+            terminal: () => markTerminalResult({ data: [] })
+        })
     }
 }

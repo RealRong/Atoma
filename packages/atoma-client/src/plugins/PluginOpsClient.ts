@@ -1,17 +1,18 @@
 import { withTraceMeta, assertOutgoingRemoteOps, assertRemoteOpResults, wrapProtocolError } from 'atoma-types/protocol-tools'
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike, RemoteOpEnvelope, RemoteOpResultEnvelope } from 'atoma-types/client/ops'
 import type { OpsContext } from 'atoma-types/client/plugins'
-import type { HandlerChain } from './HandlerChain'
+import { markTerminalResult } from './HandlerChain'
+import { PluginRegistry } from './PluginRegistry'
 
 export class PluginOpsClient implements OpsClientLike {
-    private readonly opsChain: HandlerChain<'ops'>
+    private readonly pluginRegistry: PluginRegistry
     private readonly clientId: string
 
     constructor(args: {
-        ops: HandlerChain<'ops'>
+        pluginRegistry: PluginRegistry
         clientId: string
     }) {
-        this.opsChain = args.ops
+        this.pluginRegistry = args.pluginRegistry
         this.clientId = args.clientId
     }
 
@@ -29,7 +30,12 @@ export class PluginOpsClient implements OpsClientLike {
         }
         const ctx: OpsContext = { clientId: this.clientId }
 
-        const envelope = assertRemoteOpResultEnvelope(await this.opsChain.execute(req, ctx))
+        const envelope = assertRemoteOpResultEnvelope(await this.pluginRegistry.execute({
+            name: 'ops',
+            req,
+            ctx,
+            terminal: () => markTerminalResult({ results: [] })
+        }))
 
         try {
             return {

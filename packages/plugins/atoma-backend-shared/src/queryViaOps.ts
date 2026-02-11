@@ -1,6 +1,7 @@
 import { getOpsClient } from 'atoma-types/client/ops'
-import { createOpId, buildQueryOp, assertQueryResultData } from 'atoma-types/protocol-tools'
+import { createOpId, buildQueryOp } from 'atoma-types/protocol-tools'
 import type { PluginContext, ReadRequest } from 'atoma-types/client/plugins'
+import { parseQueryOpResult } from './opsResult'
 
 export async function queryViaOps(ctx: PluginContext, req: ReadRequest) {
     const opsClient = getOpsClient(ctx.capabilities)
@@ -25,18 +26,9 @@ export async function queryViaOps(ctx: PluginContext, req: ReadRequest) {
         }
     })
 
-    const result = output.results[0]
-    if (!result) throw new Error('[Atoma] Missing query result')
-    if (!(result as any).ok) {
-        const msg = ((result as any).error && typeof (result as any).error.message === 'string')
-            ? (result as any).error.message
-            : '[Atoma] Query failed'
-        throw new Error(msg)
-    }
-
-    const data = assertQueryResultData((result as any).data)
+    const data = parseQueryOpResult(output.results)
     return {
-        data: Array.isArray((data as any)?.data) ? ((data as any).data as unknown[]) : [],
-        pageInfo: (data as any)?.pageInfo
+        data: data.data,
+        ...(data.pageInfo !== undefined ? { pageInfo: data.pageInfo } : {})
     }
 }

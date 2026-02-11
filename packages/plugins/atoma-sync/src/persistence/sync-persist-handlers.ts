@@ -39,6 +39,13 @@ function mapWriteEntriesToOutboxWrites(req: PersistRequest<any>): OutboxWrite[] 
     return out
 }
 
+function toDirectRequest<T extends Entity>(req: PersistRequest<T>): PersistRequest<T> {
+    return {
+        ...req,
+        writeStrategy: 'direct'
+    }
+}
+
 export class SyncPersistHandlers {
     private readonly unregister: Array<() => void> = []
     private disposed = false
@@ -65,29 +72,23 @@ export class SyncPersistHandlers {
 
         this.unregister.push(runtime.strategy.register('queue', {
             write: { implicitFetch: false },
-            persist: async <T extends Entity>(x: {
-                req: PersistRequest<T>
-                next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
-            }) => {
-                const writes = mapWriteEntriesToOutboxWrites(x.req)
+            persist: async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
+                const writes = mapWriteEntriesToOutboxWrites(req)
                 if (writes.length) await outbox.enqueueWrites({ writes })
-                return { status: 'enqueued' } as PersistResult<T>
+                return { status: 'enqueued' }
             }
         }))
 
         this.unregister.push(runtime.strategy.register('local-first', {
             write: { implicitFetch: true },
-            persist: async <T extends Entity>(x: {
-                req: PersistRequest<T>
-                next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
-            }) => {
-                const direct = await x.next(x.req)
-                const writes = mapWriteEntriesToOutboxWrites(x.req)
+            persist: async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
+                const direct = await runtime.strategy.persist(toDirectRequest(req))
+                const writes = mapWriteEntriesToOutboxWrites(req)
                 if (writes.length) await outbox.enqueueWrites({ writes })
                 return {
                     status: 'enqueued',
                     ...(direct.results ? { results: direct.results } : {})
-                } as PersistResult<T>
+                }
             }
         }))
     }

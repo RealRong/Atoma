@@ -5,7 +5,6 @@
  */
 import type { Entity, StoreDataProcessor } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { createOpId } from 'atoma-types/protocol-tools'
 import type {
     Runtime as RuntimeType,
     Debug,
@@ -32,6 +31,7 @@ import { Probe } from './debug'
  * Configuration for creating a Runtime.
  */
 export interface Options {
+    id: string
     schema: Schema
     io: Io
     dataProcessor?: StoreDataProcessor<Entity>
@@ -48,7 +48,7 @@ export class Runtime implements RuntimeType {
     readonly id: string
     readonly now: () => number
     readonly nextOpId: RuntimeType['nextOpId']
-    io: Io
+    readonly io: Io
     readonly strategy: StrategyRegistryType
     readonly transform: Transform
     readonly stores: StoreCatalog
@@ -60,7 +60,7 @@ export class Runtime implements RuntimeType {
 
     constructor(config: Options) {
         const opSeq = new Map<string, number>()
-        this.id = createOpId('client')
+        this.id = String(config.id)
         this.now = config.now ?? (() => Date.now())
         this.nextOpId = (storeName: string, prefix: 'q' | 'w') => {
             const key = String(storeName)
@@ -72,7 +72,7 @@ export class Runtime implements RuntimeType {
         this.io = config.io
         this.engine = config.engine ?? new Engine()
         this.transform = new TransformPipeline(this)
-        this.strategy = config.strategy ?? new StrategyRegistry(this)
+        this.strategy = config.strategy ?? new StrategyRegistry()
         this.hooks = config.hooks ?? new HookRegistry()
 
         this.stores = new Stores(this, {
