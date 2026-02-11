@@ -1,4 +1,4 @@
-import type { EntityId, Version } from './scalars'
+import type { EntityId, ResourceToken, Version } from './scalars'
 
 export type ErrorKind =
     | 'validation'
@@ -25,7 +25,7 @@ export type LimitsErrorDetails = {
 }
 
 export type ConflictErrorDetails = {
-    resource: string
+    resource: ResourceToken
     entityId: EntityId
     currentVersion?: Version
     hint?: 'rebase' | 'server-wins' | 'manual'
@@ -33,7 +33,7 @@ export type ConflictErrorDetails = {
 }
 
 export type NotFoundErrorDetails = {
-    resource: string
+    resource: ResourceToken
     entityId?: EntityId
     [k: string]: unknown
 }

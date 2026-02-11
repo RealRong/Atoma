@@ -77,7 +77,7 @@ export function createClient<
 
     const unregisterDirectStrategy = runtime.strategy.register('direct', {
         persist: async <T extends Entity>({ req }: { req: PersistRequest<T> }): Promise<PersistResult<T>> => {
-            return await plugins.chains.persist.execute(req, {
+            return await plugins.chains.persist.execute(req as unknown as PersistRequest<Entity>, {
                 clientId: runtime.id,
                 storeName: String(req.storeName)
             }) as PersistResult<T>

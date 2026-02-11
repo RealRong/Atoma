@@ -1,5 +1,5 @@
 import type { PageInfo, Query } from './query'
-import type { Cursor, EntityId, Version } from './scalars'
+import type { Cursor, EntityId, ResourceToken, Version } from './scalars'
 import type { Meta } from './meta'
 import type { StandardError } from './error'
 import type { ChangeBatch } from './changes'
@@ -15,7 +15,7 @@ export type OperationBase = {
 export type QueryOp = OperationBase & {
     kind: 'query'
     query: {
-        resource: string
+        resource: ResourceToken
         query: Query
     }
 }
@@ -72,7 +72,7 @@ export type WriteOptions = {
 export type WriteOp = OperationBase & {
     kind: 'write'
     write: {
-        resource: string
+        resource: ResourceToken
         action: WriteAction
         items: WriteItem[]
         options?: WriteOptions
@@ -84,7 +84,7 @@ export type ChangesPullOp = OperationBase & {
     pull: {
         cursor: Cursor
         limit: number
-        resources?: string[]
+        resources?: ResourceToken[]
     }
 }
 

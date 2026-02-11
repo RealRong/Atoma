@@ -1,9 +1,9 @@
-import type { WriteAction, WriteItem } from 'atoma-types/protocol'
+import type { ResourceToken, WriteAction, WriteItem } from 'atoma-types/protocol'
 import { assertFiniteNumber, assertNonEmptyString, assertPositiveVersion, invalid, isObject, makeValidationDetails } from './common'
 
 type WriteItemCtx = {
     opId: string
-    resource: string
+    resource: ResourceToken
     action: WriteAction
     index: number
 }
@@ -113,7 +113,7 @@ function assertUpsertItem(raw: Record<string, unknown>, ctx: WriteItemCtx) {
     assertValueIdMatchesEntityId({ entityId, value: val, ...ctx })
 }
 
-export function assertWriteItems(action: WriteAction, value: unknown, ctx: { opId: string; resource: string }): WriteItem[] {
+export function assertWriteItems(action: WriteAction, value: unknown, ctx: { opId: string; resource: ResourceToken }): WriteItem[] {
     if (!Array.isArray(value)) throw invalid('INVALID_REQUEST', 'Missing write.items', { kind: 'validation', part: 'write', opId: ctx.opId, resource: ctx.resource })
     const out: WriteItem[] = []
     for (let index = 0; index < value.length; index++) {

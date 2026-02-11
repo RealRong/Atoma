@@ -85,6 +85,13 @@
   - protocol/transport domain 统一 `resource`
   - 跨域映射只在边界层发生一次
 
+
+### 已落地（2026-02-10）
+
+- Store domain 统一收敛到 `StoreToken` + `storeName`（core/runtime/client/devtools）。
+- Protocol/Sync/Transport domain 统一收敛到 `ResourceToken` + `resource`/`resources`。
+- 协议工具层（protocol-tools）参数上下文同步收敛为 `ResourceToken`。
+- 跨域映射仍限制在边界适配层，不在类型层混用原始 `string`。
 ### 涉及文件（代表）
 
 - `packages/atoma-types/src/core/store.ts`

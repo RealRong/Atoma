@@ -1,4 +1,5 @@
 import type { OperationContext } from './operation'
+import type { StoreToken } from './store'
 
 /**
  * Schema validator support (works with Zod/Yup or custom functions)
@@ -23,7 +24,7 @@ export type DataProcessorMode = 'inbound' | 'writeback' | 'outbound'
 export type DataProcessorStage = 'deserialize' | 'normalize' | 'transform' | 'validate' | 'sanitize' | 'serialize'
 
 export type DataProcessorBaseContext<T> = Readonly<{
-    storeName: string
+    storeName: StoreToken
     runtime: unknown
     opContext?: OperationContext
     adapter?: unknown

@@ -1,4 +1,4 @@
-import type { FilterExpr, PageSpec, Query, SortRule } from 'atoma-types/protocol'
+import type { FilterExpr, PageSpec, Query, ResourceToken, SortRule } from 'atoma-types/protocol'
 import { assertFiniteNumber, invalid, isObject, isPlainObject, makeValidationDetails, requireArray, requireObject, requireString } from './common'
 
 function isNonEmptyString(value: unknown): value is string {
@@ -95,7 +95,7 @@ function assertPageSpec(value: unknown, detailsFor: ReturnType<typeof makeValida
     return obj as PageSpec
 }
 
-export function assertFilterExpr(value: unknown, ctx: { opId: string; resource: string }): FilterExpr {
+export function assertFilterExpr(value: unknown, ctx: { opId: string; resource: ResourceToken }): FilterExpr {
     const detailsFor = makeValidationDetails('filter', { opId: ctx.opId, resource: ctx.resource })
     if (!isObject(value)) {
         throw invalid('INVALID_FILTER', 'Invalid filter', detailsFor())
@@ -182,7 +182,7 @@ export function assertFilterExpr(value: unknown, ctx: { opId: string; resource: 
     throw invalid('INVALID_FILTER', 'Invalid filter', detailsFor())
 }
 
-export function assertQuery(value: unknown, ctx: { opId: string; resource: string }): Query {
+export function assertQuery(value: unknown, ctx: { opId: string; resource: ResourceToken }): Query {
     const detailsFor = makeValidationDetails('query', { opId: ctx.opId, resource: ctx.resource })
     const obj = requireObject(value, { code: 'INVALID_QUERY', message: 'Invalid query', details: detailsFor() })
 

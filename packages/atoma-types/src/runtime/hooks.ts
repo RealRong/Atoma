@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type { Entity, OperationContext, Query, QueryResult, WriteIntent } from '../core'
+import type { Entity, OperationContext, Query, QueryResult, StoreToken, WriteIntent } from '../core'
 import type { StoreHandle } from './handle'
 
 export type WriteHookSource =
@@ -9,72 +9,77 @@ export type WriteHookSource =
     | 'deleteOne'
     | 'patches'
 
-export type ReadStartArgs<T extends Entity = Entity> = Readonly<{
-    handle: StoreHandle<T>
-    query: Query<T>
+export type HookPayloadMap<T extends Entity = Entity> = Readonly<{
+    readStart: Readonly<{
+        handle: StoreHandle<T>
+        query: Query<T>
+    }>
+    readFinish: Readonly<{
+        handle: StoreHandle<T>
+        query: Query<T>
+        result: QueryResult<T>
+        durationMs?: number
+    }>
+    writeStart: Readonly<{
+        handle: StoreHandle<T>
+        opContext: OperationContext
+        intents: Array<WriteIntent<T>>
+        source: WriteHookSource
+    }>
+    writePatches: Readonly<{
+        handle: StoreHandle<T>
+        opContext: OperationContext
+        patches: Patch[]
+        inversePatches: Patch[]
+        source: WriteHookSource
+    }>
+    writeCommitted: Readonly<{
+        handle: StoreHandle<T>
+        opContext: OperationContext
+        result?: unknown
+    }>
+    writeFailed: Readonly<{
+        handle: StoreHandle<T>
+        opContext: OperationContext
+        error: unknown
+    }>
+    storeCreated: Readonly<{
+        handle: StoreHandle<T>
+        storeName: StoreToken
+    }>
 }>
 
-export type ReadFinishArgs<T extends Entity = Entity> = Readonly<{
-    handle: StoreHandle<T>
-    query: Query<T>
-    result: QueryResult<T>
-    durationMs?: number
+export type ReadStartArgs<T extends Entity = Entity> = HookPayloadMap<T>['readStart']
+export type ReadFinishArgs<T extends Entity = Entity> = HookPayloadMap<T>['readFinish']
+export type WriteStartArgs<T extends Entity = Entity> = HookPayloadMap<T>['writeStart']
+export type WritePatchesArgs<T extends Entity = Entity> = HookPayloadMap<T>['writePatches']
+export type WriteCommittedArgs<T extends Entity = Entity> = HookPayloadMap<T>['writeCommitted']
+export type WriteFailedArgs<T extends Entity = Entity> = HookPayloadMap<T>['writeFailed']
+export type StoreCreatedArgs<T extends Entity = Entity> = HookPayloadMap<T>['storeCreated']
+
+export type HookEventName = keyof HookPayloadMap<Entity>
+
+export type HookEmit = Readonly<{
+    [K in HookEventName]: <T extends Entity>(args: HookPayloadMap<T>[K]) => void
 }>
 
-export type WriteStartArgs<T extends Entity = Entity> = Readonly<{
-    handle: StoreHandle<T>
-    opContext: OperationContext
-    intents: Array<WriteIntent<T>>
-    source: WriteHookSource
+export type HookHandlers = Readonly<{
+    [K in HookEventName]?: <T extends Entity>(args: HookPayloadMap<T>[K]) => void
 }>
-
-export type WritePatchesArgs<T extends Entity = Entity> = Readonly<{
-    handle: StoreHandle<T>
-    opContext: OperationContext
-    patches: Patch[]
-    inversePatches: Patch[]
-    source: WriteHookSource
-}>
-
-export type WriteCommittedArgs<T extends Entity = Entity> = Readonly<{
-    handle: StoreHandle<T>
-    opContext: OperationContext
-    result?: unknown
-}>
-
-export type WriteFailedArgs<T extends Entity = Entity> = Readonly<{
-    handle: StoreHandle<T>
-    opContext: OperationContext
-    error: unknown
-}>
-
-export type StoreCreatedArgs<T extends Entity = Entity> = Readonly<{
-    handle: StoreHandle<T>
-    storeName: string
-}>
-
-export type HookEventName =
-    | 'readStart'
-    | 'readFinish'
-    | 'writeStart'
-    | 'writePatches'
-    | 'writeCommitted'
-    | 'writeFailed'
-    | 'storeCreated'
 
 export type Hooks = Readonly<{
     read?: Readonly<{
-        onStart?: <T extends Entity>(args: ReadStartArgs<T>) => void
-        onFinish?: <T extends Entity>(args: ReadFinishArgs<T>) => void
+        onStart?: HookHandlers['readStart']
+        onFinish?: HookHandlers['readFinish']
     }>
     write?: Readonly<{
-        onStart?: <T extends Entity>(args: WriteStartArgs<T>) => void
-        onPatches?: <T extends Entity>(args: WritePatchesArgs<T>) => void
-        onCommitted?: <T extends Entity>(args: WriteCommittedArgs<T>) => void
-        onFailed?: <T extends Entity>(args: WriteFailedArgs<T>) => void
+        onStart?: HookHandlers['writeStart']
+        onPatches?: HookHandlers['writePatches']
+        onCommitted?: HookHandlers['writeCommitted']
+        onFailed?: HookHandlers['writeFailed']
     }>
     store?: Readonly<{
-        onCreated?: <T extends Entity>(args: StoreCreatedArgs<T>) => void
+        onCreated?: HookHandlers['storeCreated']
     }>
 }>
 
@@ -84,13 +89,5 @@ export type HookRegistry = Readonly<{
         event: (name: HookEventName) => boolean
         writePatches: boolean
     }>
-    emit: Readonly<{
-        readStart: <T extends Entity>(args: ReadStartArgs<T>) => void
-        readFinish: <T extends Entity>(args: ReadFinishArgs<T>) => void
-        writeStart: <T extends Entity>(args: WriteStartArgs<T>) => void
-        writePatches: <T extends Entity>(args: WritePatchesArgs<T>) => void
-        writeCommitted: <T extends Entity>(args: WriteCommittedArgs<T>) => void
-        writeFailed: <T extends Entity>(args: WriteFailedArgs<T>) => void
-        storeCreated: <T extends Entity>(args: StoreCreatedArgs<T>) => void
-    }>
+    emit: HookEmit
 }>

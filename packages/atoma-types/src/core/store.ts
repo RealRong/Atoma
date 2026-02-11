@@ -83,7 +83,7 @@ export interface StoreConfig<T> {
     dataProcessor?: StoreDataProcessor<T>
     hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>
-    storeName?: string
+    storeName?: StoreToken
     write?: Readonly<{
         strategy?: WriteStrategy
     }>

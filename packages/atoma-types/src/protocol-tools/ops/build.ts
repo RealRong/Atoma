@@ -1,4 +1,4 @@
-import type { Cursor, Meta, Query, ChangesPullOp, Operation, QueryOp, WriteOp } from 'atoma-types/protocol'
+import type { Cursor, Meta, Query, ChangesPullOp, Operation, QueryOp, ResourceToken, WriteOp } from 'atoma-types/protocol'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -64,7 +64,7 @@ export function buildWriteOp(args: {
 
 export function buildQueryOp(args: {
     opId: string
-    resource: string
+    resource: ResourceToken
     query: Query
     meta?: Meta
 }): QueryOp {
@@ -83,7 +83,7 @@ export function buildChangesPullOp(args: {
     opId: string
     cursor: Cursor
     limit: number
-    resources?: string[]
+    resources?: ResourceToken[]
     meta?: Meta
 }): ChangesPullOp {
     return {

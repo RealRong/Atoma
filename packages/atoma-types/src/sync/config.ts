@@ -1,4 +1,4 @@
-import type { ChangeBatch, Cursor } from '../protocol'
+import type { ChangeBatch, Cursor, ResourceToken } from '../protocol'
 import type { SyncEvent, SyncPhase } from './events'
 import type { OutboxStore } from './outbox'
 import type { CursorStore, SyncApplier, SyncSubscribeTransport, SyncTransport } from './transport'
@@ -39,7 +39,7 @@ export type SyncRuntimeConfig = {
         enabled: boolean
         limit: number
         debounceMs: number
-        resources?: string[]
+        resources?: ResourceToken[]
         initialCursor?: Cursor
         periodic: {
             intervalMs: number

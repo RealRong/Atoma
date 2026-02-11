@@ -7,17 +7,17 @@ export type Next<T> = () => Promise<T>
 
 export type IoContext = {
     clientId: string
-    storeName?: string
+    storeName?: StoreToken
 }
 
 export type PersistContext = {
     clientId: string
-    storeName: string
+    storeName: StoreToken
 }
 
 export type ReadContext = {
     clientId: string
-    storeName: string
+    storeName: StoreToken
 }
 
 export type ReadRequest = Readonly<{

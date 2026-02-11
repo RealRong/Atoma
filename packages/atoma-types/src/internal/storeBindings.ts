@@ -16,7 +16,7 @@ export type StoreBindings<T extends Entity = Entity> = Readonly<{
     engine: Engine
     indexes: IndexesLike<T> | null
     relations?: () => unknown | undefined
-    ensureStore: (name: StoreToken) => Store<Entity, unknown>
+    ensureStore: (name: StoreToken) => Store<Entity, {}>
     hydrate?: (items: T[]) => Promise<void>
 }>
 

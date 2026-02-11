@@ -1,22 +1,24 @@
+export type { Runtime } from './runtime'
+export type { Io } from './io'
+export type { StrategyRegistry } from './strategy'
+export type { Read } from './read'
+export type { Transform, TransformPipeline } from './transform'
+export type { Write } from './write'
+export type { StoreCatalog } from './storeCatalog'
+export type { StoreHandle } from './handle'
 export type {
-    Runtime,
-    Io,
-    StrategyRegistry,
-    Read,
-    Transform,
-    Write,
-    StoreCatalog,
-    StoreHandle,
-    TransformPipeline,
     StoreDebugSnapshot,
     IndexDebugSnapshot,
     Debug
-} from './api'
+} from './debug'
 export type { StoreListener, StoreSnapshot, StoreState } from './storeState'
 export type { Schema, StoreSchema } from './schema'
 export type {
     Hooks,
     HookEventName,
+    HookEmit,
+    HookHandlers,
+    HookPayloadMap,
     HookRegistry,
     ReadStartArgs,
     ReadFinishArgs,

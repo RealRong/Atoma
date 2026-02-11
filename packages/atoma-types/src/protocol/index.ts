@@ -1,4 +1,4 @@
-export type { EntityId, Cursor, Version } from './scalars'
+export type { EntityId, Cursor, Version, ResourceToken } from './scalars'
 export type { Meta } from './meta'
 
 export type { ErrorKind, StandardErrorDetails, StandardError } from './error'

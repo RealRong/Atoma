@@ -1,9 +1,9 @@
-import type { Cursor, EntityId, Version } from './scalars'
+import type { Cursor, EntityId, ResourceToken, Version } from './scalars'
 
 export type ChangeKind = 'upsert' | 'delete'
 
 export type Change = {
-    resource: string
+    resource: ResourceToken
     entityId: EntityId
     kind: ChangeKind
     version: Version

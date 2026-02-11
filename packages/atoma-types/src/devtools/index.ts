@@ -1,15 +1,16 @@
 import { defineCapability } from '../client/registry'
+import type { StoreToken } from '../core'
 
 export type DebugKind = 'store' | 'index' | 'sync' | 'history' | 'trace' | 'custom'
 
 export type DebugProviderSnapshotArgs = Readonly<{
-    storeName?: string
+    storeName?: StoreToken
 }>
 
 export type DebugSnapshotArgs = Readonly<{
     kind?: DebugKind
     clientId?: string
-    storeName?: string
+    storeName?: StoreToken
 }>
 
 export type DebugPayload = Readonly<{
@@ -19,7 +20,7 @@ export type DebugPayload = Readonly<{
     clientId: string
     timestamp: number
     scope?: {
-        storeName?: string
+        storeName?: StoreToken
         tab?: string
     }
     data: unknown

@@ -4,6 +4,7 @@ import type {
     Cursor,
     Meta,
     NotifyMessage,
+    ResourceToken,
     WriteAction,
     WriteItem,
     WriteItemResult,
@@ -16,14 +17,14 @@ export interface CursorStore {
 }
 
 export type SyncWriteAck = {
-    resource: string
+    resource: ResourceToken
     action: WriteAction
     item: WriteItem
     result: Extract<WriteItemResult, { ok: true }>
 }
 
 export type SyncWriteReject = {
-    resource: string
+    resource: ResourceToken
     action: WriteAction
     item: WriteItem
     result: Extract<WriteItemResult, { ok: false }>
@@ -47,7 +48,7 @@ export interface SyncApplier {
 }
 
 export type SyncSubscribe = (args: {
-    resources?: string[]
+    resources?: ResourceToken[]
     onMessage: (msg: NotifyMessage) => void
     onError: (error: unknown) => void
     signal?: AbortSignal
@@ -57,7 +58,7 @@ export interface SyncTransport {
     pullChanges: (args: {
         cursor: Cursor
         limit: number
-        resources?: string[]
+        resources?: ResourceToken[]
         meta: Meta
         signal?: AbortSignal
     }) => Promise<ChangeBatch>

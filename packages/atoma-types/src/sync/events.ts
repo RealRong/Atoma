@@ -1,3 +1,4 @@
+import type { ResourceToken } from '../protocol'
 import type { SyncOutboxStats } from './outbox'
 
 export type SyncPhase = 'push' | 'pull' | 'notify' | 'lifecycle'
@@ -18,6 +19,6 @@ export type SyncEvent =
     | { type: 'pull:idle' }
     | { type: 'pull:backoff'; attempt: number; delayMs: number }
     | { type: 'notify:connected' }
-    | { type: 'notify:message'; resources?: string[] }
+    | { type: 'notify:message'; resources?: ResourceToken[] }
     | { type: 'notify:backoff'; attempt: number; delayMs: number }
     | { type: 'notify:stopped' }

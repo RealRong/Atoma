@@ -1,7 +1,8 @@
+import type { ResourceToken } from '../protocol'
 import type { EntityId, Version } from '../shared'
 
 export type OutboxWrite = {
-    resource: string
+    resource: ResourceToken
     action: OutboxWriteAction
     item: OutboxWriteItem
 }
@@ -48,7 +49,7 @@ export type OutboxWriteItem =
 
 export type SyncOutboxItem = {
     idempotencyKey: string
-    resource: string
+    resource: ResourceToken
     action: OutboxWriteAction
     item: OutboxWriteItem
     enqueuedAtMs: number
@@ -74,7 +75,7 @@ export interface OutboxStore {
         ack: string[]
         reject: string[]
         retryable: string[]
-        rebase?: Array<{ resource: string; entityId: EntityId; baseVersion: Version; afterEnqueuedAtMs?: number }>
+        rebase?: Array<{ resource: ResourceToken; entityId: EntityId; baseVersion: Version; afterEnqueuedAtMs?: number }>
     }) => Promise<void>
 
     recover: (args: { nowMs: number; inFlightTimeoutMs: number }) => Promise<void>

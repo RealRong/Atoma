@@ -1,4 +1,6 @@
+import type { ResourceToken } from './scalars'
+
 export type NotifyMessage = {
-    resources?: string[]
+    resources?: ResourceToken[]
     traceId?: string
 }

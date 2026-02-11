@@ -100,6 +100,13 @@
 - Will the name still be valid after foreseeable feature expansion?
 - Is there a shorter form with equal clarity?
 
+### 2.6 Domain Boundary Terms
+
+- In `core`/`runtime`/`client` domains, use `StoreToken` and `storeName` consistently.
+- In `protocol`/`sync`/`transport` domains, use `ResourceToken` and `resource`/`resources` consistently.
+- Cross-domain mapping (`storeName` <-> `resource`) must happen only at boundary adapters.
+- Do not introduce raw `string` fields for these concepts when a token type already exists.
+
 ---
 
 ## 3. Query and Transform Semantic Boundaries (Important)
