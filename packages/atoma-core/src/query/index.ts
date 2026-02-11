@@ -1,4 +1,4 @@
-import type { Entity, IndexesLike, PageInfo, Query } from 'atoma-types/core'
+import type { Entity, IndexQueryLike, PageInfo, Query } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import { matchesFilter } from './internal/filter'
 import { normalizeQuery } from './internal/normalize'
@@ -9,7 +9,7 @@ import { compareBy } from './internal/sort'
 export function runQuery<T extends Entity>(args: {
     snapshot: ReadonlyMap<EntityId, T>
     query: Query<T>
-    indexes: IndexesLike<T> | null
+    indexes: IndexQueryLike<T> | null
 }): { data: T[]; pageInfo?: PageInfo } {
     const { snapshot, query, indexes } = args
 

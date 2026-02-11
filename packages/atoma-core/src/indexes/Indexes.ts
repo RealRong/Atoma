@@ -52,35 +52,7 @@ export class Indexes<T> {
         })
     }
 
-    add(item: T): void {
-        const id = readEntityId(item)
-        this.indexes.forEach(index => {
-            const value = readFieldValue(item, index.config.field)
-            if (value !== undefined && value !== null) {
-                index.add(id, value)
-            }
-        })
-    }
-
-    remove(item?: T): void {
-        if (!item) return
-
-        const id = readEntityId(item)
-        this.indexes.forEach(index => {
-            const value = readFieldValue(item, index.config.field)
-            if (value !== undefined && value !== null) {
-                index.remove(id, value)
-            }
-        })
-    }
-
-    rebuild(items: Iterable<T>): void {
-        const source = Array.isArray(items) ? items : Array.from(items)
-        this.indexes.forEach(index => index.clear())
-        source.forEach(item => this.add(item))
-    }
-
-    collectCandidates(filter?: FilterExpr): CandidateResult {
+    collectCandidates(filter?: FilterExpr<T>): CandidateResult {
         const planned = planCandidates({ indexes: this.indexes, filter })
         this.lastQueryPlan = planned.plan
         return planned.result
@@ -110,8 +82,28 @@ export class Indexes<T> {
             const prev = before.get(id)
             const next = after.get(id)
             if (prev === next) continue
-            if (prev) this.remove(prev)
-            if (next) this.add(next)
+            if (prev) this.removeItem(prev)
+            if (next) this.addItem(next)
         }
+    }
+
+    private addItem(item: T): void {
+        const id = readEntityId(item)
+        this.indexes.forEach(index => {
+            const value = readFieldValue(item, index.config.field)
+            if (value !== undefined && value !== null) {
+                index.add(id, value)
+            }
+        })
+    }
+
+    private removeItem(item: T): void {
+        const id = readEntityId(item)
+        this.indexes.forEach(index => {
+            const value = readFieldValue(item, index.config.field)
+            if (value !== undefined && value !== null) {
+                index.remove(id, value)
+            }
+        })
     }
 }

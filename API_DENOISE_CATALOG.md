@@ -284,7 +284,7 @@
 
 ---
 
-## P1-5 HookRegistry 事件模型去重复
+## P1-5 HookRegistry 事件模型去重复（已完成 ✅）
 
 ### 现状
 
@@ -302,17 +302,17 @@
 
 ## 5. P2（高收益但改动较大）
 
-## P2-1 `WriteFlow` 内部 API 再压缩
+## P2-1 `WriteFlow` 内部 API 再压缩（已完成 ✅）
 
 ### 现状
 
 - `WriteFlow` 内部方法数量仍较多（context/payload/batch/commit 分层较深）。
 
-### 建议
+### 落地
 
-- 继续按“单主流程 + 小纯函数”重排：
-  - one/many 批处理策略统一
-  - patch/intent 生成逻辑进一步模块化
+- `WriteFlow` 已收敛为“编排主流程”，批处理与 patch 逻辑已拆到纯函数模块。
+- 已新增：`write/utils/batch.ts`、`write/utils/patchPayload.ts`、`write/utils/patchPlan.ts`。
+- one/many 批处理统一走 `runBatch`/`runBatchOrThrow`，`WriteFlow` 内部重复分支显著减少。
 
 ---
 

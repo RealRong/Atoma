@@ -1,4 +1,4 @@
-import type { Engine as EngineType, StoreState } from 'atoma-types/runtime'
+import type { Engine as EngineType, QueryState } from 'atoma-types/runtime'
 import type { Entity, Query, IndexesLike, IndexDefinition } from 'atoma-types/core'
 import { Indexes } from 'atoma-core/indexes'
 import { init, merge, addMany, removeMany, preserveRef, upsertItems, writeback } from 'atoma-core/store'
@@ -17,7 +17,7 @@ export class Engine implements EngineType {
 
     readonly query = {
         evaluate: <T extends Entity>({ state, query }: {
-            state: StoreState<T>
+            state: QueryState<T>
             query: Query<T>
         }) => {
             return runQuery({

@@ -15,7 +15,7 @@ function buildOptionsKey(options: unknown): string {
     return JSON.stringify(options)
 }
 
-function groupWriteEntries(entries: WriteEntry[]): Group[] {
+function groupWriteEntries(entries: ReadonlyArray<WriteEntry>): Group[] {
     const groupsByKey = new Map<string, Group>()
     const groups: Group[] = []
 

@@ -10,7 +10,7 @@ import type { EntityId, WriteItemMeta, WriteOptions } from 'atoma-types/protocol
 import { createIdempotencyKey, ensureWriteItemMeta } from 'atoma-types/protocol-tools'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 import { requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
-import type { PersistPlanEntry } from '../types'
+import type { WritePlanEntry } from '../types'
 import {
     prepareCreateInput,
     prepareUpdateInput,
@@ -41,7 +41,7 @@ export class WriteEntryFactory {
         handle: StoreHandle<T>
         item: Partial<T>
         opContext: OperationContext
-    }): Promise<{ planEntry: PersistPlanEntry<T>; output: T }> => {
+    }): Promise<{ planEntry: WritePlanEntry<T>; output: T }> => {
         const prepared = await prepareCreateInput(this.runtime, args.handle, args.item, args.opContext)
         const outbound = await this.toOutboundValue(args.handle, prepared as T, args.opContext)
 
@@ -57,7 +57,6 @@ export class WriteEntryFactory {
                     }
                 },
                 optimistic: {
-                    action: 'create',
                     entityId: prepared.id,
                     value: prepared as T
                 }
@@ -72,7 +71,7 @@ export class WriteEntryFactory {
         recipe: (draft: Draft<T>) => void
         opContext: OperationContext
         options?: StoreOperationOptions
-    }): Promise<{ planEntry: PersistPlanEntry<T>; output: T; base: PartialWithId<T> }> => {
+    }): Promise<{ planEntry: WritePlanEntry<T>; output: T; base: PartialWithId<T> }> => {
         const base = await resolveWriteBase(this.runtime, args.handle, args.id, args.options)
         const next = produce(base as T, draft => args.recipe(draft)) as PartialWithId<T>
         const patched = { ...next, id: args.id } as PartialWithId<T>
@@ -93,7 +92,6 @@ export class WriteEntryFactory {
                     }
                 },
                 optimistic: {
-                    action: 'update',
                     entityId: args.id,
                     value: prepared as T
                 }
@@ -108,7 +106,7 @@ export class WriteEntryFactory {
         item: PartialWithId<T>
         opContext: OperationContext
         options?: StoreOperationOptions & UpsertWriteOptions
-    }): Promise<{ planEntry: PersistPlanEntry<T>; output: T; afterSaveAction: 'add' | 'update'; base?: PartialWithId<T> }> => {
+    }): Promise<{ planEntry: WritePlanEntry<T>; output: T; afterSaveAction: 'add' | 'update'; base?: PartialWithId<T> }> => {
         const id = args.item.id
         const base = args.handle.state.getSnapshot().get(id) as PartialWithId<T> | undefined
         const merge = args.options?.merge !== false
@@ -158,7 +156,6 @@ export class WriteEntryFactory {
                     ...(writeOptions ? { options: writeOptions } : {})
                 },
                 optimistic: {
-                    action: 'upsert',
                     entityId: id,
                     value: prepared as T
                 }
@@ -174,7 +171,7 @@ export class WriteEntryFactory {
         id: EntityId
         opContext: OperationContext
         options?: StoreOperationOptions
-    }): Promise<{ planEntry: PersistPlanEntry<T>; base: PartialWithId<T> }> => {
+    }): Promise<{ planEntry: WritePlanEntry<T>; base: PartialWithId<T> }> => {
         const base = await resolveWriteBase(this.runtime, args.handle, args.id, args.options)
         const baseVersion = requireBaseVersion(args.id, base)
 
@@ -191,7 +188,6 @@ export class WriteEntryFactory {
                         }
                     },
                     optimistic: {
-                        action: 'delete',
                         entityId: args.id
                     }
                 },
@@ -219,7 +215,6 @@ export class WriteEntryFactory {
                     }
                 },
                 optimistic: {
-                    action: 'update',
                     entityId: args.id,
                     value: optimisticValue
                 }

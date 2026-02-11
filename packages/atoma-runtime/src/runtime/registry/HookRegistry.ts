@@ -1,57 +1,50 @@
 import type { Entity } from 'atoma-types/core'
 import type {
+    HookEmit,
     HookEventName,
+    HookHandlers,
+    HookPayloadMap,
     HookRegistry as HookRegistryType,
-    Hooks,
-    ReadStartArgs,
-    ReadFinishArgs,
-    StoreCreatedArgs,
-    WriteCommittedArgs,
-    WriteFailedArgs,
-    WritePatchesArgs,
-    WriteStartArgs
+    Hooks
 } from 'atoma-types/runtime'
 
-type ReadStartHandler = NonNullable<NonNullable<Hooks['read']>['onStart']>
-type ReadFinishHandler = NonNullable<NonNullable<Hooks['read']>['onFinish']>
-type WriteStartHandler = NonNullable<NonNullable<Hooks['write']>['onStart']>
-type WritePatchesHandler = NonNullable<NonNullable<Hooks['write']>['onPatches']>
-type WriteCommittedHandler = NonNullable<NonNullable<Hooks['write']>['onCommitted']>
-type WriteFailedHandler = NonNullable<NonNullable<Hooks['write']>['onFailed']>
-type StoreCreatedHandler = NonNullable<NonNullable<Hooks['store']>['onCreated']>
+const HOOK_EVENT_NAMES: HookEventName[] = [
+    'readStart',
+    'readFinish',
+    'writeStart',
+    'writePatches',
+    'writeCommitted',
+    'writeFailed',
+    'storeCreated'
+]
+
+type HandlerSetMap = {
+    [K in HookEventName]: Set<NonNullable<HookHandlers[K]>>
+}
+
+type HandlerInputMap = {
+    [K in HookEventName]: HookHandlers[K] | undefined
+}
+
+function createHandlerSets(): HandlerSetMap {
+    return {
+        readStart: new Set(),
+        readFinish: new Set(),
+        writeStart: new Set(),
+        writePatches: new Set(),
+        writeCommitted: new Set(),
+        writeFailed: new Set(),
+        storeCreated: new Set()
+    }
+}
 
 export class HookRegistry implements HookRegistryType {
-    private readonly readStartHandlers = new Set<ReadStartHandler>()
-    private readonly readFinishHandlers = new Set<ReadFinishHandler>()
-    private readonly writeStartHandlers = new Set<WriteStartHandler>()
-    private readonly writePatchesHandlers = new Set<WritePatchesHandler>()
-    private readonly writeCommittedHandlers = new Set<WriteCommittedHandler>()
-    private readonly writeFailedHandlers = new Set<WriteFailedHandler>()
-    private readonly storeCreatedHandlers = new Set<StoreCreatedHandler>()
+    private readonly handlers: HandlerSetMap = createHandlerSets()
 
     get has() {
         return {
-            event: (name: HookEventName) => {
-                switch (name) {
-                    case 'readStart':
-                        return this.readStartHandlers.size > 0
-                    case 'readFinish':
-                        return this.readFinishHandlers.size > 0
-                    case 'writeStart':
-                        return this.writeStartHandlers.size > 0
-                    case 'writePatches':
-                        return this.writePatchesHandlers.size > 0
-                    case 'writeCommitted':
-                        return this.writeCommittedHandlers.size > 0
-                    case 'writeFailed':
-                        return this.writeFailedHandlers.size > 0
-                    case 'storeCreated':
-                        return this.storeCreatedHandlers.size > 0
-                    default:
-                        return false
-                }
-            },
-            writePatches: this.writePatchesHandlers.size > 0
+            event: (name: HookEventName) => this.handlers[name].size > 0,
+            writePatches: this.handlers.writePatches.size > 0
         }
     }
 
@@ -59,22 +52,11 @@ export class HookRegistry implements HookRegistryType {
         if (!hooks) return () => {}
 
         const cleanups: Array<() => void> = []
+        const entries = this.toHandlerInputMap(hooks)
 
-        const add = <H>(set: Set<H>, fn?: H) => {
-            if (!fn) return
-            set.add(fn)
-            cleanups.push(() => {
-                set.delete(fn)
-            })
+        for (const eventName of HOOK_EVENT_NAMES) {
+            this.addHandler(eventName, entries[eventName], cleanups)
         }
-
-        add(this.readStartHandlers, hooks.read?.onStart)
-        add(this.readFinishHandlers, hooks.read?.onFinish)
-        add(this.writeStartHandlers, hooks.write?.onStart)
-        add(this.writePatchesHandlers, hooks.write?.onPatches)
-        add(this.writeCommittedHandlers, hooks.write?.onCommitted)
-        add(this.writeFailedHandlers, hooks.write?.onFailed)
-        add(this.storeCreatedHandlers, hooks.store?.onCreated)
 
         let active = true
         return () => {
@@ -84,68 +66,50 @@ export class HookRegistry implements HookRegistryType {
         }
     }
 
-    readonly emit = {
-        readStart: <T extends Entity>(args: ReadStartArgs<T>) => {
-            for (const fn of this.readStartHandlers) {
-                try {
-                    fn(args)
-                } catch {
-                    // ignore
-                }
-            }
-        },
-        readFinish: <T extends Entity>(args: ReadFinishArgs<T>) => {
-            for (const fn of this.readFinishHandlers) {
-                try {
-                    fn(args)
-                } catch {
-                    // ignore
-                }
-            }
-        },
-        writeStart: <T extends Entity>(args: WriteStartArgs<T>) => {
-            for (const fn of this.writeStartHandlers) {
-                try {
-                    fn(args)
-                } catch {
-                    // ignore
-                }
-            }
-        },
-        writePatches: <T extends Entity>(args: WritePatchesArgs<T>) => {
-            for (const fn of this.writePatchesHandlers) {
-                try {
-                    fn(args)
-                } catch {
-                    // ignore
-                }
-            }
-        },
-        writeCommitted: <T extends Entity>(args: WriteCommittedArgs<T>) => {
-            for (const fn of this.writeCommittedHandlers) {
-                try {
-                    fn(args)
-                } catch {
-                    // ignore
-                }
-            }
-        },
-        writeFailed: <T extends Entity>(args: WriteFailedArgs<T>) => {
-            for (const fn of this.writeFailedHandlers) {
-                try {
-                    fn(args)
-                } catch {
-                    // ignore
-                }
-            }
-        },
-        storeCreated: <T extends Entity>(args: StoreCreatedArgs<T>) => {
-            for (const fn of this.storeCreatedHandlers) {
-                try {
-                    fn(args)
-                } catch {
-                    // ignore
-                }
+    readonly emit: HookEmit = {
+        readStart: <T extends Entity>(args: HookPayloadMap<T>['readStart']) => this.emitEvent('readStart', args),
+        readFinish: <T extends Entity>(args: HookPayloadMap<T>['readFinish']) => this.emitEvent('readFinish', args),
+        writeStart: <T extends Entity>(args: HookPayloadMap<T>['writeStart']) => this.emitEvent('writeStart', args),
+        writePatches: <T extends Entity>(args: HookPayloadMap<T>['writePatches']) => this.emitEvent('writePatches', args),
+        writeCommitted: <T extends Entity>(args: HookPayloadMap<T>['writeCommitted']) => this.emitEvent('writeCommitted', args),
+        writeFailed: <T extends Entity>(args: HookPayloadMap<T>['writeFailed']) => this.emitEvent('writeFailed', args),
+        storeCreated: <T extends Entity>(args: HookPayloadMap<T>['storeCreated']) => this.emitEvent('storeCreated', args)
+    }
+
+    private toHandlerInputMap = (hooks: Hooks): HandlerInputMap => {
+        return {
+            readStart: hooks.read?.onStart,
+            readFinish: hooks.read?.onFinish,
+            writeStart: hooks.write?.onStart,
+            writePatches: hooks.write?.onPatches,
+            writeCommitted: hooks.write?.onCommitted,
+            writeFailed: hooks.write?.onFailed,
+            storeCreated: hooks.store?.onCreated
+        }
+    }
+
+    private addHandler = <K extends HookEventName>(
+        eventName: K,
+        handler: HookHandlers[K] | undefined,
+        cleanups: Array<() => void>
+    ) => {
+        if (!handler) return
+
+        const set = this.handlers[eventName] as Set<NonNullable<HookHandlers[K]>>
+        const entry = handler as NonNullable<HookHandlers[K]>
+        set.add(entry)
+        cleanups.push(() => {
+            set.delete(entry)
+        })
+    }
+
+    private emitEvent = <K extends HookEventName>(eventName: K, args: unknown) => {
+        const set = this.handlers[eventName] as Set<(args: unknown) => void>
+        for (const handler of set) {
+            try {
+                handler(args)
+            } catch {
+                // ignore
             }
         }
     }

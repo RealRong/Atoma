@@ -6,7 +6,7 @@ function mapWriteEntriesToOutboxWrites(req: PersistRequest<any>): OutboxWrite[] 
     const out: OutboxWrite[] = []
     const resource = String(req.storeName)
 
-    for (const entry of req.writeEntries as any[]) {
+    for (const entry of req.writeEntries) {
         const action = entry?.action
         const item = entry?.item
         const options = (entry?.options && typeof entry.options === 'object') ? entry.options : undefined

@@ -9,13 +9,13 @@ export type PersistRequest<T extends Entity> = Readonly<{
     writeStrategy?: WriteStrategy
     handle: StoreHandle<T>
     opContext: OperationContext
-    writeEntries: Array<WriteEntry>
+    writeEntries: ReadonlyArray<WriteEntry>
     signal?: AbortSignal
 }>
 
 export type PersistResult<T extends Entity> = Readonly<{
     status: PersistStatus
-    results?: WriteItemResult[]
+    results?: ReadonlyArray<WriteItemResult>
 }>
 
 export type PersistHandler = <T extends Entity>(args: {

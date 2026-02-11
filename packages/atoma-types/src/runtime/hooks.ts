@@ -1,6 +1,5 @@
 import type { Patch } from 'immer'
 import type { Entity, OperationContext, Query, QueryResult, StoreToken } from '../core'
-import type { WriteEntry } from '../protocol'
 import type { StoreHandle } from './handle'
 
 export type WriteHookSource =
@@ -24,7 +23,7 @@ export type HookPayloadMap<T extends Entity = Entity> = Readonly<{
     writeStart: Readonly<{
         handle: StoreHandle<T>
         opContext: OperationContext
-        entries: Array<WriteEntry>
+        entryCount: number
         source: WriteHookSource
     }>
     writePatches: Readonly<{

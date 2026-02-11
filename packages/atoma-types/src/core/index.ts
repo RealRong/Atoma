@@ -83,6 +83,8 @@ export type {
     CandidateExactness,
     CandidateResult,
     IndexSnapshot,
+    IndexQueryLike,
+    IndexSyncLike,
     IndexesLike,
 } from './indexes'
 

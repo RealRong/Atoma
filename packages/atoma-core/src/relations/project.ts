@@ -1,7 +1,7 @@
 import type {
     Entity,
     FilterExpr,
-    IndexesLike,
+    IndexQueryLike,
     RelationMap,
     SortRule,
     StoreToken
@@ -13,7 +13,7 @@ import { buildRelationPlan, type IncludeInput, type PlannedRelation } from './pl
 
 export type RelationStoreState = {
     map: ReadonlyMap<EntityId, Entity>
-    indexes: IndexesLike<Entity> | null
+    indexes: IndexQueryLike<Entity> | null
 }
 
 export type RelationStoreStates = ReadonlyMap<StoreToken, RelationStoreState>
@@ -44,7 +44,7 @@ const readField = (item: Entity, field: string): unknown => {
 }
 
 const resolveLookupMode = (
-    indexes: IndexesLike<Entity> | null,
+    indexes: IndexQueryLike<Entity> | null,
     targetKeyField: string,
     key: EntityId
 ): 'index' | 'scan' => {
@@ -113,7 +113,7 @@ function projectBelongsTo<TSource extends Entity>(
     results: TSource[],
     entry: PlannedRelation<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
-    indexes: IndexesLike<Entity> | null
+    indexes: IndexQueryLike<Entity> | null
 ) {
     if (entry.targetKeyField === 'id') {
         results.forEach(item => {
@@ -180,7 +180,7 @@ function projectHasManyOrHasOne<TSource extends Entity>(
     results: TSource[],
     entry: PlannedRelation<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
-    indexes: IndexesLike<Entity> | null
+    indexes: IndexQueryLike<Entity> | null
 ) {
     const isHasOne = entry.relationType === 'hasOne'
 

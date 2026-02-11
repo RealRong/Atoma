@@ -46,7 +46,7 @@ export type {
     StoreMap
 } from './engine/shared'
 export type { IndexEngine } from './engine/indexes'
-export type { QueryEngine } from './engine/query'
+export type { QueryEngine, QueryState } from './engine/query'
 export type { RelationEngine } from './engine/relations'
 export type { MutationEngine } from './engine/mutation'
 export type { OperationEngine } from './engine/operation'
