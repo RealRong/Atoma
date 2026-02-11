@@ -172,14 +172,14 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 },
                 write: {
                     onStart: <T extends Entity>(args: WriteStartArgs<T>) => {
-                        const { handle, opContext, intents } = args
+                        const { handle, opContext, entries } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:start`, {
                             storeName: entry.storeName,
                             actionId: opContext.actionId,
                             origin: opContext.origin,
                             scope: opContext.scope,
-                            intentCount: intents.length
+                            entryCount: entries.length
                         })
                     },
                     onPatches: <T extends Entity>(args: WritePatchesArgs<T>) => {

@@ -35,22 +35,6 @@ export type DeleteItem = {
     baseVersion: number
 }
 
-export type WriteIntentOptions = {
-    merge?: boolean
-    upsert?: {
-        mode?: 'strict' | 'loose'
-    }
-}
-
-export type WriteIntent<T = unknown> = Readonly<{
-    action: 'create' | 'update' | 'upsert' | 'delete'
-    entityId?: EntityId
-    value?: T
-    baseVersion?: number
-    options?: WriteIntentOptions
-    intent?: 'created'
-}>
-
 export interface StoreOperationOptions {
     force?: boolean
     batch?: {

@@ -63,8 +63,6 @@ export type {
     WriteManyItemErr,
     WriteManyResult,
     DeleteItem,
-    WriteIntentOptions,
-    WriteIntent,
     StoreOperationOptions,
     IndexType,
     IndexDefinition,

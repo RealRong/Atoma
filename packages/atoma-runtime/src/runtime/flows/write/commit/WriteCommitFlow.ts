@@ -1,7 +1,6 @@
 import type {
     Entity,
     StoreWritebackArgs,
-    WriteIntent
 } from 'atoma-types/core'
 import type {
     EntityId,
@@ -13,12 +12,11 @@ import type {
     StoreHandle,
     WritePolicy
 } from 'atoma-types/runtime'
-import type { ExecuteWriteRequest, OptimisticState, PersistPlan } from '../types'
-import { WriteOpsBuilder } from './WriteOpsBuilder'
+import type { ExecuteWriteRequest, OptimisticState, PersistPlan, PersistPlanEntry } from '../types'
 
-function applyIntentsOptimistically<T extends Entity>(
+function applyOptimistically<T extends Entity>(
     baseState: Map<EntityId, T>,
-    intents: Array<WriteIntent<T>>,
+    plan: PersistPlan<T>,
     preserve: (existing: T | undefined, incoming: T) => T
 ): { afterState: Map<EntityId, T> } {
     let nextState = baseState
@@ -44,17 +42,17 @@ function applyIntentsOptimistically<T extends Entity>(
         ensureMutableState().delete(id)
     }
 
-    for (const intent of intents) {
-        const entityId = intent.entityId
+    for (const planEntry of plan) {
+        const entityId = planEntry.optimistic.entityId
         if (!entityId) continue
 
-        if (intent.action === 'delete') {
+        if (planEntry.optimistic.action === 'delete') {
             remove(entityId as EntityId)
             continue
         }
 
-        if (intent.value !== undefined) {
-            upsert(entityId as EntityId, intent.value as T)
+        if (planEntry.optimistic.value !== undefined) {
+            upsert(entityId as EntityId, planEntry.optimistic.value as T)
         }
     }
 
@@ -63,16 +61,16 @@ function applyIntentsOptimistically<T extends Entity>(
 
 function applyOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
-    intents: Array<WriteIntent<T>>
+    plan: PersistPlan<T>
     writePolicy: WritePolicy
     preserve: (existing: T | undefined, incoming: T) => T
 }): OptimisticState<T> {
-    const { handle, intents, writePolicy, preserve } = args
+    const { handle, plan, writePolicy, preserve } = args
     const beforeState = handle.state.getSnapshot() as Map<EntityId, T>
     const shouldOptimistic = writePolicy.optimistic !== false
 
-    const optimistic = (shouldOptimistic && intents.length)
-        ? applyIntentsOptimistically(beforeState, intents, preserve)
+    const optimistic = (shouldOptimistic && plan.length)
+        ? applyOptimistically(beforeState, plan, preserve)
         : { afterState: beforeState }
 
     const { afterState } = optimistic
@@ -107,7 +105,7 @@ async function resolveWriteResultFromPersistResults<T extends Entity>(args: {
     handle: ExecuteWriteRequest<T>['handle']
     plan: PersistPlan<T>
     results: WriteItemResult[]
-    primaryIntent?: WriteIntent<T>
+    primaryPlan?: PersistPlanEntry<T>
 }): Promise<{ writeback?: StoreWritebackArgs<T>; output?: T }> {
     if (!args.plan.length || !args.results.length) return {}
 
@@ -123,12 +121,15 @@ async function resolveWriteResultFromPersistResults<T extends Entity>(args: {
     const versionUpdates: Array<{ key: EntityId; version: number }> = []
     let output: T | undefined
 
-    const primary = args.primaryIntent
-        ? { action: args.primaryIntent.action, entityId: args.primaryIntent.entityId }
+    const primary = args.primaryPlan
+        ? {
+            action: args.primaryPlan.optimistic.action,
+            entityId: args.primaryPlan.optimistic.entityId
+        }
         : undefined
 
     for (const planEntry of args.plan) {
-        const { entry, intent } = planEntry
+        const { entry, optimistic } = planEntry
         const itemResult = resultByEntryId.get(entry.entryId)
         if (!itemResult) {
             throw new Error(`[Atoma] missing write item result for entryId=${entry.entryId}`)
@@ -138,7 +139,7 @@ async function resolveWriteResultFromPersistResults<T extends Entity>(args: {
 
         if (typeof itemResult.version === 'number' && Number.isFinite(itemResult.version) && itemResult.version > 0) {
             const fallbackEntityId = (entry.item as any)?.entityId
-            const entityId = itemResult.entityId ?? intent.entityId ?? fallbackEntityId
+            const entityId = itemResult.entityId ?? optimistic.entityId ?? fallbackEntityId
             if (entityId) {
                 versionUpdates.push({ key: entityId as EntityId, version: itemResult.version })
             }
@@ -150,8 +151,8 @@ async function resolveWriteResultFromPersistResults<T extends Entity>(args: {
         if (!normalized) continue
 
         upserts.push(normalized)
-        if (!output && primary && intent.action === primary.action) {
-            if (!primary.entityId || intent.entityId === primary.entityId) {
+        if (!output && primary && optimistic.action === primary.action) {
+            if (!primary.entityId || optimistic.entityId === primary.entityId) {
                 output = normalized
             }
         }
@@ -190,14 +191,12 @@ function toWriteItemError(action: WriteAction, result: WriteItemResult): Error {
 }
 
 export class WriteCommitFlow {
-    private readonly opsBuilder = new WriteOpsBuilder()
-
     execute = async <T extends Entity>(args: ExecuteWriteRequest<T>): Promise<T | void> => {
-        const intents = args.intents
+        const plan = args.plan
         const writePolicy = args.runtime.strategy.resolveWritePolicy(args.writeStrategy)
         const optimisticState = applyOptimisticState({
             handle: args.handle,
-            intents,
+            plan,
             writePolicy,
             preserve: args.runtime.engine.mutation.preserveRef
         })
@@ -205,18 +204,12 @@ export class WriteCommitFlow {
         const { runtime, handle, opContext } = args
 
         try {
-            const plan = await this.opsBuilder.buildWriteEntries({
-                runtime,
-                handle,
-                intents,
-                opContext
-            })
-
             const writeEntries = plan.map(entry => entry.entry)
+            const primaryPlan = plan.length === 1 ? plan[0] : undefined
+
             if (!writeEntries.length) {
-                const primary = intents.length === 1 ? intents[0] : undefined
-                if (primary && primary.action !== 'delete') {
-                    return primary.value as T
+                if (primaryPlan && primaryPlan.optimistic.action !== 'delete') {
+                    return primaryPlan.optimistic.value as T
                 }
                 return undefined
             }
@@ -229,14 +222,13 @@ export class WriteCommitFlow {
                 writeEntries
             })
 
-            const primaryIntent = intents.length === 1 ? intents[0] : undefined
             const resolved = (persistResult.results && persistResult.results.length)
                 ? await resolveWriteResultFromPersistResults<T>({
                     runtime,
                     handle,
                     plan,
                     results: persistResult.results,
-                    primaryIntent
+                    primaryPlan
                 })
                 : {}
 
@@ -244,7 +236,11 @@ export class WriteCommitFlow {
                 handle.state.applyWriteback(resolved.writeback)
             }
 
-            return resolved.output ?? (primaryIntent?.value as T | undefined)
+            return resolved.output ?? (
+                primaryPlan && primaryPlan.optimistic.action !== 'delete'
+                    ? primaryPlan.optimistic.value as T | undefined
+                    : undefined
+            )
         } catch (error) {
             rollbackOptimisticState({
                 handle,

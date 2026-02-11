@@ -1,5 +1,5 @@
-import type { Entity, OperationContext, WriteIntent } from 'atoma-types/core'
-import type { EntityId, WriteEntry } from 'atoma-types/protocol'
+import type { Entity, OperationContext } from 'atoma-types/core'
+import type { EntityId, WriteAction, WriteEntry } from 'atoma-types/protocol'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 
 export type OptimisticState<T extends Entity> = Readonly<{
@@ -9,7 +9,11 @@ export type OptimisticState<T extends Entity> = Readonly<{
 
 export type PersistPlanEntry<T extends Entity> = Readonly<{
     entry: WriteEntry
-    intent: WriteIntent<T>
+    optimistic: Readonly<{
+        action: WriteAction
+        entityId?: EntityId
+        value?: T
+    }>
 }>
 
 export type PersistPlan<T extends Entity> = ReadonlyArray<PersistPlanEntry<T>>
@@ -19,5 +23,5 @@ export type ExecuteWriteRequest<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
     opContext: OperationContext
     writeStrategy?: string
-    intents: Array<WriteIntent<T>>
+    plan: PersistPlan<T>
 }>
