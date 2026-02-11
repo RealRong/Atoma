@@ -1,5 +1,17 @@
-import type { HandlerEntry, HandlerMap, HandlerName } from 'atoma-types/client/plugins'
-import { HandlerChain } from './HandlerChain'
+import type { Entity } from 'atoma-types/core'
+import type { RemoteOpEnvelope, RemoteOpResultEnvelope } from 'atoma-types/client/ops'
+import type {
+    HandlerEntry,
+    HandlerMap,
+    HandlerName,
+    OpsContext,
+    PersistContext,
+    PluginReadResult,
+    ReadContext,
+    ReadRequest
+} from 'atoma-types/client/plugins'
+import type { PersistRequest, PersistResult } from 'atoma-types/runtime'
+import { HandlerChain, markTerminalResult } from './HandlerChain'
 
 type StoredEntry<K extends HandlerName> = {
     handler: HandlerMap[K]
@@ -19,6 +31,16 @@ type ChainTerminal<K extends HandlerName> = (
     ctx: ChainCtx<K>
 ) => Promise<ChainRes<K>> | ChainRes<K>
 
+type HandlerVersionMap = {
+    [K in HandlerName]: number
+}
+
+const terminalByName = {
+    ops: () => markTerminalResult({ results: [] }),
+    persist: () => markTerminalResult({ status: 'confirmed' as const }),
+    read: () => markTerminalResult({ data: [] })
+}
+
 export class PluginRegistry {
     private readonly entries: StoredEntries = {
         ops: [],
@@ -26,6 +48,45 @@ export class PluginRegistry {
         read: []
     }
     private order = 0
+    private readonly versions: HandlerVersionMap = {
+        ops: 0,
+        persist: 0,
+        read: 0
+    }
+    private readonly chainCache = new Map<HandlerName, {
+        version: number
+        chain: HandlerChain<any>
+    }>()
+
+    private invalidate(name: HandlerName): void {
+        this.versions[name] += 1
+        this.chainCache.delete(name)
+    }
+
+    private getChain<K extends HandlerName>(name: K): HandlerChain<K> {
+        const version = this.versions[name]
+        const cached = this.chainCache.get(name)
+        if (cached && cached.version === version) {
+            return cached.chain as HandlerChain<K>
+        }
+
+        const entries = this.list(name)
+        if (!entries.length) {
+            throw new Error(`[Atoma] ${String(name)} handler missing`)
+        }
+
+        const chain = new HandlerChain(entries, {
+            name: String(name),
+            terminal: terminalByName[name] as unknown as ChainTerminal<K>
+        })
+
+        this.chainCache.set(name, {
+            version,
+            chain
+        })
+
+        return chain
+    }
 
     register = <K extends HandlerName>(
         name: K,
@@ -41,11 +102,13 @@ export class PluginRegistry {
         }
 
         list.push(entry)
+        this.invalidate(name)
 
         return () => {
             const index = list.indexOf(entry)
             if (index >= 0) {
                 list.splice(index, 1)
+                this.invalidate(name)
             }
         }
     }
@@ -67,22 +130,51 @@ export class PluginRegistry {
         name: K
         req: ChainReq<K>
         ctx: ChainCtx<K>
-        terminal: ChainTerminal<K>
     }): Promise<ChainRes<K>> => {
-        const entries = this.list(args.name)
-        if (!entries.length) {
-            throw new Error(`[Atoma] ${String(args.name)} handler missing`)
-        }
+        return await this.getChain(args.name).execute(args.req, args.ctx)
+    }
 
-        return await new HandlerChain(entries, {
-            name: String(args.name),
-            terminal: args.terminal
-        }).execute(args.req, args.ctx)
+    executeOps = async (args: {
+        req: RemoteOpEnvelope
+        ctx: OpsContext
+    }): Promise<RemoteOpResultEnvelope> => {
+        return await this.execute({
+            name: 'ops',
+            req: args.req,
+            ctx: args.ctx
+        })
+    }
+
+    executeRead = async (args: {
+        req: ReadRequest
+        ctx: ReadContext
+    }): Promise<PluginReadResult> => {
+        return await this.execute({
+            name: 'read',
+            req: args.req,
+            ctx: args.ctx
+        })
+    }
+
+    executePersist = async <T extends Entity>(args: {
+        req: PersistRequest<T>
+        ctx: PersistContext
+    }): Promise<PersistResult<T>> => {
+        return await this.execute({
+            name: 'persist',
+            req: args.req as unknown as ChainReq<'persist'>,
+            ctx: args.ctx as ChainCtx<'persist'>
+        }) as PersistResult<T>
     }
 
     clear = () => {
         this.entries.ops.length = 0
         this.entries.persist.length = 0
         this.entries.read.length = 0
+
+        this.versions.ops += 1
+        this.versions.persist += 1
+        this.versions.read += 1
+        this.chainCache.clear()
     }
 }

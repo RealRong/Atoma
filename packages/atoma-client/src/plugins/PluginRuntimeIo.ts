@@ -1,7 +1,6 @@
 import type { Entity, Query } from 'atoma-types/core'
 import type { Io, StoreHandle } from 'atoma-types/runtime'
-import type { PluginReadResult, ReadContext, ReadRequest } from 'atoma-types/client/plugins'
-import { markTerminalResult } from './HandlerChain'
+import type { ReadContext, ReadRequest } from 'atoma-types/client/plugins'
 import { PluginRegistry } from './PluginRegistry'
 
 export class PluginRuntimeIo implements Io {
@@ -20,7 +19,7 @@ export class PluginRuntimeIo implements Io {
         handle: StoreHandle<T>,
         query: Query,
         signal?: AbortSignal
-    ): Promise<PluginReadResult> => {
+    ) => {
         const req: ReadRequest = {
             storeName: handle.storeName,
             query,
@@ -31,11 +30,6 @@ export class PluginRuntimeIo implements Io {
             storeName: String(handle.storeName)
         }
 
-        return await this.pluginRegistry.execute({
-            name: 'read',
-            req,
-            ctx,
-            terminal: () => markTerminalResult({ data: [] })
-        })
+        return await this.pluginRegistry.executeRead({ req, ctx })
     }
 }

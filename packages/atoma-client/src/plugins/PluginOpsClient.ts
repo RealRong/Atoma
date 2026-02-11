@@ -1,7 +1,6 @@
 import { withTraceMeta, assertOutgoingRemoteOps, assertRemoteOpResults, wrapProtocolError } from 'atoma-types/protocol-tools'
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike, RemoteOpEnvelope, RemoteOpResultEnvelope } from 'atoma-types/client/ops'
 import type { OpsContext } from 'atoma-types/client/plugins'
-import { markTerminalResult } from './HandlerChain'
 import { PluginRegistry } from './PluginRegistry'
 
 export class PluginOpsClient implements OpsClientLike {
@@ -30,12 +29,7 @@ export class PluginOpsClient implements OpsClientLike {
         }
         const ctx: OpsContext = { clientId: this.clientId }
 
-        const envelope = assertRemoteOpResultEnvelope(await this.pluginRegistry.execute({
-            name: 'ops',
-            req,
-            ctx,
-            terminal: () => markTerminalResult({ results: [] })
-        }))
+        const envelope = assertRemoteOpResultEnvelope(await this.pluginRegistry.executeOps({ req, ctx }))
 
         try {
             return {

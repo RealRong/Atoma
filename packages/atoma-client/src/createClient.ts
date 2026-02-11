@@ -13,7 +13,6 @@ import { createDebugHub } from './debug/debugHub'
 import { registerRuntimeDebugProviders } from './debug/registerRuntimeDebugProviders'
 import { setupPlugins } from './plugins'
 import { CapabilitiesRegistry } from './plugins/CapabilitiesRegistry'
-import { markTerminalResult } from './plugins/HandlerChain'
 import { PluginOpsClient } from './plugins/PluginOpsClient'
 import { PluginRegistry } from './plugins/PluginRegistry'
 import { PluginRuntimeIo } from './plugins/PluginRuntimeIo'
@@ -92,15 +91,13 @@ export function createClient<
 
     const unregisterDirectStrategy = runtime.strategy.register('direct', {
         persist: async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-            return await pluginRegistry.execute({
-                name: 'persist',
-                req: req as unknown as PersistRequest<Entity>,
+            return await pluginRegistry.executePersist({
+                req,
                 ctx: {
                     clientId: runtime.id,
                     storeName: String(req.storeName)
-                },
-                terminal: () => markTerminalResult({ status: 'confirmed' as const })
-            }) as PersistResult<T>
+                }
+            })
         }
     })
 

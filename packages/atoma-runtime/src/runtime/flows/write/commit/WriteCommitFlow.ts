@@ -190,6 +190,53 @@ function toWriteItemError(action: WriteAction, result: WriteItemResult): Error {
     return error
 }
 
+function resolvePrimaryPlan<T extends Entity>(plan: WritePlan<T>): WritePlanEntry<T> | undefined {
+    return plan.length === 1 ? plan[0] : undefined
+}
+
+function fallbackPrimaryOutput<T extends Entity>(primaryPlan?: WritePlanEntry<T>): T | undefined {
+    if (!primaryPlan) return undefined
+    if (primaryPlan.entry.action === 'delete') return undefined
+    return primaryPlan.optimistic.value as T | undefined
+}
+
+async function runWriteTransaction<T extends Entity>(args: {
+    request: WriteCommitRequest<T>
+    primaryPlan?: WritePlanEntry<T>
+    writeEntries: ReadonlyArray<WriteEntry>
+}): Promise<T | void> {
+    const { request, primaryPlan, writeEntries } = args
+    const { runtime, handle, opContext, plan } = request
+
+    if (!writeEntries.length) {
+        return fallbackPrimaryOutput(primaryPlan)
+    }
+
+    const persistResult = await runtime.strategy.persist({
+        storeName: String(handle.storeName),
+        writeStrategy: request.writeStrategy,
+        handle,
+        opContext,
+        writeEntries
+    })
+
+    const resolved = (persistResult.results && persistResult.results.length)
+        ? await resolveWriteResultFromPersistResults<T>({
+            runtime,
+            handle,
+            plan,
+            results: persistResult.results,
+            primaryPlan
+        })
+        : {}
+
+    if (resolved.writeback) {
+        handle.state.applyWriteback(resolved.writeback)
+    }
+
+    return resolved.output ?? fallbackPrimaryOutput(primaryPlan)
+}
+
 export class WriteCommitFlow {
     execute = async <T extends Entity>(args: WriteCommitRequest<T>): Promise<T | void> => {
         const plan = args.plan
@@ -201,49 +248,18 @@ export class WriteCommitFlow {
             preserve: args.runtime.engine.mutation.preserveRef
         })
 
-        const { runtime, handle, opContext } = args
+        const primaryPlan = resolvePrimaryPlan(plan)
+        const writeEntries = plan.map(entry => entry.entry)
 
         try {
-            const writeEntries = plan.map(entry => entry.entry)
-            const primaryPlan = plan.length === 1 ? plan[0] : undefined
-
-            if (!writeEntries.length) {
-                if (primaryPlan && primaryPlan.entry.action !== 'delete') {
-                    return primaryPlan.optimistic.value as T
-                }
-                return undefined
-            }
-
-            const persistResult = await runtime.strategy.persist({
-                storeName: String(handle.storeName),
-                writeStrategy: args.writeStrategy,
-                handle,
-                opContext,
+            return await runWriteTransaction({
+                request: args,
+                primaryPlan,
                 writeEntries
             })
-
-            const resolved = (persistResult.results && persistResult.results.length)
-                ? await resolveWriteResultFromPersistResults<T>({
-                    runtime,
-                    handle,
-                    plan,
-                    results: persistResult.results,
-                    primaryPlan
-                })
-                : {}
-
-            if (resolved.writeback) {
-                handle.state.applyWriteback(resolved.writeback)
-            }
-
-            return resolved.output ?? (
-                primaryPlan && primaryPlan.entry.action !== 'delete'
-                    ? primaryPlan.optimistic.value as T | undefined
-                    : undefined
-            )
         } catch (error) {
             rollbackOptimisticState({
-                handle,
+                handle: args.handle,
                 optimisticState
             })
             throw error
