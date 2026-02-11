@@ -10,11 +10,11 @@ export { ensureWriteItemMeta, newWriteItemMeta } from './ops/meta'
 
 export {
     assertMeta,
-    assertOperation,
-    assertOpsRequest,
-    assertOutgoingOps,
-    assertOperationResult,
-    assertOperationResults,
+    assertRemoteOp,
+    assertRemoteOpsRequest,
+    assertOutgoingRemoteOps,
+    assertRemoteOpResult,
+    assertRemoteOpResults,
     assertQuery,
     assertFilterExpr,
     assertQueryResultData,

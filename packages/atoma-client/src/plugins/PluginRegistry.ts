@@ -12,7 +12,7 @@ type StoredEntries = {
 
 export class PluginRegistry {
     private readonly entries: StoredEntries = {
-        io: [],
+        ops: [],
         persist: [],
         read: []
     }
@@ -55,7 +55,7 @@ export class PluginRegistry {
     }
 
     clear = () => {
-        this.entries.io.length = 0
+        this.entries.ops.length = 0
         this.entries.persist.length = 0
         this.entries.read.length = 0
     }

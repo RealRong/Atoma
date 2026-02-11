@@ -1,12 +1,5 @@
 export type {
     OutboxWrite,
-    OutboxWriteAction,
-    OutboxWriteItemMeta,
-    OutboxWriteItemCreate,
-    OutboxWriteItemUpdate,
-    OutboxWriteItemUpsert,
-    OutboxWriteItemDelete,
-    OutboxWriteItem,
     SyncOutboxItem,
     SyncOutboxStats,
     SyncOutboxEvents,

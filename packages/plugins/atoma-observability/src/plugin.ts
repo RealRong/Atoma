@@ -1,6 +1,6 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import type { Entity } from 'atoma-types/core'
-import type { Operation } from 'atoma-types/protocol'
+import type { RemoteOp } from 'atoma-types/protocol'
 import type {
     PersistRequest,
     ReadFinishArgs,
@@ -23,7 +23,7 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-const applyTraceMeta = (op: Operation, traceId?: string, requestId?: string) => {
+const applyTraceMeta = (op: RemoteOp, traceId?: string, requestId?: string) => {
     if (!traceId && !requestId) return
     const baseMeta = isPlainObject((op as any).meta) ? ((op as any).meta as Record<string, unknown>) : undefined
     const nextMeta: Record<string, unknown> = baseMeta ? { ...baseMeta } : { v: 1 }
@@ -37,6 +37,25 @@ const applyTraceMeta = (op: Operation, traceId?: string, requestId?: string) => 
     if (!existingRequestId && requestId) nextMeta.requestId = requestId
 
     ;(op as any).meta = nextMeta
+}
+
+const applyWriteEntryTraceMeta = (entry: any, traceId?: string, requestId?: string) => {
+    if (!traceId && !requestId) return
+    if (!entry || typeof entry !== 'object') return
+
+    const item = (entry as any).item
+    if (!item || typeof item !== 'object') return
+
+    const baseMeta = isPlainObject((item as any).meta) ? ((item as any).meta as Record<string, unknown>) : {}
+    const nextMeta: Record<string, unknown> = { ...baseMeta }
+
+    const existingTraceId = (typeof nextMeta.traceId === 'string' && nextMeta.traceId) ? nextMeta.traceId : undefined
+    const existingRequestId = (typeof nextMeta.requestId === 'string' && nextMeta.requestId) ? nextMeta.requestId : undefined
+
+    if (!existingTraceId && traceId) nextMeta.traceId = traceId
+    if (!existingRequestId && requestId) nextMeta.requestId = requestId
+
+    ;(item as any).meta = nextMeta
 }
 
 export function observabilityPlugin(options: ObservabilityPluginOptions = {}): ClientPlugin<ObservabilityExtension> {
@@ -71,12 +90,12 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         const traceId = ctxInstance.traceId
         if (!traceId) return
         const requestId = ctxInstance.requestId()
-        for (const item of req.writeOps) {
-            applyTraceMeta(item, traceId, requestId)
+        for (const entry of req.writeEntries) {
+            applyWriteEntryTraceMeta(entry as any, traceId, requestId)
         }
     }
 
-    const attachReadTraceMeta = (ops: Operation[]) => {
+    const attachReadTraceMeta = (ops: RemoteOp[]) => {
         if (!injectTraceMeta) return
         if (!Array.isArray(ops) || ops.length === 0) return
 
@@ -103,7 +122,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 requestIdByTrace.set(traceId, requestId)
             }
 
-            applyTraceMeta(op as Operation, traceId, requestId)
+            applyTraceMeta(op as RemoteOp, traceId, requestId)
         }
     }
 
@@ -112,8 +131,8 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         register: (_ctx: PluginContext, register) => {
             if (!injectTraceMeta) return
 
-            register('io', async (req, _ctx, next) => {
-                attachReadTraceMeta(req.ops as Operation[])
+            register('ops', async (req, _ctx, next) => {
+                attachReadTraceMeta(req.ops as RemoteOp[])
                 return await next()
             }, { priority: 100 })
 

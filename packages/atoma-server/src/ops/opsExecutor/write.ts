@@ -2,7 +2,7 @@ import pLimit from 'p-limit'
 import { createError, errorStatus, toStandardError } from '../../error'
 import type { AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerPluginRuntime, AtomaServerRoute } from '../../config'
 import { withErrorTrace } from 'atoma-types/protocol-tools'
-import type { OperationResult, WriteOp } from 'atoma-types/protocol'
+import type { RemoteOpResult, WriteOp } from 'atoma-types/protocol'
 import type { IOrmAdapter, ISyncAdapter } from '../../adapters/ports'
 import { executeWriteItemWithSemantics } from '../writeSemantics'
 import { isObject } from './normalize'
@@ -85,9 +85,13 @@ function extractWriteItemMeta(raw: any): { idempotencyKey?: string; timestamp?: 
     return { idempotencyKey, timestamp }
 }
 
-function toOkItemResult(index: number, res: any) {
+function toEntryId(raw: unknown, index: number): string {
+    return (typeof raw === 'string' && raw) ? raw : String(index)
+}
+
+function toOkItemResult(entryId: string, res: any) {
     return {
-        index,
+        entryId,
         ok: true,
         entityId: res.replay.id,
         version: res.replay.serverVersion,
@@ -95,11 +99,11 @@ function toOkItemResult(index: number, res: any) {
     }
 }
 
-function toFailItemResult(index: number, res: any, trace: TraceMeta) {
+function toFailItemResult(entryId: string, res: any, trace: TraceMeta) {
     const currentValue = res.replay.currentValue
     const currentVersion = res.replay.currentVersion
     return {
-        index,
+        entryId,
         ok: false,
         error: withErrorTrace(res.error, trace),
         ...(currentValue !== undefined || currentVersion !== undefined
@@ -108,9 +112,9 @@ function toFailItemResult(index: number, res: any, trace: TraceMeta) {
     }
 }
 
-function toUnhandledItemError(index: number, err: unknown, trace: TraceMeta) {
+function toUnhandledItemError(entryId: string, err: unknown, trace: TraceMeta) {
     return {
-        index,
+        entryId,
         ok: false,
         error: withErrorTrace(toStandardError(err, 'WRITE_FAILED'), trace)
     }
@@ -126,7 +130,7 @@ export async function executeWriteOps<Ctx>(args: {
     pluginRuntime: AtomaServerPluginRuntime<Ctx>
     runOpPlugins: (ctx: AtomaOpPluginContext<Ctx>, next: () => Promise<AtomaOpPluginResult>) => Promise<AtomaOpPluginResult>
     traceMetaForOpId: (opId: string) => TraceMeta
-    resultsByOpId: Map<string, OperationResult>
+    resultsByOpId: Map<string, RemoteOpResult>
 }) {
     if (!args.writeOps.length) return
 
@@ -135,8 +139,22 @@ export async function executeWriteOps<Ctx>(args: {
     await Promise.all(args.writeOps.map(op => limit(async () => {
         const opTrace = args.traceMetaForOpId(op.opId)
         const resource = op.write.resource
-        const action = op.write.action
-        const items = Array.isArray(op.write.items) ? op.write.items : []
+        const entries = Array.isArray(op.write.entries) ? op.write.entries : []
+        const action = entries.length ? entries[0]?.action : undefined
+        if (action !== 'create' && action !== 'update' && action !== 'upsert' && action !== 'delete') {
+            throw new Error('Invalid write action')
+        }
+        if (entries.some(entry => entry.action !== action)) {
+            throw new Error('Mixed write actions in one op are not supported')
+        }
+        const items = entries.map(entry => entry.item)
+        const entryIds = entries.map((entry, index) => toEntryId((entry as any)?.entryId, index))
+        const firstOptions = entries.length ? ((entries[0] as any)?.options) : undefined
+        if (entries.some(entry => JSON.stringify((entry as any)?.options ?? null) !== JSON.stringify(firstOptions ?? null))) {
+            throw new Error('Mixed write options in one op are not supported')
+        }
+        const writeOptions = firstOptions
+        const entryIdAt = (index: number): string => entryIds[index] ?? String(index)
 
         const pluginResult = await args.runOpPlugins({
             opId: op.opId,
@@ -206,7 +224,7 @@ export async function executeWriteOps<Ctx>(args: {
                                 idempotencyKey,
                                 error: standard
                             })
-                            return toFailItemResult(index, res, opTrace)
+                            return toFailItemResult(entryIdAt(index), res, opTrace)
                         }
                     }
 
@@ -225,7 +243,7 @@ export async function executeWriteOps<Ctx>(args: {
                                     ...base,
                                     id: raw?.entityId,
                                     data: raw?.value,
-                                    ...(op.write.options !== undefined ? { options: op.write.options as any } : {})
+                                    ...(writeOptions !== undefined ? { options: writeOptions as any } : {})
                                 }
                             }
                             if (action === 'update') {
@@ -235,7 +253,7 @@ export async function executeWriteOps<Ctx>(args: {
                                     id: raw?.entityId,
                                     baseVersion: raw?.baseVersion,
                                     data: raw?.value,
-                                    ...(op.write.options !== undefined ? { options: op.write.options as any } : {})
+                                    ...(writeOptions !== undefined ? { options: writeOptions as any } : {})
                                 }
                             }
                             if (action === 'upsert') {
@@ -246,7 +264,7 @@ export async function executeWriteOps<Ctx>(args: {
                                     baseVersion: raw?.baseVersion,
                                     data: raw?.value,
                                     ...(timestamp !== undefined ? { timestamp } : {}),
-                                    ...(op.write.options !== undefined ? { options: op.write.options as any } : {})
+                                    ...(writeOptions !== undefined ? { options: writeOptions as any } : {})
                                 }
                             }
                             return {
@@ -254,13 +272,13 @@ export async function executeWriteOps<Ctx>(args: {
                                 ...base,
                                 id: raw?.entityId,
                                 baseVersion: raw?.baseVersion,
-                                ...(op.write.options !== undefined ? { options: op.write.options as any } : {})
+                                ...(writeOptions !== undefined ? { options: writeOptions as any } : {})
                             }
                         })()
                     })
 
-                    if (res.ok) return toOkItemResult(index, res)
-                    return toFailItemResult(index, res, opTrace)
+                    if (res.ok) return toOkItemResult(entryIdAt(index), res)
+                    return toFailItemResult(entryIdAt(index), res, opTrace)
                 } catch (err) {
                     args.pluginRuntime.logger?.error?.('write item threw', {
                         opId: opTrace.opId,
@@ -274,7 +292,7 @@ export async function executeWriteOps<Ctx>(args: {
                         idempotencyKey,
                         error: serializeErrorForLog(err)
                     })
-                    return toUnhandledItemError(index, err, opTrace)
+                    return toUnhandledItemError(entryIdAt(index), err, opTrace)
                 }
             }
 
@@ -302,8 +320,8 @@ export async function executeWriteOps<Ctx>(args: {
                     return executePerItemInContext(ctx)
                 }
 
-                const options = (op.write.options && isPlainObject(op.write.options))
-                    ? (op.write.options as any)
+                const options = (writeOptions && isPlainObject(writeOptions))
+                    ? (writeOptions as any)
                     : {}
                 const upsertMode: 'strict' | 'loose' = (options as any)?.upsert?.mode === 'loose' ? 'loose' : 'strict'
                 const upsertMerge: boolean = options.merge !== false
@@ -322,10 +340,10 @@ export async function executeWriteOps<Ctx>(args: {
                         if (replayHit) {
                             if (replayHit.kind === 'ok') {
                                 const res: any = { ok: true, status: 200, data: replayHit.data, replay: replayHit }
-                                itemResults[i] = toOkItemResult(i, res)
+                                itemResults[i] = toOkItemResult(entryIdAt(i), res)
                             } else {
                                 const res: any = { ok: false, status: errorStatus(replayHit.error), error: replayHit.error, replay: replayHit }
-                                itemResults[i] = toFailItemResult(i, res, opTrace)
+                                itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
                             }
                             continue
                         }
@@ -338,7 +356,7 @@ export async function executeWriteOps<Ctx>(args: {
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
                             if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
                             const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(i, res, opTrace)
+                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
                             continue
                         }
                         if (typeof baseVersion !== 'number' || !Number.isFinite(baseVersion) || baseVersion <= 0) {
@@ -346,7 +364,7 @@ export async function executeWriteOps<Ctx>(args: {
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
                             if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
                             const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(i, res, opTrace)
+                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
                             continue
                         }
                     }
@@ -357,7 +375,7 @@ export async function executeWriteOps<Ctx>(args: {
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
                             if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
                             const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(i, res, opTrace)
+                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
                             continue
                         }
                     }
@@ -369,7 +387,7 @@ export async function executeWriteOps<Ctx>(args: {
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
                             if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
                             const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(i, res, opTrace)
+                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
                             continue
                         }
                     }
@@ -381,7 +399,7 @@ export async function executeWriteOps<Ctx>(args: {
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
                             if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
                             const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(i, res, opTrace)
+                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
                             continue
                         }
                         if (typeof baseVersion !== 'number' || !Number.isFinite(baseVersion)) {
@@ -389,7 +407,7 @@ export async function executeWriteOps<Ctx>(args: {
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
                             if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
                             const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(i, res, opTrace)
+                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
                             continue
                         }
                     }
@@ -541,7 +559,7 @@ export async function executeWriteOps<Ctx>(args: {
                                 await writeIdempotency(p.idempotencyKey, replay, 200, ctx.tx)
                             }
 
-                            itemResults[p.index] = toOkItemResult(p.index, res)
+                            itemResults[p.index] = toOkItemResult(entryIdAt(p.index), res)
                             continue
                         }
 
@@ -572,7 +590,7 @@ export async function executeWriteOps<Ctx>(args: {
                             args.pluginRuntime.logger?.error?.('write item failed', logMeta)
                         }
                         const res: any = { ok: false, status, error: standard, replay }
-                        itemResults[p.index] = toFailItemResult(p.index, res, opTrace)
+                        itemResults[p.index] = toFailItemResult(entryIdAt(p.index), res, opTrace)
                     } catch (err) {
                         args.pluginRuntime.logger?.error?.('write item threw', {
                             opId: opTrace.opId,
@@ -586,7 +604,7 @@ export async function executeWriteOps<Ctx>(args: {
                             idempotencyKey: p.idempotencyKey,
                             error: serializeErrorForLog(err)
                         })
-                        itemResults[p.index] = toUnhandledItemError(p.index, err, opTrace)
+                        itemResults[p.index] = toUnhandledItemError(entryIdAt(p.index), err, opTrace)
                     }
                 }
 
@@ -606,7 +624,7 @@ export async function executeWriteOps<Ctx>(args: {
                         try {
                             fallback[i] = await args.adapter.transaction(async (tx) => executeSingleInContext({ orm: tx.orm, tx: tx.tx }, i))
                         } catch (err) {
-                            fallback[i] = toUnhandledItemError(i, err, opTrace)
+                            fallback[i] = toUnhandledItemError(entryIdAt(i), err, opTrace)
                         }
                     }
                     return fallback
@@ -627,7 +645,7 @@ export async function executeWriteOps<Ctx>(args: {
             ...(opTrace.traceId ? { traceId: opTrace.traceId } : {}),
             ...(opTrace.requestId ? { requestId: opTrace.requestId } : {}),
             resource: op.write?.resource,
-            action: op.write?.action,
+            action,
             error: serializeErrorForLog(pluginResult.error)
         })
         const standard = withErrorTrace(

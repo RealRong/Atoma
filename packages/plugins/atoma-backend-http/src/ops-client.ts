@@ -1,5 +1,5 @@
-import { assertOutgoingOps, HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
-import type { Meta, OpsResponseData } from 'atoma-types/protocol'
+import { assertOutgoingRemoteOps, HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
+import type { Meta, RemoteOpsResponseData } from 'atoma-types/protocol'
 import { OpsClient } from './internal/ops-client-base'
 import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client/ops'
 import { BatchEngine } from './internal/batch/batch-engine'
@@ -20,7 +20,7 @@ export type HttpOpsClientConfig = {
     headers?: () => Promise<Record<string, string>> | Record<string, string>
     retry?: RetryOptions
     fetchFn?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-    interceptors?: HttpInterceptors<OpsResponseData>
+    interceptors?: HttpInterceptors<RemoteOpsResponseData>
     /** 
      * Batch configuration. Default: enabled with zero delay.
      * Set to { enabled: false } to disable batching.
@@ -117,7 +117,7 @@ export class HttpOpsClient extends OpsClient {
      */
     private async _executeOpsDirectly({ ops, meta, signal }: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
         const requestMeta = this.normalizeRequestMeta(meta)
-        assertOutgoingOps({ ops, meta: requestMeta })
+        assertOutgoingRemoteOps({ ops, meta: requestMeta })
         const res = await this.transport.executeOps({
             baseURL: this.baseURL,
             opsPath: this.opsPath,

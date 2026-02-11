@@ -4,12 +4,12 @@ import type { ServerRuntime } from '../../runtime/createRuntime'
 import { composeEnvelopeOk, withErrorTrace, createErrorFromCode } from 'atoma-types/protocol-tools'
 import type {
     ChangesPullOp,
-    OperationResult,
+    RemoteOpResult,
     QueryOp,
     WriteOp
 } from 'atoma-types/protocol'
 import type { IOrmAdapter } from '../../adapters/ports'
-import { clampQueryLimit, ensureProtocolVersion, normalizeOpsRequest, parseCursor } from './normalize'
+import { clampQueryLimit, ensureProtocolVersion, normalizeRemoteOpsRequest, parseCursor } from './normalize'
 import { executeQueryOps } from './query'
 import { executeWriteOps } from './write'
 
@@ -55,7 +55,7 @@ export function createOpsExecutor<Ctx>(args: {
             }
 
             const bodyRaw = await args.readBodyJson(incoming)
-            const req = normalizeOpsRequest(bodyRaw)
+            const req = normalizeRemoteOpsRequest(bodyRaw)
             ensureProtocolVersion(req.meta)
 
             const ops = req.ops
@@ -110,12 +110,12 @@ export function createOpsExecutor<Ctx>(args: {
             }
 
             for (const op of writeOps) {
-                const items = Array.isArray(op.write.items) ? op.write.items : []
-                if (limits?.write?.maxBatchSize && items.length > limits.write.maxBatchSize) {
+                const entries = Array.isArray(op.write.entries) ? op.write.entries : []
+                if (limits?.write?.maxBatchSize && entries.length > limits.write.maxBatchSize) {
                     throwError('TOO_MANY_ITEMS', `Too many items: max ${limits.write.maxBatchSize}`, {
                         kind: 'limits',
                         max: limits.write.maxBatchSize,
-                        actual: items.length,
+                        actual: entries.length,
                         ...(runtime.traceId ? { traceId: runtime.traceId } : {}),
                         ...(runtime.requestId ? { requestId: runtime.requestId } : {}),
                         opId: op.opId
@@ -123,7 +123,7 @@ export function createOpsExecutor<Ctx>(args: {
                 }
 
                 if (limits?.write?.maxPayloadBytes) {
-                    const size = byteLengthUtf8(JSON.stringify(items ?? ''))
+                    const size = byteLengthUtf8(JSON.stringify(entries ?? ''))
                     if (size > limits.write.maxPayloadBytes) {
                         throwError('PAYLOAD_TOO_LARGE', `Payload too large: max ${limits.write.maxPayloadBytes} bytes`, {
                             kind: 'limits',
@@ -139,7 +139,7 @@ export function createOpsExecutor<Ctx>(args: {
 
             const route: AtomaServerRoute = { kind: 'ops' }
 
-            const resultsByOpId = new Map<string, OperationResult>()
+            const resultsByOpId = new Map<string, RemoteOpResult>()
             const pluginRuntime = {
                 ctx: runtime.ctx as Ctx,
                 traceId: runtime.traceId,
@@ -224,7 +224,7 @@ export function createOpsExecutor<Ctx>(args: {
                 resultsByOpId.set(op.opId, { opId: op.opId, ok: false, error: standard })
             }
 
-            const results: OperationResult[] = ops.map((op) => {
+            const results: RemoteOpResult[] = ops.map((op) => {
                 const res = resultsByOpId.get(op.opId)
                 if (res) return res
                 return {

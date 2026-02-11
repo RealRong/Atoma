@@ -1,3 +1,4 @@
+import { getOpsClient } from 'atoma-types/client/ops'
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import type { SyncTransport } from 'atoma-types/sync'
 import { createOpsSyncDriver } from '#sync/transport'
@@ -16,13 +17,18 @@ export function syncOpsDriverPlugin(options: SyncOpsDriverPluginOptions = {}): C
         init: (ctx: PluginContext) => {
             if (!options.overwrite && getSyncDriver(ctx)) return
 
+            const opsClient = getOpsClient(ctx.capabilities)
+            if (!opsClient) {
+                throw new Error('[atoma-sync] sync.ops-driver: missing client.ops capability')
+            }
+
             const driver: SyncTransport = createOpsSyncDriver({
                 executeOps: async (input) => {
-                    const results = await ctx.runtime.io.executeOps({
+                    return await opsClient.executeOps({
                         ops: input.ops as any,
+                        meta: input.meta,
                         ...(input.signal ? { signal: input.signal } : {})
                     })
-                    return { results: results as any }
                 },
                 ...(options.now ? { now: options.now } : {})
             })

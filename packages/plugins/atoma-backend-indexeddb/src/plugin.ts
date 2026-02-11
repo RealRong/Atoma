@@ -17,7 +17,7 @@ export function indexedDbBackendPlugin(options: IndexedDbBackendPluginOptions): 
                 }
             })
 
-            register('io', async (req) => {
+            register('ops', async (req) => {
                 return await opsClient.executeOps({
                     ops: req.ops,
                     meta: req.meta,

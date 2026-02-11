@@ -33,7 +33,7 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
                 batch: opts.batch
             })
 
-            register('io', async (req) => {
+            register('ops', async (req) => {
                 return await opsClient.executeOps({
                     ops: req.ops,
                     meta: req.meta,

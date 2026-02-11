@@ -1,12 +1,12 @@
 import { toStandardError } from '../../error'
 import type { AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerPluginRuntime, AtomaServerRoute } from '../../config'
 import { withErrorTrace } from 'atoma-types/protocol-tools'
-import type { OperationResult, QueryOp, QueryResultData } from 'atoma-types/protocol'
+import type { RemoteOpResult, QueryOp, QueryResultData } from 'atoma-types/protocol'
 import type { IOrmAdapter, QueryResult } from '../../adapters/ports'
 
 type TraceMeta = { traceId?: string; requestId?: string; opId: string }
 
-type QueryOkResult = Extract<OperationResult<QueryResultData>, { ok: true }>
+type QueryOkResult = Extract<RemoteOpResult<QueryResultData>, { ok: true }>
 
 function toQueryOk(opId: string, res?: QueryResult): QueryOkResult {
     return {
@@ -16,7 +16,7 @@ function toQueryOk(opId: string, res?: QueryResult): QueryOkResult {
     }
 }
 
-function toQueryFail(opId: string, err: unknown, trace: TraceMeta): OperationResult {
+function toQueryFail(opId: string, err: unknown, trace: TraceMeta): RemoteOpResult {
     return {
         opId,
         ok: false,
@@ -32,7 +32,7 @@ export async function executeQueryOps<Ctx>(args: {
     pluginRuntime: AtomaServerPluginRuntime<Ctx>
     runOpPlugins: (ctx: AtomaOpPluginContext<Ctx>, next: () => Promise<AtomaOpPluginResult>) => Promise<AtomaOpPluginResult>
     traceMetaForOpId: (opId: string) => TraceMeta
-    resultsByOpId: Map<string, OperationResult>
+    resultsByOpId: Map<string, RemoteOpResult>
 }) {
     if (!args.queryOps.length) return
 

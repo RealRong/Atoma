@@ -1,4 +1,4 @@
-import type { Cursor, Meta, Query, ChangesPullOp, Operation, QueryOp, ResourceToken, WriteOp } from 'atoma-types/protocol'
+import type { Cursor, Meta, Query, ChangesPullOp, RemoteOp, QueryOp, ResourceToken, WriteOp } from 'atoma-types/protocol'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -22,10 +22,10 @@ export function buildRequestMeta(args?: {
 }
 
 export function withTraceMeta(args: {
-    ops: Operation[]
+    ops: RemoteOp[]
     traceId?: string
     nextRequestId?: () => string | undefined
-}): Operation[] {
+}): RemoteOp[] {
     if (!Array.isArray(args.ops) || args.ops.length === 0) return args.ops
     const traceId = (typeof args.traceId === 'string' && args.traceId) ? args.traceId : undefined
     if (!traceId) return args.ops
@@ -45,7 +45,7 @@ export function withTraceMeta(args: {
                 traceId,
                 ...(requestId ? { requestId } : {})
             }
-        } as Operation
+        } as RemoteOp
     })
 }
 

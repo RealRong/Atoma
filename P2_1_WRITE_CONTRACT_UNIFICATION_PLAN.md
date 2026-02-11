@@ -5,6 +5,14 @@
 
 ---
 
+## 实施状态（2026-02-11）
+
+- 已完成：Phase A（types 抽芯）、Phase B（runtime 收敛）、Phase C（sync 去重）、Phase D（transport 适配定点化）
+- 已完成：全仓 `pnpm typecheck` 验证通过
+- 当前状态：`writeEntries` + `entryId` 已贯通到 runtime / sync / backend / server 执行链路
+
+---
+
 ## 1. 最终架构决策（唯一推荐）
 
 ### 1.1 分层真相（Single Source of Truth）
@@ -38,7 +46,8 @@
 ### 2.2 写入协议（v2）
 
 - `WriteOp` 从 `action + items` 改为 `entries`：
-  - `write: { resource, entries: WriteEntry[], options? }`
+  - `write: { resource, entries: WriteEntry[] }`
+  - `options` 下沉到 `WriteEntry.options`（按 entry 维度表达）
 - `WriteEntry` 改为判别联合（每条 entry 自带 action）
   - `create | update | upsert | delete`
   - 每条必须包含 `entryId`（客户端生成，稳定对齐键）

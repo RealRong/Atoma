@@ -1,5 +1,5 @@
-import type { OperationResult, QueryResultData, StandardError, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
-import { assertFiniteNumber, assertPositiveVersion, invalid, isObject, makeValidationDetails, requireArray, requireObject, requireString, readString } from './common'
+import type { RemoteOpResult, QueryResultData, StandardError, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
+import { assertPositiveVersion, invalid, isObject, makeValidationDetails, requireArray, requireObject, requireString } from './common'
 
 function assertStandardError(value: unknown, ctx: { part: string; field?: string }): StandardError {
     const detailsFor = makeValidationDetails(ctx.part)
@@ -14,7 +14,7 @@ function assertStandardError(value: unknown, ctx: { part: string; field?: string
     return obj as unknown as StandardError
 }
 
-export function assertOperationResult(value: unknown): OperationResult {
+export function assertRemoteOpResult(value: unknown): RemoteOpResult {
     const detailsFor = makeValidationDetails('opResult')
     const obj = requireObject(value, { code: 'INVALID_RESPONSE', message: 'Invalid operation result', details: detailsFor() })
 
@@ -33,18 +33,18 @@ export function assertOperationResult(value: unknown): OperationResult {
         if (!Object.prototype.hasOwnProperty.call(obj, 'data')) {
             throw invalid('INVALID_RESPONSE', 'Invalid operation result (missing data)', detailsFor('data', { opId }))
         }
-        return obj as unknown as OperationResult
+        return obj as unknown as RemoteOpResult
     }
 
     const error = (obj as any).error
     assertStandardError(error, { part: 'opResult', field: 'error' })
-    return obj as unknown as OperationResult
+    return obj as unknown as RemoteOpResult
 }
 
-export function assertOperationResults(value: unknown): OperationResult[] {
+export function assertRemoteOpResults(value: unknown): RemoteOpResult[] {
     const detailsFor = makeValidationDetails('opsResponse')
     const arr = requireArray(value, { code: 'INVALID_RESPONSE', message: 'Invalid results (must be an array)', details: detailsFor('results') })
-    return arr.map(r => assertOperationResult(r))
+    return arr.map(r => assertRemoteOpResult(r))
 }
 
 export function assertQueryResultData(value: unknown): QueryResultData {
@@ -61,25 +61,26 @@ function assertWriteItemResult(value: unknown): WriteItemResult {
     const detailsFor = makeValidationDetails('writeResult')
     if (!isObject(value)) throw invalid('INVALID_RESPONSE', 'Invalid write item result', detailsFor())
 
-    const index = assertFiniteNumber((value as any).index, {
+    const entryId = requireString(value, 'entryId', {
         code: 'INVALID_RESPONSE',
-        message: 'Invalid write item result (missing index)',
-        details: detailsFor('index')
+        message: 'Invalid write item result (missing entryId)',
+        details: detailsFor('entryId')
     })
+
     const ok = (value as any).ok
     if (ok !== true && ok !== false) {
-        throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing ok)', detailsFor('ok', { index }))
+        throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing ok)', detailsFor('ok', { entryId }))
     }
 
     if (ok === true) {
         const entityId = (value as any).entityId
         if (typeof entityId !== 'string' || !entityId) {
-            throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing entityId)', detailsFor('entityId', { index }))
+            throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing entityId)', detailsFor('entityId', { entryId }))
         }
         assertPositiveVersion((value as any).version, {
             code: 'INVALID_RESPONSE',
             message: 'Invalid write item result (missing version)',
-            details: detailsFor('version', { index })
+            details: detailsFor('version', { entryId })
         })
         return value as unknown as WriteItemResult
     }
@@ -87,13 +88,13 @@ function assertWriteItemResult(value: unknown): WriteItemResult {
     assertStandardError((value as any).error, { part: 'writeResult', field: 'error' })
     const current = (value as any).current
     if (current !== undefined) {
-        if (!isObject(current)) throw invalid('INVALID_RESPONSE', 'Invalid write item result (invalid current)', detailsFor('current', { index }))
+        if (!isObject(current)) throw invalid('INVALID_RESPONSE', 'Invalid write item result (invalid current)', detailsFor('current', { entryId }))
         const currentVersion = (current as any).version
         if (currentVersion !== undefined && currentVersion !== null) {
             assertPositiveVersion(currentVersion, {
                 code: 'INVALID_RESPONSE',
                 message: 'Invalid write item result (invalid current.version)',
-                details: detailsFor('current.version', { index })
+                details: detailsFor('current.version', { entryId })
             })
         }
     }

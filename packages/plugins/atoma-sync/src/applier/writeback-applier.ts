@@ -90,8 +90,8 @@ export class WritebackApplier implements SyncApplier {
         const upserts: any[] = []
         const deletes: EntityId[] = []
 
-        if (reject.action === 'create') {
-            const tempEntityId = (reject.item as any)?.entityId
+        if (reject.entry.action === 'create') {
+            const tempEntityId = (reject.entry.item as any)?.entityId
             const tempKey = (typeof tempEntityId === 'string' && tempEntityId)
                 ? (tempEntityId as EntityId)
                 : null

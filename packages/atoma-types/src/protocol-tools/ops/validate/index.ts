@@ -1,5 +1,5 @@
 export { assertMeta } from './meta'
-export { assertOperation } from './operation'
-export { assertOpsRequest, assertOutgoingOps } from './opsRequest'
-export { assertOperationResult, assertOperationResults, assertQueryResultData, assertWriteResultData } from './result'
+export { assertRemoteOp } from './operation'
+export { assertRemoteOpsRequest, assertOutgoingRemoteOps } from './opsRequest'
+export { assertRemoteOpResult, assertRemoteOpResults, assertQueryResultData, assertWriteResultData } from './result'
 export { assertQuery, assertFilterExpr } from './query'

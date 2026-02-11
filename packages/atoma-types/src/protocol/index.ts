@@ -8,20 +8,27 @@ export type { CursorToken, PageInfo, Query, FilterExpr, SortRule, PageSpec } fro
 export type { ChangeKind, Change, ChangeBatch } from './changes'
 
 export type {
-    OperationKind,
-    Operation,
+    RemoteOpKind,
+    RemoteOp,
     QueryOp,
     WriteOp,
     WriteAction,
     WriteItem,
     WriteItemMeta,
     WriteOptions,
+    WriteEntryBase,
+    WriteEntryCreate,
+    WriteEntryUpdate,
+    WriteEntryDelete,
+    WriteEntryUpsert,
+    WriteEntry,
     ChangesPullOp,
-    OperationResult,
-    OpsRequest,
-    OpsResponseData,
+    RemoteOpResult,
+    RemoteOpsRequest,
+    RemoteOpsResponseData,
     QueryResultData,
     WriteItemResult,
+    WriteEntryResult,
     WriteResultData,
     ChangesPullResultData
 } from './operation'

@@ -1,6 +1,6 @@
-import type { ClientPlugin, IoHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client/plugins'
+import type { ClientPlugin, OpsHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client/plugins'
 import type { Entity, Query } from 'atoma-types/core'
-import type { Operation, OperationResult, QueryResultData } from 'atoma-types/protocol'
+import type { RemoteOp, RemoteOpResult, QueryResultData } from 'atoma-types/protocol'
 import { isTerminalResult } from '../plugins/HandlerChain'
 
 function toQueryResultData(data: unknown[], pageInfo?: unknown): QueryResultData {
@@ -13,7 +13,7 @@ function toQueryResultData(data: unknown[], pageInfo?: unknown): QueryResultData
     }
 }
 
-function toUnsupportedOpsResults(ops: Operation[]): OperationResult[] {
+function toUnsupportedOpsResults(ops: RemoteOp[]): RemoteOpResult[] {
     return ops.map(op => ({
         opId: op.opId,
         ok: false,
@@ -29,15 +29,15 @@ export function localBackendPlugin(): ClientPlugin {
     return {
         id: 'defaults:local-backend',
         register: (ctx: PluginContext, register: Register) => {
-            const ioHandler: IoHandler = async (req, _ctx, next) => {
+            const opsHandler: OpsHandler = async (req, _ctx, next) => {
                 const upstream = await next()
                 if (!isTerminalResult(upstream)) return upstream
 
                 if (!req.ops.length) return { results: [] }
-                const results: OperationResult[] = []
+                const results: RemoteOpResult[] = []
                 for (const op of req.ops) {
                     if (op.kind === 'query') {
-                        const handle = ctx.runtime.stores.resolveHandle(op.query.resource, 'LocalBackendPlugin.io.query')
+                        const handle = ctx.runtime.stores.resolveHandle(op.query.resource, 'LocalBackendPlugin.ops.query')
                         const local = ctx.runtime.engine.query.evaluate({
                             state: handle.state,
                             query: op.query.query as Query<Entity>
@@ -69,7 +69,7 @@ export function localBackendPlugin(): ClientPlugin {
                 return { status: 'confirmed' }
             }
 
-            register('io', ioHandler, { priority: -1000 })
+            register('ops', opsHandler, { priority: -1000 })
             register('read', readHandler, { priority: -1000 })
             register('persist', persistHandler, { priority: -1000 })
         }

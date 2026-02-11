@@ -1,13 +1,13 @@
-import type { Envelope, Meta, Operation } from 'atoma-types/protocol'
+import type { Envelope, Meta, RemoteOp } from 'atoma-types/protocol'
 import { parseEnvelope } from 'atoma-types/protocol-tools'
-import type { OpsResponseData } from 'atoma-types/protocol'
+import type { RemoteOpsResponseData } from 'atoma-types/protocol'
 import type { HttpInterceptors } from './json-client'
 import { createJsonHttpClient } from './json-client'
 
 export type ExecuteOpsArgs = {
     baseURL: string
     opsPath: string
-    ops: Operation[]
+    ops: RemoteOp[]
     meta: Meta
     extraHeaders?: Record<string, string>
     signal?: AbortSignal
@@ -28,7 +28,7 @@ function joinUrl(base: string, path: string): string {
 export function createOpsHttpTransport(deps: {
     fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
     getHeaders: () => Promise<Record<string, string>>
-    interceptors?: HttpInterceptors<OpsResponseData>
+    interceptors?: HttpInterceptors<RemoteOpsResponseData>
 }) {
     const responseParser = deps.interceptors?.responseParser
         ? deps.interceptors.responseParser
@@ -37,7 +37,7 @@ export function createOpsHttpTransport(deps: {
             return parseEnvelope(json, fallback) as any
         }
 
-    const pipeline = createJsonHttpClient<OpsResponseData>({
+    const pipeline = createJsonHttpClient<RemoteOpsResponseData>({
         fetchFn: deps.fetchFn,
         getHeaders: deps.getHeaders,
         interceptors: deps.interceptors
@@ -46,9 +46,9 @@ export function createOpsHttpTransport(deps: {
     })
 
     const executeOps = async (args: ExecuteOpsArgs): Promise<{
-        envelope: Envelope<OpsResponseData>
+        envelope: Envelope<RemoteOpsResponseData>
         response: Response
-        results: OpsResponseData['results']
+        results: RemoteOpsResponseData['results']
     }> => {
         const { envelope, response } = await pipeline.execute({
             url: joinUrl(args.baseURL, args.opsPath),
@@ -57,13 +57,13 @@ export function createOpsHttpTransport(deps: {
             body: {
                 meta: args.meta,
                 ops: args.ops
-            } satisfies { meta: Meta; ops: Operation[] },
+            } satisfies { meta: Meta; ops: RemoteOp[] },
             extraHeaders: args.extraHeaders,
             signal: args.signal
         })
 
         const results = (envelope.ok === true && envelope.data && typeof envelope.data === 'object' && Array.isArray((envelope.data as any).results))
-            ? ((envelope.data as any).results as OpsResponseData['results'])
+            ? ((envelope.data as any).results as RemoteOpsResponseData['results'])
             : []
 
         return { envelope: envelope as any, response, results }

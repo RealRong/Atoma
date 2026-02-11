@@ -5,11 +5,9 @@ import type {
 } from 'atoma-types/core'
 import type {
     EntityId,
-    OperationResult,
     WriteAction,
-    WriteItemResult,
-    WriteOp,
-    WriteResultData
+    WriteEntry,
+    WriteItemResult
 } from 'atoma-types/protocol'
 import type {
     StoreHandle,
@@ -104,17 +102,22 @@ function rollbackOptimisticState<T extends Entity>(args: {
     }
 }
 
-async function resolveWriteResultFromOperationResults<T extends Entity>(args: {
+async function resolveWriteResultFromPersistResults<T extends Entity>(args: {
     runtime: ExecuteWriteRequest<T>['runtime']
     handle: ExecuteWriteRequest<T>['handle']
     plan: PersistPlan<T>
-    results: OperationResult[]
+    results: WriteItemResult[]
     primaryIntent?: WriteIntent<T>
 }): Promise<{ writeback?: StoreWritebackArgs<T>; output?: T }> {
     if (!args.plan.length || !args.results.length) return {}
 
-    const resultByOpId = new Map<string, OperationResult>()
-    args.results.forEach(result => resultByOpId.set(result.opId, result))
+    const resultByEntryId = new Map<string, WriteItemResult>()
+    for (const itemResult of args.results) {
+        if (typeof itemResult.entryId !== 'string' || !itemResult.entryId) {
+            throw new Error('[Atoma] write item result missing entryId')
+        }
+        resultByEntryId.set(itemResult.entryId, itemResult)
+    }
 
     const upserts: T[] = []
     const versionUpdates: Array<{ key: EntityId; version: number }> = []
@@ -124,41 +127,32 @@ async function resolveWriteResultFromOperationResults<T extends Entity>(args: {
         ? { action: args.primaryIntent.action, entityId: args.primaryIntent.entityId }
         : undefined
 
-    for (const entry of args.plan) {
-        const operationResult = resultByOpId.get(entry.op.opId)
-        if (!operationResult) throw new Error('[Atoma] missing operation result')
-
-        if (!operationResult.ok) {
-            const error = new Error(`[Atoma] op failed: ${operationResult.error.message || 'Operation failed'}`)
-            ;(error as { error?: unknown }).error = operationResult.error
-            throw error
+    for (const planEntry of args.plan) {
+        const { entry, intent } = planEntry
+        const itemResult = resultByEntryId.get(entry.entryId)
+        if (!itemResult) {
+            throw new Error(`[Atoma] missing write item result for entryId=${entry.entryId}`)
         }
 
-        const itemResults = resolveWriteItemResults(operationResult)
-        const shouldApplyData = shouldApplyReturnedData(entry.op)
+        if (!itemResult.ok) throw toWriteItemError(entry.action, itemResult)
 
-        for (const itemResult of itemResults) {
-            const intent = entry.intents[itemResult.index]
-            if (!intent) throw new Error('[Atoma] write item result index out of range')
-            if (!itemResult.ok) throw toWriteItemError(entry.op.write.action, itemResult)
-
-            if (typeof itemResult.version === 'number' && Number.isFinite(itemResult.version) && itemResult.version > 0) {
-                const entityId = itemResult.entityId ?? intent.entityId
-                if (entityId) {
-                    versionUpdates.push({ key: entityId, version: itemResult.version })
-                }
+        if (typeof itemResult.version === 'number' && Number.isFinite(itemResult.version) && itemResult.version > 0) {
+            const fallbackEntityId = (entry.item as any)?.entityId
+            const entityId = itemResult.entityId ?? intent.entityId ?? fallbackEntityId
+            if (entityId) {
+                versionUpdates.push({ key: entityId as EntityId, version: itemResult.version })
             }
+        }
 
-            if (!shouldApplyData || !itemResult.data || typeof itemResult.data !== 'object') continue
+        if (!shouldApplyReturnedData(entry) || !itemResult.data || typeof itemResult.data !== 'object') continue
 
-            const normalized = await args.runtime.transform.writeback(args.handle, itemResult.data as T)
-            if (!normalized) continue
+        const normalized = await args.runtime.transform.writeback(args.handle, itemResult.data as T)
+        if (!normalized) continue
 
-            upserts.push(normalized)
-            if (!output && primary && intent.action === primary.action) {
-                if (!primary.entityId || intent.entityId === primary.entityId) {
-                    output = normalized
-                }
+        upserts.push(normalized)
+        if (!output && primary && intent.action === primary.action) {
+            if (!primary.entityId || intent.entityId === primary.entityId) {
+                output = normalized
             }
         }
     }
@@ -173,25 +167,8 @@ async function resolveWriteResultFromOperationResults<T extends Entity>(args: {
     return { writeback, output }
 }
 
-function resolveWriteItemResults(operationResult: OperationResult): WriteItemResult[] {
-    if (!operationResult.ok) return []
-
-    const data = operationResult.data as WriteResultData | undefined
-    if (!data || !Array.isArray(data.results) || !data.results.length) {
-        throw new Error('[Atoma] missing write item results')
-    }
-
-    for (const itemResult of data.results) {
-        if (typeof itemResult.index !== 'number' || !Number.isFinite(itemResult.index)) {
-            throw new Error('[Atoma] write item result missing index')
-        }
-    }
-
-    return data.results
-}
-
-function shouldApplyReturnedData(op: WriteOp): boolean {
-    const options = op.write.options
+function shouldApplyReturnedData(entry: WriteEntry): boolean {
+    const options = entry.options
     if (!options) return true
     if (options.returning === false) return false
 
@@ -228,15 +205,15 @@ export class WriteCommitFlow {
         const { runtime, handle, opContext } = args
 
         try {
-            const plan = await this.opsBuilder.buildWriteOps({
+            const plan = await this.opsBuilder.buildWriteEntries({
                 runtime,
                 handle,
                 intents,
                 opContext
             })
 
-            const writeOps = plan.map(entry => entry.op)
-            if (!writeOps.length) {
+            const writeEntries = plan.map(entry => entry.entry)
+            if (!writeEntries.length) {
                 const primary = intents.length === 1 ? intents[0] : undefined
                 if (primary && primary.action !== 'delete') {
                     return primary.value as T
@@ -249,12 +226,12 @@ export class WriteCommitFlow {
                 writeStrategy: args.writeStrategy,
                 handle,
                 opContext,
-                writeOps
+                writeEntries
             })
 
             const primaryIntent = intents.length === 1 ? intents[0] : undefined
             const resolved = (persistResult.results && persistResult.results.length)
-                ? await resolveWriteResultFromOperationResults<T>({
+                ? await resolveWriteResultFromPersistResults<T>({
                     runtime,
                     handle,
                     plan,

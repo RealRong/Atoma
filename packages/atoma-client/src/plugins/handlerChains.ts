@@ -3,21 +3,21 @@ import { HandlerChain } from './HandlerChain'
 import { PluginRegistry } from './PluginRegistry'
 
 export function createHandlerChains(pluginRegistry: PluginRegistry): {
-    io: HandlerChain<'io'>
+    ops: HandlerChain<'ops'>
     persist: HandlerChain<'persist'>
     read: HandlerChain<'read'>
 } {
-    const ioEntries = pluginRegistry.list('io')
+    const opsEntries = pluginRegistry.list('ops')
     const persistEntries = pluginRegistry.list('persist')
     const readEntries = pluginRegistry.list('read')
 
-    if (!ioEntries.length) throw new Error('[Atoma] io handler missing')
+    if (!opsEntries.length) throw new Error('[Atoma] ops handler missing')
     if (!persistEntries.length) throw new Error('[Atoma] persist handler missing')
     if (!readEntries.length) throw new Error('[Atoma] read handler missing')
 
     return {
-        io: new HandlerChain<'io'>(ioEntries, {
-            name: 'io',
+        ops: new HandlerChain<'ops'>(opsEntries, {
+            name: 'ops',
             terminal: () => markTerminalResult({ results: [] })
         }),
         persist: new HandlerChain<'persist'>(persistEntries, {

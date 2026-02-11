@@ -1,5 +1,5 @@
 import { HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
-import type { Meta, Operation, OperationResult, QueryOp, WriteOp } from 'atoma-types/protocol'
+import type { Meta, RemoteOp, RemoteOpResult, QueryOp, WriteOp } from 'atoma-types/protocol'
 import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client/ops'
 import { parseOrThrow, z } from 'atoma-shared'
 
@@ -9,8 +9,8 @@ type Deferred<T> = {
 }
 
 type OpsTask = {
-    op: Operation
-    deferred: Deferred<OperationResult>
+    op: RemoteOp
+    deferred: Deferred<RemoteOpResult>
 }
 
 type BatchEngineConfigLike = {
@@ -148,12 +148,12 @@ function normalizeMaxOpsPerRequest(config: BatchEngineConfigLike) {
 // Ops Batch Execute
 // ============================================================================
 
-type OpsRequest = {
+type RemoteOpsRequest = {
     meta: Meta
-    ops: Operation[]
+    ops: RemoteOp[]
 }
 
-type OpsResult = OperationResult
+type OpsResult = RemoteOpResult
 
 function mapOpsResults(results: unknown): Map<string, OpsResult> {
     const map = new Map<string, OpsResult>()
@@ -164,7 +164,7 @@ function mapOpsResults(results: unknown): Map<string, OpsResult> {
     return map
 }
 
-function missingResult(opId: string): OperationResult {
+function missingResult(opId: string): RemoteOpResult {
     return {
         opId,
         ok: false,
@@ -180,10 +180,10 @@ async function executeOpsTasksBatch(args: {
     lane: 'query' | 'write'
     endpoint: string
     tasks: OpsTask[]
-    executeFn: (input: { ops: Operation[]; meta: Meta; signal?: AbortSignal }) => Promise<{ results: OperationResult[]; status?: number }>
+    executeFn: (input: { ops: RemoteOp[]; meta: Meta; signal?: AbortSignal }) => Promise<{ results: RemoteOpResult[]; status?: number }>
     controller?: AbortController
 }) {
-    const payload: OpsRequest = {
+    const payload: RemoteOpsRequest = {
         meta: {
             v: 1,
             clientTimeMs: Date.now()
@@ -242,7 +242,7 @@ class QueryLane {
         })
     }
 
-    enqueue(op: QueryOp): Promise<OperationResult> {
+    enqueue(op: QueryOp): Promise<RemoteOpResult> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -383,7 +383,7 @@ class WriteLane {
         })
     }
 
-    enqueue(op: WriteOp): Promise<OperationResult> {
+    enqueue(op: WriteOp): Promise<RemoteOpResult> {
         return new Promise((resolve, reject) => {
             if (this.disposed) {
                 reject(this.disposedError)
@@ -594,7 +594,7 @@ export class BatchEngine {
         })
     }
 
-    enqueueOp(op: Operation): Promise<OperationResult> {
+    enqueueOp(op: RemoteOp): Promise<RemoteOpResult> {
         if (!op || typeof op !== 'object' || typeof (op as any).opId !== 'string' || !(op as any).opId) {
             return Promise.reject(new Error('[BatchEngine] opId is required'))
         }
@@ -609,7 +609,7 @@ export class BatchEngine {
         return Promise.reject(new Error(`[BatchEngine] Unsupported op kind: ${op.kind}`))
     }
 
-    async enqueueOps(ops: Operation[]): Promise<OperationResult[]> {
+    async enqueueOps(ops: RemoteOp[]): Promise<RemoteOpResult[]> {
         return Promise.all(ops.map(op => this.enqueueOp(op)))
     }
 
@@ -621,9 +621,9 @@ export class BatchEngine {
     private validateWriteBatchSize(op: WriteOp) {
         const max = this.config.maxBatchSize
         if (typeof max !== 'number' || !Number.isFinite(max) || max <= 0) return
-        const count = Array.isArray(op.write.items) ? op.write.items.length : 0
+        const count = Array.isArray(op.write.entries) ? op.write.entries.length : 0
         if (count > max) {
-            throw new Error(`[BatchEngine] write.items exceeds maxBatchSize (${count} > ${max})`)
+            throw new Error(`[BatchEngine] write.entries exceeds maxBatchSize (${count} > ${max})`)
         }
     }
 }

@@ -5,8 +5,7 @@ import type {
     Meta,
     NotifyMessage,
     ResourceToken,
-    WriteAction,
-    WriteItem,
+    WriteEntry,
     WriteItemResult,
 } from '../protocol'
 import type { SyncOutboxItem } from './outbox'
@@ -18,15 +17,13 @@ export interface CursorStore {
 
 export type SyncWriteAck = {
     resource: ResourceToken
-    action: WriteAction
-    item: WriteItem
+    entry: WriteEntry
     result: Extract<WriteItemResult, { ok: true }>
 }
 
 export type SyncWriteReject = {
     resource: ResourceToken
-    action: WriteAction
-    item: WriteItem
+    entry: WriteEntry
     result: Extract<WriteItemResult, { ok: false }>
 }
 

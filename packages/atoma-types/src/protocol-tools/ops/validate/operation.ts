@@ -1,14 +1,14 @@
-import type { Operation, OperationKind, QueryOp, WriteAction, WriteOp, ChangesPullOp, Meta } from 'atoma-types/protocol'
+import type { RemoteOp, RemoteOpKind, QueryOp, WriteOp, ChangesPullOp, Meta } from 'atoma-types/protocol'
 import { assertFiniteNumber, assertNonEmptyString, invalid, isObject, makeValidationDetails, requireObject, requireString, readString } from './common'
 import { assertOpMeta } from './meta'
 import { assertQuery } from './query'
-import { assertWriteItems } from './write'
+import { assertWriteEntries } from './write'
 
 type JsonObject = Record<string, unknown>
 
 type OpBase = {
     opId: string
-    kind: OperationKind
+    kind: RemoteOpKind
     meta?: Meta
 }
 
@@ -19,7 +19,7 @@ function assertOpBase(obj: JsonObject): OpBase {
         message: 'Missing opId',
         details: detailsForOp('opId')
     })
-    const kind = readString(obj, 'kind') as OperationKind | undefined
+    const kind = readString(obj, 'kind') as RemoteOpKind | undefined
     if (kind !== 'query' && kind !== 'write' && kind !== 'changes.pull') {
         throw invalid('INVALID_REQUEST', 'Missing kind', detailsForOp('kind', { opId }))
     }
@@ -60,16 +60,8 @@ function assertWriteOp(obj: JsonObject, base: OpBase): WriteOp {
         message: 'Missing write.resource',
         details: detailsForWrite('resource')
     })
-    const action = readString(writeObj, 'action') as WriteAction | undefined
-    if (action !== 'create' && action !== 'update' && action !== 'delete' && action !== 'upsert') {
-        throw invalid('INVALID_REQUEST', 'Invalid write.action', detailsForWrite('action', { resource }))
-    }
 
-    const items = assertWriteItems(action, (writeObj as any).items, { opId: base.opId, resource })
-    const optionsRaw = (writeObj as any).options
-    if (optionsRaw !== undefined && !isObject(optionsRaw)) {
-        throw invalid('INVALID_WRITE', 'Invalid write.options', detailsForWrite('options', { resource }))
-    }
+    const entries = assertWriteEntries((writeObj as any).entries, { opId: base.opId, resource })
 
     return {
         opId: base.opId,
@@ -77,9 +69,7 @@ function assertWriteOp(obj: JsonObject, base: OpBase): WriteOp {
         ...(base.meta ? { meta: base.meta } : {}),
         write: {
             resource,
-            action,
-            items,
-            ...(optionsRaw ? { options: optionsRaw as any } : {})
+            entries
         }
     }
 }
@@ -113,7 +103,7 @@ function assertChangesPullOp(obj: JsonObject, base: OpBase): ChangesPullOp {
     }
 }
 
-export function assertOperation(value: unknown): Operation {
+export function assertRemoteOp(value: unknown): RemoteOp {
     if (!isObject(value)) throw invalid('INVALID_REQUEST', 'Invalid op', { kind: 'validation', part: 'op' })
 
     const base = assertOpBase(value)

@@ -1,11 +1,11 @@
 import type { Entity, Query, StoreToken } from '../../core'
 import type { Runtime, PersistRequest, PersistResult, HookRegistry } from '../../runtime'
-import type { OperationEnvelope, ResultEnvelope } from '../ops'
+import type { RemoteOpEnvelope, RemoteOpResultEnvelope } from '../ops'
 import type { CapabilitiesRegistry } from '../registry'
 
 export type Next<T> = () => Promise<T>
 
-export type IoContext = {
+export type OpsContext = {
     clientId: string
     storeName?: StoreToken
 }
@@ -31,11 +31,11 @@ export type PluginReadResult = Readonly<{
     pageInfo?: unknown
 }>
 
-export type IoHandler = (
-    req: OperationEnvelope,
-    ctx: IoContext,
-    next: Next<ResultEnvelope>
-) => Promise<ResultEnvelope>
+export type OpsHandler = (
+    req: RemoteOpEnvelope,
+    ctx: OpsContext,
+    next: Next<RemoteOpResultEnvelope>
+) => Promise<RemoteOpResultEnvelope>
 
 export type PersistHandler = <T extends Entity>(
     req: PersistRequest<T>,
@@ -50,7 +50,7 @@ export type ReadHandler = (
 ) => Promise<PluginReadResult>
 
 export type HandlerMap = {
-    io: IoHandler
+    ops: OpsHandler
     persist: PersistHandler
     read: ReadHandler
 }

@@ -4,15 +4,15 @@ import type { Meta } from './meta'
 import type { StandardError } from './error'
 import type { ChangeBatch } from './changes'
 
-export type OperationKind = 'query' | 'write' | 'changes.pull'
+export type RemoteOpKind = 'query' | 'write' | 'changes.pull'
 
-export type OperationBase = {
+export type RemoteOpBase = {
     opId: string
-    kind: OperationKind
+    kind: RemoteOpKind
     meta?: Meta
 }
 
-export type QueryOp = OperationBase & {
+export type QueryOp = RemoteOpBase & {
     kind: 'query'
     query: {
         resource: ResourceToken
@@ -69,17 +69,46 @@ export type WriteOptions = {
     }
 }
 
-export type WriteOp = OperationBase & {
+export type WriteEntryBase = {
+    entryId: string
+    options?: WriteOptions
+}
+
+export type WriteEntryCreate = WriteEntryBase & {
+    action: 'create'
+    item: WriteItemCreate
+}
+
+export type WriteEntryUpdate = WriteEntryBase & {
+    action: 'update'
+    item: WriteItemUpdate
+}
+
+export type WriteEntryDelete = WriteEntryBase & {
+    action: 'delete'
+    item: WriteItemDelete
+}
+
+export type WriteEntryUpsert = WriteEntryBase & {
+    action: 'upsert'
+    item: WriteItemUpsert
+}
+
+export type WriteEntry =
+    | WriteEntryCreate
+    | WriteEntryUpdate
+    | WriteEntryDelete
+    | WriteEntryUpsert
+
+export type WriteOp = RemoteOpBase & {
     kind: 'write'
     write: {
         resource: ResourceToken
-        action: WriteAction
-        items: WriteItem[]
-        options?: WriteOptions
+        entries: WriteEntry[]
     }
 }
 
-export type ChangesPullOp = OperationBase & {
+export type ChangesPullOp = RemoteOpBase & {
     kind: 'changes.pull'
     pull: {
         cursor: Cursor
@@ -88,7 +117,7 @@ export type ChangesPullOp = OperationBase & {
     }
 }
 
-export type Operation = QueryOp | WriteOp | ChangesPullOp
+export type RemoteOp = QueryOp | WriteOp | ChangesPullOp
 
 export type ResultOk<T> = {
     opId: string
@@ -102,15 +131,15 @@ export type ResultErr = {
     error: StandardError
 }
 
-export type OperationResult<T = unknown> = ResultOk<T> | ResultErr
+export type RemoteOpResult<T = unknown> = ResultOk<T> | ResultErr
 
-export type OpsRequest = {
+export type RemoteOpsRequest = {
     meta: Meta
-    ops: Operation[]
+    ops: RemoteOp[]
 }
 
-export type OpsResponseData = {
-    results: OperationResult[]
+export type RemoteOpsResponseData = {
+    results: RemoteOpResult[]
 }
 
 export type QueryResultData = {
@@ -119,8 +148,10 @@ export type QueryResultData = {
 }
 
 export type WriteItemResult =
-    | { index: number; ok: true; entityId: EntityId; version: Version; data?: unknown }
-    | { index: number; ok: false; error: StandardError; current?: { value?: unknown; version?: Version } }
+    | { entryId: string; ok: true; entityId: EntityId; version: Version; data?: unknown }
+    | { entryId: string; ok: false; error: StandardError; current?: { value?: unknown; version?: Version } }
+
+export type WriteEntryResult = WriteItemResult
 
 export type WriteResultData = {
     transactionApplied?: boolean

@@ -1,5 +1,5 @@
 import type { Entity, OperationContext, StoreToken, WriteStrategy } from '../core'
-import type { OperationResult, WriteOp } from '../protocol'
+import type { WriteEntry, WriteItemResult } from '../protocol'
 import type { StoreHandle } from './handle'
 
 export type PersistStatus = 'confirmed' | 'enqueued'
@@ -9,13 +9,13 @@ export type PersistRequest<T extends Entity> = Readonly<{
     writeStrategy?: WriteStrategy
     handle: StoreHandle<T>
     opContext: OperationContext
-    writeOps: Array<WriteOp>
+    writeEntries: Array<WriteEntry>
     signal?: AbortSignal
 }>
 
 export type PersistResult<T extends Entity> = Readonly<{
     status: PersistStatus
-    results?: OperationResult[]
+    results?: WriteItemResult[]
 }>
 
 export type PersistHandler = <T extends Entity>(args: {

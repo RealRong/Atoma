@@ -261,8 +261,7 @@ export class PushLane {
             if (outcome.kind === 'ack') {
                 acks.push({
                     resource: entry.resource,
-                    action: entry.action as any,
-                    item: entry.item as any,
+                    entry: entry.entry as any,
                     result: outcome.result
                 })
                 ackedKeys.push(entry.idempotencyKey)
@@ -286,8 +285,7 @@ export class PushLane {
 
             rejects.push({
                 resource: entry.resource,
-                action: entry.action as any,
-                item: entry.item as any,
+                entry: entry.entry as any,
                 result: outcome.result
             })
             rejectedKeys.push(entry.idempotencyKey)

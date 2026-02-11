@@ -1,4 +1,5 @@
 import type { Entity } from 'atoma-types/core'
+import { registerOpsClient } from 'atoma-types/client/ops'
 import type { PersistRequest, PersistResult, Io, Schema } from 'atoma-types/runtime'
 import { Runtime } from 'atoma-runtime'
 import type {
@@ -11,6 +12,7 @@ import { createDebugHub } from './debug/debugHub'
 import { registerRuntimeDebugProviders } from './debug/registerRuntimeDebugProviders'
 import { setupPlugins } from './plugins'
 import { CapabilitiesRegistry } from './plugins/CapabilitiesRegistry'
+import { PluginOpsClient } from './plugins/PluginOpsClient'
 import { PluginRuntimeIo } from './plugins/PluginRuntimeIo'
 
 function ensureDebugHub(capabilities: CapabilitiesRegistry): (() => void) | undefined {
@@ -54,14 +56,19 @@ export function createClient<
         rawPlugins: Array.isArray(input.plugins) ? input.plugins : []
     })
 
+    const opsClient = new PluginOpsClient({
+        ops: plugins.chains.ops,
+        clientId: runtime.id
+    })
+
     runtime.io = new PluginRuntimeIo({
-        io: plugins.chains.io,
         read: plugins.chains.read,
-        now: runtime.now,
         clientId: runtime.id
     })
 
     const disposers: Array<() => void> = []
+
+    disposers.push(registerOpsClient(capabilities, opsClient))
 
     const unregisterDebugHub = ensureDebugHub(capabilities)
     if (unregisterDebugHub) {

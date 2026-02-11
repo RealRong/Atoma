@@ -1,5 +1,5 @@
 export type {
-    IoHandler,
+    OpsHandler,
     PersistHandler,
     ReadHandler,
     HandlerMap,
@@ -7,7 +7,7 @@ export type {
     HandlerEntry,
     Register,
     PluginContext,
-    IoContext,
+    OpsContext,
     PersistContext,
     ReadContext,
     ReadRequest,

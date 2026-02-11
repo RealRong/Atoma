@@ -1,50 +1,41 @@
-import type { Runtime } from 'atoma-types/runtime'
 import type { Entity } from 'atoma-types/core'
-import type { PersistRequest, PersistResult } from 'atoma-types/runtime'
-import type { WriteAction, WriteItem, WriteOptions } from 'atoma-types/protocol'
+import type { PersistRequest, PersistResult, Runtime } from 'atoma-types/runtime'
 import type { OutboxStore, OutboxWrite } from 'atoma-types/sync'
 
-function mapWriteOpsToOutboxWrites(writeOps: PersistRequest<any>['writeOps']): OutboxWrite[] {
+function mapWriteEntriesToOutboxWrites(req: PersistRequest<any>): OutboxWrite[] {
     const out: OutboxWrite[] = []
-    for (const op of writeOps as any) {
-        if (!op || op.kind !== 'write') {
-            throw new Error('[atoma-sync] outbox: 仅支持 write op（op.kind 必须为 "write"）')
+    const resource = String(req.storeName)
+
+    for (const entry of req.writeEntries as any[]) {
+        const action = entry?.action
+        const item = entry?.item
+        const options = (entry?.options && typeof entry.options === 'object') ? entry.options : undefined
+
+        if (!resource || !action || !item) {
+            throw new Error('[atoma-sync] outbox: write entry 必须包含 resource/action/item')
         }
 
-        const write: any = op.write
-        const resource = String(write?.resource ?? '')
-        const action = write?.action as WriteAction
-        const options = (write?.options && typeof write.options === 'object') ? (write.options as WriteOptions) : undefined
-        const items: WriteItem[] = Array.isArray(write?.items) ? (write.items as WriteItem[]) : []
-        if (!resource || !action || items.length === 0) {
-            throw new Error('[atoma-sync] outbox: write op 必须包含 resource/action 且至少 1 个 item')
-        }
-
-        // We intentionally do not support per-write protocol options in the outbox.
-        // Keep the sync semantics uniform and controlled by the sync runtime config.
         if (options && Object.keys(options as any).length > 0) {
-            throw new Error('[atoma-sync] outbox: 不支持 write.options（请通过 sync 配置控制行为）')
+            throw new Error('[atoma-sync] outbox: 不支持 write entry options（请通过 sync 配置控制行为）')
         }
 
-        for (const item of items) {
-            const meta = item?.meta
-            if (!meta || typeof meta !== 'object') {
-                throw new Error('[atoma-sync] outbox: write item meta 必填（需要 idempotencyKey/clientTimeMs）')
-            }
-            if (typeof meta.idempotencyKey !== 'string' || !meta.idempotencyKey) {
-                throw new Error('[atoma-sync] outbox: write item meta.idempotencyKey 必填')
-            }
-            if (typeof meta.clientTimeMs !== 'number' || !Number.isFinite(meta.clientTimeMs)) {
-                throw new Error('[atoma-sync] outbox: write item meta.clientTimeMs 必填')
-            }
-
-            out.push({
-                resource,
-                action,
-                item,
-            })
+        const meta = item?.meta
+        if (!meta || typeof meta !== 'object') {
+            throw new Error('[atoma-sync] outbox: write item meta 必填（需要 idempotencyKey/clientTimeMs）')
         }
+        if (typeof meta.idempotencyKey !== 'string' || !meta.idempotencyKey) {
+            throw new Error('[atoma-sync] outbox: write item meta.idempotencyKey 必填')
+        }
+        if (typeof meta.clientTimeMs !== 'number' || !Number.isFinite(meta.clientTimeMs)) {
+            throw new Error('[atoma-sync] outbox: write item meta.clientTimeMs 必填')
+        }
+
+        out.push({
+            resource,
+            entry
+        })
     }
+
     return out
 }
 
@@ -78,7 +69,7 @@ export class SyncPersistHandlers {
                 req: PersistRequest<T>
                 next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
             }) => {
-                const writes = mapWriteOpsToOutboxWrites(x.req.writeOps)
+                const writes = mapWriteEntriesToOutboxWrites(x.req)
                 if (writes.length) await outbox.enqueueWrites({ writes })
                 return { status: 'enqueued' } as PersistResult<T>
             }
@@ -91,7 +82,7 @@ export class SyncPersistHandlers {
                 next: (req: PersistRequest<T>) => Promise<PersistResult<T>>
             }) => {
                 const direct = await x.next(x.req)
-                const writes = mapWriteOpsToOutboxWrites(x.req.writeOps)
+                const writes = mapWriteEntriesToOutboxWrites(x.req)
                 if (writes.length) await outbox.enqueueWrites({ writes })
                 return {
                     status: 'enqueued',

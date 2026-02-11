@@ -12,7 +12,7 @@ export function memoryBackendPlugin(options?: MemoryBackendPluginOptions): Clien
                 ...(options?.seed ? { seed: options.seed } : {})
             })
 
-            register('io', async (req) => {
+            register('ops', async (req) => {
                 return await opsClient.executeOps({
                     ops: req.ops,
                     meta: req.meta,

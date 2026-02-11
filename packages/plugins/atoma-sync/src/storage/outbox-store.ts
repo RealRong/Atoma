@@ -9,8 +9,7 @@ type PersistedOutboxEntry = {
     outboxKey: string
     idempotencyKey: string
     resource: string
-    action: string
-    item: any
+    entry: any
     enqueuedAtMs: number
     status: OutboxStatus
     inFlightAtMs?: number
@@ -93,21 +92,26 @@ export class DefaultOutboxStore implements OutboxStore {
 
         for (const write of args.writes) {
             const resource = String((write as any)?.resource ?? '')
-            const action = (write as any)?.action as any
-            const baseItem = (write as any)?.item as any
+            const baseEntry = (write as any)?.entry as any
 
-            if (!resource || !action || !baseItem) {
-                throw new Error('[Sync] enqueueWrites requires { resource, action, item }')
+            if (!resource || !baseEntry || typeof baseEntry !== 'object') {
+                throw new Error('[Sync] enqueueWrites requires { resource, entry }')
             }
 
+            const baseItem = baseEntry.item
             const meta = this.requireItemMeta(baseItem)
-            const ensuredItem = { ...(baseItem as any), meta } as any
+            const ensuredEntry = {
+                ...(baseEntry as any),
+                item: {
+                    ...(baseItem as any),
+                    meta
+                }
+            } as any
 
             const entry = {
                 idempotencyKey: meta.idempotencyKey!,
                 resource,
-                action,
-                item: ensuredItem,
+                entry: ensuredEntry,
                 enqueuedAtMs: now
             } as SyncOutboxItem
             items.push(entry)
@@ -134,14 +138,13 @@ export class DefaultOutboxStore implements OutboxStore {
             const existing = await store.get(pk)
             if (existing) continue
 
-            const entityId = this.extractEntityId(item.item)
+            const entityId = this.extractEntityId(item.entry)
             const persisted: PersistedOutboxEntry = {
                 pk,
                 outboxKey: this.storageKey,
                 idempotencyKey: item.idempotencyKey,
                 resource: item.resource,
-                action: item.action,
-                item: item.item,
+                entry: item.entry,
                 enqueuedAtMs: item.enqueuedAtMs,
                 status: 'pending',
                 ...(entityId ? { entityId } : {})
@@ -243,16 +246,19 @@ export class DefaultOutboxStore implements OutboxStore {
 
                 for (let cursor = await index.openCursor(range); cursor; cursor = await cursor.continue()) {
                     const raw = cursor.value as PersistedOutboxEntry
-                    const item: any = raw.item
+                    const item: any = raw.entry?.item
                     if (after !== undefined && raw.enqueuedAtMs <= after) continue
                     if (typeof item?.baseVersion !== 'number' || !Number.isFinite(item.baseVersion) || item.baseVersion <= 0) continue
                     if (item.baseVersion >= baseVersion) continue
 
                     const next: PersistedOutboxEntry = {
                         ...raw,
-                        item: {
+                        entry: {
+                            ...(raw.entry as any),
+                            item: {
                             ...(item as any),
                             baseVersion
+                            }
                         }
                     }
                     await cursor.update(next)
@@ -367,14 +373,13 @@ export class DefaultOutboxStore implements OutboxStore {
         return {
             idempotencyKey: raw.idempotencyKey,
             resource: raw.resource,
-            action: raw.action as any,
-            item: raw.item as any,
+            entry: raw.entry as any,
             enqueuedAtMs: raw.enqueuedAtMs
         }
     }
 
-    private extractEntityId(item: any): string | undefined {
-        const id = item?.entityId
+    private extractEntityId(entry: any): string | undefined {
+        const id = entry?.item?.entityId
         return (typeof id === 'string' && id) ? id : undefined
     }
 
@@ -415,13 +420,13 @@ class MemoryOutboxStore {
         const inserted: string[] = []
         for (const write of args.writes) {
             const resource = String((write as any)?.resource ?? '')
-            const action = (write as any)?.action as any
-            const baseItem = (write as any)?.item as any
+            const baseEntry = (write as any)?.entry as any
 
-            if (!resource || !action || !baseItem) {
-                throw new Error('[Sync] enqueueWrites requires { resource, action, item }')
+            if (!resource || !baseEntry || typeof baseEntry !== 'object') {
+                throw new Error('[Sync] enqueueWrites requires { resource, entry }')
             }
 
+            const baseItem = baseEntry.item
             const meta = (baseItem as any)?.meta
             const key = meta?.idempotencyKey
             if (typeof key !== 'string' || !key) throw new Error('[Sync] write item meta.idempotencyKey is required for enqueueWrites')
@@ -436,8 +441,7 @@ class MemoryOutboxStore {
             const entry: SyncOutboxItem & { status: OutboxStatus; inFlightAtMs?: number } = {
                 idempotencyKey: key,
                 resource,
-                action,
-                item: baseItem,
+                entry: baseEntry,
                 enqueuedAtMs: now,
                 status: 'pending',
                 inFlightAtMs: undefined
@@ -469,8 +473,7 @@ class MemoryOutboxStore {
             out.push({
                 idempotencyKey: entry.idempotencyKey,
                 resource: entry.resource,
-                action: entry.action,
-                item: entry.item,
+                entry: entry.entry,
                 enqueuedAtMs: entry.enqueuedAtMs
             })
         }
@@ -512,7 +515,7 @@ class MemoryOutboxStore {
                     if (!e || e.status !== 'pending') continue
                     if (after !== undefined && e.enqueuedAtMs <= after) continue
                     if (e.resource !== resource) continue
-                    const item: any = e.item
+                    const item: any = e.entry?.item
                     if (item?.entityId !== entityId) continue
                     if (typeof item.baseVersion !== 'number' || !Number.isFinite(item.baseVersion) || item.baseVersion <= 0) continue
                     if (item.baseVersion < baseVersion) {

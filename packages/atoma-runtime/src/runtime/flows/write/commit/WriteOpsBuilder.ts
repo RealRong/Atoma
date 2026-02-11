@@ -6,24 +6,18 @@ import type {
 } from 'atoma-types/core'
 import type {
     EntityId,
+    WriteEntry,
     WriteOptions
 } from 'atoma-types/protocol'
 import {
-    buildWriteOp,
     createIdempotencyKey,
     ensureWriteItemMeta
 } from 'atoma-types/protocol-tools'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 import type { PersistPlan } from '../types'
 
-type Group<T extends Entity> = {
-    action: WriteIntent<T>['action']
-    options?: WriteOptions
-    intents: Array<WriteIntent<T>>
-}
-
 export class WriteOpsBuilder {
-    buildWriteOps = async <T extends Entity>(args: {
+    buildWriteEntries = async <T extends Entity>(args: {
         runtime: Runtime
         handle: StoreHandle<T>
         intents: Array<WriteIntent<T>>
@@ -49,89 +43,74 @@ export class WriteOpsBuilder {
             } as WriteIntent<T>
         }))
 
-        const groupsByKey = new Map<string, Group<T>>()
-        const groups: Array<Group<T>> = []
-
-        for (const intent of normalized) {
-            const options = intent.options ? this.buildWriteOptions(intent.options) : undefined
-            const optionsKey = this.buildOptionsKey(options)
-            const key = `${intent.action}::${optionsKey}`
-
-            let group = groupsByKey.get(key)
-            if (!group) {
-                group = { action: intent.action, options, intents: [] }
-                groupsByKey.set(key, group)
-                groups.push(group)
-            }
-            group.intents.push(intent)
-        }
-
-        return groups.map(group => this.buildGroupPlan({ runtime, handle, group }))
+        return normalized.map(intent => this.buildPlanEntry({ runtime, handle, intent }))
     }
 
-    private buildGroupPlan = <T extends Entity>(args: {
+    private buildPlanEntry = <T extends Entity>(args: {
         runtime: Runtime
         handle: StoreHandle<T>
-        group: Group<T>
+        intent: WriteIntent<T>
     }): PersistPlan<T>[number] => {
-        const { runtime, handle, group } = args
+        const { runtime, handle, intent } = args
+        const now = runtime.now
+        const meta = ensureWriteItemMeta({
+            meta: {
+                idempotencyKey: createIdempotencyKey({ now }),
+                clientTimeMs: now()
+            },
+            now
+        })
 
-        const items = group.intents.map(intent => {
-            const now = runtime.now
-            const meta = ensureWriteItemMeta({
-                meta: {
-                    idempotencyKey: createIdempotencyKey({ now }),
-                    clientTimeMs: now()
-                },
-                now
-            })
-
-            if (intent.action === 'delete') {
-                return {
+        const entry: WriteEntry = intent.action === 'delete'
+            ? {
+                entryId: runtime.nextOpId(handle.storeName, 'w'),
+                action: 'delete',
+                item: {
                     entityId: intent.entityId as EntityId,
                     baseVersion: intent.baseVersion as number,
                     meta
                 }
             }
-
-            if (intent.action === 'update') {
-                return {
-                    entityId: intent.entityId as EntityId,
-                    baseVersion: intent.baseVersion as number,
-                    value: intent.value,
-                    meta
+            : intent.action === 'update'
+                ? {
+                    entryId: runtime.nextOpId(handle.storeName, 'w'),
+                    action: 'update',
+                    item: {
+                        entityId: intent.entityId as EntityId,
+                        baseVersion: intent.baseVersion as number,
+                        value: intent.value,
+                        meta
+                    }
                 }
-            }
+                : intent.action === 'upsert'
+                    ? {
+                        entryId: runtime.nextOpId(handle.storeName, 'w'),
+                        action: 'upsert',
+                        item: {
+                            entityId: intent.entityId as EntityId,
+                            ...(typeof intent.baseVersion === 'number' ? { baseVersion: intent.baseVersion } : {}),
+                            value: intent.value,
+                            meta
+                        }
+                    }
+                    : {
+                        entryId: runtime.nextOpId(handle.storeName, 'w'),
+                        action: 'create',
+                        item: {
+                            ...(intent.entityId ? { entityId: intent.entityId } : {}),
+                            value: intent.value,
+                            meta
+                        }
+                    }
 
-            if (intent.action === 'upsert') {
-                return {
-                    entityId: intent.entityId as EntityId,
-                    ...(typeof intent.baseVersion === 'number' ? { baseVersion: intent.baseVersion } : {}),
-                    value: intent.value,
-                    meta
-                }
-            }
-
-            return {
-                ...(intent.entityId ? { entityId: intent.entityId } : {}),
-                value: intent.value,
-                meta
-            }
-        })
-
-        const op = buildWriteOp({
-            opId: runtime.nextOpId(handle.storeName, 'w'),
-            write: {
-                resource: handle.storeName,
-                action: group.action,
-                items,
-                ...(group.options ? { options: group.options } : {})
-            }
-        })
+        const options = intent.options ? this.buildWriteOptions(intent.options) : undefined
+        if (options) {
+            ;(entry as any).options = options
+        }
 
         return {
-            op,
-            intents: group.intents
+            entry,
+            intent
         }
     }
 
@@ -145,31 +124,5 @@ export class WriteOpsBuilder {
         }
 
         return Object.keys(out).length ? out : undefined
-    }
-
-    private buildOptionsKey = (options: WriteOptions | undefined): string => {
-        if (!options) return ''
-        const parts: string[] = []
-
-        if (typeof options.returning === 'boolean') {
-            parts.push(`r:${options.returning ? 1 : 0}`)
-        }
-        if (typeof options.merge === 'boolean') {
-            parts.push(`m:${options.merge ? 1 : 0}`)
-        }
-        if (options.upsert?.mode === 'strict' || options.upsert?.mode === 'loose') {
-            parts.push(`u:${options.upsert.mode}`)
-        }
-
-        const select = options.select
-        if (select && typeof select === 'object') {
-            const keys = Object.keys(select).sort()
-            if (keys.length) {
-                const encoded = keys.map(key => `${key}:${select[key] ? 1 : 0}`).join(',')
-                parts.push(`s:${encoded}`)
-            }
-        }
-
-        return parts.join('|')
     }
 }

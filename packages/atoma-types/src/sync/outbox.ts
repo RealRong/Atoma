@@ -1,57 +1,15 @@
-import type { ResourceToken } from '../protocol'
+import type { ResourceToken, WriteEntry } from '../protocol'
 import type { EntityId, Version } from '../shared'
 
 export type OutboxWrite = {
     resource: ResourceToken
-    action: OutboxWriteAction
-    item: OutboxWriteItem
+    entry: WriteEntry
 }
-
-export type OutboxWriteAction = 'create' | 'update' | 'delete' | 'upsert'
-
-export type OutboxWriteItemMeta = {
-    idempotencyKey?: string
-    clientTimeMs?: number
-    [k: string]: unknown
-}
-
-export type OutboxWriteItemCreate = {
-    entityId?: EntityId
-    value: unknown
-    meta?: OutboxWriteItemMeta
-}
-
-export type OutboxWriteItemUpdate = {
-    entityId: EntityId
-    baseVersion: Version
-    value: unknown
-    meta?: OutboxWriteItemMeta
-}
-
-export type OutboxWriteItemUpsert = {
-    entityId: EntityId
-    baseVersion?: Version
-    value: unknown
-    meta?: OutboxWriteItemMeta
-}
-
-export type OutboxWriteItemDelete = {
-    entityId: EntityId
-    baseVersion: Version
-    meta?: OutboxWriteItemMeta
-}
-
-export type OutboxWriteItem =
-    | OutboxWriteItemCreate
-    | OutboxWriteItemUpdate
-    | OutboxWriteItemDelete
-    | OutboxWriteItemUpsert
 
 export type SyncOutboxItem = {
     idempotencyKey: string
     resource: ResourceToken
-    action: OutboxWriteAction
-    item: OutboxWriteItem
+    entry: WriteEntry
     enqueuedAtMs: number
 }
 
