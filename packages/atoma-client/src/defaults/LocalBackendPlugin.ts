@@ -1,7 +1,7 @@
-import type { ClientPlugin, OpsHandler, PersistHandler, PluginContext, ReadHandler, Register } from 'atoma-types/client/plugins'
+import type { ClientPlugin, OpsHandler, PluginContext, OpsRegister } from 'atoma-types/client/plugins'
 import type { Entity, Query } from 'atoma-types/core'
-import type { RemoteOp, RemoteOpResult, QueryResultData } from 'atoma-types/protocol'
-import { isTerminalResult } from '../plugins/HandlerChain'
+import type { QueryResultData, RemoteOpResult, WriteResultData } from 'atoma-types/protocol'
+import { isTerminalResult } from '../plugins/OpsChain'
 
 function toQueryResultData(data: unknown[], pageInfo?: unknown): QueryResultData {
     if (pageInfo === undefined) {
@@ -13,16 +13,15 @@ function toQueryResultData(data: unknown[], pageInfo?: unknown): QueryResultData
     }
 }
 
-function toUnsupportedOpsResults(ops: RemoteOp[]): RemoteOpResult[] {
-    return ops.map(op => ({
-        opId: op.opId,
-        ok: false,
-        error: {
-            code: 'LOCAL_ONLY',
-            message: '[Atoma] LocalBackendPlugin: ops not supported',
-            kind: 'internal'
-        }
-    }))
+function toWriteResultData(entries: Array<{ entryId: string; item: { entityId?: string } }>): WriteResultData {
+    return {
+        results: entries.map(entry => ({
+            entryId: entry.entryId,
+            ok: true,
+            entityId: String(entry.item.entityId ?? ''),
+            version: 1
+        }))
+    }
 }
 
 function runLocalQuery(ctx: PluginContext, storeName: string, query: Query<Entity>): QueryResultData {
@@ -37,7 +36,7 @@ function runLocalQuery(ctx: PluginContext, storeName: string, query: Query<Entit
 export function localBackendPlugin(): ClientPlugin {
     return {
         id: 'defaults:local-backend',
-        register: (ctx: PluginContext, register: Register) => {
+        register: (ctx: PluginContext, register: OpsRegister) => {
             const opsHandler: OpsHandler = async (req, _ctx, next) => {
                 const upstream = await next()
                 if (!isTerminalResult(upstream)) return upstream
@@ -46,34 +45,36 @@ export function localBackendPlugin(): ClientPlugin {
 
                 const results: RemoteOpResult[] = []
                 for (const op of req.ops) {
-                    if (op.kind !== 'query') {
-                        results.push(...toUnsupportedOpsResults([op]))
+                    if (op.kind === 'query') {
+                        const data = runLocalQuery(ctx, String(op.query.resource), op.query.query as Query<Entity>)
+                        results.push({ opId: op.opId, ok: true, data })
                         continue
                     }
 
-                    const data = runLocalQuery(ctx, String(op.query.resource), op.query.query as Query<Entity>)
-                    results.push({ opId: op.opId, ok: true, data })
+                    if (op.kind === 'write') {
+                        results.push({
+                            opId: op.opId,
+                            ok: true,
+                            data: toWriteResultData(op.write.entries as Array<{ entryId: string; item: { entityId?: string } }>),
+                        })
+                        continue
+                    }
+
+                    results.push({
+                        opId: op.opId,
+                        ok: false,
+                        error: {
+                            code: 'LOCAL_ONLY',
+                            message: `[Atoma] LocalBackendPlugin: unsupported op kind ${String(op.kind)}`,
+                            kind: 'internal'
+                        }
+                    })
                 }
 
                 return { results }
             }
 
-            const readHandler: ReadHandler = async (req, _ctx, next) => {
-                const upstream = await next()
-                if (!isTerminalResult(upstream)) return upstream
-
-                return runLocalQuery(ctx, String(req.storeName), req.query as Query<Entity>)
-            }
-
-            const persistHandler: PersistHandler = async (_req, _ctx, next) => {
-                const upstream = await next()
-                if (!isTerminalResult(upstream)) return upstream
-                return { status: 'confirmed' }
-            }
-
-            register('ops', opsHandler, { priority: -1000 })
-            register('read', readHandler, { priority: -1000 })
-            register('persist', persistHandler, { priority: -1000 })
+            register(opsHandler, { priority: -1000 })
         }
     }
 }

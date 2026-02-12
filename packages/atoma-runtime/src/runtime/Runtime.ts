@@ -1,6 +1,6 @@
 /**
  * Runtime: Unified entrypoint for read/write flows.
- * - Owns all subsystems (io, strategy, transform, stores).
+ * - Owns all subsystems (strategy, transform, stores).
  * - Exposes runtime.read/runtime.write as the only flow entrypoints.
  */
 import type { Entity, StoreDataProcessor } from 'atoma-types/core'
@@ -10,7 +10,6 @@ import type {
     Debug,
     Engine as EngineType,
     HookRegistry as HookRegistryType,
-    Io,
     Read,
     Schema,
     StrategyRegistry as StrategyRegistryType,
@@ -33,7 +32,6 @@ import { Probe } from './debug'
 export interface Options {
     id: string
     schema: Schema
-    io: Io
     dataProcessor?: StoreDataProcessor<Entity>
     defaults?: {
         idGenerator?: () => EntityId
@@ -48,7 +46,6 @@ export class Runtime implements RuntimeType {
     readonly id: string
     readonly now: () => number
     readonly nextOpId: RuntimeType['nextOpId']
-    readonly io: Io
     readonly strategy: StrategyRegistryType
     readonly transform: Transform
     readonly stores: StoreCatalog
@@ -69,7 +66,6 @@ export class Runtime implements RuntimeType {
             return `${prefix}_${this.now()}_${next}`
         }
 
-        this.io = config.io
         this.engine = config.engine ?? new Engine()
         this.transform = new TransformPipeline(this)
         this.strategy = config.strategy ?? new StrategyRegistry()

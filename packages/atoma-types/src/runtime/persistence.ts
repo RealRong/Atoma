@@ -1,10 +1,10 @@
-import type { Entity, OperationContext, StoreToken, WriteStrategy } from '../core'
+import type { Entity, OperationContext, Query, StoreToken, WriteStrategy } from '../core'
 import type { WriteEntry, WriteItemResult } from '../protocol'
 import type { StoreHandle } from './handle'
 
-export type PersistStatus = 'confirmed' | 'enqueued'
+export type WriteStatus = 'confirmed' | 'enqueued'
 
-export type PersistRequest<T extends Entity> = Readonly<{
+export type WriteInput<T extends Entity> = Readonly<{
     storeName: StoreToken
     writeStrategy?: WriteStrategy
     handle: StoreHandle<T>
@@ -13,23 +13,38 @@ export type PersistRequest<T extends Entity> = Readonly<{
     signal?: AbortSignal
 }>
 
-export type PersistResult<T extends Entity> = Readonly<{
-    status: PersistStatus
+export type WriteOutput<T extends Entity> = Readonly<{
+    status: WriteStatus
     results?: ReadonlyArray<WriteItemResult>
 }>
 
-export type PersistHandler = <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
+export type WriteExecutor = <T extends Entity>(input: WriteInput<T>) => Promise<WriteOutput<T>>
 
-export type WritePolicy = Readonly<{
+export type QueryInput<T extends Entity> = Readonly<{
+    storeName: StoreToken
+    handle: StoreHandle<T>
+    query: Query<T>
+    signal?: AbortSignal
+}>
+
+export type QueryOutput = Readonly<{
+    data: unknown[]
+    pageInfo?: unknown
+}>
+
+export type QueryExecutor = <T extends Entity>(input: QueryInput<T>) => Promise<QueryOutput>
+
+export type Policy = Readonly<{
     implicitFetch?: boolean
     optimistic?: boolean
 }>
 
-export type StrategyDescriptor = Readonly<{
-    persist?: PersistHandler
-    write?: WritePolicy
+export type StrategySpec = Readonly<{
+    query?: QueryExecutor
+    write?: WriteExecutor
+    policy?: Policy
 }>
 
-export interface Persistence {
-    persist: <T extends Entity>(req: PersistRequest<T>) => Promise<PersistResult<T>>
+export interface WritePort {
+    write: <T extends Entity>(input: WriteInput<T>) => Promise<WriteOutput<T>>
 }

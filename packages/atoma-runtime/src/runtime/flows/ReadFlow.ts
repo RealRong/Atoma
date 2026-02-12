@@ -61,14 +61,18 @@ export class ReadFlow implements Read {
 
         try {
             const startedAt = runtime.now()
-            const { data, pageInfo } = await runtime.io.query(handle, input)
+            const { data, pageInfo } = await runtime.strategy.query({
+                storeName: String(handle.storeName),
+                handle,
+                query: input
+            })
             const durationMs = runtime.now() - startedAt
 
             const fetched = Array.isArray(data) ? data : []
             const remote = await this.writebackArray(handle, fetched)
 
-            const cachePolicy = decideQueryCacheWrite(input)
-            if (cachePolicy.effectiveSkipStore) {
+            const cachePolicy = queryStorePolicy(input)
+            if (cachePolicy.skipStore) {
                 const result = this.toQueryResult(remote, pageInfo)
                 hooks.emit.readFinish({ handle, query: input, result, durationMs })
                 return result
@@ -116,8 +120,12 @@ export class ReadFlow implements Read {
         }
 
         if (missingUnique.length) {
-            const { data } = await this.runtime.io.query(handle, {
-                filter: { op: 'in', field: 'id', values: missingUnique }
+            const { data } = await this.runtime.strategy.query({
+                storeName: String(handle.storeName),
+                handle,
+                query: {
+                    filter: { op: 'in', field: 'id', values: missingUnique }
+                }
             })
 
             const before = handle.state.getSnapshot() as Map<EntityId, T>
@@ -162,9 +170,13 @@ export class ReadFlow implements Read {
     }
 
     fetchOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId): Promise<T | undefined> => {
-        const { data } = await this.runtime.io.query(handle, {
-            filter: { op: 'eq', field: 'id', value: id },
-            page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
+        const { data } = await this.runtime.strategy.query({
+            storeName: String(handle.storeName),
+            handle,
+            query: {
+                filter: { op: 'eq', field: 'id', value: id },
+                page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
+            }
         })
         const one = data[0]
         if (one === undefined) return undefined
@@ -172,7 +184,11 @@ export class ReadFlow implements Read {
     }
 
     fetchAll = async <T extends Entity>(handle: StoreHandle<T>): Promise<T[]> => {
-        const { data } = await this.runtime.io.query(handle, {})
+        const { data } = await this.runtime.strategy.query({
+            storeName: String(handle.storeName),
+            handle,
+            query: {}
+        })
         return await this.writebackArray(handle, data)
     }
 
@@ -182,7 +198,11 @@ export class ReadFlow implements Read {
         cacheFilter?: (item: T) => boolean
     ): Promise<T[]> => {
         const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
-        const { data } = await this.runtime.io.query(handle, {})
+        const { data } = await this.runtime.strategy.query({
+            storeName: String(handle.storeName),
+            handle,
+            query: {}
+        })
         const fetched = Array.isArray(data) ? data : []
         const output: T[] = []
         const itemsToCache: T[] = []
@@ -223,17 +243,17 @@ export class ReadFlow implements Read {
     }
 }
 
-const decideQueryCacheWrite = <T extends Entity>(query?: StoreQuery<T>) => {
+const queryStorePolicy = <T extends Entity>(query?: StoreQuery<T>) => {
     const hasSelect = Boolean(Array.isArray(query?.select) && query.select.length)
     if (hasSelect) {
-        return { effectiveSkipStore: true, reason: 'select' }
+        return { skipStore: true, reason: 'select' }
     }
 
     const include = query?.include
     const hasInclude = Boolean(include && typeof include === 'object' && Object.keys(include).length)
     if (hasInclude) {
-        return { effectiveSkipStore: true, reason: 'include' }
+        return { skipStore: true, reason: 'include' }
     }
 
-    return { effectiveSkipStore: false }
+    return { skipStore: false }
 }

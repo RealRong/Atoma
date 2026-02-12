@@ -5,7 +5,7 @@ import { SyncEngine } from '#sync/engine/sync-engine'
 import { createStores } from '#sync/storage'
 import { WritebackApplier } from '#sync/applier/writeback-applier'
 import { SyncDevtools } from '#sync/devtools/sync-devtools'
-import { SyncPersistHandlers } from '#sync/persistence/sync-persist-handlers'
+import { SyncWrites } from '#sync/persistence/SyncWrites'
 import { getSyncDriver, getSyncSubscribeDriver } from '#sync/capabilities'
 import { getOrCreateGlobalReplicaId } from '#sync/internal/replica-id'
 import type { SyncExtension, SyncPluginOptions } from './types'
@@ -156,7 +156,7 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
         return engine
     }
 
-    const persistHandlers = new SyncPersistHandlers({ runtime, outbox: stores.outbox })
+    const syncWrites = new SyncWrites({ runtime, outbox: stores.outbox })
 
     const sync = {
         start: (m?: SyncMode) => {
@@ -230,7 +230,7 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
             // ignore
         }
 
-        persistHandlers.dispose()
+        syncWrites.dispose()
     }
 
     return { extension, dispose }

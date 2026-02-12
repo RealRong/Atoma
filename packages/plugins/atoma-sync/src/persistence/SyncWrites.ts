@@ -1,12 +1,12 @@
 import type { Entity } from 'atoma-types/core'
-import type { PersistRequest, PersistResult, Runtime } from 'atoma-types/runtime'
+import type { Runtime, WriteInput, WriteOutput } from 'atoma-types/runtime'
 import type { OutboxStore, OutboxWrite } from 'atoma-types/sync'
 
-function mapWriteEntriesToOutboxWrites(req: PersistRequest<any>): OutboxWrite[] {
+function mapWriteEntriesToOutboxWrites(input: WriteInput<any>): OutboxWrite[] {
     const out: OutboxWrite[] = []
-    const resource = String(req.storeName)
+    const resource = String(input.storeName)
 
-    for (const entry of req.writeEntries) {
+    for (const entry of input.writeEntries) {
         const action = entry?.action
         const item = entry?.item
         const options = (entry?.options && typeof entry.options === 'object') ? entry.options : undefined
@@ -39,14 +39,14 @@ function mapWriteEntriesToOutboxWrites(req: PersistRequest<any>): OutboxWrite[] 
     return out
 }
 
-function toDirectRequest<T extends Entity>(req: PersistRequest<T>): PersistRequest<T> {
+function asDirectWrite<T extends Entity>(input: WriteInput<T>): WriteInput<T> {
     return {
-        ...req,
+        ...input,
         writeStrategy: 'direct'
     }
 }
 
-export class SyncPersistHandlers {
+export class SyncWrites {
     private readonly unregister: Array<() => void> = []
     private disposed = false
 
@@ -71,19 +71,19 @@ export class SyncPersistHandlers {
         const { runtime, outbox } = this.deps
 
         this.unregister.push(runtime.strategy.register('queue', {
-            write: { implicitFetch: false },
-            persist: async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-                const writes = mapWriteEntriesToOutboxWrites(req)
+            policy: { implicitFetch: false },
+            write: async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
+                const writes = mapWriteEntriesToOutboxWrites(input)
                 if (writes.length) await outbox.enqueueWrites({ writes })
                 return { status: 'enqueued' }
             }
         }))
 
         this.unregister.push(runtime.strategy.register('local-first', {
-            write: { implicitFetch: true },
-            persist: async <T extends Entity>(req: PersistRequest<T>): Promise<PersistResult<T>> => {
-                const direct = await runtime.strategy.persist(toDirectRequest(req))
-                const writes = mapWriteEntriesToOutboxWrites(req)
+            policy: { implicitFetch: true },
+            write: async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
+                const direct = await runtime.strategy.write(asDirectWrite(input))
+                const writes = mapWriteEntriesToOutboxWrites(input)
                 if (writes.length) await outbox.enqueueWrites({ writes })
                 return {
                     status: 'enqueued',

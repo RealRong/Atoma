@@ -1,7 +1,5 @@
-import type { PersistResult } from 'atoma-types/runtime'
 import { HttpOpsClient } from './ops-client'
-import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client/plugins'
-import { persistViaOps, queryViaOps } from 'atoma-backend-shared'
+import type { ClientPlugin, PluginContext, OpsRegister } from 'atoma-types/client/plugins'
 import type { HttpBackendPluginOptions } from './types'
 
 function normalizeBaseUrl(baseURL: string): string {
@@ -18,7 +16,7 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
 
     return {
         id: `http:${opts.baseURL}`,
-        register: (ctx: PluginContext, register: Register) => {
+        register: (_ctx: PluginContext, register: OpsRegister) => {
             const opsClient = new HttpOpsClient({
                 baseURL: opts.baseURL,
                 opsPath: opts.opsPath,
@@ -33,20 +31,12 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
                 batch: opts.batch
             })
 
-            register('ops', async (req) => {
+            register(async (req) => {
                 return await opsClient.executeOps({
                     ops: req.ops,
                     meta: req.meta,
                     ...(req.signal ? { signal: req.signal } : {})
                 })
-            }, { priority: 1000 })
-
-            register('read', async (req: ReadRequest, _ctx, _next) => {
-                return await queryViaOps(ctx, req)
-            }, { priority: 1000 })
-
-            register('persist', async (req, _ctx, _next): Promise<PersistResult<any>> => {
-                return await persistViaOps(ctx, req)
             }, { priority: 1000 })
         }
     }

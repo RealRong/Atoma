@@ -1,17 +1,17 @@
 import { withTraceMeta, assertOutgoingRemoteOps, assertRemoteOpResults, wrapProtocolError } from 'atoma-types/protocol-tools'
 import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike, RemoteOpEnvelope, RemoteOpResultEnvelope } from 'atoma-types/client/ops'
 import type { OpsContext } from 'atoma-types/client/plugins'
-import { PluginRegistry } from './PluginRegistry'
+import { OpsHandlerRegistry } from './OpsHandlerRegistry'
 
-export class PluginOpsClient implements OpsClientLike {
-    private readonly pluginRegistry: PluginRegistry
+export class RegistryOpsClient implements OpsClientLike {
+    private readonly opsRegistry: OpsHandlerRegistry
     private readonly clientId: string
 
     constructor(args: {
-        pluginRegistry: PluginRegistry
+        opsRegistry: OpsHandlerRegistry
         clientId: string
     }) {
-        this.pluginRegistry = args.pluginRegistry
+        this.opsRegistry = args.opsRegistry
         this.clientId = args.clientId
     }
 
@@ -29,7 +29,7 @@ export class PluginOpsClient implements OpsClientLike {
         }
         const ctx: OpsContext = { clientId: this.clientId }
 
-        const envelope = assertRemoteOpResultEnvelope(await this.pluginRegistry.executeOps({ req, ctx }))
+        const envelope = assertRemoteOpResultEnvelope(await this.opsRegistry.executeOps({ req, ctx }))
 
         try {
             return {

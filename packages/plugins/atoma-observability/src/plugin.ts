@@ -2,7 +2,6 @@ import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import type { Entity } from 'atoma-types/core'
 import type { RemoteOp } from 'atoma-types/protocol'
 import type {
-    PersistRequest,
     ReadFinishArgs,
     ReadStartArgs,
     WriteCommittedArgs,
@@ -82,25 +81,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         writeContextByAction.delete(key)
     }
 
-    const attachWriteTraceMeta = (req: PersistRequest<any>) => {
-        if (!injectTraceMeta) return
-        const actionId = req.opContext.actionId
-        const entry = writeContextByAction.get(String(actionId))
-        const ctxInstance = entry?.ctx ?? storeObs.createContext(String(req.storeName), { traceId: actionId })
-        const traceId = ctxInstance.traceId
-        if (!traceId) return
-        const requestId = ctxInstance.requestId()
-        for (const entry of req.writeEntries) {
-            applyWriteEntryTraceMeta(entry as any, traceId, requestId)
-        }
-    }
-
-    const attachReadTraceMeta = (ops: RemoteOp[]) => {
-        if (!injectTraceMeta) return
-        if (!Array.isArray(ops) || ops.length === 0) return
-
-        const requestIdByTrace = new Map<string, string>()
-
+    const attachQueryTrace = (ops: RemoteOp[], requestIdByTrace: Map<string, string>) => {
         for (const op of ops) {
             if (!op || typeof op !== 'object') continue
             if (op.kind !== 'query') continue
@@ -126,18 +107,54 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         }
     }
 
+    const attachWriteTrace = (ops: RemoteOp[], requestIdByTrace: Map<string, string>) => {
+        for (const op of ops) {
+            if (!op || typeof op !== 'object') continue
+            if (op.kind !== 'write') continue
+
+            const resource = (op as any)?.write?.resource
+            const entries = Array.isArray((op as any)?.write?.entries)
+                ? ((op as any).write.entries as any[])
+                : []
+            if (!entries.length) continue
+
+            const actionId = entries[0]?.item?.meta?.traceId
+                ?? entries[0]?.item?.meta?.idempotencyKey
+                ?? `w_${String(resource ?? 'unknown')}`
+
+            const writeEntry = writeContextByAction.get(String(actionId))
+            const writeCtx = writeEntry?.ctx ?? storeObs.createContext(String(resource ?? 'unknown'), { traceId: String(actionId) })
+            const traceId = writeCtx.traceId
+            if (!traceId) continue
+
+            let requestId = requestIdByTrace.get(traceId)
+            if (!requestId) {
+                requestId = writeCtx.requestId()
+                requestIdByTrace.set(traceId, requestId)
+            }
+
+            for (const entry of entries) {
+                applyWriteEntryTraceMeta(entry, traceId, requestId)
+            }
+        }
+    }
+
+    const attachOpsTrace = (ops: RemoteOp[]) => {
+        if (!injectTraceMeta) return
+        if (!Array.isArray(ops) || ops.length === 0) return
+
+        const requestIdByTrace = new Map<string, string>()
+        attachQueryTrace(ops, requestIdByTrace)
+        attachWriteTrace(ops, requestIdByTrace)
+    }
+
     return {
         id: 'atoma-observability',
         register: (_ctx: PluginContext, register) => {
             if (!injectTraceMeta) return
 
-            register('ops', async (req, _ctx, next) => {
-                attachReadTraceMeta(req.ops as RemoteOp[])
-                return await next()
-            }, { priority: 100 })
-
-            register('persist', async (req, _ctx, next) => {
-                attachWriteTraceMeta(req as PersistRequest<any>)
+            register(async (req, _ctx, next) => {
+                attachOpsTrace(req.ops as RemoteOp[])
                 return await next()
             }, { priority: 100 })
         },

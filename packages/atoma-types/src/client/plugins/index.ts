@@ -1,17 +1,9 @@
 export type {
     OpsHandler,
-    PersistHandler,
-    ReadHandler,
-    HandlerMap,
-    HandlerName,
-    HandlerEntry,
-    Register,
+    OpsEntry,
+    OpsRegister,
     PluginContext,
     OpsContext,
-    PersistContext,
-    ReadContext,
-    ReadRequest,
-    PluginReadResult,
     ClientPlugin,
     PluginInitResult
 } from './contracts'

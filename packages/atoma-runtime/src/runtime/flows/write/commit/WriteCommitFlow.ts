@@ -10,7 +10,7 @@ import type {
 } from 'atoma-types/protocol'
 import type {
     StoreHandle,
-    WritePolicy
+    Policy
 } from 'atoma-types/runtime'
 import type { WriteCommitRequest, OptimisticState, WritePlan, WritePlanEntry } from '../types'
 
@@ -62,7 +62,7 @@ function applyOptimistically<T extends Entity>(
 function applyOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
     plan: WritePlan<T>
-    writePolicy: WritePolicy
+    writePolicy: Policy
     preserve: (existing: T | undefined, incoming: T) => T
 }): OptimisticState<T> {
     const { handle, plan, writePolicy, preserve } = args
@@ -100,7 +100,7 @@ function rollbackOptimisticState<T extends Entity>(args: {
     }
 }
 
-async function resolveWriteResultFromPersistResults<T extends Entity>(args: {
+async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
     runtime: WriteCommitRequest<T>['runtime']
     handle: WriteCommitRequest<T>['handle']
     plan: WritePlan<T>
@@ -212,7 +212,7 @@ async function runWriteTransaction<T extends Entity>(args: {
         return fallbackPrimaryOutput(primaryPlan)
     }
 
-    const persistResult = await runtime.strategy.persist({
+    const writeResult = await runtime.strategy.write({
         storeName: String(handle.storeName),
         writeStrategy: request.writeStrategy,
         handle,
@@ -220,12 +220,12 @@ async function runWriteTransaction<T extends Entity>(args: {
         writeEntries
     })
 
-    const resolved = (persistResult.results && persistResult.results.length)
-        ? await resolveWriteResultFromPersistResults<T>({
+    const resolved = (writeResult.results && writeResult.results.length)
+        ? await resolveWriteResultFromWriteOutput<T>({
             runtime,
             handle,
             plan,
-            results: persistResult.results,
+            results: writeResult.results,
             primaryPlan
         })
         : {}
@@ -240,7 +240,7 @@ async function runWriteTransaction<T extends Entity>(args: {
 export class WriteCommitFlow {
     execute = async <T extends Entity>(args: WriteCommitRequest<T>): Promise<T | void> => {
         const plan = args.plan
-        const writePolicy = args.runtime.strategy.resolveWritePolicy(args.writeStrategy)
+        const writePolicy = args.runtime.strategy.resolvePolicy(args.writeStrategy)
         const optimisticState = applyOptimisticState({
             handle: args.handle,
             plan,

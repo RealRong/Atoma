@@ -1,31 +1,21 @@
-import type { ClientPlugin, PluginContext, ReadRequest, Register } from 'atoma-types/client/plugins'
-import type { PersistResult } from 'atoma-types/runtime'
-import { persistViaOps, queryViaOps } from 'atoma-backend-shared'
+import type { ClientPlugin, PluginContext, OpsRegister } from 'atoma-types/client/plugins'
 import { MemoryOpsClient } from './ops-client'
 import type { MemoryBackendPluginOptions } from './types'
 
 export function memoryBackendPlugin(options?: MemoryBackendPluginOptions): ClientPlugin {
     return {
         id: 'memory',
-        register: (ctx: PluginContext, register: Register) => {
+        register: (_ctx: PluginContext, register: OpsRegister) => {
             const opsClient = new MemoryOpsClient({
                 ...(options?.seed ? { seed: options.seed } : {})
             })
 
-            register('ops', async (req) => {
+            register(async (req) => {
                 return await opsClient.executeOps({
                     ops: req.ops,
                     meta: req.meta,
                     ...(req.signal ? { signal: req.signal } : {})
                 })
-            }, { priority: 1000 })
-
-            register('read', async (req: ReadRequest) => {
-                return await queryViaOps(ctx, req)
-            }, { priority: 1000 })
-
-            register('persist', async (req, _ctx, _next): Promise<PersistResult<any>> => {
-                return await persistViaOps(ctx, req)
             }, { priority: 1000 })
         }
     }

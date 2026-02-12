@@ -1,5 +1,4 @@
 export type { Runtime } from './runtime'
-export type { Io } from './io'
 export type { StrategyRegistry } from './strategy'
 export type { Read } from './read'
 export type { Transform, TransformPipeline } from './transform'
@@ -31,13 +30,16 @@ export type {
 } from './hooks'
 
 export type {
-    PersistHandler,
-    PersistRequest,
-    PersistResult,
-    PersistStatus,
-    Persistence,
-    StrategyDescriptor,
-    WritePolicy
+    WriteExecutor,
+    WriteInput,
+    WriteOutput,
+    WriteStatus,
+    WritePort,
+    QueryExecutor,
+    QueryInput,
+    QueryOutput,
+    StrategySpec,
+    Policy
 } from './persistence'
 
 export type {

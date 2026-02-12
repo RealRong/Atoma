@@ -1,6 +1,6 @@
 import type { Entity } from 'atoma-types/core'
 import type { AtomaClient, AtomaSchema } from 'atoma-types/client'
-import type { ClientPlugin, PluginContext, PluginInitResult, Register } from 'atoma-types/client/plugins'
+import type { ClientPlugin, PluginContext, PluginInitResult, OpsRegister } from 'atoma-types/client/plugins'
 import { localBackendPlugin } from '../defaults/LocalBackendPlugin'
 
 const LOCAL_BACKEND_PLUGIN_ID = 'defaults:local-backend'
@@ -53,7 +53,7 @@ export function buildPluginList(plugins: ClientPlugin[]): ClientPlugin[] {
 export function registerPluginHandlers(
     plugins: ClientPlugin[],
     ctx: PluginContext,
-    register: Register
+    register: OpsRegister
 ): void {
     for (const plugin of plugins) {
         if (typeof plugin.register !== 'function') continue

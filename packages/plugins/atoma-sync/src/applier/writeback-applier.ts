@@ -36,12 +36,13 @@ export class WritebackApplier implements SyncApplier {
             const handle = this.deps.runtime.stores.resolveHandle(resource as any, 'sync.applyPullChanges')
 
             const upsertsRaw = uniqueUpsertKeys.length
-                ? (await this.deps.runtime.io.query<any>(
+                ? (await this.deps.runtime.strategy.query<any>({
+                    storeName: String(handle.storeName),
                     handle,
-                    {
+                    query: {
                         filter: { op: 'in', field: 'id', values: uniqueUpsertKeys }
-                    } as any
-                )).data.filter((i: any): i is any => i !== undefined)
+                    },
+                })).data.filter((i: any): i is any => i !== undefined)
                 : []
 
             const processed = await Promise.all(

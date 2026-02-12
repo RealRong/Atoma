@@ -2,7 +2,6 @@ import type { StoreToken } from '../core'
 import type { Engine } from './engine/api'
 import type { Debug } from './debug'
 import type { HookRegistry } from './hooks'
-import type { Io } from './io'
 import type { Read } from './read'
 import type { StoreCatalog } from './storeCatalog'
 import type { StrategyRegistry } from './strategy'
@@ -15,7 +14,6 @@ export type Runtime = Readonly<{
     nextOpId: (storeName: StoreToken, prefix: 'q' | 'w') => string
     stores: StoreCatalog
     hooks: HookRegistry
-    io: Io
     read: Read
     write: Write
     strategy: StrategyRegistry
