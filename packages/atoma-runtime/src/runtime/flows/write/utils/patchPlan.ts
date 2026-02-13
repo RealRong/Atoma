@@ -1,8 +1,7 @@
 import { applyPatches, type Patch } from 'immer'
-import { requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
+import { createIdempotencyKey, ensureWriteItemMeta, requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
 import type { Entity, OperationContext } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
-import { createIdempotencyKey, ensureWriteItemMeta } from 'atoma-types/protocol-tools'
+import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 import type { WritePlan, WritePlanEntry } from '../types'
 

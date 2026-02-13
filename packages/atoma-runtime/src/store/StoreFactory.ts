@@ -10,7 +10,7 @@ import type {
 } from 'atoma-types/core'
 import { compileRelationsMap } from 'atoma-core/relations'
 import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
-import type { EntityId } from 'atoma-types/protocol'
+import type { EntityId } from 'atoma-types/shared'
 import type { Runtime } from 'atoma-types/runtime'
 import type { Schema, StoreSchema, StoreHandle } from 'atoma-types/runtime'
 import { SimpleStoreState } from './StoreState'
@@ -82,6 +82,7 @@ export class StoreFactory {
             storeName: name,
             config: {
                 defaultWriteStrategy: storeSchema.write?.strategy,
+                getAllMergePolicy: storeSchema.read?.getAllMergePolicy,
                 hooks: storeSchema.hooks,
                 idGenerator,
                 dataProcessor

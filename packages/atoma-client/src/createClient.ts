@@ -28,9 +28,17 @@ export function createClient<
     const input = (typeof options === 'object' && options !== null ? options : {}) as {
         schema?: unknown
         plugins?: unknown
+        execution?: {
+            defaultStrategy?: unknown
+        }
     }
     const schema = (input.schema ?? {}) as Schema
     const rawPlugins = Array.isArray(input.plugins) ? input.plugins : []
+    const defaultExecutionStrategy = (
+        typeof input.execution?.defaultStrategy === 'string' && input.execution.defaultStrategy.trim()
+            ? input.execution.defaultStrategy.trim()
+            : 'direct'
+    )
 
     const capabilities = new CapabilitiesRegistry()
     const runtime = new Runtime({
@@ -54,7 +62,11 @@ export function createClient<
     const disposers: Array<() => void> = []
     disposers.push(...installDebugIntegration({ capabilities, runtime }))
     disposers.push(plugins.dispose)
-    disposers.push(installDirectStrategy({ runtime, pipeline }))
+    disposers.push(installDirectStrategy({
+        runtime,
+        operation,
+        defaultStrategy: defaultExecutionStrategy
+    }))
 
     let disposed = false
     const dispose = () => {

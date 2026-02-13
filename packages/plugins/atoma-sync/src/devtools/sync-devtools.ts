@@ -16,6 +16,12 @@ export class SyncDevtools {
         this.lastEventAt = this.deps.now()
         if ((e as any)?.type === 'outbox:queue') this.lastOutboxStats = (e as any).stats
         if ((e as any)?.type === 'outbox:queue_full') this.lastOutboxStats = (e as any).stats
+        if ((e as any)?.type === 'outbox:enqueue_failed') {
+            const payload = e as Extract<SyncEvent, { type: 'outbox:enqueue_failed' }>
+            this.lastError = payload.error?.message
+                ? `[outbox] ${payload.error.message}`
+                : '[outbox] enqueue failed'
+        }
         if ((e as any)?.type === 'lifecycle:started') this.started = true
         if ((e as any)?.type === 'lifecycle:stopped') this.started = false
 
@@ -53,4 +59,3 @@ export class SyncDevtools {
         }
     }
 }
-

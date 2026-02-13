@@ -156,7 +156,12 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
         return engine
     }
 
-    const syncWrites = new SyncWrites({ runtime, outbox: stores.outbox })
+    const syncWrites = new SyncWrites({
+        runtime,
+        outbox: stores.outbox,
+        onEvent,
+        onError
+    })
 
     const sync = {
         start: (m?: SyncMode) => {

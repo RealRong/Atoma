@@ -13,6 +13,7 @@ type IdState = {
 }
 
 const ID_STATE_KEY = Symbol.for('atoma.shared.id.state')
+const IDEMPOTENCY_PREFIX = 'i'
 const DEFAULT_PREFIX_BY_KIND: Readonly<Record<IdKind, string>> = {
     action: 'a',
     entity: 'e',
@@ -100,4 +101,13 @@ export function createEntityId(now?: () => number): string {
 
 export function createActionId(now?: () => number): string {
     return createId({ kind: 'action', now })
+}
+
+export function createIdempotencyKey(args?: { now?: () => number }): string {
+    return createId({
+        kind: 'request',
+        sortable: true,
+        prefix: IDEMPOTENCY_PREFIX,
+        now: args?.now
+    })
 }

@@ -1,5 +1,5 @@
 import type { Entity } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { EntityId } from 'atoma-types/shared'
 import type { Patch } from 'immer'
 
 export type WritePatchPayload = { patches: Patch[]; inversePatches: Patch[] } | null

@@ -53,14 +53,17 @@ export type PluginRuntime = Readonly<{
             versionUpdates?: Array<{ key: string; version: number }>
         }) => Promise<void>
     }>
-    strategy: Readonly<{
-        register: Runtime['strategy']['register']
+    execution: Readonly<{
+        register: Runtime['execution']['register']
+        setDefault: Runtime['execution']['setDefault']
+        resolvePolicy: Runtime['execution']['resolvePolicy']
+        subscribe: Runtime['execution']['subscribe']
         query: <T extends Entity>(args: {
             storeName: StoreToken
             query: Query<T>
             signal?: AbortSignal
         }) => Promise<QueryOutput>
-        write: Runtime['strategy']['write']
+        write: Runtime['execution']['write']
     }>
 }>
 

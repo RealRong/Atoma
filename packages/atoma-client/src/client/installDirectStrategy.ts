@@ -1,137 +1,59 @@
-import type { Entity } from 'atoma-types/core'
-import { assertQueryResultData, assertWriteResultData, buildQueryOp, buildWriteOp, createOpId } from 'atoma-types/protocol-tools'
-import type { WriteEntry, WriteItemResult } from 'atoma-types/protocol'
-import type { QueryInput, QueryOutput, WriteInput, WriteOutput } from 'atoma-types/runtime'
-import { Runtime } from 'atoma-runtime'
-import { OperationPipeline } from '../plugins/OperationPipeline'
+import type { Entity, WriteStrategy } from 'atoma-types/core'
+import type { OperationClient } from 'atoma-types/client/ops'
+import type { QueryInput, QueryOutput, RuntimeWriteEntry, RuntimeWriteItemResult, WriteInput, WriteOutput } from 'atoma-types/runtime'
+import type { Runtime } from 'atoma-runtime'
+import { createOperationExecutionSpec } from './adapters/operationExecutionAdapter'
 
-type EntryGroup = {
-    entries: WriteEntry[]
-}
-
-function optionsKey(options: WriteEntry['options']): string {
-    if (!options || typeof options !== 'object') return ''
-    return JSON.stringify(options)
-}
-
-function groupWriteEntries(entries: ReadonlyArray<WriteEntry>): EntryGroup[] {
-    const groupsByKey = new Map<string, EntryGroup>()
-    const groups: EntryGroup[] = []
+function toLocalWriteResults(entries: ReadonlyArray<RuntimeWriteEntry>): RuntimeWriteItemResult[] {
+    const results: RuntimeWriteItemResult[] = []
 
     for (const entry of entries) {
-        const key = `${entry.action}::${optionsKey(entry.options)}`
-        const existing = groupsByKey.get(key)
-        if (existing) {
-            existing.entries.push(entry)
-            continue
-        }
-
-        const group: EntryGroup = {
-            entries: [entry]
-        }
-        groupsByKey.set(key, group)
-        groups.push(group)
+        const rawEntityId = (entry.item as { entityId?: unknown })?.entityId
+        const rawBaseVersion = (entry.item as { baseVersion?: unknown })?.baseVersion
+        const entityId = (
+            typeof rawEntityId === 'string' && rawEntityId.length
+                ? rawEntityId
+                : entry.entryId
+        )
+        const version = (
+            typeof rawBaseVersion === 'number' && Number.isFinite(rawBaseVersion) && rawBaseVersion > 0
+                ? rawBaseVersion + 1
+                : 1
+        )
+        results.push({
+            entryId: entry.entryId,
+            ok: true,
+            entityId,
+            version
+        })
     }
 
-    return groups
+    return results
 }
 
 export function installDirectStrategy({
     runtime,
-    pipeline
+    operation,
+    defaultStrategy = 'direct'
 }: {
     runtime: Runtime
-    pipeline: OperationPipeline
+    operation: OperationClient
+    defaultStrategy?: WriteStrategy
 }): () => void {
-    const unregister = runtime.strategy.register('direct', {
+    const unregisterDirect = runtime.execution.register('direct', {
         query: async <T extends Entity>(input: QueryInput<T>): Promise<QueryOutput> => {
-            const opId = createOpId('q', { now: runtime.now })
-            const envelope = await pipeline.executeOperations({
-                req: {
-                    ops: [buildQueryOp({
-                        opId,
-                        resource: input.storeName,
-                        query: input.query
-                    })],
-                    meta: {
-                        v: 1,
-                        clientTimeMs: runtime.now(),
-                        requestId: opId,
-                        traceId: opId
-                    },
-                    ...(input.signal ? { signal: input.signal } : {})
-                },
-                ctx: {
-                    clientId: runtime.id
-                }
+            const local = runtime.engine.query.evaluate({
+                state: input.handle.state,
+                query: input.query
             })
 
-            const result = envelope.results[0]
-            if (!result) {
-                throw new Error('[Atoma] direct.query: missing query result')
-            }
-
-            if (!result.ok) {
-                throw new Error(result.error.message || '[Atoma] direct.query failed')
-            }
-
-            const parsed = assertQueryResultData(result.data)
             return {
-                data: parsed.data,
-                ...(parsed.pageInfo !== undefined ? { pageInfo: parsed.pageInfo } : {})
+                data: local.data,
+                ...(local.pageInfo !== undefined ? { pageInfo: local.pageInfo } : {})
             }
         },
         write: async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
-            if (!input.writeEntries.length) {
-                return { status: 'confirmed' }
-            }
-
-            const groups = groupWriteEntries(input.writeEntries)
-            const envelope = await pipeline.executeOperations({
-                req: {
-                    ops: groups.map(group => buildWriteOp({
-                        opId: createOpId('w', { now: runtime.now }),
-                        write: {
-                            resource: input.storeName,
-                            entries: group.entries
-                        }
-                    })),
-                    meta: {
-                        v: 1,
-                        clientTimeMs: input.opContext.timestamp,
-                        requestId: input.opContext.actionId,
-                        traceId: input.opContext.actionId
-                    },
-                    ...(input.signal ? { signal: input.signal } : {})
-                },
-                ctx: {
-                    clientId: runtime.id
-                }
-            })
-
-            const results: WriteItemResult[] = []
-            for (let index = 0; index < groups.length; index++) {
-                const group = groups[index]
-                const result = envelope.results[index]
-                if (!result) {
-                    throw new Error('[Atoma] direct.write: missing write result')
-                }
-
-                if (!result.ok) {
-                    for (const entry of group.entries) {
-                        results.push({
-                            entryId: entry.entryId,
-                            ok: false,
-                            error: result.error
-                        })
-                    }
-                    continue
-                }
-
-                const parsed = assertWriteResultData(result.data)
-                results.push(...parsed.results)
-            }
-
+            const results = toLocalWriteResults(input.writeEntries)
             return {
                 status: 'confirmed',
                 ...(results.length ? { results } : {})
@@ -139,10 +61,16 @@ export function installDirectStrategy({
         }
     })
 
-    const restoreDefault = runtime.strategy.setDefault('direct')
+    const unregisterOperation = runtime.execution.register(
+        'operation',
+        createOperationExecutionSpec({ runtime, operation })
+    )
+
+    const restoreDefault = runtime.execution.setDefault(defaultStrategy)
 
     return () => {
         restoreDefault()
-        unregister()
+        unregisterOperation()
+        unregisterDirect()
     }
 }

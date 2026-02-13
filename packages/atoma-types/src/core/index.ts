@@ -58,6 +58,7 @@ export type {
 
 export type {
     UpsertMode,
+    GetAllMergePolicy,
     UpsertWriteOptions,
     WriteManyItemOk,
     WriteManyItemErr,

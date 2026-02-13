@@ -6,6 +6,7 @@ import type { StoreDataProcessor } from './processor'
 import type { Query, QueryOneResult, QueryResult } from './query'
 
 export type UpsertMode = 'strict' | 'loose'
+export type GetAllMergePolicy = 'replace' | 'upsert-only' | 'preserve-missing'
 
 export type UpsertWriteOptions = {
     mode?: UpsertMode
@@ -68,6 +69,9 @@ export interface StoreConfig<T> {
     hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>
     storeName?: StoreToken
+    read?: Readonly<{
+        getAllMergePolicy?: GetAllMergePolicy
+    }>
     write?: Readonly<{
         strategy?: WriteStrategy
     }>

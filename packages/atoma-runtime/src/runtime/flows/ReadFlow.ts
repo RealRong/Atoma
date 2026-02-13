@@ -1,5 +1,11 @@
-import type { Entity, Query as StoreQuery, QueryOneResult, QueryResult } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type {
+    Entity,
+    GetAllMergePolicy,
+    Query as StoreQuery,
+    QueryOneResult,
+    QueryResult
+} from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/shared'
 import { toErrorWithFallback as toError } from 'atoma-shared'
 import type { Runtime, Read, StoreHandle } from 'atoma-types/runtime'
 
@@ -38,6 +44,14 @@ export class ReadFlow implements Read {
         return result.items
     }
 
+    private resolveGetAllMergePolicy = <T extends Entity>(handle: StoreHandle<T>): GetAllMergePolicy => {
+        const policy = handle.config.getAllMergePolicy
+        if (policy === 'replace' || policy === 'upsert-only' || policy === 'preserve-missing') {
+            return policy
+        }
+        return 'replace'
+    }
+
     query = async <T extends Entity>(handle: StoreHandle<T>, input: StoreQuery<T>): Promise<QueryResult<T>> => {
         const runtime = this.runtime
         const { state } = handle
@@ -61,7 +75,7 @@ export class ReadFlow implements Read {
 
         try {
             const startedAt = runtime.now()
-            const { data, pageInfo } = await runtime.strategy.query({
+            const { data, pageInfo } = await runtime.execution.query({
                 storeName: String(handle.storeName),
                 handle,
                 query: input
@@ -120,7 +134,7 @@ export class ReadFlow implements Read {
         }
 
         if (missingUnique.length) {
-            const { data } = await this.runtime.strategy.query({
+            const { data } = await this.runtime.execution.query({
                 storeName: String(handle.storeName),
                 handle,
                 query: {
@@ -170,7 +184,7 @@ export class ReadFlow implements Read {
     }
 
     fetchOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId): Promise<T | undefined> => {
-        const { data } = await this.runtime.strategy.query({
+        const { data } = await this.runtime.execution.query({
             storeName: String(handle.storeName),
             handle,
             query: {
@@ -184,7 +198,7 @@ export class ReadFlow implements Read {
     }
 
     fetchAll = async <T extends Entity>(handle: StoreHandle<T>): Promise<T[]> => {
-        const { data } = await this.runtime.strategy.query({
+        const { data } = await this.runtime.execution.query({
             storeName: String(handle.storeName),
             handle,
             query: {}
@@ -198,13 +212,15 @@ export class ReadFlow implements Read {
         cacheFilter?: (item: T) => boolean
     ): Promise<T[]> => {
         const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
-        const { data } = await this.runtime.strategy.query({
+        const mergePolicy = this.resolveGetAllMergePolicy(handle)
+        const { data } = await this.runtime.execution.query({
             storeName: String(handle.storeName),
             handle,
             query: {}
         })
         const fetched = Array.isArray(data) ? data : []
         const output: T[] = []
+        const nonCachedOutput: T[] = []
         const itemsToCache: T[] = []
         const incomingIds = new Set<EntityId>()
 
@@ -219,6 +235,7 @@ export class ReadFlow implements Read {
             const shouldCache = cacheFilter ? cacheFilter(processed) : true
             if (!shouldCache) {
                 output.push(processed)
+                nonCachedOutput.push(processed)
                 continue
             }
 
@@ -228,17 +245,35 @@ export class ReadFlow implements Read {
             output.push(preserved)
         }
 
-        const toRemove: EntityId[] = []
-        existingMap.forEach((_value, id) => {
-            if (!incomingIds.has(id)) toRemove.push(id)
-        })
+        let next = existingMap
+        if (mergePolicy === 'replace') {
+            const toRemove: EntityId[] = []
+            existingMap.forEach((_value, id) => {
+                if (!incomingIds.has(id)) toRemove.push(id)
+            })
+            next = this.runtime.engine.mutation.removeMany(toRemove, existingMap)
+        }
 
-        const withRemovals = this.runtime.engine.mutation.removeMany(toRemove, existingMap)
-        const next = itemsToCache.length
-            ? this.runtime.engine.mutation.addMany(itemsToCache, withRemovals)
-            : withRemovals
+        if (itemsToCache.length) {
+            next = this.runtime.engine.mutation.addMany(itemsToCache, next)
+        }
 
-        handle.state.commit({ before: existingMap, after: next })
+        if (next !== existingMap) {
+            handle.state.commit({ before: existingMap, after: next })
+        }
+
+        if (mergePolicy === 'preserve-missing') {
+            const mergedById = new Map<EntityId, T>()
+            next.forEach((item, id) => {
+                if (filter && !filter(item)) return
+                mergedById.set(id, item)
+            })
+            for (const item of nonCachedOutput) {
+                mergedById.set(item.id, item)
+            }
+            return Array.from(mergedById.values())
+        }
+
         return output
     }
 }

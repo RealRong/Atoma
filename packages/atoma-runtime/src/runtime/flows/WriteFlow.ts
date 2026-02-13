@@ -7,7 +7,7 @@ import type {
     UpsertWriteOptions,
     WriteManyResult
 } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Write, WriteHookSource, StoreHandle } from 'atoma-types/runtime'
 import { WriteCommitFlow } from './write/commit/WriteCommitFlow'
 import { WriteEntryFactory } from './write/services/WriteEntryFactory'
@@ -60,12 +60,15 @@ export class WriteFlow implements Write {
     }): Promise<T | void> => {
         const { handle, opContext, plan, source, patchPayload } = args
         const hooks = this.runtime.hooks
+        const writeEntries = plan.map(planEntry => planEntry.entry)
 
         hooks.emit.writeStart({
             handle,
             opContext,
             entryCount: plan.length,
-            source
+            source,
+            writeStrategy: args.writeStrategy,
+            writeEntries
         })
 
         try {
@@ -88,7 +91,13 @@ export class WriteFlow implements Write {
             }
 
             const finalValue = committed ?? args.output
-            hooks.emit.writeCommitted({ handle, opContext, result: finalValue })
+            hooks.emit.writeCommitted({
+                handle,
+                opContext,
+                writeStrategy: args.writeStrategy,
+                writeEntries,
+                result: finalValue
+            })
 
             if (args.afterSaveAction && args.output) {
                 await runAfterSave(handle.config.hooks, args.output, args.afterSaveAction)
@@ -96,7 +105,13 @@ export class WriteFlow implements Write {
 
             return finalValue
         } catch (error) {
-            hooks.emit.writeFailed({ handle, opContext, error })
+            hooks.emit.writeFailed({
+                handle,
+                opContext,
+                writeStrategy: args.writeStrategy,
+                writeEntries,
+                error
+            })
             throw error
         }
     }

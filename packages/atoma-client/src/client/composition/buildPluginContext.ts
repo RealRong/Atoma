@@ -62,22 +62,25 @@ export function buildPluginContext({
                 } as any)
             }
         },
-        strategy: {
-            register: (key, spec) => runtime.strategy.register(key, spec),
+        execution: {
+            register: (key, spec) => runtime.execution.register(key, spec),
+            setDefault: (key) => runtime.execution.setDefault(key),
+            resolvePolicy: (key) => runtime.execution.resolvePolicy(key),
+            subscribe: (listener) => runtime.execution.subscribe(listener),
             query: async <T extends Entity>(input: {
                 storeName: StoreToken
                 query: Query<T>
                 signal?: AbortSignal
             }) => {
-                const handle = runtime.stores.resolveHandle(input.storeName, 'plugin.runtime.strategy.query')
-                return await runtime.strategy.query<T>({
+                const handle = runtime.stores.resolveHandle(input.storeName, 'plugin.runtime.execution.query')
+                return await runtime.execution.query<T>({
                     storeName: input.storeName,
                     handle: handle as any,
                     query: input.query,
                     ...(input.signal ? { signal: input.signal } : {})
                 })
             },
-            write: (input) => runtime.strategy.write(input)
+            write: (input) => runtime.execution.write(input)
         }
     }
 

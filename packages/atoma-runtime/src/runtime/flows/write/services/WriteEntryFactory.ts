@@ -6,10 +6,13 @@ import type {
     StoreOperationOptions,
     UpsertWriteOptions,
 } from 'atoma-types/core'
-import type { EntityId, WriteItemMeta, WriteOptions } from 'atoma-types/protocol'
-import { createIdempotencyKey, ensureWriteItemMeta } from 'atoma-types/protocol-tools'
+import type {
+    RuntimeWriteItemMeta,
+    RuntimeWriteOptions,
+} from 'atoma-types/runtime'
+import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
-import { requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
+import { createIdempotencyKey, ensureWriteItemMeta, requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
 import type { WritePlanEntry } from '../types'
 import {
     prepareCreateInput,
@@ -18,10 +21,10 @@ import {
     runBeforeSave
 } from '../utils/prepareWriteInput'
 
-function buildUpsertWriteOptions(options?: UpsertWriteOptions): WriteOptions | undefined {
+function buildUpsertWriteOptions(options?: UpsertWriteOptions): RuntimeWriteOptions | undefined {
     if (!options) return undefined
 
-    const out: WriteOptions = {}
+    const out: RuntimeWriteOptions = {}
     if (typeof options.merge === 'boolean') out.merge = options.merge
     if (options.mode === 'strict' || options.mode === 'loose') {
         out.upsert = { mode: options.mode }
@@ -223,7 +226,7 @@ export class WriteEntryFactory {
         }
     }
 
-    private createWriteItemMeta = (): WriteItemMeta => {
+    private createWriteItemMeta = (): RuntimeWriteItemMeta => {
         const now = this.runtime.now
         return ensureWriteItemMeta({
             meta: {

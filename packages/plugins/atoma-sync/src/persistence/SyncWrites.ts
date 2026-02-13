@@ -1,13 +1,16 @@
-import type { Entity } from 'atoma-types/core'
 import type { PluginRuntime } from 'atoma-types/client/plugins'
-import type { WriteInput, WriteOutput } from 'atoma-types/runtime'
-import type { OutboxStore, OutboxWrite } from 'atoma-types/sync'
+import type { RuntimeWriteEntry, RuntimeWriteItemResult, WriteOutput } from 'atoma-types/runtime'
+import type { OutboxStore, OutboxWrite, SyncEvent, SyncPhase } from 'atoma-types/sync'
+import { toError } from '#sync/internal'
 
-function mapWriteEntriesToOutboxWrites(input: WriteInput<any>): OutboxWrite[] {
+function mapWriteEntriesToOutboxWrites(args: {
+    storeName: string
+    writeEntries: ReadonlyArray<RuntimeWriteEntry>
+}): OutboxWrite[] {
     const out: OutboxWrite[] = []
-    const resource = String(input.storeName)
+    const resource = String(args.storeName)
 
-    for (const entry of input.writeEntries) {
+    for (const entry of args.writeEntries) {
         const action = entry?.action
         const item = entry?.item
         const options = (entry?.options && typeof entry.options === 'object') ? entry.options : undefined
@@ -40,18 +43,16 @@ function mapWriteEntriesToOutboxWrites(input: WriteInput<any>): OutboxWrite[] {
     return out
 }
 
-function asDirectWrite<T extends Entity>(input: WriteInput<T>): WriteInput<T> {
-    return {
-        ...input,
-        writeStrategy: 'direct'
-    }
-}
-
 export class SyncWrites {
     private readonly unregister: Array<() => void> = []
     private disposed = false
 
-    constructor(private readonly deps: { runtime: PluginRuntime; outbox: OutboxStore }) {
+    constructor(private readonly deps: {
+        runtime: PluginRuntime
+        outbox: OutboxStore
+        onEvent?: (event: SyncEvent) => void
+        onError?: (error: Error, context: { phase: SyncPhase }) => void
+    }) {
         this.register()
     }
 
@@ -71,26 +72,85 @@ export class SyncWrites {
     private register() {
         const { runtime, outbox } = this.deps
 
-        this.unregister.push(runtime.strategy.register('queue', {
-            policy: { implicitFetch: false },
-            write: async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
-                const writes = mapWriteEntriesToOutboxWrites(input)
-                if (writes.length) await outbox.enqueueWrites({ writes })
-                return { status: 'enqueued' }
-            }
-        }))
+        this.unregister.push(runtime.execution.subscribe((event) => {
+            if (event.type !== 'write.succeeded') return
+            if (event.strategy === 'operation') return
+            if (event.output.status === 'enqueued') return
 
-        this.unregister.push(runtime.strategy.register('local-first', {
-            policy: { implicitFetch: true },
-            write: async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
-                const direct = await runtime.strategy.write(asDirectWrite(input))
-                const writes = mapWriteEntriesToOutboxWrites(input)
-                if (writes.length) await outbox.enqueueWrites({ writes })
-                return {
-                    status: 'enqueued',
-                    ...(direct.results ? { results: direct.results } : {})
-                }
+            const writeEntries = filterWriteEntriesByResults({
+                status: event.output.status,
+                writeEntries: event.input.writeEntries,
+                results: event.output.results
+            })
+            if (!writeEntries.length) return
+
+            const resource = String(event.input.storeName)
+            const strategy = String(event.strategy)
+
+            let writes: OutboxWrite[]
+            try {
+                writes = mapWriteEntriesToOutboxWrites({
+                    storeName: resource,
+                    writeEntries
+                })
+            } catch (error) {
+                this.reportEnqueueFailure({
+                    resource,
+                    strategy,
+                    count: writeEntries.length,
+                    error
+                })
+                return
             }
+            if (!writes.length) return
+
+            void outbox.enqueueWrites({ writes }).catch((error) => {
+                this.reportEnqueueFailure({
+                    resource,
+                    strategy,
+                    count: writes.length,
+                    error
+                })
+            })
         }))
     }
+
+    private reportEnqueueFailure(args: {
+        resource: string
+        strategy: string
+        count: number
+        error: unknown
+    }) {
+        const error = toError(args.error)
+        this.deps.onEvent?.({
+            type: 'outbox:enqueue_failed',
+            resource: args.resource,
+            strategy: args.strategy,
+            count: args.count,
+            error
+        })
+        this.deps.onError?.(error, { phase: 'outbox' })
+    }
+}
+
+function filterWriteEntriesByResults(args: {
+    status: WriteOutput<any>['status']
+    writeEntries: ReadonlyArray<RuntimeWriteEntry>
+    results?: ReadonlyArray<RuntimeWriteItemResult>
+}): RuntimeWriteEntry[] {
+    if (!args.results || !args.results.length) {
+        if (args.status === 'rejected' || args.status === 'partial' || args.status === 'enqueued') {
+            return []
+        }
+        return [...args.writeEntries]
+    }
+
+    const okEntryIds = new Set(
+        args.results
+            .filter(result => result.ok)
+            .map(result => result.entryId)
+    )
+
+    if (!okEntryIds.size) return []
+    return args.writeEntries.filter(entry => okEntryIds.has(entry.entryId))
 }

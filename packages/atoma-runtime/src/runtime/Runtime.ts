@@ -1,18 +1,18 @@
 /**
  * Runtime: Unified entrypoint for read/write flows.
- * - Owns all subsystems (strategy, transform, stores).
+ * - Owns all subsystems (execution, transform, stores).
  * - Exposes runtime.read/runtime.write as the only flow entrypoints.
  */
 import type { Entity, StoreDataProcessor } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { EntityId } from 'atoma-types/shared'
 import type {
     Runtime as RuntimeType,
     Debug,
+    ExecutionRegistry as ExecutionRegistryType,
     Engine as EngineType,
     HookRegistry as HookRegistryType,
     Read,
     Schema,
-    StrategyRegistry as StrategyRegistryType,
     Transform,
     Write,
     StoreCatalog
@@ -20,7 +20,7 @@ import type {
 import { TransformPipeline } from './transform'
 import { Stores } from '../store/Stores'
 import { HookRegistry } from './registry/HookRegistry'
-import { StrategyRegistry } from './registry/StrategyRegistry'
+import { ExecutionRegistry } from './registry/ExecutionRegistry'
 import { ReadFlow } from './flows/ReadFlow'
 import { WriteFlow } from './flows/WriteFlow'
 import { Engine } from '../engine'
@@ -36,7 +36,7 @@ export interface Options {
     defaults?: {
         idGenerator?: () => EntityId
     }
-    strategy?: StrategyRegistryType
+    execution?: ExecutionRegistryType
     now?: () => number
     hooks?: HookRegistryType
     engine?: EngineType
@@ -46,7 +46,7 @@ export class Runtime implements RuntimeType {
     readonly id: string
     readonly now: () => number
     readonly nextOpId: RuntimeType['nextOpId']
-    readonly strategy: StrategyRegistryType
+    readonly execution: ExecutionRegistryType
     readonly transform: Transform
     readonly stores: StoreCatalog
     readonly read: Read
@@ -68,7 +68,7 @@ export class Runtime implements RuntimeType {
 
         this.engine = config.engine ?? new Engine()
         this.transform = new TransformPipeline(this)
-        this.strategy = config.strategy ?? new StrategyRegistry()
+        this.execution = config.execution ?? new ExecutionRegistry()
         this.hooks = config.hooks ?? new HookRegistry()
 
         this.stores = new Stores(this, {

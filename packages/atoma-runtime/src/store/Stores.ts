@@ -1,5 +1,5 @@
 import type { Entity, Store, StoreDataProcessor, StoreToken } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Schema, StoreHandle, StoreCatalog } from 'atoma-types/runtime'
 import { StoreFactory, type StoreEngine, type StoreFacade } from './StoreFactory'
 

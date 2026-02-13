@@ -1,5 +1,19 @@
 import { assertRemoteOpResults, createOpId, buildWriteOp, buildChangesPullOp, assertWriteResultData } from 'atoma-types/protocol-tools'
-import type { Meta, RemoteOp, RemoteOpResult, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
+import type {
+    Meta,
+    RemoteOp,
+    RemoteOpResult,
+    WriteEntry as ProtocolWriteEntry,
+    WriteItemResult as ProtocolWriteItemResult,
+    WriteResultData
+} from 'atoma-types/protocol'
+import type {
+    RuntimeWriteEntry,
+    RuntimeWriteError,
+    RuntimeWriteItemMeta,
+    RuntimeWriteItemResult,
+    RuntimeWriteOptions
+} from 'atoma-types/runtime'
 import type { SyncOutboxItem, SyncPushOutcome, SyncTransport } from 'atoma-types/sync'
 
 type ExecuteOperations = (input: {
@@ -7,6 +21,126 @@ type ExecuteOperations = (input: {
     meta: Meta
     signal?: AbortSignal
 }) => Promise<{ results: RemoteOpResult[]; status?: number }>
+
+function toProtocolWriteItemMeta(meta: RuntimeWriteItemMeta | undefined): ProtocolWriteEntry['item']['meta'] {
+    if (!meta || typeof meta !== 'object') return undefined
+    return {
+        ...meta
+    }
+}
+
+function toProtocolWriteOptions(options: RuntimeWriteOptions | undefined): ProtocolWriteEntry['options'] {
+    if (!options || typeof options !== 'object') return undefined
+    return {
+        ...(typeof options.returning === 'boolean' ? { returning: options.returning } : {}),
+        ...(options.select && typeof options.select === 'object' ? { select: options.select } : {}),
+        ...(typeof options.merge === 'boolean' ? { merge: options.merge } : {}),
+        ...(options.upsert && typeof options.upsert === 'object' ? { upsert: { ...options.upsert } } : {})
+    }
+}
+
+function toProtocolWriteEntry(entry: RuntimeWriteEntry): ProtocolWriteEntry {
+    const options = toProtocolWriteOptions(entry.options)
+
+    if (entry.action === 'create') {
+        return {
+            entryId: entry.entryId,
+            action: 'create',
+            item: {
+                ...(entry.item.entityId ? { entityId: entry.item.entityId } : {}),
+                value: entry.item.value,
+                ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
+            },
+            ...(options ? { options } : {})
+        }
+    }
+
+    if (entry.action === 'update') {
+        return {
+            entryId: entry.entryId,
+            action: 'update',
+            item: {
+                entityId: entry.item.entityId,
+                baseVersion: entry.item.baseVersion,
+                value: entry.item.value,
+                ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
+            },
+            ...(options ? { options } : {})
+        }
+    }
+
+    if (entry.action === 'upsert') {
+        return {
+            entryId: entry.entryId,
+            action: 'upsert',
+            item: {
+                entityId: entry.item.entityId,
+                ...(typeof entry.item.baseVersion === 'number' ? { baseVersion: entry.item.baseVersion } : {}),
+                value: entry.item.value,
+                ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
+            },
+            ...(options ? { options } : {})
+        }
+    }
+
+    return {
+        entryId: entry.entryId,
+        action: 'delete',
+        item: {
+            entityId: entry.item.entityId,
+            baseVersion: entry.item.baseVersion,
+            ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
+        },
+        ...(options ? { options } : {})
+    }
+}
+
+function toRuntimeWriteError(error: unknown, fallbackMessage = 'Write failed'): RuntimeWriteError {
+    const raw = (error && typeof error === 'object') ? (error as Record<string, unknown>) : {}
+    const code = (typeof raw.code === 'string' && raw.code) ? raw.code : 'WRITE_FAILED'
+    const message = (typeof raw.message === 'string' && raw.message) ? raw.message : fallbackMessage
+    const kind = (typeof raw.kind === 'string' && raw.kind) ? raw.kind : 'internal'
+    const retryable = (typeof raw.retryable === 'boolean') ? raw.retryable : undefined
+    const details = (raw.details && typeof raw.details === 'object')
+        ? (raw.details as Record<string, unknown>)
+        : undefined
+    const cause = raw.cause ? toRuntimeWriteError(raw.cause, fallbackMessage) : undefined
+
+    return {
+        code,
+        message,
+        kind,
+        ...(retryable !== undefined ? { retryable } : {}),
+        ...(details ? { details } : {}),
+        ...(cause ? { cause } : {})
+    }
+}
+
+function toRuntimeWriteItemResult(itemResult: ProtocolWriteItemResult): RuntimeWriteItemResult {
+    if (itemResult.ok) {
+        return {
+            entryId: itemResult.entryId,
+            ok: true,
+            entityId: itemResult.entityId,
+            version: itemResult.version,
+            ...(itemResult.data !== undefined ? { data: itemResult.data } : {})
+        }
+    }
+
+    return {
+        entryId: itemResult.entryId,
+        ok: false,
+        error: toRuntimeWriteError(itemResult.error),
+        ...(itemResult.current
+            ? {
+                current: {
+                    ...(itemResult.current.value !== undefined ? { value: itemResult.current.value } : {}),
+                    ...(typeof itemResult.current.version === 'number' ? { version: itemResult.current.version } : {})
+                }
+            }
+            : {})
+    }
+}
 
 export function createOperationSyncDriver(args: {
     executeOperations: ExecuteOperations
@@ -83,8 +217,8 @@ export function createOperationSyncDriver(args: {
                     write: {
                         resource: group.resource,
                         entries: group.entries.map(e => {
-                            const raw = e.entry.entry as any
-                            const baseOptions = (raw?.options && typeof raw.options === 'object') ? raw.options : undefined
+                            const raw = toProtocolWriteEntry(e.entry.entry)
+                            const baseOptions = (raw.options && typeof raw.options === 'object') ? raw.options : undefined
                             const options = {
                                 ...(baseOptions ? baseOptions : {}),
                                 returning: input.returning
@@ -124,7 +258,10 @@ export function createOperationSyncDriver(args: {
                             result: {
                                 entryId: typeof entryId === 'string' && entryId ? entryId : 'missing',
                                 ok: false,
-                                error: { code: 'WRITE_FAILED', message: 'Missing write result', kind: 'internal' as const }
+                                error: toRuntimeWriteError(
+                                    { code: 'WRITE_FAILED', message: 'Missing write result', kind: 'internal' },
+                                    'Missing write result'
+                                )
                             }
                         }
                     }
@@ -143,7 +280,7 @@ export function createOperationSyncDriver(args: {
                                 result: {
                                     entryId: typeof entryId === 'string' && entryId ? entryId : 'failed',
                                     ok: false,
-                                    error: payload
+                                    error: toRuntimeWriteError(payload)
                                 } as any
                             }
                     }
@@ -161,8 +298,8 @@ export function createOperationSyncDriver(args: {
                 }
 
                 const itemResults = Array.isArray((data as any)?.results) ? (data as any).results : []
-                const itemResultByEntryId = new Map<string, WriteItemResult>()
-                for (const itemResult of itemResults as WriteItemResult[]) {
+                const itemResultByEntryId = new Map<string, ProtocolWriteItemResult>()
+                for (const itemResult of itemResults as ProtocolWriteItemResult[]) {
                     itemResultByEntryId.set(itemResult.entryId, itemResult)
                 }
 
@@ -176,15 +313,19 @@ export function createOperationSyncDriver(args: {
                             result: {
                                 entryId: key || 'missing',
                                 ok: false,
-                                error: { code: 'WRITE_FAILED', message: 'Missing write item result', kind: 'internal' as const }
+                                error: toRuntimeWriteError(
+                                    { code: 'WRITE_FAILED', message: 'Missing write item result', kind: 'internal' },
+                                    'Missing write item result'
+                                )
                             }
                         }
                         continue
                     }
 
-                    outcomes[mapped.index] = itemResult.ok === true
-                        ? { kind: 'ack', result: itemResult as any }
-                        : { kind: 'reject', result: itemResult as any }
+                    const runtimeResult = toRuntimeWriteItemResult(itemResult)
+                    outcomes[mapped.index] = runtimeResult.ok === true
+                        ? { kind: 'ack', result: runtimeResult }
+                        : { kind: 'reject', result: runtimeResult }
                 }
             }
 
@@ -195,7 +336,10 @@ export function createOperationSyncDriver(args: {
                         result: {
                             entryId: `missing-${i}`,
                             ok: false,
-                            error: { code: 'WRITE_FAILED', message: 'Missing write outcome', kind: 'internal' as const }
+                            error: toRuntimeWriteError(
+                                { code: 'WRITE_FAILED', message: 'Missing write outcome', kind: 'internal' },
+                                'Missing write outcome'
+                            )
                         }
                     }
                 }

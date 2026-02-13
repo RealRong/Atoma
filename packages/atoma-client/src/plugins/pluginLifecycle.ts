@@ -7,9 +7,6 @@ import type {
     PluginInitResult,
     RegisterOperationMiddleware,
 } from 'atoma-types/client/plugins'
-import { localBackendPlugin } from '../defaults/LocalBackendPlugin'
-
-const LOCAL_BACKEND_PLUGIN_ID = 'defaults:local-backend'
 
 type ClientPluginLike = {
     id?: unknown
@@ -49,10 +46,6 @@ export function buildPluginList(plugins: ClientPlugin[]): ClientPlugin[] {
             seenIds.add(id)
         }
         unique.push(plugin)
-    }
-
-    if (!seenIds.has(LOCAL_BACKEND_PLUGIN_ID)) {
-        unique.push(localBackendPlugin())
     }
 
     return unique

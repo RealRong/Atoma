@@ -1,7 +1,10 @@
 export { toError, toErrorWithFallback } from './errors'
 
-export { createActionId, createEntityId, createId } from './id'
+export { createActionId, createEntityId, createId, createIdempotencyKey } from './id'
 export type { CreateIdArgs, IdKind } from './id'
+
+export { ensureWriteItemMeta, newWriteItemMeta } from './writeMeta'
+export type { WriteItemMeta } from './writeMeta'
 
 export { resolveFiniteVersion, resolvePositiveVersion, requireBaseVersion } from './version'
 

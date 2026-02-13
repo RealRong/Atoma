@@ -1,5 +1,11 @@
 export type { Runtime } from './runtime'
-export type { StrategyRegistry } from './strategy'
+export type {
+    ExecutionRegistry,
+    ExecutionSpec,
+    ExecutionEvent,
+    ExecutionWriteEvent,
+    ExecutionQueryEvent
+} from './execution'
 export type { Read } from './read'
 export type { Transform, TransformPipeline } from './transform'
 export type { Write } from './write'
@@ -34,11 +40,26 @@ export type {
     WriteInput,
     WriteOutput,
     WriteStatus,
+    RuntimeWriteAction,
+    RuntimeWriteItemMeta,
+    RuntimeWriteItemCreate,
+    RuntimeWriteItemUpdate,
+    RuntimeWriteItemUpsert,
+    RuntimeWriteItemDelete,
+    RuntimeWriteItem,
+    RuntimeWriteOptions,
+    RuntimeWriteEntryBase,
+    RuntimeWriteEntryCreate,
+    RuntimeWriteEntryUpdate,
+    RuntimeWriteEntryDelete,
+    RuntimeWriteEntryUpsert,
+    RuntimeWriteEntry,
+    RuntimeWriteError,
+    RuntimeWriteItemResult,
     WritePort,
     QueryExecutor,
     QueryInput,
     QueryOutput,
-    StrategySpec,
     Policy
 } from './persistence'
 

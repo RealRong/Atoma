@@ -1,5 +1,5 @@
 import type { Entity, IndexesLike, StoreWritebackArgs } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { EntityId } from 'atoma-types/shared'
 import type { Engine, StoreSnapshot, StoreState } from 'atoma-types/runtime'
 
 export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T> {

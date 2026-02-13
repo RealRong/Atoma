@@ -1,14 +1,7 @@
-import { createId } from 'atoma-shared'
-
-const IDEMPOTENCY_PREFIX = 'i'
+import { createId, createIdempotencyKey as createSharedIdempotencyKey } from 'atoma-shared'
 
 export function createIdempotencyKey(args?: { now?: () => number }): string {
-    return createId({
-        kind: 'request',
-        sortable: true,
-        prefix: IDEMPOTENCY_PREFIX,
-        now: args?.now
-    })
+    return createSharedIdempotencyKey(args)
 }
 
 export function createOpId(prefix: string, args?: { now?: () => number }): string {

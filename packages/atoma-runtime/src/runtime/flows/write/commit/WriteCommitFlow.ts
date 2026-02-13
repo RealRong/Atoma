@@ -3,15 +3,13 @@ import type {
     StoreWritebackArgs,
 } from 'atoma-types/core'
 import type {
-    EntityId,
-    WriteAction,
-    WriteEntry,
-    WriteItemResult
-} from 'atoma-types/protocol'
-import type {
+    RuntimeWriteEntry,
+    RuntimeWriteItemResult,
+    WriteOutput,
     StoreHandle,
     Policy
 } from 'atoma-types/runtime'
+import type { EntityId } from 'atoma-types/shared'
 import type { WriteCommitRequest, OptimisticState, WritePlan, WritePlanEntry } from '../types'
 
 function applyOptimistically<T extends Entity>(
@@ -104,12 +102,12 @@ async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
     runtime: WriteCommitRequest<T>['runtime']
     handle: WriteCommitRequest<T>['handle']
     plan: WritePlan<T>
-    results: ReadonlyArray<WriteItemResult>
+    results: ReadonlyArray<RuntimeWriteItemResult>
     primaryPlan?: WritePlanEntry<T>
 }): Promise<{ writeback?: StoreWritebackArgs<T>; output?: T }> {
     if (!args.plan.length || !args.results.length) return {}
 
-    const resultByEntryId = new Map<string, WriteItemResult>()
+    const resultByEntryId = new Map<string, RuntimeWriteItemResult>()
     for (const itemResult of args.results) {
         if (typeof itemResult.entryId !== 'string' || !itemResult.entryId) {
             throw new Error('[Atoma] write item result missing entryId')
@@ -168,7 +166,7 @@ async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
     return { writeback, output }
 }
 
-function shouldApplyReturnedData(entry: WriteEntry): boolean {
+function shouldApplyReturnedData(entry: RuntimeWriteEntry): boolean {
     const options = entry.options
     if (!options) return true
     if (options.returning === false) return false
@@ -181,7 +179,10 @@ function shouldApplyReturnedData(entry: WriteEntry): boolean {
     return true
 }
 
-function toWriteItemError(action: WriteAction, result: WriteItemResult): Error {
+function toWriteItemError(
+    action: RuntimeWriteEntry['action'],
+    result: RuntimeWriteItemResult
+): Error {
     if (result.ok) return new Error(`[Atoma] write(${action}) failed`)
 
     const msg = result.error.message || 'Write failed'
@@ -203,7 +204,7 @@ function fallbackPrimaryOutput<T extends Entity>(primaryPlan?: WritePlanEntry<T>
 async function runWriteTransaction<T extends Entity>(args: {
     request: WriteCommitRequest<T>
     primaryPlan?: WritePlanEntry<T>
-    writeEntries: ReadonlyArray<WriteEntry>
+    writeEntries: ReadonlyArray<RuntimeWriteEntry>
 }): Promise<T | void> {
     const { request, primaryPlan, writeEntries } = args
     const { runtime, handle, opContext, plan } = request
@@ -212,13 +213,15 @@ async function runWriteTransaction<T extends Entity>(args: {
         return fallbackPrimaryOutput(primaryPlan)
     }
 
-    const writeResult = await runtime.strategy.write({
+    const writeResult = await runtime.execution.write({
         storeName: String(handle.storeName),
         writeStrategy: request.writeStrategy,
         handle,
         opContext,
         writeEntries
     })
+
+    ensureWriteResultStatus({ writeResult })
 
     const resolved = (writeResult.results && writeResult.results.length)
         ? await resolveWriteResultFromWriteOutput<T>({
@@ -237,10 +240,25 @@ async function runWriteTransaction<T extends Entity>(args: {
     return resolved.output ?? fallbackPrimaryOutput(primaryPlan)
 }
 
+function ensureWriteResultStatus(args: {
+    writeResult: WriteOutput<any>
+}) {
+    const { writeResult } = args
+    if (writeResult.status === 'rejected') {
+        if (writeResult.results?.length) return
+        throw new Error('[Atoma] execution.write rejected without item results')
+    }
+
+    if (writeResult.status === 'partial') {
+        if (writeResult.results?.length) return
+        throw new Error('[Atoma] execution.write partial without item results')
+    }
+}
+
 export class WriteCommitFlow {
     execute = async <T extends Entity>(args: WriteCommitRequest<T>): Promise<T | void> => {
         const plan = args.plan
-        const writePolicy = args.runtime.strategy.resolvePolicy(args.writeStrategy)
+        const writePolicy = args.runtime.execution.resolvePolicy(args.writeStrategy)
         const optimisticState = applyOptimisticState({
             handle: args.handle,
             plan,
