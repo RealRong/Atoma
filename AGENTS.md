@@ -161,6 +161,12 @@
 - Variables/functions: camelCase.
 - Constants: UPPER_SNAKE_CASE.
 
+### 5.1 Implementation Pattern Preferences
+
+- 对单次使用的中间结果，优先内联调用，避免无必要临时变量（例如：`disposers.push(...plugins.init(client))`）。
+- 对“参数对象”风格函数，优先在函数签名处解构并显式标注类型（例如：`function f({ a, b }: Args)`），减少 `args.xxx` 噪音。
+- 资源释放必须保持逆序语义；优先使用逆序 `for` / `while + pop`，不要用 `forEach` 承担逆序清理。
+
 ---
 
 ## 6. Build, Validation, and Workflow

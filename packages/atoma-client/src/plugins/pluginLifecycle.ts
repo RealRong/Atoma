@@ -1,13 +1,11 @@
 import type { Entity } from 'atoma-types/core'
 import type { AtomaClient, AtomaSchema } from 'atoma-types/client'
 import type {
-    AnyClientPlugin,
+    ClientPlugin,
     EventRegister,
     PluginContext,
     PluginInitResult,
     RegisterOperationMiddleware,
-    RuntimeExtensionContext,
-    RuntimeExtensionPlugin,
 } from 'atoma-types/client/plugins'
 import { localBackendPlugin } from '../defaults/LocalBackendPlugin'
 
@@ -15,7 +13,6 @@ const LOCAL_BACKEND_PLUGIN_ID = 'defaults:local-backend'
 
 type ClientPluginLike = {
     id?: unknown
-    runtimeExtension?: unknown
     operations?: unknown
     events?: unknown
     init?: unknown
@@ -25,16 +22,11 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isRuntimeExtensionPlugin(value: AnyClientPlugin): value is RuntimeExtensionPlugin {
-    return (value as RuntimeExtensionPlugin).runtimeExtension === true
-}
-
-export function isClientPlugin(value: unknown): value is AnyClientPlugin {
+export function isClientPlugin(value: unknown): value is ClientPlugin {
     if (!isPlainObject(value)) return false
 
     const candidate = value as ClientPluginLike
     if (candidate.id !== undefined && typeof candidate.id !== 'string') return false
-    if (candidate.runtimeExtension !== undefined && candidate.runtimeExtension !== true) return false
     if (candidate.operations !== undefined && typeof candidate.operations !== 'function') return false
     if (candidate.events !== undefined && typeof candidate.events !== 'function') return false
     if (candidate.init !== undefined && typeof candidate.init !== 'function') return false
@@ -42,13 +34,13 @@ export function isClientPlugin(value: unknown): value is AnyClientPlugin {
     return true
 }
 
-export function normalizePlugins(value: ReadonlyArray<unknown>): AnyClientPlugin[] {
+export function normalizePlugins(value: ReadonlyArray<unknown>): ClientPlugin[] {
     return value.filter(isClientPlugin)
 }
 
-export function buildPluginList(plugins: AnyClientPlugin[]): AnyClientPlugin[] {
+export function buildPluginList(plugins: ClientPlugin[]): ClientPlugin[] {
     const seenIds = new Set<string>()
-    const unique: AnyClientPlugin[] = []
+    const unique: ClientPlugin[] = []
 
     for (const plugin of plugins) {
         const id = (typeof plugin.id === 'string' && plugin.id.trim()) ? plugin.id.trim() : undefined
@@ -67,25 +59,14 @@ export function buildPluginList(plugins: AnyClientPlugin[]): AnyClientPlugin[] {
 }
 
 export function registerPluginHandlers(
-    plugins: AnyClientPlugin[],
+    plugins: ClientPlugin[],
     context: PluginContext,
-    runtimeExtensionContext: RuntimeExtensionContext,
-    registerOperations: RegisterOperationMiddleware,
+    register: RegisterOperationMiddleware,
     registerEvents: EventRegister
 ): void {
     for (const plugin of plugins) {
-        if (isRuntimeExtensionPlugin(plugin)) {
-            if (typeof plugin.operations === 'function') {
-                plugin.operations(runtimeExtensionContext, registerOperations)
-            }
-            if (typeof plugin.events === 'function') {
-                plugin.events(runtimeExtensionContext, registerEvents)
-            }
-            continue
-        }
-
         if (typeof plugin.operations === 'function') {
-            plugin.operations(context, registerOperations)
+            plugin.operations(context, register)
         }
         if (typeof plugin.events === 'function') {
             plugin.events(context, registerEvents)
@@ -115,9 +96,8 @@ export function initPlugins<
     E extends Record<string, Entity>,
     S extends AtomaSchema<E>
 >(
-    plugins: AnyClientPlugin[],
+    plugins: ClientPlugin[],
     context: PluginContext,
-    runtimeExtensionContext: RuntimeExtensionContext,
     client: AtomaClient<E, S>
 ): Array<() => void> {
     const disposers: Array<() => void> = []
@@ -125,9 +105,7 @@ export function initPlugins<
     for (const plugin of plugins) {
         if (typeof plugin.init !== 'function') continue
 
-        const result = isRuntimeExtensionPlugin(plugin)
-            ? toPluginInitResult(plugin.init(runtimeExtensionContext))
-            : toPluginInitResult(plugin.init(context))
+        const result = toPluginInitResult(plugin.init(context))
         if (!result) continue
 
         if (isPlainObject(result.extension)) {

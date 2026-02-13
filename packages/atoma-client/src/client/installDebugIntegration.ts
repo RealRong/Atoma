@@ -12,20 +12,23 @@ function installDebugHub(capabilities: CapabilitiesRegistry): (() => void) | und
     return capabilities.register(DEBUG_HUB_CAPABILITY, createDebugHub())
 }
 
-export function installDebugIntegration(args: {
+export function installDebugIntegration({
+    capabilities,
+    runtime
+}: {
     capabilities: CapabilitiesRegistry
     runtime: Runtime
 }): Array<() => void> {
     const disposers: Array<() => void> = []
 
-    const unregisterDebugHub = installDebugHub(args.capabilities)
+    const unregisterDebugHub = installDebugHub(capabilities)
     if (unregisterDebugHub) {
         disposers.push(unregisterDebugHub)
     }
 
-    const debugHub = args.capabilities.get(DEBUG_HUB_CAPABILITY)
+    const debugHub = capabilities.get(DEBUG_HUB_CAPABILITY)
     if (debugHub) {
-        disposers.push(registerRuntimeDebugProviders(args.runtime, debugHub))
+        disposers.push(registerRuntimeDebugProviders(runtime, debugHub))
     }
 
     return disposers

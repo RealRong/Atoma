@@ -1,21 +1,52 @@
 import type { Entity } from 'atoma-types/core'
 import { assertQueryResultData, assertWriteResultData, buildQueryOp, buildWriteOp, createOpId } from 'atoma-types/protocol-tools'
-import type { WriteItemResult } from 'atoma-types/protocol'
+import type { WriteEntry, WriteItemResult } from 'atoma-types/protocol'
 import type { QueryInput, QueryOutput, WriteInput, WriteOutput } from 'atoma-types/runtime'
 import { Runtime } from 'atoma-runtime'
 import { OperationPipeline } from '../plugins/OperationPipeline'
-import { groupWriteEntries } from './groupWriteEntries'
 
-export function installDirectStrategy(args: {
+type EntryGroup = {
+    entries: WriteEntry[]
+}
+
+function optionsKey(options: WriteEntry['options']): string {
+    if (!options || typeof options !== 'object') return ''
+    return JSON.stringify(options)
+}
+
+function groupWriteEntries(entries: ReadonlyArray<WriteEntry>): EntryGroup[] {
+    const groupsByKey = new Map<string, EntryGroup>()
+    const groups: EntryGroup[] = []
+
+    for (const entry of entries) {
+        const key = `${entry.action}::${optionsKey(entry.options)}`
+        const existing = groupsByKey.get(key)
+        if (existing) {
+            existing.entries.push(entry)
+            continue
+        }
+
+        const group: EntryGroup = {
+            entries: [entry]
+        }
+        groupsByKey.set(key, group)
+        groups.push(group)
+    }
+
+    return groups
+}
+
+export function installDirectStrategy({
+    runtime,
+    pipeline
+}: {
     runtime: Runtime
-    operationPipeline: OperationPipeline
+    pipeline: OperationPipeline
 }): () => void {
-    const { runtime, operationPipeline } = args
-
     const unregister = runtime.strategy.register('direct', {
         query: async <T extends Entity>(input: QueryInput<T>): Promise<QueryOutput> => {
             const opId = createOpId('q', { now: runtime.now })
-            const envelope = await operationPipeline.executeOperations({
+            const envelope = await pipeline.executeOperations({
                 req: {
                     ops: [buildQueryOp({
                         opId,
@@ -56,7 +87,7 @@ export function installDirectStrategy(args: {
             }
 
             const groups = groupWriteEntries(input.writeEntries)
-            const envelope = await operationPipeline.executeOperations({
+            const envelope = await pipeline.executeOperations({
                 req: {
                     ops: groups.map(group => buildWriteOp({
                         opId: createOpId('w', { now: runtime.now }),

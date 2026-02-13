@@ -1,10 +1,10 @@
-import type { RuntimeExtensionFacade } from 'atoma-types/client/plugins'
+import type { PluginRuntime } from 'atoma-types/client/plugins'
 import type { Change, EntityId } from 'atoma-types/protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from 'atoma-types/sync'
 
 export class WritebackApplier implements SyncApplier {
     constructor(private readonly deps: {
-        runtime: RuntimeExtensionFacade
+        runtime: PluginRuntime
     }) {}
 
     applyPullChanges = async (changes: Change[]) => {
@@ -33,34 +33,24 @@ export class WritebackApplier implements SyncApplier {
             const uniqueUpsertKeys = Array.from(new Set(upsertEntityIds))
             const uniqueDeleteKeys = Array.from(new Set(deleteKeys))
 
-            const handle = this.deps.runtime.stores.resolveHandle(resource as any, 'sync.applyPullChanges')
-
             const upsertsRaw = uniqueUpsertKeys.length
                 ? (await this.deps.runtime.strategy.query<any>({
-                    storeName: String(handle.storeName),
-                    handle,
+                    storeName: resource as any,
                     query: {
                         filter: { op: 'in', field: 'id', values: uniqueUpsertKeys }
                     },
                 })).data.filter((i: any): i is any => i !== undefined)
                 : []
 
-            const processed = await Promise.all(
-                upsertsRaw.map(item => this.deps.runtime.transform.writeback(handle, item as any))
-            )
-
-            const upserts = processed.filter((item): item is any => item !== undefined)
-
-            handle.state.applyWriteback({
-                upserts,
+            await this.deps.runtime.stores.applyWriteback({
+                storeName: resource as any,
+                upserts: upsertsRaw,
                 deletes: uniqueDeleteKeys
             } as any)
         }
     }
 
     applyWriteAck = async (ack: SyncWriteAck) => {
-        const handle = this.deps.runtime.stores.resolveHandle(ack.resource as any, 'sync.applyWriteAck')
-
         const upserts: any[] = []
         const deletes: EntityId[] = []
         const versionUpdates: Array<{ key: EntityId; version: number }> = []
@@ -75,19 +65,17 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(serverData)
         }
 
-        const processed = await Promise.all(
-            upserts.map(item => this.deps.runtime.transform.writeback(handle, item))
-        )
-        const normalized = processed.filter((item): item is any => item !== undefined)
-
-        handle.state.applyWriteback({ upserts: normalized, deletes, versionUpdates } as any)
+        await this.deps.runtime.stores.applyWriteback({
+            storeName: ack.resource as any,
+            upserts,
+            deletes,
+            versionUpdates
+        } as any)
     }
 
     applyWriteReject = async (
         reject: SyncWriteReject
     ) => {
-        const handle = this.deps.runtime.stores.resolveHandle(reject.resource as any, 'sync.applyWriteReject')
-
         const upserts: any[] = []
         const deletes: EntityId[] = []
 
@@ -107,12 +95,11 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(current.value)
         }
 
-        const processed = await Promise.all(
-            upserts.map(item => this.deps.runtime.transform.writeback(handle, item))
-        )
-        const normalized = processed.filter((item): item is any => item !== undefined)
-
-        handle.state.applyWriteback({ upserts: normalized, deletes } as any)
+        await this.deps.runtime.stores.applyWriteback({
+            storeName: reject.resource as any,
+            upserts,
+            deletes
+        } as any)
     }
 
     applyWriteResults: SyncApplier['applyWriteResults'] = async (args) => {

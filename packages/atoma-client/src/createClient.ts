@@ -1,17 +1,15 @@
-import type { Patch } from 'immer'
-import type { Entity, OperationContext, Query, QueryResult } from 'atoma-types/core'
-import { registerOperationClient } from 'atoma-types/client/ops'
-import type { PluginContext, RuntimeExtensionContext } from 'atoma-types/client/plugins'
+import type { Entity } from 'atoma-types/core'
 import { createId } from 'atoma-shared'
-import type { Schema } from 'atoma-types/runtime'
 import { Runtime } from 'atoma-runtime'
 import type {
     AtomaClient,
     AtomaSchema,
     CreateClientOptions,
 } from 'atoma-types/client'
-import { installDebugIntegration } from './client/installDebugIntegration'
+import type { Schema } from 'atoma-types/runtime'
 import { createOperationClient } from './client/createOperationClient'
+import { buildPluginContext } from './client/composition/buildPluginContext'
+import { installDebugIntegration } from './client/installDebugIntegration'
 import { installDirectStrategy } from './client/installDirectStrategy'
 import { setupPlugins } from './plugins'
 import { CapabilitiesRegistry } from './plugins/CapabilitiesRegistry'
@@ -26,93 +24,37 @@ import { OperationPipeline } from './plugins/OperationPipeline'
 export function createClient<
     const E extends Record<string, Entity>,
     const S extends AtomaSchema<E> = AtomaSchema<E>
->(opt: CreateClientOptions<E, S>): AtomaClient<E, S> {
-    const input = (typeof opt === 'object' && opt !== null ? opt : {}) as {
+>(options: CreateClientOptions<E, S>): AtomaClient<E, S> {
+    const input = (typeof options === 'object' && options !== null ? options : {}) as {
         schema?: unknown
         plugins?: unknown
     }
+    const schema = (input.schema ?? {}) as Schema
+    const rawPlugins = Array.isArray(input.plugins) ? input.plugins : []
 
     const capabilities = new CapabilitiesRegistry()
-    const clientId = createId()
-    const operationPipeline = new OperationPipeline()
-
     const runtime = new Runtime({
-        id: clientId,
-        schema: (input.schema ?? {}) as Schema
+        id: createId(),
+        schema
     })
-
-    const runtimeApi: PluginContext['runtimeApi'] = {
-        id: runtime.id,
-        now: runtime.now,
-        queryStore: <T extends Entity>(args: { storeName: string; query: Query<T> }) => {
-            const handle = runtime.stores.resolveHandle(args.storeName, 'plugin.runtimeApi.queryStore')
-            return runtime.engine.query.evaluate({
-                state: handle.state,
-                query: args.query
-            }) as QueryResult<T>
-        },
-        applyStorePatches: async (args: {
-            storeName: string
-            patches: Patch[]
-            inversePatches: Patch[]
-            opContext: OperationContext
-        }) => {
-            const handle = runtime.stores.resolveHandle(args.storeName, 'plugin.runtimeApi.applyStorePatches')
-            await runtime.write.patches(
-                handle,
-                args.patches,
-                args.inversePatches,
-                { opContext: args.opContext }
-            )
-        }
-    }
-
-    const context: PluginContext = {
-        clientId: runtime.id,
-        capabilities,
-        runtimeApi,
-        events: {
-            register: runtime.hooks.register
-        }
-    }
-
-    const runtimeExtensionContext: RuntimeExtensionContext = {
-        ...context,
-        runtimeExtension: {
-            id: runtime.id,
-            now: runtime.now,
-            stores: {
-                resolveHandle: (name, tag) => runtime.stores.resolveHandle(name, tag)
-            },
-            strategy: {
-                register: (key, spec) => runtime.strategy.register(key, spec),
-                query: (input) => runtime.strategy.query(input),
-                write: (input) => runtime.strategy.write(input)
-            },
-            transform: {
-                writeback: (handle, data, ctx) => runtime.transform.writeback(handle, data, ctx)
-            }
-        }
-    }
-
-    const plugins = setupPlugins({
-        context,
-        runtimeExtensionContext,
-        rawPlugins: Array.isArray(input.plugins) ? input.plugins : [],
-        operationPipeline
-    })
-
-    const operationClient = createOperationClient({
-        operationPipeline,
+    const pipeline = new OperationPipeline()
+    const operation = createOperationClient({
+        pipeline,
         clientId: runtime.id
     })
 
-    const disposers: Array<() => void> = []
+    const context = buildPluginContext({ runtime, capabilities, operation })
 
-    disposers.push(registerOperationClient(capabilities, operationClient))
+    const plugins = setupPlugins({
+        context,
+        rawPlugins,
+        pipeline
+    })
+
+    const disposers: Array<() => void> = []
     disposers.push(...installDebugIntegration({ capabilities, runtime }))
     disposers.push(plugins.dispose)
-    disposers.push(installDirectStrategy({ runtime, operationPipeline }))
+    disposers.push(installDirectStrategy({ runtime, pipeline }))
 
     let disposed = false
     const dispose = () => {
@@ -135,8 +77,7 @@ export function createClient<
         dispose
     }
 
-    const pluginInitDisposers = plugins.init(client)
-    disposers.push(...pluginInitDisposers)
+    disposers.push(...plugins.init(client))
 
     return client
 }

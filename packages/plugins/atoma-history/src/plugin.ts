@@ -49,7 +49,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                         providerId: historyProviderId,
                         kind: 'history',
                         clientId: ctx.clientId,
-                        timestamp: ctx.runtimeApi.now(),
+                        timestamp: ctx.runtime.now(),
                         scope: { tab: 'history' },
                         data: buildSnapshot(manager)
                     }
@@ -65,7 +65,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                     return await manager.undo({
                         scope,
                         apply: async (applyArgs) => {
-                            await ctx.runtimeApi.applyStorePatches({
+                            await ctx.runtime.stores.applyPatches({
                                 storeName: applyArgs.storeName,
                                 patches: applyArgs.patches,
                                 inversePatches: applyArgs.inversePatches,
@@ -79,7 +79,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                     return await manager.redo({
                         scope,
                         apply: async (applyArgs) => {
-                            await ctx.runtimeApi.applyStorePatches({
+                            await ctx.runtime.stores.applyPatches({
                                 storeName: applyArgs.storeName,
                                 patches: applyArgs.patches,
                                 inversePatches: applyArgs.inversePatches,

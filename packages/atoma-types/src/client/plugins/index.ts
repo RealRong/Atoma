@@ -4,13 +4,9 @@ export type {
     RegisterOperationMiddleware,
     EventRegister,
     PluginEvents,
-    PluginRuntimeApi,
-    RuntimeExtensionFacade,
+    PluginRuntime,
     PluginContext,
-    RuntimeExtensionContext,
     OperationContext,
     ClientPlugin,
-    RuntimeExtensionPlugin,
-    AnyClientPlugin,
     PluginInitResult
 } from './contracts'

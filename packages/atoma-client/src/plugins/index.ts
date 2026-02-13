@@ -4,7 +4,6 @@ import type {
     EventRegister,
     PluginContext,
     RegisterOperationMiddleware,
-    RuntimeExtensionContext,
 } from 'atoma-types/client/plugins'
 import { buildPluginList, initPlugins, normalizePlugins, registerPluginHandlers } from './pluginLifecycle'
 import { OperationPipeline } from './OperationPipeline'
@@ -23,33 +22,35 @@ export type PluginsSetup = Readonly<{
     dispose: () => void
 }>
 
-export function setupPlugins(args: {
+export function setupPlugins({
+    context,
+    rawPlugins,
+    pipeline
+}: {
     context: PluginContext
-    runtimeExtensionContext: RuntimeExtensionContext
     rawPlugins: ReadonlyArray<unknown>
-    operationPipeline?: OperationPipeline
+    pipeline: OperationPipeline
 }): PluginsSetup {
-    const operationPipeline = args.operationPipeline ?? new OperationPipeline()
     const unregisters: Array<() => void> = []
 
-    const plugins = buildPluginList(normalizePlugins(args.rawPlugins))
+    const plugins = buildPluginList(normalizePlugins(rawPlugins))
 
     const register: RegisterOperationMiddleware = (handler, opts) => {
-        const unregister = operationPipeline.register(handler, opts)
+        const unregister = pipeline.register(handler, opts)
         unregisters.push(unregister)
         return unregister
     }
 
     const registerEvents: EventRegister = (hooks) => {
-        const unregister = args.context.events.register(hooks)
+        const unregister = context.events.register(hooks)
         unregisters.push(unregister)
         return unregister
     }
 
-    registerPluginHandlers(plugins, args.context, args.runtimeExtensionContext, register, registerEvents)
+    registerPluginHandlers(plugins, context, register, registerEvents)
 
     const init: PluginsSetup['init'] = (client) => {
-        return initPlugins(plugins, args.context, args.runtimeExtensionContext, client)
+        return initPlugins(plugins, context, client)
     }
 
     const dispose = () => {
@@ -57,7 +58,7 @@ export function setupPlugins(args: {
             safeDispose(unregisters[i])
         }
         unregisters.length = 0
-        operationPipeline.clear()
+        pipeline.clear()
     }
 
     return {

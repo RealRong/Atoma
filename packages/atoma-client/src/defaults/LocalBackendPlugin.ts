@@ -25,7 +25,7 @@ function toWriteResultData(entries: Array<{ entryId: string; item: { entityId?: 
 }
 
 function runLocalQuery(ctx: PluginContext, storeName: string, query: Query<Entity>): QueryResultData {
-    const local = ctx.runtimeApi.queryStore({
+    const local = ctx.runtime.stores.query({
         storeName,
         query
     })

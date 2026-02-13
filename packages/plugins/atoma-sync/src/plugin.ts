@@ -1,4 +1,4 @@
-import type { RuntimeExtensionContext, RuntimeExtensionPlugin } from 'atoma-types/client/plugins'
+import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import { DEBUG_HUB_CAPABILITY } from 'atoma-types/devtools'
 import type { SyncClient, SyncMode, SyncPhase, SyncRuntimeConfig } from 'atoma-types/sync'
 import { SyncEngine } from '#sync/engine/sync-engine'
@@ -10,20 +10,19 @@ import { getSyncDriver, getSyncSubscribeDriver } from '#sync/capabilities'
 import { getOrCreateGlobalReplicaId } from '#sync/internal/replica-id'
 import type { SyncExtension, SyncPluginOptions } from './types'
 
-export function syncPlugin(opts: SyncPluginOptions = {}): RuntimeExtensionPlugin<SyncExtension> {
+export function syncPlugin(opts: SyncPluginOptions = {}): ClientPlugin<SyncExtension> {
     return {
         id: 'sync',
-        runtimeExtension: true,
-        init: (ctx: RuntimeExtensionContext) => setupSyncPlugin(ctx, opts)
+        init: (ctx: PluginContext) => setupSyncPlugin(ctx, opts)
     }
 }
 
-function setupSyncPlugin(ctx: RuntimeExtensionContext, opts: SyncPluginOptions): { extension: SyncExtension; dispose: () => void } {
+function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extension: SyncExtension; dispose: () => void } {
     const now = opts.now ?? (() => Date.now())
     const modeDefault: SyncMode = opts.mode ?? 'full'
     const resources = opts.resources
 
-    const runtime = ctx.runtimeExtension
+    const runtime = ctx.runtime
 
     const replicaId = getOrCreateGlobalReplicaId({ now })
     const clientKey = String(opts.clientKey ?? runtime.id ?? 'default').trim() || 'default'

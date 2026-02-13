@@ -9,8 +9,11 @@ import type {
 import type { OperationContext } from 'atoma-types/client/plugins'
 import { OperationPipeline } from '../plugins/OperationPipeline'
 
-export function createOperationClient(args: {
-    operationPipeline: OperationPipeline
+export function createOperationClient({
+    pipeline,
+    clientId
+}: {
+    pipeline: OperationPipeline
     clientId: string
 }): OperationClient {
     const executeOperations: OperationClient['executeOperations'] = async (input: ExecuteOperationsInput): Promise<ExecuteOperationsOutput> => {
@@ -25,9 +28,9 @@ export function createOperationClient(args: {
             meta,
             ...(input.signal ? { signal: input.signal } : {})
         }
-        const ctx: OperationContext = { clientId: args.clientId }
+        const ctx: OperationContext = { clientId }
 
-        const envelope = assertRemoteOpResultEnvelope(await args.operationPipeline.executeOperations({ req, ctx }))
+        const envelope = assertRemoteOpResultEnvelope(await pipeline.executeOperations({ req, ctx }))
 
         try {
             return {
