@@ -16,32 +16,13 @@ const buildSnapshot = (manager: HistoryManager) => {
 }
 
 export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
+    const manager = new HistoryManager()
+    let stopEvents: (() => void) | undefined
+
     return {
         id: 'atoma-history',
-        init: (ctx: PluginContext) => {
-            const manager = new HistoryManager()
-
-            const debugHub = ctx.capabilities.get(DEBUG_HUB_CAPABILITY)
-            const historyProviderId = `history.${ctx.runtime.id}`
-            const unregisterDebugProvider = debugHub?.register({
-                id: historyProviderId,
-                kind: 'history',
-                clientId: ctx.runtime.id,
-                priority: 50,
-                snapshot: () => {
-                    return {
-                        version: 1,
-                        providerId: historyProviderId,
-                        kind: 'history',
-                        clientId: ctx.runtime.id,
-                        timestamp: ctx.runtime.now(),
-                        scope: { tab: 'history' },
-                        data: buildSnapshot(manager)
-                    }
-                }
-            })
-
-            const stopHooks = ctx.hooks.register({
+        events: (_ctx, registerEvents) => {
+            stopEvents = registerEvents({
                 write: {
                     onPatches: (args) => {
                         manager.record({
@@ -50,6 +31,27 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                             inversePatches: args.inversePatches,
                             opContext: args.opContext
                         })
+                    }
+                }
+            })
+        },
+        init: (ctx: PluginContext) => {
+            const debugHub = ctx.capabilities.get(DEBUG_HUB_CAPABILITY)
+            const historyProviderId = `history.${ctx.clientId}`
+            const unregisterDebugProvider = debugHub?.register({
+                id: historyProviderId,
+                kind: 'history',
+                clientId: ctx.clientId,
+                priority: 50,
+                snapshot: () => {
+                    return {
+                        version: 1,
+                        providerId: historyProviderId,
+                        kind: 'history',
+                        clientId: ctx.clientId,
+                        timestamp: ctx.runtimeApi.now(),
+                        scope: { tab: 'history' },
+                        data: buildSnapshot(manager)
                     }
                 }
             })
@@ -63,13 +65,12 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                     return await manager.undo({
                         scope,
                         apply: async (applyArgs) => {
-                            const handle = ctx.runtime.stores.resolveHandle(applyArgs.storeName, 'history.undo')
-                            await ctx.runtime.write.patches(
-                                handle,
-                                applyArgs.patches,
-                                applyArgs.inversePatches,
-                                { opContext: applyArgs.opContext }
-                            )
+                            await ctx.runtimeApi.applyStorePatches({
+                                storeName: applyArgs.storeName,
+                                patches: applyArgs.patches,
+                                inversePatches: applyArgs.inversePatches,
+                                opContext: applyArgs.opContext
+                            })
                         }
                     })
                 },
@@ -78,13 +79,12 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                     return await manager.redo({
                         scope,
                         apply: async (applyArgs) => {
-                            const handle = ctx.runtime.stores.resolveHandle(applyArgs.storeName, 'history.redo')
-                            await ctx.runtime.write.patches(
-                                handle,
-                                applyArgs.patches,
-                                applyArgs.inversePatches,
-                                { opContext: applyArgs.opContext }
-                            )
+                            await ctx.runtimeApi.applyStorePatches({
+                                storeName: applyArgs.storeName,
+                                patches: applyArgs.patches,
+                                inversePatches: applyArgs.inversePatches,
+                                opContext: applyArgs.opContext
+                            })
                         }
                     })
                 }
@@ -94,7 +94,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                 extension: { history },
                 dispose: () => {
                     try {
-                        stopHooks()
+                        stopEvents?.()
                     } catch {
                         // ignore
                     }

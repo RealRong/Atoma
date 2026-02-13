@@ -1,5 +1,6 @@
 import type { Entity } from 'atoma-types/core'
-import type { Runtime, WriteInput, WriteOutput } from 'atoma-types/runtime'
+import type { RuntimeExtensionFacade } from 'atoma-types/client/plugins'
+import type { WriteInput, WriteOutput } from 'atoma-types/runtime'
 import type { OutboxStore, OutboxWrite } from 'atoma-types/sync'
 
 function mapWriteEntriesToOutboxWrites(input: WriteInput<any>): OutboxWrite[] {
@@ -50,7 +51,7 @@ export class SyncWrites {
     private readonly unregister: Array<() => void> = []
     private disposed = false
 
-    constructor(private readonly deps: { runtime: Runtime; outbox: OutboxStore }) {
+    constructor(private readonly deps: { runtime: RuntimeExtensionFacade; outbox: OutboxStore }) {
         this.register()
     }
 

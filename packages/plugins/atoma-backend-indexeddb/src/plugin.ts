@@ -1,13 +1,13 @@
 import type { Table } from 'dexie'
-import type { ClientPlugin, PluginContext, OpsRegister } from 'atoma-types/client/plugins'
-import { IndexedDBOpsClient } from './ops-client'
+import type { ClientPlugin, PluginContext, RegisterOperationMiddleware } from 'atoma-types/client/plugins'
+import { IndexedDbOperationClient } from './operation-client'
 import type { IndexedDbBackendPluginOptions } from './types'
 
 export function indexedDbBackendPlugin(options: IndexedDbBackendPluginOptions): ClientPlugin {
     return {
         id: 'indexeddb',
-        register: (_ctx: PluginContext, register: OpsRegister) => {
-            const opsClient = new IndexedDBOpsClient({
+        operations: (_ctx: PluginContext, register: RegisterOperationMiddleware) => {
+            const operationClient = new IndexedDbOperationClient({
                 tableForResource: (resource) => {
                     const tbl = (options.tables as any)[resource]
                     if (tbl) return tbl as Table<any, string>
@@ -16,7 +16,7 @@ export function indexedDbBackendPlugin(options: IndexedDbBackendPluginOptions): 
             })
 
             register(async (req) => {
-                return await opsClient.executeOps({
+                return await operationClient.executeOperations({
                     ops: req.ops,
                     meta: req.meta,
                     ...(req.signal ? { signal: req.signal } : {})

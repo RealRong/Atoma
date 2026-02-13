@@ -17,7 +17,7 @@ Core/runtime no longer knows about observability. If you want traces/debug event
 
 ## Plugin behavior (no core coupling)
 
-The plugin registers `ctx.hooks.register(...)` and listens to:
+The plugin registers `ctx.events.register(...)` and listens to:
 
 - `store.onCreated`
 - `read.onStart/onFinish`

@@ -1,9 +1,9 @@
 import { assertOutgoingRemoteOps, HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
 import type { Meta, RemoteOpsResponseData } from 'atoma-types/protocol'
-import { OpsClient } from './internal/ops-client-base'
-import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client/ops'
+import { OperationClientBase } from './internal/operation-client-base'
+import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-types/client/ops'
 import { BatchEngine } from './internal/batch/batch-engine'
-import { createOpsHttpTransport } from './internal/transport/ops-transport'
+import { createOperationHttpTransport } from './internal/transport/operation-transport'
 import type { HttpInterceptors } from './internal/transport/json-client'
 
 export type RetryOptions = {
@@ -14,9 +14,9 @@ export type RetryOptions = {
     jitter?: boolean
 }
 
-export type HttpOpsClientConfig = {
+export type HttpOperationClientConfig = {
     baseURL: string
-    opsPath?: string
+    operationsPath?: string
     headers?: () => Promise<Record<string, string>> | Record<string, string>
     retry?: RetryOptions
     fetchFn?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -37,20 +37,20 @@ export type HttpOpsClientConfig = {
     }
 }
 
-export class HttpOpsClient extends OpsClient {
+export class HttpOperationClient extends OperationClientBase {
     private readonly baseURL: string
-    private readonly opsPath: string
+    private readonly operationsPath: string
     private readonly fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
     private readonly retry?: RetryOptions
     private readonly getHeaders: () => Promise<Record<string, string>>
-    private readonly transport: ReturnType<typeof createOpsHttpTransport>
+    private readonly transport: ReturnType<typeof createOperationHttpTransport>
     private readonly batchEngine?: BatchEngine
 
-    constructor(config: HttpOpsClientConfig) {
+    constructor(config: HttpOperationClientConfig) {
         super()
 
         this.baseURL = config.baseURL
-        this.opsPath = config.opsPath ?? HTTP_PATH_OPS
+        this.operationsPath = config.operationsPath ?? HTTP_PATH_OPS
         this.fetchFn = config.fetchFn ?? fetch.bind(globalThis)
         this.retry = config.retry
 
@@ -64,7 +64,7 @@ export class HttpOpsClient extends OpsClient {
             return headers
         }
 
-        this.transport = createOpsHttpTransport({
+        this.transport = createOperationHttpTransport({
             fetchFn: async (input, init) => fetchWithRetry(this.fetchFn, input, init, this.retry),
             getHeaders: this.getHeaders,
             interceptors: config.interceptors
@@ -74,8 +74,8 @@ export class HttpOpsClient extends OpsClient {
         const batchEnabled = config.batch?.enabled ?? true
         if (batchEnabled) {
             this.batchEngine = new BatchEngine({
-                endpoint: this.opsPath,
-                executeFn: (input) => this._executeOpsDirectly(input),
+                endpoint: this.operationsPath,
+                executeFn: (input) => this.executeOperationsDirectly(input),
                 flushIntervalMs: config.batch?.flushIntervalMs ?? 0,
                 maxBatchSize: config.batch?.maxBatchSize,
                 maxQueueLength: config.batch?.maxQueueLength,
@@ -100,27 +100,27 @@ export class HttpOpsClient extends OpsClient {
     /**
      * Execute operations. Automatically uses BatchEngine if enabled.
      */
-    async executeOps(input: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
+    async executeOperations(input: ExecuteOperationsInput): Promise<ExecuteOperationsOutput> {
         if (this.batchEngine) {
-            const results = await this.batchEngine.enqueueOps(input.ops)
+            const results = await this.batchEngine.enqueueOperations(input.ops)
             return {
                 results,
                 status: 200
             }
         }
-        return this._executeOpsDirectly(input)
+        return this.executeOperationsDirectly(input)
     }
 
     /**
      * Direct HTTP execution (bypasses BatchEngine).
      * Used internally by BatchEngine.
      */
-    private async _executeOpsDirectly({ ops, meta, signal }: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
+    private async executeOperationsDirectly({ ops, meta, signal }: ExecuteOperationsInput): Promise<ExecuteOperationsOutput> {
         const requestMeta = this.normalizeRequestMeta(meta)
         assertOutgoingRemoteOps({ ops, meta: requestMeta })
-        const res = await this.transport.executeOps({
+        const res = await this.transport.executeOperations({
             baseURL: this.baseURL,
-            opsPath: this.opsPath,
+            endpointPath: this.operationsPath,
             ops,
             meta: requestMeta,
             signal

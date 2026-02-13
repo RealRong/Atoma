@@ -1,6 +1,6 @@
 import { runQuery } from 'atoma-core/query'
 import type { Entity, Query as CoreQuery } from 'atoma-types/core'
-import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike } from 'atoma-types/client/ops'
+import type { ExecuteOperationsInput, ExecuteOperationsOutput, OperationClient } from 'atoma-types/client/ops'
 import type {
     ChangeBatch,
     RemoteOp,
@@ -15,15 +15,15 @@ import type {
 
 type PlainRecord = Record<string, any>
 
-export type OpsStorageAdapter = Readonly<{
+export type OperationStorageAdapter = Readonly<{
     list: (resource: string) => Promise<any[]>
     get: (resource: string, id: string) => Promise<any | undefined>
     put: (resource: string, id: string, value: any) => Promise<void>
     delete: (resource: string, id: string) => Promise<void>
 }>
 
-export type StorageOpsClientOptions = Readonly<{
-    adapter: OpsStorageAdapter
+export type StorageOperationClientOptions = Readonly<{
+    adapter: OperationStorageAdapter
     toStoredValue?: (value: any) => any
     toResponseValue?: (value: any) => any
 }>
@@ -67,23 +67,23 @@ function normalizeEntryId(raw: unknown, fallback: string): string {
     return (typeof raw === 'string' && raw) ? raw : fallback
 }
 
-export class StorageOpsClient implements OpsClientLike {
-    private readonly adapter: OpsStorageAdapter
+export class StorageOperationClient implements OperationClient {
+    private readonly adapter: OperationStorageAdapter
     private readonly toStoredValue: (value: any) => any
     private readonly toResponseValue: (value: any) => any
 
-    constructor(options: StorageOpsClientOptions) {
+    constructor(options: StorageOperationClientOptions) {
         if (!options || typeof options !== 'object') {
-            throw new Error('[Atoma] StorageOpsClient: options is required')
+            throw new Error('[Atoma] StorageOperationClient: options is required')
         }
         if (!options.adapter || typeof options.adapter !== 'object') {
-            throw new Error('[Atoma] StorageOpsClient: options.adapter is required')
+            throw new Error('[Atoma] StorageOperationClient: options.adapter is required')
         }
         if (typeof options.adapter.list !== 'function'
             || typeof options.adapter.get !== 'function'
             || typeof options.adapter.put !== 'function'
             || typeof options.adapter.delete !== 'function') {
-            throw new Error('[Atoma] StorageOpsClient: adapter methods list/get/put/delete are required')
+            throw new Error('[Atoma] StorageOperationClient: adapter methods list/get/put/delete are required')
         }
 
         this.adapter = options.adapter
@@ -91,7 +91,7 @@ export class StorageOpsClient implements OpsClientLike {
         this.toResponseValue = options.toResponseValue ?? (value => value)
     }
 
-    async executeOps(input: ExecuteOpsInput): Promise<ExecuteOpsOutput> {
+    async executeOperations(input: ExecuteOperationsInput): Promise<ExecuteOperationsOutput> {
         const ops = Array.isArray(input.ops) ? input.ops : []
         const results: RemoteOpResult[] = []
 

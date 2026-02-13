@@ -4,9 +4,9 @@ import type { RemoteOpsResponseData } from 'atoma-types/protocol'
 import type { HttpInterceptors } from './json-client'
 import { createJsonHttpClient } from './json-client'
 
-export type ExecuteOpsArgs = {
+export type ExecuteOperationRequest = {
     baseURL: string
-    opsPath: string
+    endpointPath: string
     ops: RemoteOp[]
     meta: Meta
     extraHeaders?: Record<string, string>
@@ -25,7 +25,7 @@ function joinUrl(base: string, path: string): string {
     return `${base}${path}`
 }
 
-export function createOpsHttpTransport(deps: {
+export function createOperationHttpTransport(deps: {
     fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
     getHeaders: () => Promise<Record<string, string>>
     interceptors?: HttpInterceptors<RemoteOpsResponseData>
@@ -45,14 +45,14 @@ export function createOpsHttpTransport(deps: {
             : { responseParser }
     })
 
-    const executeOps = async (args: ExecuteOpsArgs): Promise<{
+    const executeOperations = async (args: ExecuteOperationRequest): Promise<{
         envelope: Envelope<RemoteOpsResponseData>
         response: Response
         results: RemoteOpsResponseData['results']
     }> => {
         const { envelope, response } = await pipeline.execute({
-            url: joinUrl(args.baseURL, args.opsPath),
-            endpoint: args.opsPath,
+            url: joinUrl(args.baseURL, args.endpointPath),
+            endpoint: args.endpointPath,
             method: 'POST',
             body: {
                 meta: args.meta,
@@ -69,5 +69,5 @@ export function createOpsHttpTransport(deps: {
         return { envelope: envelope as any, response, results }
     }
 
-    return { executeOps }
+    return { executeOperations }
 }

@@ -1,35 +1,33 @@
 import { withTraceMeta, assertOutgoingRemoteOps, assertRemoteOpResults, wrapProtocolError } from 'atoma-types/protocol-tools'
-import type { ExecuteOpsInput, ExecuteOpsOutput, OpsClientLike, RemoteOpEnvelope, RemoteOpResultEnvelope } from 'atoma-types/client/ops'
-import type { OpsContext } from 'atoma-types/client/plugins'
-import { OpsHandlerRegistry } from './OpsHandlerRegistry'
+import type {
+    ExecuteOperationsInput,
+    ExecuteOperationsOutput,
+    OperationClient,
+    RemoteOperationEnvelope,
+    RemoteOperationResultEnvelope
+} from 'atoma-types/client/ops'
+import type { OperationContext } from 'atoma-types/client/plugins'
+import { OperationPipeline } from '../plugins/OperationPipeline'
 
-export class RegistryOpsClient implements OpsClientLike {
-    private readonly opsRegistry: OpsHandlerRegistry
-    private readonly clientId: string
-
-    constructor(args: {
-        opsRegistry: OpsHandlerRegistry
-        clientId: string
-    }) {
-        this.opsRegistry = args.opsRegistry
-        this.clientId = args.clientId
-    }
-
-    executeOps = async (input: ExecuteOpsInput): Promise<ExecuteOpsOutput> => {
-        const opsWithTrace = withTraceMeta({
+export function createOperationClient(args: {
+    operationPipeline: OperationPipeline
+    clientId: string
+}): OperationClient {
+    const executeOperations: OperationClient['executeOperations'] = async (input: ExecuteOperationsInput): Promise<ExecuteOperationsOutput> => {
+        const operationsWithTrace = withTraceMeta({
             ops: input.ops
         })
         const meta = input.meta
-        assertOutgoingRemoteOps({ ops: opsWithTrace, meta })
+        assertOutgoingRemoteOps({ ops: operationsWithTrace, meta })
 
-        const req: RemoteOpEnvelope = {
-            ops: opsWithTrace,
+        const req: RemoteOperationEnvelope = {
+            ops: operationsWithTrace,
             meta,
             ...(input.signal ? { signal: input.signal } : {})
         }
-        const ctx: OpsContext = { clientId: this.clientId }
+        const ctx: OperationContext = { clientId: args.clientId }
 
-        const envelope = assertRemoteOpResultEnvelope(await this.opsRegistry.executeOps({ req, ctx }))
+        const envelope = assertRemoteOpResultEnvelope(await args.operationPipeline.executeOperations({ req, ctx }))
 
         try {
             return {
@@ -40,9 +38,13 @@ export class RegistryOpsClient implements OpsClientLike {
             throw toProtocolValidationError(error, 'Invalid ops response')
         }
     }
+
+    return {
+        executeOperations
+    }
 }
 
-function assertRemoteOpResultEnvelope(value: unknown): RemoteOpResultEnvelope {
+function assertRemoteOpResultEnvelope(value: unknown): RemoteOperationResultEnvelope {
     if (!value || typeof value !== 'object') {
         throw new Error('[Atoma] Invalid ops response: envelope missing')
     }
@@ -52,7 +54,7 @@ function assertRemoteOpResultEnvelope(value: unknown): RemoteOpResultEnvelope {
         throw new Error('[Atoma] Invalid ops response: results must be an array')
     }
 
-    return value as RemoteOpResultEnvelope
+    return value as RemoteOperationResultEnvelope
 }
 
 function toProtocolValidationError(error: unknown, fallbackMessage: string): Error {

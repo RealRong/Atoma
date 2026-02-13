@@ -1,9 +1,16 @@
 export type {
-    OpsHandler,
-    OpsEntry,
-    OpsRegister,
+    OperationMiddleware,
+    OperationMiddlewareEntry,
+    RegisterOperationMiddleware,
+    EventRegister,
+    PluginEvents,
+    PluginRuntimeApi,
+    RuntimeExtensionFacade,
     PluginContext,
-    OpsContext,
+    RuntimeExtensionContext,
+    OperationContext,
     ClientPlugin,
+    RuntimeExtensionPlugin,
+    AnyClientPlugin,
     PluginInitResult
 } from './contracts'

@@ -1,5 +1,5 @@
 import type { Table } from 'dexie'
-import { StorageOpsClient } from 'atoma-backend-shared'
+import { StorageOperationClient } from 'atoma-backend-shared'
 import { parseOrThrow, z } from 'atoma-shared'
 
 function isPlainObject(value: unknown): value is Record<string, any> {
@@ -35,7 +35,7 @@ function serializeValue(value: any) {
     return cloned
 }
 
-export class IndexedDBOpsClient extends StorageOpsClient {
+export class IndexedDbOperationClient extends StorageOperationClient {
     constructor(config: {
         tableForResource: (resource: string) => Table<any, string>
     }) {
@@ -44,7 +44,7 @@ export class IndexedDBOpsClient extends StorageOpsClient {
                 .loose()
                 .superRefine((value: any, ctx) => {
                     if (typeof value.tableForResource !== 'function') {
-                        ctx.addIssue({ code: 'custom', message: '[IndexedDBOpsClient] config.tableForResource is required' })
+                        ctx.addIssue({ code: 'custom', message: '[IndexedDbOperationClient] config.tableForResource is required' })
                     }
                 }),
             config,

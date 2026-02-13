@@ -17,7 +17,7 @@ Core/Runtime 不再感知 observability。需要 trace/debug 时，请显式安�
 
 ## 插件行为（零核心耦合）
 
-插件通过 `ctx.hooks.register(...)` 订阅：
+插件通过 `ctx.events.register(...)` 订阅：
 
 - `store.onCreated`
 - `read.onStart/onFinish`

@@ -1,6 +1,6 @@
 import { HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
 import type { Meta, RemoteOp, RemoteOpResult, QueryOp, WriteOp } from 'atoma-types/protocol'
-import type { ExecuteOpsInput, ExecuteOpsOutput } from 'atoma-types/client/ops'
+import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-types/client/ops'
 import { parseOrThrow, z } from 'atoma-shared'
 
 type Deferred<T> = {
@@ -8,7 +8,7 @@ type Deferred<T> = {
     reject: (reason?: unknown) => void
 }
 
-type OpsTask = {
+type OperationTask = {
     op: RemoteOp
     deferred: Deferred<RemoteOpResult>
 }
@@ -139,7 +139,7 @@ function isWriteQueueFull(config: BatchEngineConfigLike, writePendingCount: numb
     return writePendingCount >= maxLen
 }
 
-function normalizeMaxOpsPerRequest(config: BatchEngineConfigLike) {
+function normalizeMaxOperationsPerRequest(config: BatchEngineConfigLike) {
     const n = config.maxOpsPerRequest
     return (typeof n === 'number' && Number.isFinite(n) && n > 0) ? Math.floor(n) : Infinity
 }
@@ -153,13 +153,13 @@ type RemoteOpsRequest = {
     ops: RemoteOp[]
 }
 
-type OpsResult = RemoteOpResult
+type OperationResult = RemoteOpResult
 
-function mapOpsResults(results: unknown): Map<string, OpsResult> {
-    const map = new Map<string, OpsResult>()
+function mapOperationResults(results: unknown): Map<string, OperationResult> {
+    const map = new Map<string, OperationResult>()
     if (!Array.isArray(results)) return map
     results.forEach((r: any) => {
-        if (r && typeof r.opId === 'string') map.set(r.opId, r as OpsResult)
+        if (r && typeof r.opId === 'string') map.set(r.opId, r as OperationResult)
     })
     return map
 }
@@ -176,10 +176,10 @@ function missingResult(opId: string): RemoteOpResult {
     }
 }
 
-async function executeOpsTasksBatch(args: {
+async function executeOperationTasksBatch(args: {
     lane: 'query' | 'write'
     endpoint: string
-    tasks: OpsTask[]
+    tasks: OperationTask[]
     executeFn: (input: { ops: RemoteOp[]; meta: Meta; signal?: AbortSignal }) => Promise<{ results: RemoteOpResult[]; status?: number }>
     controller?: AbortController
 }) {
@@ -198,7 +198,7 @@ async function executeOpsTasksBatch(args: {
             signal: args.controller?.signal
         })
 
-        const resultMap = mapOpsResults(res.results)
+        const resultMap = mapOperationResults(res.results)
         return payload.ops.map((op) => resultMap.get(op.opId) ?? missingResult(op.opId))
     } catch (error: unknown) {
         throw error
@@ -219,7 +219,7 @@ type QueryLaneDeps = {
         maxOpsPerRequest?: number
         onError?: (error: Error, context: unknown) => void
     }
-    executeFn: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
+    executeFn: (input: ExecuteOperationsInput) => Promise<ExecuteOperationsOutput>
 }
 
 class QueryLane {
@@ -228,10 +228,10 @@ class QueryLane {
     private readonly queueOverflowError = new Error('BatchEngine queue overflow')
     private readonly droppedQueryError = new Error('BatchEngine dropped old query due to queue overflow')
 
-    private readonly queryQueue: Array<OpsTask> = []
+    private readonly queryQueue: Array<OperationTask> = []
     private queryInFlight = 0
     private readonly inFlightControllers = new Set<AbortController>()
-    private readonly inFlightTasks = new Set<OpsTask>()
+    private readonly inFlightTasks = new Set<OperationTask>()
 
     private readonly scheduler: ReturnType<typeof createCoalescedScheduler>
 
@@ -278,10 +278,10 @@ class QueryLane {
     async drain() {
         const config = this.deps.config()
         const maxInFlight = clampInt(config.queryMaxInFlight ?? 2, 1, 64)
-        const maxOps = normalizeMaxOpsPerRequest(config)
+        const maxOperations = normalizeMaxOperationsPerRequest(config)
 
         while (!this.disposed && this.queryInFlight < maxInFlight && this.queryQueue.length) {
-            const batch = takeBatch(this.queryQueue, maxOps)
+            const batch = takeBatch(this.queryQueue, maxOperations)
 
             this.queryInFlight++
             batch.forEach(t => this.inFlightTasks.add(t))
@@ -289,7 +289,7 @@ class QueryLane {
             if (controller) this.inFlightControllers.add(controller)
 
             try {
-                const results = await executeOpsTasksBatch({
+                const results = await executeOperationTasksBatch({
                     lane: 'query',
                     endpoint: this.deps.endpoint(),
                     tasks: batch,
@@ -360,7 +360,7 @@ type WriteLaneDeps = {
         maxOpsPerRequest?: number
         onError?: (error: Error, context: unknown) => void
     }
-    executeFn: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
+    executeFn: (input: ExecuteOperationsInput) => Promise<ExecuteOperationsOutput>
 }
 
 class WriteLane {
@@ -368,11 +368,11 @@ class WriteLane {
     private readonly disposedError = new Error('BatchEngine disposed')
     private readonly queueOverflowError = new Error('BatchEngine queue overflow')
 
-    private readonly writeQueue: Array<OpsTask> = []
+    private readonly writeQueue: Array<OperationTask> = []
     private writeInFlight = 0
 
     private readonly inFlightControllers = new Set<AbortController>()
-    private readonly inFlightTasks = new Set<OpsTask>()
+    private readonly inFlightTasks = new Set<OperationTask>()
 
     private readonly scheduler: ReturnType<typeof createCoalescedScheduler>
 
@@ -404,10 +404,10 @@ class WriteLane {
     async drain() {
         const config = this.deps.config()
         const maxInFlight = clampInt(config.writeMaxInFlight ?? 1, 1, 64)
-        const maxOps = normalizeMaxOpsPerRequest(config)
+        const maxOperations = normalizeMaxOperationsPerRequest(config)
 
         while (!this.disposed && this.writeInFlight < maxInFlight && this.writeQueue.length) {
-            const batch = takeBatch(this.writeQueue, maxOps)
+            const batch = takeBatch(this.writeQueue, maxOperations)
 
             this.writeInFlight++
             batch.forEach(t => this.inFlightTasks.add(t))
@@ -415,7 +415,7 @@ class WriteLane {
             if (controller) this.inFlightControllers.add(controller)
 
             try {
-                const results = await executeOpsTasksBatch({
+                const results = await executeOperationTasksBatch({
                     lane: 'write',
                     endpoint: this.deps.endpoint(),
                     tasks: batch,
@@ -477,8 +477,8 @@ class WriteLane {
     }
 }
 
-function takeBatch(queue: OpsTask[], maxOps: number) {
-    const takeCount = Math.min(queue.length, maxOps)
+function takeBatch(queue: OperationTask[], maxOperations: number) {
+    const takeCount = Math.min(queue.length, maxOperations)
     return queue.splice(0, takeCount)
 }
 
@@ -487,13 +487,13 @@ function takeBatch(queue: OpsTask[], maxOps: number) {
 // ============================================================================
 
 export interface BatchEngineConfig {
-    /** Ops endpoint path override. */
+    /** Operation endpoint path override. */
     endpoint?: string
     /** 
      * Direct execution function (no batching).
      * BatchEngine will call this function when flushing batched operations.
      */
-    executeFn: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
+    executeFn: (input: ExecuteOperationsInput) => Promise<ExecuteOperationsOutput>
     /**
      * Per-lane queue backpressure limit.
      * - number: applies to both query and write lanes
@@ -519,7 +519,7 @@ export interface BatchEngineConfig {
     /** Write-lane max concurrent in-flight requests. Default: 1. */
     writeMaxInFlight?: number
     /**
-     * Max ops per HTTP request (shared by query/write lanes).
+     * Max operations per HTTP request (shared by query/write lanes).
      * Default: unlimited (still bounded by `maxBatchSize` for writes).
      */
     maxOpsPerRequest?: number
@@ -542,7 +542,7 @@ export class BatchEngine {
      * Lane state + drain algorithms are embedded here for locality.
      */
     private readonly endpoint: string
-    private readonly executeFn: (input: ExecuteOpsInput) => Promise<ExecuteOpsOutput>
+    private readonly executeFn: (input: ExecuteOperationsInput) => Promise<ExecuteOperationsOutput>
 
     private readonly queryLane: QueryLane
     private readonly writeLane: WriteLane
@@ -609,7 +609,7 @@ export class BatchEngine {
         return Promise.reject(new Error(`[BatchEngine] Unsupported op kind: ${op.kind}`))
     }
 
-    async enqueueOps(ops: RemoteOp[]): Promise<RemoteOpResult[]> {
+    async enqueueOperations(ops: RemoteOp[]): Promise<RemoteOpResult[]> {
         return Promise.all(ops.map(op => this.enqueueOp(op)))
     }
 

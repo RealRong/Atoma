@@ -1,8 +1,13 @@
 import type { Entity } from 'atoma-types/core'
 import type { AtomaClient, AtomaSchema } from 'atoma-types/client'
-import type { PluginContext, OpsRegister } from 'atoma-types/client/plugins'
+import type {
+    EventRegister,
+    PluginContext,
+    RegisterOperationMiddleware,
+    RuntimeExtensionContext,
+} from 'atoma-types/client/plugins'
 import { buildPluginList, initPlugins, normalizePlugins, registerPluginHandlers } from './pluginLifecycle'
-import { OpsHandlerRegistry } from './OpsHandlerRegistry'
+import { OperationPipeline } from './OperationPipeline'
 
 function safeDispose(dispose: (() => void) | undefined): void {
     if (typeof dispose !== 'function') return
@@ -20,24 +25,31 @@ export type PluginsSetup = Readonly<{
 
 export function setupPlugins(args: {
     context: PluginContext
+    runtimeExtensionContext: RuntimeExtensionContext
     rawPlugins: ReadonlyArray<unknown>
-    opsRegistry?: OpsHandlerRegistry
+    operationPipeline?: OperationPipeline
 }): PluginsSetup {
-    const opsRegistry = args.opsRegistry ?? new OpsHandlerRegistry()
+    const operationPipeline = args.operationPipeline ?? new OperationPipeline()
     const unregisters: Array<() => void> = []
 
     const plugins = buildPluginList(normalizePlugins(args.rawPlugins))
 
-    const register: OpsRegister = (handler, opts) => {
-        const unregister = opsRegistry.register(handler, opts)
+    const register: RegisterOperationMiddleware = (handler, opts) => {
+        const unregister = operationPipeline.register(handler, opts)
         unregisters.push(unregister)
         return unregister
     }
 
-    registerPluginHandlers(plugins, args.context, register)
+    const registerEvents: EventRegister = (hooks) => {
+        const unregister = args.context.events.register(hooks)
+        unregisters.push(unregister)
+        return unregister
+    }
+
+    registerPluginHandlers(plugins, args.context, args.runtimeExtensionContext, register, registerEvents)
 
     const init: PluginsSetup['init'] = (client) => {
-        return initPlugins(plugins, args.context, client)
+        return initPlugins(plugins, args.context, args.runtimeExtensionContext, client)
     }
 
     const dispose = () => {
@@ -45,7 +57,7 @@ export function setupPlugins(args: {
             safeDispose(unregisters[i])
         }
         unregisters.length = 0
-        opsRegistry.clear()
+        operationPipeline.clear()
     }
 
     return {

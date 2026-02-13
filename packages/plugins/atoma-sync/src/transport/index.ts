@@ -1,1 +1,1 @@
-export { createOpsSyncDriver } from '#sync/transport/ops-driver'
+export { createOperationSyncDriver } from '#sync/transport/operation-driver'

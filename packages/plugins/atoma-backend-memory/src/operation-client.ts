@@ -1,4 +1,4 @@
-import { StorageOpsClient } from 'atoma-backend-shared'
+import { StorageOperationClient } from 'atoma-backend-shared'
 
 type ResourceStore = Map<string, any>
 
@@ -6,7 +6,7 @@ function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-export class MemoryOpsClient extends StorageOpsClient {
+export class MemoryOperationClient extends StorageOperationClient {
     private readonly storesByResource = new Map<string, ResourceStore>()
 
     constructor(config?: {

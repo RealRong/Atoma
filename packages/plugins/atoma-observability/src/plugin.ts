@@ -148,9 +148,11 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         attachWriteTrace(ops, requestIdByTrace)
     }
 
+    let stopEvents: (() => void) | undefined
+
     return {
         id: 'atoma-observability',
-        register: (_ctx: PluginContext, register) => {
+        operations: (_ctx: PluginContext, register) => {
             if (!injectTraceMeta) return
 
             register(async (req, _ctx, next) => {
@@ -158,8 +160,8 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 return await next()
             }, { priority: 100 })
         },
-        init: (ctx: PluginContext) => {
-            const stop = ctx.hooks.register({
+        events: (_ctx: PluginContext, registerEvents) => {
+            stopEvents = registerEvents({
                 read: {
                     onStart: <T extends Entity>(args: ReadStartArgs<T>) => {
                         const { handle, query } = args
@@ -229,6 +231,8 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                     }
                 }
             })
+        },
+        init: (_ctx: PluginContext) => {
 
             return {
                 extension: {
@@ -243,7 +247,7 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 },
                 dispose: () => {
                     try {
-                        stop()
+                        stopEvents?.()
                     } catch {
                         // ignore
                     }

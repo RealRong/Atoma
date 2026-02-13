@@ -1,5 +1,5 @@
-import { HttpOpsClient } from './ops-client'
-import type { ClientPlugin, PluginContext, OpsRegister } from 'atoma-types/client/plugins'
+import { HttpOperationClient } from './operation-client'
+import type { ClientPlugin, PluginContext, RegisterOperationMiddleware } from 'atoma-types/client/plugins'
 import type { HttpBackendPluginOptions } from './types'
 
 function normalizeBaseUrl(baseURL: string): string {
@@ -16,10 +16,10 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
 
     return {
         id: `http:${opts.baseURL}`,
-        register: (_ctx: PluginContext, register: OpsRegister) => {
-            const opsClient = new HttpOpsClient({
+        operations: (_ctx: PluginContext, register: RegisterOperationMiddleware) => {
+            const operationClient = new HttpOperationClient({
                 baseURL: opts.baseURL,
-                opsPath: opts.opsPath,
+                operationsPath: opts.operationsPath,
                 headers: opts.headers,
                 retry: opts.retry,
                 fetchFn: opts.fetchFn,
@@ -32,7 +32,7 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
             })
 
             register(async (req) => {
-                return await opsClient.executeOps({
+                return await operationClient.executeOperations({
                     ops: req.ops,
                     meta: req.meta,
                     ...(req.signal ? { signal: req.signal } : {})

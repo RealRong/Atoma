@@ -20,7 +20,7 @@ export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugi
             }
 
             const inspector = createClientInspector({
-                clientId: ctx.runtime.id,
+                clientId: ctx.clientId,
                 hub,
                 label: options.label
             })

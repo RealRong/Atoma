@@ -1,2 +1,2 @@
-export { StorageOpsClient } from './ops-client-core'
-export type { OpsStorageAdapter, StorageOpsClientOptions } from './ops-client-core'
+export { StorageOperationClient } from './operation-client-core'
+export type { OperationStorageAdapter, StorageOperationClientOptions } from './operation-client-core'

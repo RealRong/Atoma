@@ -2,14 +2,14 @@ import { assertRemoteOpResults, createOpId, buildWriteOp, buildChangesPullOp, as
 import type { Meta, RemoteOp, RemoteOpResult, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
 import type { SyncOutboxItem, SyncPushOutcome, SyncTransport } from 'atoma-types/sync'
 
-type ExecuteOps = (input: {
+type ExecuteOperations = (input: {
     ops: RemoteOp[]
     meta: Meta
     signal?: AbortSignal
 }) => Promise<{ results: RemoteOpResult[]; status?: number }>
 
-export function createOpsSyncDriver(args: {
-    executeOps: ExecuteOps
+export function createOperationSyncDriver(args: {
+    executeOperations: ExecuteOperations
     now?: () => number
 }): SyncTransport {
     const now = args.now ?? (() => Date.now())
@@ -23,7 +23,7 @@ export function createOpsSyncDriver(args: {
                 ...(input.resources?.length ? { resources: input.resources } : {})
             })
 
-            const res = await args.executeOps({
+            const res = await args.executeOperations({
                 ops: [op],
                 meta: input.meta,
                 ...(input.signal ? { signal: input.signal } : {})
@@ -33,7 +33,7 @@ export function createOpsSyncDriver(args: {
             const result = results[0]
             if (!result) throw new Error('[Sync] Missing changes.pull result')
             if (!(result as any).ok) {
-                throw toOpsError(result, 'changes.pull')
+                throw toOperationError(result, 'changes.pull')
             }
             return (result as any).data as any
         },
@@ -99,7 +99,7 @@ export function createOpsSyncDriver(args: {
 
                 let result: RemoteOpResult | undefined
                 try {
-                    const res = await args.executeOps({
+                    const res = await args.executeOperations({
                         ops: [op],
                         meta: input.meta,
                         ...(input.signal ? { signal: input.signal } : {})
@@ -133,7 +133,7 @@ export function createOpsSyncDriver(args: {
 
                 if (!(result as any).ok) {
                     const payload = (result as any).error ?? result
-                    const retryable = isRetryableOpError(payload)
+                    const retryable = isRetryableOperationError(payload)
                     for (const e of group.entries) {
                         const entryId = (e.entry.entry as any)?.entryId
                         outcomes[e.index] = retryable
@@ -206,7 +206,7 @@ export function createOpsSyncDriver(args: {
     }
 }
 
-function toOpsError(result: RemoteOpResult, tag: string): Error {
+function toOperationError(result: RemoteOpResult, tag: string): Error {
     if ((result as any).ok) return new Error(`[${tag}] RemoteOp failed`)
     const message = ((result as any).error && typeof ((result as any).error as any).message === 'string')
         ? ((result as any).error as any).message
@@ -216,7 +216,7 @@ function toOpsError(result: RemoteOpResult, tag: string): Error {
     return err
 }
 
-function isRetryableOpError(error: any): boolean {
+function isRetryableOperationError(error: any): boolean {
     if (!error || typeof error !== 'object') return false
     if (error.retryable === true) return true
     const kind = (error as any).kind

@@ -1,10 +1,10 @@
-import type { Runtime } from 'atoma-types/runtime'
+import type { RuntimeExtensionFacade } from 'atoma-types/client/plugins'
 import type { Change, EntityId } from 'atoma-types/protocol'
 import type { SyncApplier, SyncWriteAck, SyncWriteReject } from 'atoma-types/sync'
 
 export class WritebackApplier implements SyncApplier {
     constructor(private readonly deps: {
-        runtime: Runtime
+        runtime: RuntimeExtensionFacade
     }) {}
 
     applyPullChanges = async (changes: Change[]) => {
