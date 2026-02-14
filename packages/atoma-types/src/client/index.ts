@@ -8,3 +8,6 @@ export type {
     AtomaHistory,
     PluginCapableClient
 } from './client'
+
+export type { ServiceToken, ServiceRegistry } from './services'
+export { createServiceToken } from './services'

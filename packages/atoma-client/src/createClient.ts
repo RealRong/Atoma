@@ -7,13 +7,11 @@ import type {
     CreateClientOptions,
 } from 'atoma-types/client'
 import type { Schema } from 'atoma-types/runtime'
-import { createOperationClient } from './client/createOperationClient'
 import { buildPluginContext } from './client/composition/buildPluginContext'
 import { installDebugIntegration } from './client/installDebugIntegration'
 import { installDirectStrategy } from './client/installDirectStrategy'
 import { setupPlugins } from './plugins'
-import { CapabilitiesRegistry } from './plugins/CapabilitiesRegistry'
-import { OperationPipeline } from './plugins/OperationPipeline'
+import { ServiceRegistry } from './plugins/ServiceRegistry'
 
 /**
  * Creates an Atoma client instance.
@@ -29,44 +27,41 @@ export function createClient<
         schema?: unknown
         plugins?: unknown
         execution?: {
-            defaultStrategy?: unknown
+            defaultRoute?: unknown
         }
     }
     const schema = (input.schema ?? {}) as Schema
     const rawPlugins = Array.isArray(input.plugins) ? input.plugins : []
-    const defaultExecutionStrategy = (
-        typeof input.execution?.defaultStrategy === 'string' && input.execution.defaultStrategy.trim()
-            ? input.execution.defaultStrategy.trim()
-            : 'direct'
+    const defaultExecutionRoute = (
+        typeof input.execution?.defaultRoute === 'string' && input.execution.defaultRoute.trim()
+            ? input.execution.defaultRoute.trim()
+            : 'direct-local'
     )
 
-    const capabilities = new CapabilitiesRegistry()
+    const services = new ServiceRegistry()
     const runtime = new Runtime({
         id: createId(),
         schema
     })
-    const pipeline = new OperationPipeline()
-    const operation = createOperationClient({
-        pipeline,
-        clientId: runtime.id
-    })
 
-    const context = buildPluginContext({ runtime, capabilities, operation })
-
-    const plugins = setupPlugins({
-        context,
-        rawPlugins,
-        pipeline
+    const context = buildPluginContext({
+        runtime,
+        services
     })
 
     const disposers: Array<() => void> = []
-    disposers.push(...installDebugIntegration({ capabilities, runtime }))
-    disposers.push(plugins.dispose)
+    disposers.push(...installDebugIntegration({ services, runtime }))
     disposers.push(installDirectStrategy({
         runtime,
-        operation,
-        defaultStrategy: defaultExecutionStrategy
+        services,
+        defaultRoute: defaultExecutionRoute
     }))
+
+    const plugins = setupPlugins({
+        context,
+        rawPlugins
+    })
+    disposers.push(plugins.dispose)
 
     let disposed = false
     const dispose = () => {
@@ -89,7 +84,7 @@ export function createClient<
         dispose
     }
 
-    disposers.push(...plugins.init(client))
+    plugins.mount(client)
 
     return client
 }

@@ -1,4 +1,4 @@
-import type { Entity, WriteStrategy } from '../core'
+import type { Entity, WriteRoute } from '../core'
 import type { AtomaSchema } from './schema'
 import type { ClientPlugin } from './plugins'
 
@@ -9,6 +9,6 @@ export type CreateClientOptions<
     schema?: Schema
     plugins?: ReadonlyArray<ClientPlugin>
     execution?: Readonly<{
-        defaultStrategy?: WriteStrategy
+        defaultRoute?: WriteRoute
     }>
 }>

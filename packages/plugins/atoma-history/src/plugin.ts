@@ -1,6 +1,6 @@
 import type { AtomaHistory } from 'atoma-types/client'
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { DEBUG_HUB_CAPABILITY } from 'atoma-types/devtools'
+import { DEBUG_HUB_TOKEN } from 'atoma-types/devtools'
 import { HistoryManager } from './history-manager'
 
 const toScope = (scope?: string) => String(scope ?? 'default')
@@ -17,12 +17,11 @@ const buildSnapshot = (manager: HistoryManager) => {
 
 export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
     const manager = new HistoryManager()
-    let stopEvents: (() => void) | undefined
 
     return {
         id: 'atoma-history',
-        events: (_ctx, registerEvents) => {
-            stopEvents = registerEvents({
+        setup: (ctx: PluginContext) => {
+            const stopEvents = ctx.events.register({
                 write: {
                     onPatches: (args) => {
                         manager.record({
@@ -34,9 +33,8 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                     }
                 }
             })
-        },
-        init: (ctx: PluginContext) => {
-            const debugHub = ctx.capabilities.get(DEBUG_HUB_CAPABILITY)
+
+            const debugHub = ctx.services.resolve(DEBUG_HUB_TOKEN)
             const historyProviderId = `history.${ctx.clientId}`
             const unregisterDebugProvider = debugHub?.register({
                 id: historyProviderId,

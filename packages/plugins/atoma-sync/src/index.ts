@@ -1,7 +1,14 @@
 export { syncPlugin } from './plugin'
 export { syncOperationDriverPlugin } from './drivers/operation-sync-driver-plugin'
 export { sseSubscribeDriverPlugin } from './drivers/sse-subscribe-driver-plugin'
-export { SYNC_DRIVER_CAPABILITY_KEY, SYNC_SUBSCRIBE_CAPABILITY_KEY, getSyncDriver, getSyncSubscribeDriver, registerSyncDriver, registerSyncSubscribeDriver } from './capabilities'
+export {
+    SYNC_TRANSPORT_TOKEN,
+    SYNC_SUBSCRIBE_TRANSPORT_TOKEN,
+    resolveSyncTransport,
+    resolveSyncSubscribeTransport,
+    registerSyncTransport,
+    registerSyncSubscribeTransport
+} from './services'
 export type { SyncOperationDriverPluginOptions } from './drivers/operation-sync-driver-plugin'
 export type { SseSubscribeDriverPluginOptions } from './drivers/sse-subscribe-driver-plugin'
 export type { SyncPluginOptions, SyncExtension } from './types'

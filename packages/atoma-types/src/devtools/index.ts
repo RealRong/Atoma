@@ -1,4 +1,4 @@
-import { defineCapability } from '../client/registry'
+import { createServiceToken } from '../client/services'
 import type { StoreToken } from '../core'
 
 export type DebugKind = 'store' | 'index' | 'sync' | 'history' | 'trace' | 'custom'
@@ -54,4 +54,4 @@ export type DebugHub = Readonly<{
     subscribe: (fn: (e: DebugHubEvent) => void) => () => void
 }>
 
-export const DEBUG_HUB_CAPABILITY = defineCapability<DebugHub>('debug.hub')
+export const DEBUG_HUB_TOKEN = createServiceToken<DebugHub>('debug.hub')

@@ -11,7 +11,7 @@ export type SyncEvent =
     | { type: 'lifecycle:lock_lost'; error: Error }
     | { type: 'outbox:queue'; stats: SyncOutboxStats }
     | { type: 'outbox:queue_full'; stats: SyncOutboxStats; maxQueueSize: number }
-    | { type: 'outbox:enqueue_failed'; resource: ResourceToken; count: number; strategy: string; error: Error }
+    | { type: 'outbox:enqueue_failed'; resource: ResourceToken; count: number; route: string; error: Error }
     | { type: 'push:start' }
     | { type: 'push:idle' }
     | { type: 'push:backoff'; attempt: number; delayMs: number }

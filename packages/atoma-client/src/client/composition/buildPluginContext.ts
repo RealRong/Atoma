@@ -1,23 +1,27 @@
 import type { Patch } from 'immer'
-import type { OperationClient } from 'atoma-types/client/ops'
 import type { Entity, OperationContext, Query, QueryResult, StoreToken } from 'atoma-types/core'
 import type { PluginContext } from 'atoma-types/client/plugins'
-import { Runtime } from 'atoma-runtime'
-import { CapabilitiesRegistry } from '../../plugins/CapabilitiesRegistry'
+import type { StoreHandle } from 'atoma-types/runtime'
+import type { Runtime } from 'atoma-runtime'
+import type { ServiceRegistry } from '../../plugins/ServiceRegistry'
 
 export function buildPluginContext({
     runtime,
-    capabilities,
-    operation
+    services
 }: {
     runtime: Runtime
-    capabilities: CapabilitiesRegistry
-    operation: OperationClient
+    services: ServiceRegistry
 }): PluginContext {
     const pluginRuntime: PluginContext['runtime'] = {
         id: runtime.id,
         now: runtime.now,
         stores: {
+            resolveHandle: <T extends Entity>(input: {
+                storeName: StoreToken
+                reason: string
+            }) => {
+                return runtime.stores.resolveHandle(input.storeName, input.reason) as unknown as StoreHandle<T>
+            },
             query: <T extends Entity>(input: {
                 storeName: StoreToken
                 query: Query<T>
@@ -63,8 +67,7 @@ export function buildPluginContext({
             }
         },
         execution: {
-            register: (key, spec) => runtime.execution.register(key, spec),
-            setDefault: (key) => runtime.execution.setDefault(key),
+            apply: (bundle) => runtime.execution.apply(bundle),
             resolvePolicy: (key) => runtime.execution.resolvePolicy(key),
             subscribe: (listener) => runtime.execution.subscribe(listener),
             query: async <T extends Entity>(input: {
@@ -81,13 +84,20 @@ export function buildPluginContext({
                 })
             },
             write: (input) => runtime.execution.write(input)
-        }
+        },
+        engine: {
+            query: {
+                evaluate: runtime.engine.query.evaluate
+            }
+        },
     }
 
     return {
         clientId: runtime.id,
-        capabilities,
-        operation,
+        services: {
+            register: services.register,
+            resolve: services.resolve
+        },
         runtime: pluginRuntime,
         events: {
             register: runtime.hooks.register

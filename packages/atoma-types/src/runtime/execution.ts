@@ -1,4 +1,4 @@
-import type { Entity, WriteStrategy } from '../core'
+import type { Entity, WriteRoute } from '../core'
 import type {
     QueryInput,
     QueryOutput,
@@ -7,16 +7,56 @@ import type {
     Policy
 } from './persistence'
 
+export type ExecutorId = string
+
+export type RouteId = WriteRoute
+
+export type RouteSpec = Readonly<{
+    query: ExecutorId
+    write: ExecutorId
+    policy?: Policy
+}>
+
+export type ExecutionBundle = Readonly<{
+    id: string
+    executors?: Readonly<Record<ExecutorId, ExecutionSpec>>
+    routes?: Readonly<Record<RouteId, RouteSpec>>
+    defaultRoute?: RouteId
+    allowOverride?: boolean
+}>
+
+export type ExecutionResolutionSource =
+    | 'explicit-route'
+    | 'default-route'
+
+export type ExecutionResolution = Readonly<{
+    source: ExecutionResolutionSource
+    route: RouteId
+    executor: ExecutorId
+    trace: ReadonlyArray<ExecutorId>
+}>
+
 export type ExecutionWriteEvent = Readonly<
     | {
+        type: 'write.dispatched'
+        route: RouteId
+        executor: ExecutorId
+        resolution: ExecutionResolution
+        input: WriteInput<any>
+    }
+    | {
         type: 'write.succeeded'
-        strategy: WriteStrategy
+        route: RouteId
+        executor: ExecutorId
+        resolution: ExecutionResolution
         input: WriteInput<any>
         output: WriteOutput<any>
     }
     | {
         type: 'write.failed'
-        strategy: WriteStrategy
+        route: RouteId
+        executor: ExecutorId
+        resolution: ExecutionResolution
         input: WriteInput<any>
         error: unknown
     }
@@ -24,14 +64,25 @@ export type ExecutionWriteEvent = Readonly<
 
 export type ExecutionQueryEvent = Readonly<
     | {
+        type: 'query.dispatched'
+        route: RouteId
+        executor: ExecutorId
+        resolution: ExecutionResolution
+        input: QueryInput<any>
+    }
+    | {
         type: 'query.succeeded'
-        strategy: WriteStrategy
+        route: RouteId
+        executor: ExecutorId
+        resolution: ExecutionResolution
         input: QueryInput<any>
         output: QueryOutput
     }
     | {
         type: 'query.failed'
-        strategy: WriteStrategy
+        route: RouteId
+        executor: ExecutorId
+        resolution: ExecutionResolution
         input: QueryInput<any>
         error: unknown
     }
@@ -45,10 +96,9 @@ export type ExecutionSpec = Readonly<{
     policy?: Policy
 }>
 
-export type ExecutionRegistry = Readonly<{
-    register: (key: WriteStrategy, spec: ExecutionSpec) => () => void
-    setDefault: (key: WriteStrategy) => () => void
-    resolvePolicy: (key?: WriteStrategy) => Policy
+export type ExecutionKernel = Readonly<{
+    apply: (bundle: ExecutionBundle) => () => void
+    resolvePolicy: (route?: RouteId) => Policy
     subscribe: (listener: (event: ExecutionEvent) => void) => () => void
     query: <T extends Entity>(input: QueryInput<T>) => Promise<QueryOutput>
     write: <T extends Entity>(input: WriteInput<T>) => Promise<WriteOutput<T>>

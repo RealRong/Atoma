@@ -1,4 +1,4 @@
-import type { Entity, OperationContext, Query, StoreToken, WriteStrategy } from '../core'
+import type { Entity, OperationContext, Query, StoreToken, WriteRoute } from '../core'
 import type { EntityId, Version } from '../shared'
 import type { StoreHandle } from './handle'
 
@@ -104,7 +104,7 @@ export type RuntimeWriteItemResult =
 
 export type WriteInput<T extends Entity> = Readonly<{
     storeName: StoreToken
-    writeStrategy?: WriteStrategy
+    route?: WriteRoute
     handle: StoreHandle<T>
     opContext: OperationContext
     writeEntries: ReadonlyArray<RuntimeWriteEntry>

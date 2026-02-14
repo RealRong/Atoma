@@ -18,7 +18,7 @@ export default defineConfig({
         },
         sourcemap: true,
         rollupOptions: {
-            external: ['react', 'react-dom', 'atoma', 'atoma-client'],
+            external: ['react', 'react-dom', 'atoma', 'atoma-client', /^atoma-types(\/.*)?$/],
             output: {
                 globals: {
                     react: 'React',

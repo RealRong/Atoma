@@ -1,4 +1,4 @@
-import type { Entity, OperationContext } from 'atoma-types/core'
+import type { Entity, OperationContext, WriteRoute } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, RuntimeWriteEntry, StoreHandle } from 'atoma-types/runtime'
 
@@ -21,6 +21,6 @@ export type WriteCommitRequest<T extends Entity> = Readonly<{
     runtime: Runtime
     handle: StoreHandle<T>
     opContext: OperationContext
-    writeStrategy?: string
+    route?: WriteRoute
     plan: WritePlan<T>
 }>

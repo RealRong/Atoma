@@ -36,7 +36,7 @@ export async function resolveWriteBase<T extends Entity>(
     const cached = handle.state.getSnapshot().get(id) as T | undefined
     if (cached) return cached as PartialWithId<T>
 
-    const writePolicy = runtime.execution.resolvePolicy(options?.writeStrategy ?? handle.config.defaultWriteStrategy)
+    const writePolicy = runtime.execution.resolvePolicy(options?.route ?? handle.config.defaultRoute)
     const allowImplicitFetchForWrite = writePolicy.implicitFetch !== false
     if (!allowImplicitFetchForWrite) {
         throw new Error(`[Atoma] write: 缓存缺失且当前写入模式禁止补读，请先 fetch 再写入（id=${String(id)}）`)

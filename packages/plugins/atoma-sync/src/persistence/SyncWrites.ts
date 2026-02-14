@@ -46,13 +46,21 @@ function mapWriteEntriesToOutboxWrites(args: {
 export class SyncWrites {
     private readonly unregister: Array<() => void> = []
     private disposed = false
+    private readonly enqueueRoutes?: ReadonlySet<string>
 
     constructor(private readonly deps: {
         runtime: PluginRuntime
         outbox: OutboxStore
+        enqueueRoutes?: ReadonlyArray<string>
         onEvent?: (event: SyncEvent) => void
         onError?: (error: Error, context: { phase: SyncPhase }) => void
     }) {
+        const routes = deps.enqueueRoutes
+            ?.map(value => String(value ?? '').trim())
+            .filter(Boolean)
+        if (routes?.length) {
+            this.enqueueRoutes = new Set(routes)
+        }
         this.register()
     }
 
@@ -74,8 +82,8 @@ export class SyncWrites {
 
         this.unregister.push(runtime.execution.subscribe((event) => {
             if (event.type !== 'write.succeeded') return
-            if (event.strategy === 'operation') return
             if (event.output.status === 'enqueued') return
+            if (this.enqueueRoutes && !this.enqueueRoutes.has(event.route)) return
 
             const writeEntries = filterWriteEntriesByResults({
                 status: event.output.status,
@@ -85,7 +93,7 @@ export class SyncWrites {
             if (!writeEntries.length) return
 
             const resource = String(event.input.storeName)
-            const strategy = String(event.strategy)
+            const route = String(event.route)
 
             let writes: OutboxWrite[]
             try {
@@ -96,7 +104,7 @@ export class SyncWrites {
             } catch (error) {
                 this.reportEnqueueFailure({
                     resource,
-                    strategy,
+                    route,
                     count: writeEntries.length,
                     error
                 })
@@ -107,7 +115,7 @@ export class SyncWrites {
             void outbox.enqueueWrites({ writes }).catch((error) => {
                 this.reportEnqueueFailure({
                     resource,
-                    strategy,
+                    route,
                     count: writes.length,
                     error
                 })
@@ -117,7 +125,7 @@ export class SyncWrites {
 
     private reportEnqueueFailure(args: {
         resource: string
-        strategy: string
+        route: string
         count: number
         error: unknown
     }) {
@@ -125,7 +133,7 @@ export class SyncWrites {
         this.deps.onEvent?.({
             type: 'outbox:enqueue_failed',
             resource: args.resource,
-            strategy: args.strategy,
+            route: args.route,
             count: args.count,
             error
         })

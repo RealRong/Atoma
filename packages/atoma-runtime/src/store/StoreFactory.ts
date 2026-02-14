@@ -81,7 +81,7 @@ export class StoreFactory {
             state,
             storeName: name,
             config: {
-                defaultWriteStrategy: storeSchema.write?.strategy,
+                defaultRoute: storeSchema.write?.route,
                 getAllMergePolicy: storeSchema.read?.getAllMergePolicy,
                 hooks: storeSchema.hooks,
                 idGenerator,

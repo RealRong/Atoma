@@ -1,7 +1,13 @@
 export type { Runtime } from './runtime'
 export type {
-    ExecutionRegistry,
+    ExecutionKernel,
     ExecutionSpec,
+    ExecutorId,
+    RouteId,
+    RouteSpec,
+    ExecutionBundle,
+    ExecutionResolution,
+    ExecutionResolutionSource,
     ExecutionEvent,
     ExecutionWriteEvent,
     ExecutionQueryEvent

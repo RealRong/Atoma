@@ -1,7 +1,8 @@
-import type { ClientPlugin, OperationMiddleware, PluginContext, RegisterOperationMiddleware } from 'atoma-types/client/plugins'
+import type { ClientPlugin } from 'atoma-types/client/plugins'
+import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
+import type { OperationClient } from 'atoma-types/client/ops'
 import type { Entity, Query } from 'atoma-types/core'
 import type { QueryResultData, RemoteOpResult, WriteResultData } from 'atoma-types/protocol'
-import { isTerminalResult } from '../plugins/OperationPipeline'
 
 function toQueryResultData(data: unknown[], pageInfo?: unknown): QueryResultData {
     if (pageInfo === undefined) {
@@ -24,56 +25,69 @@ function toWriteResultData(entries: Array<{ entryId: string; item: { entityId?: 
     }
 }
 
-function runLocalQuery(ctx: PluginContext, storeName: string, query: Query<Entity>): QueryResultData {
-    const local = ctx.runtime.stores.query({
-        storeName,
-        query
-    })
-    return toQueryResultData(local.data as unknown[], local.pageInfo)
-}
-
 export function localBackendPlugin(): ClientPlugin {
     return {
         id: 'defaults:local-backend',
-        operations: (ctx: PluginContext, register: RegisterOperationMiddleware) => {
-            const operationMiddleware: OperationMiddleware = async (req, _ctx, next) => {
-                const upstream = await next()
-                if (!isTerminalResult(upstream)) return upstream
+        provides: [OPERATION_CLIENT_TOKEN],
+        setup: (ctx) => {
+            const operationClient: OperationClient = {
+                executeOperations: async (input) => {
+                    if (!input.ops.length) return { results: [] }
 
-                if (!req.ops.length) return { results: [] }
+                    const results: RemoteOpResult[] = []
+                    for (const op of input.ops) {
+                        if (op.kind === 'query') {
+                            const storeName = String(op.query.resource)
+                            const handle = ctx.runtime.stores.resolveHandle<Entity>({
+                                storeName,
+                                reason: 'defaults.local.operation.query'
+                            })
+                            const local = ctx.runtime.engine.query.evaluate({
+                                state: handle.state,
+                                query: op.query.query as Query<Entity>
+                            })
+                            results.push({
+                                opId: op.opId,
+                                ok: true,
+                                data: toQueryResultData(local.data as unknown[], local.pageInfo)
+                            })
+                            continue
+                        }
 
-                const results: RemoteOpResult[] = []
-                for (const op of req.ops) {
-                    if (op.kind === 'query') {
-                        const data = runLocalQuery(ctx, String(op.query.resource), op.query.query as Query<Entity>)
-                        results.push({ opId: op.opId, ok: true, data })
-                        continue
-                    }
+                        if (op.kind === 'write') {
+                            results.push({
+                                opId: op.opId,
+                                ok: true,
+                                data: toWriteResultData(op.write.entries as Array<{ entryId: string; item: { entityId?: string } }>),
+                            })
+                            continue
+                        }
 
-                    if (op.kind === 'write') {
                         results.push({
                             opId: op.opId,
-                            ok: true,
-                            data: toWriteResultData(op.write.entries as Array<{ entryId: string; item: { entityId?: string } }>),
+                            ok: false,
+                            error: {
+                                code: 'LOCAL_ONLY',
+                                message: `[Atoma] LocalBackendPlugin: unsupported op kind ${String(op.kind)}`,
+                                kind: 'internal'
+                            }
                         })
-                        continue
                     }
 
-                    results.push({
-                        opId: op.opId,
-                        ok: false,
-                        error: {
-                            code: 'LOCAL_ONLY',
-                            message: `[Atoma] LocalBackendPlugin: unsupported op kind ${String(op.kind)}`,
-                            kind: 'internal'
-                        }
-                    })
+                    return { results }
                 }
-
-                return { results }
             }
 
-            register(operationMiddleware, { priority: -1000 })
+            const unregister = ctx.services.register(OPERATION_CLIENT_TOKEN, operationClient)
+            return {
+                dispose: () => {
+                    try {
+                        unregister?.()
+                    } catch {
+                        // ignore
+                    }
+                }
+            }
         }
     }
 }

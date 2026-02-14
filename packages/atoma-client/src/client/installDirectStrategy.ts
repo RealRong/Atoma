@@ -1,8 +1,9 @@
-import type { Entity, WriteStrategy } from 'atoma-types/core'
-import type { OperationClient } from 'atoma-types/client/ops'
+import type { Entity, WriteRoute } from 'atoma-types/core'
+import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { QueryInput, QueryOutput, RuntimeWriteEntry, RuntimeWriteItemResult, WriteInput, WriteOutput } from 'atoma-types/runtime'
 import type { Runtime } from 'atoma-runtime'
 import { createOperationExecutionSpec } from './adapters/operationExecutionAdapter'
+import type { ServiceRegistry } from '../plugins/ServiceRegistry'
 
 function toLocalWriteResults(entries: ReadonlyArray<RuntimeWriteEntry>): RuntimeWriteItemResult[] {
     const results: RuntimeWriteItemResult[] = []
@@ -33,44 +34,51 @@ function toLocalWriteResults(entries: ReadonlyArray<RuntimeWriteEntry>): Runtime
 
 export function installDirectStrategy({
     runtime,
-    operation,
-    defaultStrategy = 'direct'
+    services,
+    defaultRoute = 'direct-local'
 }: {
     runtime: Runtime
-    operation: OperationClient
-    defaultStrategy?: WriteStrategy
+    services: ServiceRegistry
+    defaultRoute?: WriteRoute
 }): () => void {
-    const unregisterDirect = runtime.execution.register('direct', {
-        query: async <T extends Entity>(input: QueryInput<T>): Promise<QueryOutput> => {
-            const local = runtime.engine.query.evaluate({
-                state: input.handle.state,
-                query: input.query
-            })
+    return runtime.execution.apply({
+        id: 'builtin.direct',
+        executors: {
+            local: {
+                query: async <T extends Entity>(input: QueryInput<T>): Promise<QueryOutput> => {
+                    const local = runtime.engine.query.evaluate({
+                        state: input.handle.state,
+                        query: input.query
+                    })
 
-            return {
-                data: local.data,
-                ...(local.pageInfo !== undefined ? { pageInfo: local.pageInfo } : {})
+                    return {
+                        data: local.data,
+                        ...(local.pageInfo !== undefined ? { pageInfo: local.pageInfo } : {})
+                    }
+                },
+                write: async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
+                    const results = toLocalWriteResults(input.writeEntries)
+                    return {
+                        status: 'confirmed',
+                        ...(results.length ? { results } : {})
+                    }
+                }
+            },
+            operation: createOperationExecutionSpec({
+                runtime,
+                resolveOperation: () => services.resolve(OPERATION_CLIENT_TOKEN)
+            })
+        },
+        routes: {
+            'direct-local': {
+                query: 'local',
+                write: 'local'
+            },
+            'direct-operation': {
+                query: 'operation',
+                write: 'operation'
             }
         },
-        write: async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
-            const results = toLocalWriteResults(input.writeEntries)
-            return {
-                status: 'confirmed',
-                ...(results.length ? { results } : {})
-            }
-        }
+        defaultRoute
     })
-
-    const unregisterOperation = runtime.execution.register(
-        'operation',
-        createOperationExecutionSpec({ runtime, operation })
-    )
-
-    const restoreDefault = runtime.execution.setDefault(defaultStrategy)
-
-    return () => {
-        restoreDefault()
-        unregisterOperation()
-        unregisterDirect()
-    }
 }

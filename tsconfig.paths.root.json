@@ -87,8 +87,8 @@
             "atoma-types/client/plugins": [
                 "packages/atoma-types/src/client/plugins/index.ts"
             ],
-            "atoma-types/client/registry": [
-                "packages/atoma-types/src/client/registry.ts"
+            "atoma-types/client/services": [
+                "packages/atoma-types/src/client/services.ts"
             ],
             "atoma-types/client/ops": [
                 "packages/atoma-types/src/client/ops.ts"

@@ -215,7 +215,7 @@ async function runWriteTransaction<T extends Entity>(args: {
 
     const writeResult = await runtime.execution.write({
         storeName: String(handle.storeName),
-        writeStrategy: request.writeStrategy,
+        route: request.route,
         handle,
         opContext,
         writeEntries
@@ -258,7 +258,7 @@ function ensureWriteResultStatus(args: {
 export class WriteCommitFlow {
     execute = async <T extends Entity>(args: WriteCommitRequest<T>): Promise<T | void> => {
         const plan = args.plan
-        const writePolicy = args.runtime.execution.resolvePolicy(args.writeStrategy)
+        const writePolicy = args.runtime.execution.resolvePolicy(args.route)
         const optimisticState = applyOptimisticState({
             handle: args.handle,
             plan,

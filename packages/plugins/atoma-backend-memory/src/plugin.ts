@@ -1,22 +1,28 @@
-import type { ClientPlugin, PluginContext, RegisterOperationMiddleware } from 'atoma-types/client/plugins'
+import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
+import type { ClientPlugin } from 'atoma-types/client/plugins'
 import { MemoryOperationClient } from './operation-client'
 import type { MemoryBackendPluginOptions } from './types'
 
 export function memoryBackendPlugin(options?: MemoryBackendPluginOptions): ClientPlugin {
     return {
         id: 'memory',
-        operations: (_ctx: PluginContext, register: RegisterOperationMiddleware) => {
+        provides: [OPERATION_CLIENT_TOKEN],
+        setup: (ctx) => {
             const operationClient = new MemoryOperationClient({
                 ...(options?.seed ? { seed: options.seed } : {})
             })
 
-            register(async (req) => {
-                return await operationClient.executeOperations({
-                    ops: req.ops,
-                    meta: req.meta,
-                    ...(req.signal ? { signal: req.signal } : {})
-                })
-            }, { priority: 1000 })
+            const unregister = ctx.services.register(OPERATION_CLIENT_TOKEN, operationClient)
+
+            return {
+                dispose: () => {
+                    try {
+                        unregister?.()
+                    } catch {
+                        // ignore
+                    }
+                }
+            }
         }
     }
 }

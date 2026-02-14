@@ -41,7 +41,7 @@ export interface StoreOperationOptions {
     batch?: {
         concurrency?: number
     }
-    writeStrategy?: WriteStrategy
+    route?: WriteRoute
     opContext?: OperationContext
 }
 
@@ -73,13 +73,13 @@ export interface StoreConfig<T> {
         getAllMergePolicy?: GetAllMergePolicy
     }>
     write?: Readonly<{
-        strategy?: WriteStrategy
+        route?: WriteRoute
     }>
 }
 
 export type StoreToken = string
 
-export type WriteStrategy = string
+export type WriteRoute = string
 
 declare const RELATIONS_BRAND: unique symbol
 

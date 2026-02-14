@@ -1,19 +1,19 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { DEBUG_HUB_CAPABILITY } from 'atoma-types/devtools'
+import { DEBUG_HUB_TOKEN } from 'atoma-types/devtools'
 import type { SyncClient, SyncMode, SyncPhase, SyncRuntimeConfig } from 'atoma-types/sync'
 import { SyncEngine } from '#sync/engine/sync-engine'
 import { createStores } from '#sync/storage'
 import { WritebackApplier } from '#sync/applier/writeback-applier'
 import { SyncDevtools } from '#sync/devtools/sync-devtools'
 import { SyncWrites } from '#sync/persistence/SyncWrites'
-import { getSyncDriver, getSyncSubscribeDriver } from '#sync/capabilities'
+import { resolveSyncSubscribeTransport, resolveSyncTransport } from '#sync/services'
 import { getOrCreateGlobalReplicaId } from '#sync/internal/replica-id'
 import type { SyncExtension, SyncPluginOptions } from './types'
 
 export function syncPlugin(opts: SyncPluginOptions = {}): ClientPlugin<SyncExtension> {
     return {
         id: 'sync',
-        init: (ctx: PluginContext) => setupSyncPlugin(ctx, opts)
+        setup: (ctx: PluginContext) => setupSyncPlugin(ctx, opts)
     }
 }
 
@@ -39,14 +39,14 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
 
     const devtools = new SyncDevtools({ now })
     const resolveDriver = () => {
-        const driver = getSyncDriver(ctx)
+        const driver = resolveSyncTransport(ctx)
         if (!driver) {
-            throw new Error('[Sync] sync.driver missing (register via plugin)')
+            throw new Error('[Sync] sync.transport missing (register via plugin)')
         }
         return driver
     }
 
-    const resolveSubscribeDriver = () => getSyncSubscribeDriver(ctx)
+    const resolveSubscribeDriver = () => resolveSyncSubscribeTransport(ctx)
 
     const onEvent = (e: any) => {
         devtools.onEvent(e)
@@ -86,7 +86,7 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
         const backoff = opts.policy?.backoff ?? {}
 
         if (subscribeEnabled && subscribeEnabledByUser && !subscribeTransport) {
-            throw new Error('[Sync] sync.subscribe missing (register via plugin)')
+            throw new Error('[Sync] sync.subscribe transport missing (register via plugin)')
         }
 
         return {
@@ -138,11 +138,11 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
     let engine: SyncClient | null = null
 
     const isConfigured = (m: SyncMode) => {
-        const driver = getSyncDriver(ctx)
+        const driver = resolveSyncTransport(ctx)
         if (!driver) return false
         const subscribeEnabled = m === 'subscribe-only' || m === 'pull+subscribe' || m === 'full'
         const subscribeEnabledByUser = opts.subscribe !== false
-        if (subscribeEnabled && subscribeEnabledByUser && !getSyncSubscribeDriver(ctx)) {
+        if (subscribeEnabled && subscribeEnabledByUser && !resolveSyncSubscribeTransport(ctx)) {
             return false
         }
         return true
@@ -159,6 +159,7 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
     const syncWrites = new SyncWrites({
         runtime,
         outbox: stores.outbox,
+        enqueueRoutes: opts.enqueueRoutes ?? ['direct-local'],
         onEvent,
         onError
     })
@@ -194,7 +195,7 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
 
     const extension: SyncExtension = { sync }
 
-    const debugHub = ctx.capabilities.get(DEBUG_HUB_CAPABILITY)
+    const debugHub = ctx.services.resolve(DEBUG_HUB_TOKEN)
     const syncProviderId = `sync.${runtime.id}`
     const unregisterDebugProvider = debugHub?.register({
         id: syncProviderId,

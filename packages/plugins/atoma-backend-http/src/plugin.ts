@@ -1,5 +1,6 @@
 import { HttpOperationClient } from './operation-client'
-import type { ClientPlugin, PluginContext, RegisterOperationMiddleware } from 'atoma-types/client/plugins'
+import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
+import type { ClientPlugin } from 'atoma-types/client/plugins'
 import type { HttpBackendPluginOptions } from './types'
 
 function normalizeBaseUrl(baseURL: string): string {
@@ -16,7 +17,8 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
 
     return {
         id: `http:${opts.baseURL}`,
-        operations: (_ctx: PluginContext, register: RegisterOperationMiddleware) => {
+        provides: [OPERATION_CLIENT_TOKEN],
+        setup: (ctx) => {
             const operationClient = new HttpOperationClient({
                 baseURL: opts.baseURL,
                 operationsPath: opts.operationsPath,
@@ -31,13 +33,17 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
                 batch: opts.batch
             })
 
-            register(async (req) => {
-                return await operationClient.executeOperations({
-                    ops: req.ops,
-                    meta: req.meta,
-                    ...(req.signal ? { signal: req.signal } : {})
-                })
-            }, { priority: 1000 })
+            const unregister = ctx.services.register(OPERATION_CLIENT_TOKEN, operationClient)
+
+            return {
+                dispose: () => {
+                    try {
+                        unregister?.()
+                    } catch {
+                        // ignore
+                    }
+                }
+            }
         }
     }
 }

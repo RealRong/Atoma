@@ -3,6 +3,7 @@ import type { SyncBackoffConfig, SyncEvent, SyncMode, SyncPhase, SyncRetryConfig
 export type SyncPluginOptions = Readonly<{
     mode?: SyncMode
     resources?: string[]
+    enqueueRoutes?: ReadonlyArray<string>
 
     pull?: Readonly<{ intervalMs?: number }>
     push?: Readonly<{ maxItems?: number }>

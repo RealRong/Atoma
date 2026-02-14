@@ -1,6 +1,5 @@
-import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
+import type { ClientPlugin } from 'atoma-types/client/plugins'
 import type { Entity } from 'atoma-types/core'
-import type { RemoteOp } from 'atoma-types/protocol'
 import type {
     ReadFinishArgs,
     ReadStartArgs,
@@ -18,49 +17,9 @@ type WriteContextEntry = {
     storeName: string
 }
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> => {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-const applyTraceMeta = (op: RemoteOp, traceId?: string, requestId?: string) => {
-    if (!traceId && !requestId) return
-    const baseMeta = isPlainObject((op as any).meta) ? ((op as any).meta as Record<string, unknown>) : undefined
-    const nextMeta: Record<string, unknown> = baseMeta ? { ...baseMeta } : { v: 1 }
-
-    if (typeof nextMeta.v !== 'number') nextMeta.v = 1
-
-    const existingTraceId = (typeof nextMeta.traceId === 'string' && nextMeta.traceId) ? nextMeta.traceId : undefined
-    const existingRequestId = (typeof nextMeta.requestId === 'string' && nextMeta.requestId) ? nextMeta.requestId : undefined
-
-    if (!existingTraceId && traceId) nextMeta.traceId = traceId
-    if (!existingRequestId && requestId) nextMeta.requestId = requestId
-
-    ;(op as any).meta = nextMeta
-}
-
-const applyWriteEntryTraceMeta = (entry: any, traceId?: string, requestId?: string) => {
-    if (!traceId && !requestId) return
-    if (!entry || typeof entry !== 'object') return
-
-    const item = (entry as any).item
-    if (!item || typeof item !== 'object') return
-
-    const baseMeta = isPlainObject((item as any).meta) ? ((item as any).meta as Record<string, unknown>) : {}
-    const nextMeta: Record<string, unknown> = { ...baseMeta }
-
-    const existingTraceId = (typeof nextMeta.traceId === 'string' && nextMeta.traceId) ? nextMeta.traceId : undefined
-    const existingRequestId = (typeof nextMeta.requestId === 'string' && nextMeta.requestId) ? nextMeta.requestId : undefined
-
-    if (!existingTraceId && traceId) nextMeta.traceId = traceId
-    if (!existingRequestId && requestId) nextMeta.requestId = requestId
-
-    ;(item as any).meta = nextMeta
-}
-
 export function observabilityPlugin(options: ObservabilityPluginOptions = {}): ClientPlugin<ObservabilityExtension> {
     const storeObs = new StoreObservability()
     const prefix = String(options.eventPrefix ?? 'obs')
-    const injectTraceMeta = options.injectTraceMeta !== false
 
     const readContextByQuery = new WeakMap<object, ObservabilityContext>()
     const writeContextByAction = new Map<string, WriteContextEntry>()
@@ -81,87 +40,10 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
         writeContextByAction.delete(key)
     }
 
-    const attachQueryTrace = (ops: RemoteOp[], requestIdByTrace: Map<string, string>) => {
-        for (const op of ops) {
-            if (!op || typeof op !== 'object') continue
-            if (op.kind !== 'query') continue
-
-            const meta = isPlainObject((op as any).meta) ? ((op as any).meta as Record<string, unknown>) : undefined
-            const existingTraceId = (typeof meta?.traceId === 'string' && meta.traceId) ? meta.traceId : undefined
-            if (existingTraceId) continue
-
-            const query = (op as any)?.query?.query
-            if (!query || typeof query !== 'object') continue
-
-            const ctxInstance = readContextByQuery.get(query as object)
-            if (!ctxInstance || !ctxInstance.traceId) continue
-
-            const traceId = ctxInstance.traceId
-            let requestId = requestIdByTrace.get(traceId)
-            if (!requestId) {
-                requestId = ctxInstance.requestId()
-                requestIdByTrace.set(traceId, requestId)
-            }
-
-            applyTraceMeta(op as RemoteOp, traceId, requestId)
-        }
-    }
-
-    const attachWriteTrace = (ops: RemoteOp[], requestIdByTrace: Map<string, string>) => {
-        for (const op of ops) {
-            if (!op || typeof op !== 'object') continue
-            if (op.kind !== 'write') continue
-
-            const resource = (op as any)?.write?.resource
-            const entries = Array.isArray((op as any)?.write?.entries)
-                ? ((op as any).write.entries as any[])
-                : []
-            if (!entries.length) continue
-
-            const actionId = entries[0]?.item?.meta?.traceId
-                ?? entries[0]?.item?.meta?.idempotencyKey
-                ?? `w_${String(resource ?? 'unknown')}`
-
-            const writeEntry = writeContextByAction.get(String(actionId))
-            const writeCtx = writeEntry?.ctx ?? storeObs.createContext(String(resource ?? 'unknown'), { traceId: String(actionId) })
-            const traceId = writeCtx.traceId
-            if (!traceId) continue
-
-            let requestId = requestIdByTrace.get(traceId)
-            if (!requestId) {
-                requestId = writeCtx.requestId()
-                requestIdByTrace.set(traceId, requestId)
-            }
-
-            for (const entry of entries) {
-                applyWriteEntryTraceMeta(entry, traceId, requestId)
-            }
-        }
-    }
-
-    const attachOpsTrace = (ops: RemoteOp[]) => {
-        if (!injectTraceMeta) return
-        if (!Array.isArray(ops) || ops.length === 0) return
-
-        const requestIdByTrace = new Map<string, string>()
-        attachQueryTrace(ops, requestIdByTrace)
-        attachWriteTrace(ops, requestIdByTrace)
-    }
-
-    let stopEvents: (() => void) | undefined
-
     return {
         id: 'atoma-observability',
-        operations: (_ctx: PluginContext, register) => {
-            if (!injectTraceMeta) return
-
-            register(async (req, _ctx, next) => {
-                attachOpsTrace(req.ops as RemoteOp[])
-                return await next()
-            }, { priority: 100 })
-        },
-        events: (_ctx: PluginContext, registerEvents) => {
-            stopEvents = registerEvents({
+        setup: (_ctx) => {
+            const stopEvents = _ctx.events.register({
                 read: {
                     onStart: <T extends Entity>(args: ReadStartArgs<T>) => {
                         const { handle, query } = args
@@ -231,8 +113,6 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                     }
                 }
             })
-        },
-        init: (_ctx: PluginContext) => {
 
             return {
                 extension: {

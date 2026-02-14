@@ -9,7 +9,7 @@ export default defineConfig({
         'client/client': 'src/client/client.ts',
         'client/options': 'src/client/options.ts',
         'client/plugins': 'src/client/plugins/index.ts',
-        'client/registry': 'src/client/registry.ts',
+        'client/services': 'src/client/services.ts',
         'client/ops': 'src/client/ops.ts',
         'client/relations': 'src/client/relations.ts',
         'client/schema': 'src/client/schema.ts',

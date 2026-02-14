@@ -6,10 +6,6 @@ export type ObservabilityPluginOptions = Readonly<{
      * Customize event type names (optional).
      */
     eventPrefix?: string
-    /**
-     * Inject traceId/requestId into ops meta (default: true).
-     */
-    injectTraceMeta?: boolean
 }>
 
 export type ObservabilityExtension = Readonly<{

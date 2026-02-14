@@ -64,10 +64,14 @@ function groupWriteEntries(entries: ReadonlyArray<RuntimeWriteEntry>): EntryGrou
 
 async function executeOperationQuery<T extends Entity>(args: {
     runtime: Runtime
-    operation: OperationClient
+    resolveOperation: () => OperationClient | undefined
     input: QueryInput<T>
 }): Promise<QueryOutput> {
-    const { runtime, operation, input } = args
+    const { runtime, resolveOperation, input } = args
+    const operation = resolveOperation()
+    if (!operation) {
+        throw new Error('[Atoma] operation.query: operation client 未注册')
+    }
     const opId = createOpId('q', { now: runtime.now })
     const envelope = await operation.executeOperations({
         ops: [buildQueryOp({
@@ -102,10 +106,14 @@ async function executeOperationQuery<T extends Entity>(args: {
 
 async function executeOperationWrite<T extends Entity>(args: {
     runtime: Runtime
-    operation: OperationClient
+    resolveOperation: () => OperationClient | undefined
     input: WriteInput<T>
 }): Promise<WriteOutput<T>> {
-    const { runtime, operation, input } = args
+    const { runtime, resolveOperation, input } = args
+    const operation = resolveOperation()
+    if (!operation) {
+        throw new Error('[Atoma] operation.write: operation client 未注册')
+    }
     if (!input.writeEntries.length) {
         return { status: 'confirmed' }
     }
@@ -159,20 +167,20 @@ async function executeOperationWrite<T extends Entity>(args: {
 
 export function createOperationExecutionSpec(args: {
     runtime: Runtime
-    operation: OperationClient
+    resolveOperation: () => OperationClient | undefined
 }): ExecutionSpec {
     return {
         query: async <T extends Entity>(input: QueryInput<T>): Promise<QueryOutput> => {
             return await executeOperationQuery({
                 runtime: args.runtime,
-                operation: args.operation,
+                resolveOperation: args.resolveOperation,
                 input
             })
         },
         write: async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
             return await executeOperationWrite({
                 runtime: args.runtime,
-                operation: args.operation,
+                resolveOperation: args.resolveOperation,
                 input
             })
         }

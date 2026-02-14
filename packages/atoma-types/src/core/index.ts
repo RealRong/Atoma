@@ -70,7 +70,7 @@ export type {
     LifecycleHooks,
     StoreConfig,
     StoreToken,
-    WriteStrategy,
+    WriteRoute,
     Store,
 } from './store'
 

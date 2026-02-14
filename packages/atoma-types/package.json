@@ -39,10 +39,10 @@
             "import": "./dist/client/plugins.js",
             "source": "./src/client/plugins/index.ts"
         },
-        "./client/registry": {
-            "types": "./dist/client/registry.d.ts",
-            "import": "./dist/client/registry.js",
-            "source": "./src/client/registry.ts"
+        "./client/services": {
+            "types": "./dist/client/services.d.ts",
+            "import": "./dist/client/services.js",
+            "source": "./src/client/services.ts"
         },
         "./client/ops": {
             "types": "./dist/client/ops.d.ts",

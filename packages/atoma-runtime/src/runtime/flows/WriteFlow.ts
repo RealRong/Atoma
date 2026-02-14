@@ -5,6 +5,7 @@ import type {
     PartialWithId,
     StoreOperationOptions,
     UpsertWriteOptions,
+    WriteRoute,
     WriteManyResult
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
@@ -19,7 +20,7 @@ import { runAfterSave } from './write/utils/prepareWriteInput'
 
 type WriteContext = {
     opContext: OperationContext
-    writeStrategy?: string
+    route?: WriteRoute
 }
 
 function createWriteContext<T extends Entity>(
@@ -29,7 +30,7 @@ function createWriteContext<T extends Entity>(
 ): WriteContext {
     return {
         opContext: runtime.engine.operation.createContext(options?.opContext),
-        writeStrategy: options?.writeStrategy ?? handle.config.defaultWriteStrategy
+        route: options?.route ?? handle.config.defaultRoute
     }
 }
 
@@ -51,7 +52,7 @@ export class WriteFlow implements Write {
     private commitWrite = async <T extends Entity>(args: {
         handle: StoreHandle<T>
         opContext: OperationContext
-        writeStrategy?: string
+        route?: WriteRoute
         plan: WritePlan<T>
         source: WriteHookSource
         output?: T
@@ -67,7 +68,7 @@ export class WriteFlow implements Write {
             opContext,
             entryCount: plan.length,
             source,
-            writeStrategy: args.writeStrategy,
+            route: args.route,
             writeEntries
         })
 
@@ -76,7 +77,7 @@ export class WriteFlow implements Write {
                 runtime: this.runtime,
                 handle,
                 opContext,
-                writeStrategy: args.writeStrategy,
+                route: args.route,
                 plan
             })
 
@@ -94,7 +95,7 @@ export class WriteFlow implements Write {
             hooks.emit.writeCommitted({
                 handle,
                 opContext,
-                writeStrategy: args.writeStrategy,
+                route: args.route,
                 writeEntries,
                 result: finalValue
             })
@@ -108,7 +109,7 @@ export class WriteFlow implements Write {
             hooks.emit.writeFailed({
                 handle,
                 opContext,
-                writeStrategy: args.writeStrategy,
+                route: args.route,
                 writeEntries,
                 error
             })
