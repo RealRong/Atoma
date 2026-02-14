@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type { Entity, OperationContext, Query, QueryResult, StoreToken } from 'atoma-types/core'
+import type { Entity, OperationContext, Query, QueryResult, StoreToken, ExecutionRoute } from 'atoma-types/core'
 import type { PluginContext } from 'atoma-types/client/plugins'
 import type { StoreHandle } from 'atoma-types/runtime'
 import type { Runtime } from 'atoma-runtime'
@@ -56,7 +56,7 @@ export function buildPluginContext({
 
                 const processed = await Promise.all(
                     input.upserts.map(item => runtime.transform.writeback(handle, item))
-                )
+                ) as Array<T | undefined>
                 const upserts = processed.filter((item): item is T => item !== undefined)
 
                 handle.state.applyWriteback({
@@ -67,23 +67,28 @@ export function buildPluginContext({
             }
         },
         execution: {
-            apply: (bundle) => runtime.execution.apply(bundle),
-            resolvePolicy: (key) => runtime.execution.resolvePolicy(key),
-            subscribe: (listener) => runtime.execution.subscribe(listener),
+            apply: runtime.execution.apply,
+            resolvePolicy: runtime.execution.resolvePolicy,
+            subscribe: runtime.execution.subscribe,
             query: async <T extends Entity>(input: {
                 storeName: StoreToken
+                route?: ExecutionRoute
                 query: Query<T>
                 signal?: AbortSignal
             }) => {
                 const handle = runtime.stores.resolveHandle(input.storeName, 'plugin.runtime.execution.query')
-                return await runtime.execution.query<T>({
-                    storeName: input.storeName,
-                    handle: handle as any,
-                    query: input.query,
-                    ...(input.signal ? { signal: input.signal } : {})
-                })
+                return await runtime.execution.query<T>(
+                    {
+                        handle: handle as any,
+                        query: input.query
+                    },
+                    {
+                        ...(input.route !== undefined ? { route: input.route } : {}),
+                        ...(input.signal ? { signal: input.signal } : {})
+                    }
+                )
             },
-            write: (input) => runtime.execution.write(input)
+            write: runtime.execution.write
         },
         engine: {
             query: {

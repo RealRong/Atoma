@@ -1,8 +1,8 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { SyncTransport } from 'atoma-types/sync'
-import { createOperationSyncDriver } from '#sync/transport'
-import { registerSyncTransport, resolveSyncTransport, SYNC_TRANSPORT_TOKEN } from '#sync/services'
+import { createOperationSyncDriver } from '#sync/transport/operation-driver'
+import { SYNC_TRANSPORT_TOKEN } from '#sync/services'
 
 export type SyncOperationDriverPluginOptions = Readonly<{
     /** Optional time source for op ids. */
@@ -17,7 +17,7 @@ export function syncOperationDriverPlugin(options: SyncOperationDriverPluginOpti
         provides: [SYNC_TRANSPORT_TOKEN],
         requires: [OPERATION_CLIENT_TOKEN],
         setup: (ctx: PluginContext) => {
-            if (!options.overwrite && resolveSyncTransport(ctx)) return
+            if (!options.overwrite && ctx.services.resolve(SYNC_TRANSPORT_TOKEN)) return
 
             const operation = ctx.services.resolve(OPERATION_CLIENT_TOKEN)
             if (!operation) {
@@ -35,7 +35,9 @@ export function syncOperationDriverPlugin(options: SyncOperationDriverPluginOpti
                 ...(options.now ? { now: options.now } : {})
             })
 
-            const unregister = registerSyncTransport(ctx, driver, { override: options.overwrite === true })
+            const unregister = ctx.services.register(SYNC_TRANSPORT_TOKEN, driver, {
+                override: options.overwrite === true
+            })
 
             return {
                 dispose: () => {

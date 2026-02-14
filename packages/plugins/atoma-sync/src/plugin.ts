@@ -6,7 +6,7 @@ import { createStores } from '#sync/storage'
 import { WritebackApplier } from '#sync/applier/writeback-applier'
 import { SyncDevtools } from '#sync/devtools/sync-devtools'
 import { SyncWrites } from '#sync/persistence/SyncWrites'
-import { resolveSyncSubscribeTransport, resolveSyncTransport } from '#sync/services'
+import { SYNC_SUBSCRIBE_TRANSPORT_TOKEN, SYNC_TRANSPORT_TOKEN } from '#sync/services'
 import { getOrCreateGlobalReplicaId } from '#sync/internal/replica-id'
 import type { SyncExtension, SyncPluginOptions } from './types'
 
@@ -39,14 +39,14 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
 
     const devtools = new SyncDevtools({ now })
     const resolveDriver = () => {
-        const driver = resolveSyncTransport(ctx)
+        const driver = ctx.services.resolve(SYNC_TRANSPORT_TOKEN)
         if (!driver) {
             throw new Error('[Sync] sync.transport missing (register via plugin)')
         }
         return driver
     }
 
-    const resolveSubscribeDriver = () => resolveSyncSubscribeTransport(ctx)
+    const resolveSubscribeDriver = () => ctx.services.resolve(SYNC_SUBSCRIBE_TRANSPORT_TOKEN)
 
     const onEvent = (e: any) => {
         devtools.onEvent(e)
@@ -138,11 +138,11 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
     let engine: SyncClient | null = null
 
     const isConfigured = (m: SyncMode) => {
-        const driver = resolveSyncTransport(ctx)
+        const driver = ctx.services.resolve(SYNC_TRANSPORT_TOKEN)
         if (!driver) return false
         const subscribeEnabled = m === 'subscribe-only' || m === 'pull+subscribe' || m === 'full'
         const subscribeEnabledByUser = opts.subscribe !== false
-        if (subscribeEnabled && subscribeEnabledByUser && !resolveSyncSubscribeTransport(ctx)) {
+        if (subscribeEnabled && subscribeEnabledByUser && !ctx.services.resolve(SYNC_SUBSCRIBE_TRANSPORT_TOKEN)) {
             return false
         }
         return true

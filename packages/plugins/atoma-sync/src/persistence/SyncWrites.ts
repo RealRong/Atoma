@@ -87,12 +87,12 @@ export class SyncWrites {
 
             const writeEntries = filterWriteEntriesByResults({
                 status: event.output.status,
-                writeEntries: event.input.writeEntries,
+                writeEntries: event.request.entries,
                 results: event.output.results
             })
             if (!writeEntries.length) return
 
-            const resource = String(event.input.storeName)
+            const resource = String(event.request.handle.storeName)
             const route = String(event.route)
 
             let writes: OutboxWrite[]

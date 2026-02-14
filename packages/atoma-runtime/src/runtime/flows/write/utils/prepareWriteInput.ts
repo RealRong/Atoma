@@ -42,14 +42,20 @@ export async function resolveWriteBase<T extends Entity>(
         throw new Error(`[Atoma] write: 缓存缺失且当前写入模式禁止补读，请先 fetch 再写入（id=${String(id)}）`)
     }
 
-    const { data } = await runtime.execution.query({
-        storeName: String(handle.storeName),
-        handle,
-        query: {
-            filter: { op: 'eq', field: 'id', value: id },
-            page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
+    const route = options?.route ?? handle.config.defaultRoute
+    const { data } = await runtime.execution.query(
+        {
+            handle,
+            query: {
+                filter: { op: 'eq', field: 'id', value: id },
+                page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
+            }
+        },
+        {
+            ...(route !== undefined ? { route } : {}),
+            ...(options?.signal ? { signal: options.signal } : {})
         }
-    })
+    )
     const first = data[0]
     const fetched = first !== undefined ? (first as T) : undefined
     if (!fetched) {

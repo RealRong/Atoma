@@ -1,4 +1,4 @@
-import type { Entity, OperationContext, Query, StoreToken, WriteRoute } from '../core'
+import type { Entity, ExecutionRoute, OperationContext, Query } from '../core'
 import type { EntityId, Version } from '../shared'
 import type { StoreHandle } from './handle'
 
@@ -102,13 +102,15 @@ export type RuntimeWriteItemResult =
         current?: { value?: unknown; version?: Version }
     }
 
-export type WriteInput<T extends Entity> = Readonly<{
-    storeName: StoreToken
-    route?: WriteRoute
+export type ExecutionOptions = Readonly<{
+    route?: ExecutionRoute
+    signal?: AbortSignal
+}>
+
+export type WriteRequest<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
     opContext: OperationContext
-    writeEntries: ReadonlyArray<RuntimeWriteEntry>
-    signal?: AbortSignal
+    entries: ReadonlyArray<RuntimeWriteEntry>
 }>
 
 export type WriteOutput<T extends Entity> = Readonly<{
@@ -116,21 +118,34 @@ export type WriteOutput<T extends Entity> = Readonly<{
     results?: ReadonlyArray<RuntimeWriteItemResult>
 }>
 
-export type WriteExecutor = <T extends Entity>(input: WriteInput<T>) => Promise<WriteOutput<T>>
+export type WriteExecutor = <T extends Entity>(
+    request: WriteRequest<T>,
+    options?: ExecutionOptions
+) => Promise<WriteOutput<T>>
 
-export type QueryInput<T extends Entity> = Readonly<{
-    storeName: StoreToken
+export type QueryRequest<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
     query: Query<T>
-    signal?: AbortSignal
 }>
 
-export type QueryOutput = Readonly<{
+export type LocalQueryOutput = Readonly<{
+    source: 'local'
     data: unknown[]
     pageInfo?: unknown
 }>
 
-export type QueryExecutor = <T extends Entity>(input: QueryInput<T>) => Promise<QueryOutput>
+export type RemoteQueryOutput = Readonly<{
+    source: 'remote'
+    data: unknown[]
+    pageInfo?: unknown
+}>
+
+export type QueryOutput = LocalQueryOutput | RemoteQueryOutput
+
+export type QueryExecutor = <T extends Entity>(
+    request: QueryRequest<T>,
+    options?: ExecutionOptions
+) => Promise<QueryOutput>
 
 export type Policy = Readonly<{
     implicitFetch?: boolean
@@ -138,5 +153,5 @@ export type Policy = Readonly<{
 }>
 
 export interface WritePort {
-    write: <T extends Entity>(input: WriteInput<T>) => Promise<WriteOutput<T>>
+    write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
 }

@@ -65,12 +65,13 @@ export type {
     WriteManyResult,
     DeleteItem,
     StoreOperationOptions,
+    StoreReadOptions,
     IndexType,
     IndexDefinition,
     LifecycleHooks,
     StoreConfig,
     StoreToken,
-    WriteRoute,
+    ExecutionRoute,
     Store,
 } from './store'
 

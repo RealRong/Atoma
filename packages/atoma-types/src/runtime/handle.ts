@@ -1,4 +1,4 @@
-import type { Entity, GetAllMergePolicy, StoreConfig, StoreToken, WriteRoute } from '../core'
+import type { Entity, GetAllMergePolicy, StoreConfig, StoreToken, ExecutionRoute } from '../core'
 import type { StoreState } from './storeState'
 
 export type StoreHandle<T extends Entity = Entity> = {
@@ -6,7 +6,7 @@ export type StoreHandle<T extends Entity = Entity> = {
     storeName: StoreToken
     relations?: () => unknown | undefined
     config: Readonly<{
-        defaultRoute?: WriteRoute
+        defaultRoute?: ExecutionRoute
         getAllMergePolicy?: GetAllMergePolicy
         hooks: StoreConfig<T>['hooks']
         idGenerator: StoreConfig<T>['idGenerator']

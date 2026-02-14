@@ -41,9 +41,15 @@ export interface StoreOperationOptions {
     batch?: {
         concurrency?: number
     }
-    route?: WriteRoute
+    route?: ExecutionRoute
+    signal?: AbortSignal
     opContext?: OperationContext
 }
+
+export type StoreReadOptions = Readonly<{
+    route?: ExecutionRoute
+    signal?: AbortSignal
+}>
 
 export type IndexType = 'number' | 'date' | 'string' | 'substring' | 'text'
 
@@ -73,13 +79,13 @@ export interface StoreConfig<T> {
         getAllMergePolicy?: GetAllMergePolicy
     }>
     write?: Readonly<{
-        route?: WriteRoute
+        route?: ExecutionRoute
     }>
 }
 
 export type StoreToken = string
 
-export type WriteRoute = string
+export type ExecutionRoute = string
 
 declare const RELATIONS_BRAND: unique symbol
 
@@ -98,10 +104,10 @@ export interface Store<T, Relations = {}> {
     upsertOne(item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T>
     upsertMany(items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>>
     getOne(id: EntityId): Promise<T | undefined>
-    fetchOne(id: EntityId): Promise<T | undefined>
+    fetchOne(id: EntityId, options?: StoreReadOptions): Promise<T | undefined>
     getAll(filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean): Promise<T[]>
-    fetchAll?(): Promise<T[]>
+    fetchAll?(options?: StoreReadOptions): Promise<T[]>
     getMany(ids: EntityId[], cache?: boolean): Promise<T[]>
-    query?(query: Query<T>): Promise<QueryResult<T>>
-    queryOne?(query: Query<T>): Promise<QueryOneResult<T>>
+    query?(query: Query<T>, options?: StoreReadOptions): Promise<QueryResult<T>>
+    queryOne?(query: Query<T>, options?: StoreReadOptions): Promise<QueryOneResult<T>>
 }

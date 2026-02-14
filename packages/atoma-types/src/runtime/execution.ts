@@ -1,15 +1,16 @@
-import type { Entity, WriteRoute } from '../core'
+import type { Entity, ExecutionRoute } from '../core'
 import type {
-    QueryInput,
+    ExecutionOptions,
+    QueryRequest,
     QueryOutput,
-    WriteInput,
+    WriteRequest,
     WriteOutput,
     Policy
 } from './persistence'
 
 export type ExecutorId = string
 
-export type RouteId = WriteRoute
+export type RouteId = ExecutionRoute
 
 export type RouteSpec = Readonly<{
     query: ExecutorId
@@ -22,7 +23,6 @@ export type ExecutionBundle = Readonly<{
     executors?: Readonly<Record<ExecutorId, ExecutionSpec>>
     routes?: Readonly<Record<RouteId, RouteSpec>>
     defaultRoute?: RouteId
-    allowOverride?: boolean
 }>
 
 export type ExecutionResolutionSource =
@@ -36,20 +36,44 @@ export type ExecutionResolution = Readonly<{
     trace: ReadonlyArray<ExecutorId>
 }>
 
+export type ExecutionErrorCode =
+    | 'E_EXECUTION_BUNDLE_INVALID'
+    | 'E_EXECUTION_CONFLICT'
+    | 'E_ROUTE_NOT_FOUND'
+    | 'E_ROUTE_INVALID'
+    | 'E_EXECUTOR_NOT_FOUND'
+    | 'E_EXECUTOR_QUERY_UNIMPLEMENTED'
+    | 'E_EXECUTOR_WRITE_UNIMPLEMENTED'
+    | 'E_EXECUTION_QUERY_FAILED'
+    | 'E_EXECUTION_WRITE_FAILED'
+    | 'E_OPERATION_CLIENT_MISSING'
+    | 'E_OPERATION_RESULT_MISSING'
+    | 'E_OPERATION_FAILED'
+    | (string & {})
+
+export type ExecutionError = Error & Readonly<{
+    code: ExecutionErrorCode
+    retryable: boolean
+    details?: Readonly<Record<string, unknown>>
+    cause?: unknown
+}>
+
 export type ExecutionWriteEvent = Readonly<
     | {
         type: 'write.dispatched'
         route: RouteId
         executor: ExecutorId
         resolution: ExecutionResolution
-        input: WriteInput<any>
+        request: WriteRequest<any>
+        options?: ExecutionOptions
     }
     | {
         type: 'write.succeeded'
         route: RouteId
         executor: ExecutorId
         resolution: ExecutionResolution
-        input: WriteInput<any>
+        request: WriteRequest<any>
+        options?: ExecutionOptions
         output: WriteOutput<any>
     }
     | {
@@ -57,8 +81,9 @@ export type ExecutionWriteEvent = Readonly<
         route: RouteId
         executor: ExecutorId
         resolution: ExecutionResolution
-        input: WriteInput<any>
-        error: unknown
+        request: WriteRequest<any>
+        options?: ExecutionOptions
+        error: ExecutionError
     }
 >
 
@@ -68,14 +93,16 @@ export type ExecutionQueryEvent = Readonly<
         route: RouteId
         executor: ExecutorId
         resolution: ExecutionResolution
-        input: QueryInput<any>
+        request: QueryRequest<any>
+        options?: ExecutionOptions
     }
     | {
         type: 'query.succeeded'
         route: RouteId
         executor: ExecutorId
         resolution: ExecutionResolution
-        input: QueryInput<any>
+        request: QueryRequest<any>
+        options?: ExecutionOptions
         output: QueryOutput
     }
     | {
@@ -83,16 +110,17 @@ export type ExecutionQueryEvent = Readonly<
         route: RouteId
         executor: ExecutorId
         resolution: ExecutionResolution
-        input: QueryInput<any>
-        error: unknown
+        request: QueryRequest<any>
+        options?: ExecutionOptions
+        error: ExecutionError
     }
 >
 
 export type ExecutionEvent = ExecutionWriteEvent | ExecutionQueryEvent
 
 export type ExecutionSpec = Readonly<{
-    query?: <T extends Entity>(input: QueryInput<T>) => Promise<QueryOutput>
-    write?: <T extends Entity>(input: WriteInput<T>) => Promise<WriteOutput<T>>
+    query?: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<QueryOutput>
+    write?: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
     policy?: Policy
 }>
 
@@ -100,6 +128,6 @@ export type ExecutionKernel = Readonly<{
     apply: (bundle: ExecutionBundle) => () => void
     resolvePolicy: (route?: RouteId) => Policy
     subscribe: (listener: (event: ExecutionEvent) => void) => () => void
-    query: <T extends Entity>(input: QueryInput<T>) => Promise<QueryOutput>
-    write: <T extends Entity>(input: WriteInput<T>) => Promise<WriteOutput<T>>
+    query: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<QueryOutput>
+    write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
 }>

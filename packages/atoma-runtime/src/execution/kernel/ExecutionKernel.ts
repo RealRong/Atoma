@@ -1,17 +1,21 @@
 import type { Entity } from 'atoma-types/core'
+import { createCodedError, isCodedError } from 'atoma-shared'
 import type {
     ExecutionBundle,
+    ExecutionError,
+    ExecutionErrorCode,
     ExecutionEvent,
     ExecutionKernel as ExecutionKernelType,
+    ExecutionOptions,
     ExecutorId,
-    RouteId,
-    RouteSpec,
     ExecutionResolution,
     ExecutionSpec,
     Policy,
-    QueryInput,
+    QueryRequest,
     QueryOutput,
-    WriteInput,
+    RouteId,
+    RouteSpec,
+    WriteRequest,
     WriteOutput
 } from 'atoma-types/runtime'
 import { ExecutionEvents } from '../events'
@@ -28,7 +32,6 @@ type KernelLayer = Readonly<{
     executors: ReadonlyMap<ExecutorId, ExecutionSpec>
     routes: ReadonlyMap<RouteId, RouteSpec>
     defaultRoute?: RouteId
-    allowOverride: boolean
 }>
 
 type KernelSnapshot = Readonly<{
@@ -58,16 +61,62 @@ export class ExecutionKernel implements ExecutionKernelType {
         optimistic: true
     }
 
+    private createExecutionError = (args: {
+        code: ExecutionErrorCode
+        message: string
+        retryable?: boolean
+        details?: Readonly<Record<string, unknown>>
+        cause?: unknown
+    }): ExecutionError => {
+        return createCodedError({
+            code: args.code,
+            message: args.message,
+            retryable: args.retryable,
+            details: args.details,
+            cause: args.cause
+        }) as ExecutionError
+    }
+
+    private normalizeExecutionError = (args: {
+        error: unknown
+        fallbackCode: ExecutionErrorCode
+        fallbackMessage: string
+        retryable?: boolean
+        details?: Readonly<Record<string, unknown>>
+    }): ExecutionError => {
+        if (isCodedError(args.error)) {
+            return args.error as ExecutionError
+        }
+        return this.createExecutionError({
+            code: args.fallbackCode,
+            message: args.fallbackMessage,
+            retryable: args.retryable,
+            details: args.details,
+            cause: args.error
+        })
+    }
+
     private normalizeBundle = (bundle: ExecutionBundle): Omit<KernelLayer, 'token'> => {
         const id = normalize(bundle.id)
-        if (!id) throw new Error('[Atoma] execution.apply: bundle.id 必填')
+        if (!id) {
+            throw this.createExecutionError({
+                code: 'E_EXECUTION_BUNDLE_INVALID',
+                message: '[Atoma] execution.apply: bundle.id 必填',
+                retryable: false
+            })
+        }
 
         const executors = new Map<ExecutorId, ExecutionSpec>()
         const rawExecutors = bundle.executors ?? {}
         for (const [rawExecutorId, spec] of Object.entries(rawExecutors)) {
             const executorId = normalize(rawExecutorId)
             if (!executorId) {
-                throw new Error('[Atoma] execution.apply: executor id 必填')
+                throw this.createExecutionError({
+                    code: 'E_EXECUTION_BUNDLE_INVALID',
+                    message: '[Atoma] execution.apply: executor id 必填',
+                    retryable: false,
+                    details: { layerId: id }
+                })
             }
             executors.set(executorId, spec)
         }
@@ -77,12 +126,22 @@ export class ExecutionKernel implements ExecutionKernelType {
         for (const [rawRouteId, spec] of Object.entries(rawRoutes)) {
             const routeId = normalize(rawRouteId)
             if (!routeId) {
-                throw new Error('[Atoma] execution.apply: route id 必填')
+                throw this.createExecutionError({
+                    code: 'E_ROUTE_INVALID',
+                    message: '[Atoma] execution.apply: route id 必填',
+                    retryable: false,
+                    details: { layerId: id }
+                })
             }
             const query = normalize(spec?.query)
             const write = normalize(spec?.write)
             if (!query || !write) {
-                throw new Error(`[Atoma] execution.apply: route 配置缺失 query/write: ${routeId}`)
+                throw this.createExecutionError({
+                    code: 'E_ROUTE_INVALID',
+                    message: `[Atoma] execution.apply: route 配置缺失 query/write: ${routeId}`,
+                    retryable: false,
+                    details: { layerId: id, route: routeId }
+                })
             }
             routes.set(routeId, {
                 ...spec,
@@ -97,8 +156,7 @@ export class ExecutionKernel implements ExecutionKernelType {
             id,
             executors,
             routes,
-            ...(defaultRoute ? { defaultRoute } : {}),
-            allowOverride: bundle.allowOverride === true
+            ...(defaultRoute ? { defaultRoute } : {})
         }
     }
 
@@ -109,15 +167,25 @@ export class ExecutionKernel implements ExecutionKernelType {
 
         for (const layer of layers) {
             for (const [executorId, spec] of layer.executors.entries()) {
-                if (executors.has(executorId) && !layer.allowOverride) {
-                    throw new Error(`[Atoma] execution.apply: executor 冲突: ${executorId}`)
+                if (executors.has(executorId)) {
+                    throw this.createExecutionError({
+                        code: 'E_EXECUTION_CONFLICT',
+                        message: `[Atoma] execution.apply: executor 冲突: ${executorId}`,
+                        retryable: false,
+                        details: { executor: executorId, layerId: layer.id }
+                    })
                 }
                 executors.set(executorId, spec)
             }
 
             for (const [routeId, route] of layer.routes.entries()) {
-                if (routes.has(routeId) && !layer.allowOverride) {
-                    throw new Error(`[Atoma] execution.apply: route 冲突: ${routeId}`)
+                if (routes.has(routeId)) {
+                    throw this.createExecutionError({
+                        code: 'E_EXECUTION_CONFLICT',
+                        message: `[Atoma] execution.apply: route 冲突: ${routeId}`,
+                        retryable: false,
+                        details: { route: routeId, layerId: layer.id }
+                    })
                 }
                 routes.set(routeId, route)
             }
@@ -129,15 +197,30 @@ export class ExecutionKernel implements ExecutionKernelType {
 
         for (const [routeId, route] of routes.entries()) {
             if (!executors.has(route.query)) {
-                throw new Error(`[Atoma] execution.apply: route.query 未注册 executor: ${routeId} -> ${route.query}`)
+                throw this.createExecutionError({
+                    code: 'E_EXECUTOR_NOT_FOUND',
+                    message: `[Atoma] execution.apply: route.query 未注册 executor: ${routeId} -> ${route.query}`,
+                    retryable: false,
+                    details: { route: routeId, phase: 'query', executor: route.query }
+                })
             }
             if (!executors.has(route.write)) {
-                throw new Error(`[Atoma] execution.apply: route.write 未注册 executor: ${routeId} -> ${route.write}`)
+                throw this.createExecutionError({
+                    code: 'E_EXECUTOR_NOT_FOUND',
+                    message: `[Atoma] execution.apply: route.write 未注册 executor: ${routeId} -> ${route.write}`,
+                    retryable: false,
+                    details: { route: routeId, phase: 'write', executor: route.write }
+                })
             }
         }
 
         if (defaultRoute && !routes.has(defaultRoute)) {
-            throw new Error(`[Atoma] execution.apply: defaultRoute 未注册: ${defaultRoute}`)
+            throw this.createExecutionError({
+                code: 'E_ROUTE_NOT_FOUND',
+                message: `[Atoma] execution.apply: defaultRoute 未注册: ${defaultRoute}`,
+                retryable: false,
+                details: { route: defaultRoute, source: 'default-route' }
+            })
         }
 
         return {
@@ -206,7 +289,12 @@ export class ExecutionKernel implements ExecutionKernelType {
         const resolveByRoute = (routeId: RouteId, source: ExecutionResolution['source']): KernelResolvedExecution => {
             const routeSpec = this.snapshot.routes.get(routeId)
             if (!routeSpec) {
-                throw new Error(`[Atoma] execution: route 未注册: ${routeId}`)
+                throw this.createExecutionError({
+                    code: 'E_ROUTE_NOT_FOUND',
+                    message: `[Atoma] execution: route 未注册: ${routeId}`,
+                    retryable: false,
+                    details: { route: routeId, source }
+                })
             }
 
             const executor = args.phase === 'query'
@@ -214,7 +302,12 @@ export class ExecutionKernel implements ExecutionKernelType {
                 : routeSpec.write
             const spec = this.snapshot.executors.get(executor)
             if (!spec) {
-                throw new Error(`[Atoma] execution: executor 未注册: ${executor}`)
+                throw this.createExecutionError({
+                    code: 'E_EXECUTOR_NOT_FOUND',
+                    message: `[Atoma] execution: executor 未注册: ${executor}`,
+                    retryable: false,
+                    details: { route: routeId, executor, phase: args.phase }
+                })
             }
 
             return {
@@ -241,30 +334,50 @@ export class ExecutionKernel implements ExecutionKernelType {
         }
 
         if (!args.required) return undefined
-        throw new Error('[Atoma] execution: 未配置默认 route')
+        throw this.createExecutionError({
+            code: 'E_ROUTE_NOT_FOUND',
+            message: '[Atoma] execution: 未配置默认 route',
+            retryable: false,
+            details: { source: 'default-route' }
+        })
     }
 
     private resolveQueryExecutor = (executor: ExecutorId, spec: ExecutionSpec): NonNullable<ExecutionSpec['query']> => {
         if (!spec.query) {
-            throw new Error(`[Atoma] execution.query: executor 未实现 query: ${executor}`)
+            throw this.createExecutionError({
+                code: 'E_EXECUTOR_QUERY_UNIMPLEMENTED',
+                message: `[Atoma] execution.query: executor 未实现 query: ${executor}`,
+                retryable: false,
+                details: { executor }
+            })
         }
         return spec.query
     }
 
     private resolveWriteExecutor = (executor: ExecutorId, spec: ExecutionSpec): NonNullable<ExecutionSpec['write']> => {
         if (!spec.write) {
-            throw new Error(`[Atoma] execution.write: executor 未实现 write: ${executor}`)
+            throw this.createExecutionError({
+                code: 'E_EXECUTOR_WRITE_UNIMPLEMENTED',
+                message: `[Atoma] execution.write: executor 未实现 write: ${executor}`,
+                retryable: false,
+                details: { executor }
+            })
         }
         return spec.write
     }
 
-    query = async <T extends Entity>(input: QueryInput<T>): Promise<QueryOutput> => {
+    query = async <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions): Promise<QueryOutput> => {
         const resolved = this.resolveExecution({
             phase: 'query',
+            route: options?.route,
             required: true
         })
         if (!resolved) {
-            throw new Error('[Atoma] execution.query: route 解析失败')
+            throw this.createExecutionError({
+                code: 'E_ROUTE_NOT_FOUND',
+                message: '[Atoma] execution.query: route 解析失败',
+                retryable: false
+            })
         }
 
         this.events.emit({
@@ -272,43 +385,60 @@ export class ExecutionKernel implements ExecutionKernelType {
             route: resolved.route,
             executor: resolved.executor,
             resolution: resolved.resolution,
-            input
+            request,
+            options
         })
 
         const query = this.resolveQueryExecutor(resolved.executor, resolved.spec)
 
         try {
-            const output = await query(input)
+            const output = await query(request, options)
             this.events.emit({
                 type: 'query.succeeded',
                 route: resolved.route,
                 executor: resolved.executor,
                 resolution: resolved.resolution,
-                input,
+                request,
+                options,
                 output
             })
             return output
         } catch (error) {
+            const normalizedError = this.normalizeExecutionError({
+                error,
+                fallbackCode: 'E_EXECUTION_QUERY_FAILED',
+                fallbackMessage: '[Atoma] execution.query failed',
+                retryable: false,
+                details: {
+                    route: resolved.route,
+                    executor: resolved.executor
+                }
+            })
             this.events.emit({
                 type: 'query.failed',
                 route: resolved.route,
                 executor: resolved.executor,
                 resolution: resolved.resolution,
-                input,
-                error
+                request,
+                options,
+                error: normalizedError
             })
-            throw error
+            throw normalizedError
         }
     }
 
-    write = async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
+    write = async <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions): Promise<WriteOutput<T>> => {
         const resolved = this.resolveExecution({
             phase: 'write',
-            route: input.route,
+            route: options?.route,
             required: true
         })
         if (!resolved) {
-            throw new Error('[Atoma] execution.write: route 解析失败')
+            throw this.createExecutionError({
+                code: 'E_ROUTE_NOT_FOUND',
+                message: '[Atoma] execution.write: route 解析失败',
+                retryable: false
+            })
         }
 
         this.events.emit({
@@ -316,32 +446,45 @@ export class ExecutionKernel implements ExecutionKernelType {
             route: resolved.route,
             executor: resolved.executor,
             resolution: resolved.resolution,
-            input
+            request,
+            options
         })
 
         const write = this.resolveWriteExecutor(resolved.executor, resolved.spec)
 
         try {
-            const output = await write(input)
+            const output = await write(request, options)
             this.events.emit({
                 type: 'write.succeeded',
                 route: resolved.route,
                 executor: resolved.executor,
                 resolution: resolved.resolution,
-                input,
+                request,
+                options,
                 output
             })
             return output
         } catch (error) {
+            const normalizedError = this.normalizeExecutionError({
+                error,
+                fallbackCode: 'E_EXECUTION_WRITE_FAILED',
+                fallbackMessage: '[Atoma] execution.write failed',
+                retryable: false,
+                details: {
+                    route: resolved.route,
+                    executor: resolved.executor
+                }
+            })
             this.events.emit({
                 type: 'write.failed',
                 route: resolved.route,
                 executor: resolved.executor,
                 resolution: resolved.resolution,
-                input,
-                error
+                request,
+                options,
+                error: normalizedError
             })
-            throw error
+            throw normalizedError
         }
     }
 }

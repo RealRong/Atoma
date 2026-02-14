@@ -204,22 +204,26 @@ function fallbackPrimaryOutput<T extends Entity>(primaryPlan?: WritePlanEntry<T>
 async function runWriteTransaction<T extends Entity>(args: {
     request: WriteCommitRequest<T>
     primaryPlan?: WritePlanEntry<T>
-    writeEntries: ReadonlyArray<RuntimeWriteEntry>
+    entries: ReadonlyArray<RuntimeWriteEntry>
 }): Promise<T | void> {
-    const { request, primaryPlan, writeEntries } = args
+    const { request, primaryPlan, entries } = args
     const { runtime, handle, opContext, plan } = request
 
-    if (!writeEntries.length) {
+    if (!entries.length) {
         return fallbackPrimaryOutput(primaryPlan)
     }
 
-    const writeResult = await runtime.execution.write({
-        storeName: String(handle.storeName),
-        route: request.route,
-        handle,
-        opContext,
-        writeEntries
-    })
+    const writeResult = await runtime.execution.write(
+        {
+            handle,
+            opContext,
+            entries
+        },
+        {
+            ...(request.route !== undefined ? { route: request.route } : {}),
+            ...(request.signal ? { signal: request.signal } : {})
+        }
+    )
 
     ensureWriteResultStatus({ writeResult })
 
@@ -267,13 +271,13 @@ export class WriteCommitFlow {
         })
 
         const primaryPlan = resolvePrimaryPlan(plan)
-        const writeEntries = plan.map(entry => entry.entry)
+        const entries = plan.map(entry => entry.entry)
 
         try {
             return await runWriteTransaction({
                 request: args,
                 primaryPlan,
-                writeEntries
+                entries
             })
         } catch (error) {
             rollbackOptimisticState({

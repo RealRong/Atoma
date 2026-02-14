@@ -3,7 +3,8 @@ import type {
     GetAllMergePolicy,
     Query as StoreQuery,
     QueryOneResult,
-    QueryResult
+    QueryResult,
+    StoreReadOptions
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import { toErrorWithFallback as toError } from 'atoma-shared'
@@ -18,6 +19,28 @@ export class ReadFlow implements Read {
 
     private toQueryResult = <T extends Entity>(data: T[], pageInfo?: unknown): QueryResult<T> => {
         return pageInfo ? { data, pageInfo: pageInfo as QueryResult<T>['pageInfo'] } : { data }
+    }
+
+    private resolveQueryRoute = <T extends Entity>(
+        handle: StoreHandle<T>,
+        options?: StoreReadOptions
+    ) => {
+        return options?.route ?? handle.config.defaultRoute
+    }
+
+    private toExecutionOptions = <T extends Entity>(
+        handle: StoreHandle<T>,
+        options?: StoreReadOptions
+    ) => {
+        const route = this.resolveQueryRoute(handle, options)
+        return {
+            ...(route !== undefined ? { route } : {}),
+            ...(options?.signal ? { signal: options.signal } : {})
+        }
+    }
+
+    private isLocalSource = (source: 'local' | 'remote'): boolean => {
+        return source === 'local'
     }
 
     private writebackOne = async <T extends Entity>(handle: StoreHandle<T>, input: unknown): Promise<T | undefined> => {
@@ -52,70 +75,68 @@ export class ReadFlow implements Read {
         return 'replace'
     }
 
-    query = async <T extends Entity>(handle: StoreHandle<T>, input: StoreQuery<T>): Promise<QueryResult<T>> => {
+    query = async <T extends Entity>(
+        handle: StoreHandle<T>,
+        input: StoreQuery<T>,
+        options?: StoreReadOptions
+    ): Promise<QueryResult<T>> => {
         const runtime = this.runtime
-        const { state } = handle
         const hooks = runtime.hooks
 
         hooks.emit.readStart({ handle, query: input })
 
-        let localCache: { data: T[]; result: QueryResult<T> } | null = null
-        const getLocalResult = (): { data: T[]; result: QueryResult<T> } => {
-            if (localCache) return localCache
-
-            const localResult = runtime.engine.query.evaluate({
-                state,
-                query: input
-            })
-
-            const result = this.toQueryResult(localResult.data, localResult.pageInfo)
-            localCache = { data: localResult.data, result }
-            return localCache
-        }
-
         try {
             const startedAt = runtime.now()
-            const { data, pageInfo } = await runtime.execution.query({
-                storeName: String(handle.storeName),
-                handle,
-                query: input
-            })
+            const output = await runtime.execution.query(
+                {
+                    handle,
+                    query: input
+                },
+                this.toExecutionOptions(handle, options)
+            )
             const durationMs = runtime.now() - startedAt
 
-            const fetched = Array.isArray(data) ? data : []
+            const fetched = Array.isArray(output.data) ? output.data : []
+            if (this.isLocalSource(output.source)) {
+                const result = this.toQueryResult(fetched as T[], output.pageInfo)
+                hooks.emit.readFinish({ handle, query: input, result, durationMs })
+                return result
+            }
+
             const remote = await this.writebackArray(handle, fetched)
 
             const cachePolicy = queryStorePolicy(input)
             if (cachePolicy.skipStore) {
-                const result = this.toQueryResult(remote, pageInfo)
+                const result = this.toQueryResult(remote, output.pageInfo)
                 hooks.emit.readFinish({ handle, query: input, result, durationMs })
                 return result
             }
 
             const processed = this.applyQueryWriteback(handle, remote)
-            const result = this.toQueryResult(processed, pageInfo)
+            const result = this.toQueryResult(processed, output.pageInfo)
             hooks.emit.readFinish({ handle, query: input, result, durationMs })
             return result
         } catch (error) {
-            void toError(error, '[Atoma] query failed')
-            const fallback = getLocalResult().result
-            hooks.emit.readFinish({ handle, query: input, result: fallback })
-            return fallback
+            throw toError(error, '[Atoma] query failed')
         }
     }
 
-    queryOne = async <T extends Entity>(handle: StoreHandle<T>, input: StoreQuery<T>): Promise<QueryOneResult<T>> => {
+    queryOne = async <T extends Entity>(
+        handle: StoreHandle<T>,
+        input: StoreQuery<T>,
+        options?: StoreReadOptions
+    ): Promise<QueryOneResult<T>> => {
         const next: StoreQuery<T> = {
             ...input,
             page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
         }
-        const result = await this.query(handle, next)
+        const result = await this.query(handle, next, options)
         return { data: result.data[0] }
     }
 
     getMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], cache = true): Promise<T[]> => {
         const beforeMap = handle.state.getSnapshot() as Map<EntityId, T>
-        const output: Array<T | undefined> = new Array(ids.length)
+        const resolvedItems: Array<T | undefined> = new Array(ids.length)
         const missingSet = new Set<EntityId>()
         const missingUnique: EntityId[] = []
 
@@ -123,10 +144,10 @@ export class ReadFlow implements Read {
             const id = ids[index]
             const cached = beforeMap.get(id)
             if (cached !== undefined) {
-                output[index] = cached
+                resolvedItems[index] = cached
                 continue
             }
-            output[index] = undefined
+            resolvedItems[index] = undefined
             if (!missingSet.has(id)) {
                 missingSet.add(id)
                 missingUnique.push(id)
@@ -134,29 +155,39 @@ export class ReadFlow implements Read {
         }
 
         if (missingUnique.length) {
-            const { data } = await this.runtime.execution.query({
-                storeName: String(handle.storeName),
-                handle,
-                query: {
-                    filter: { op: 'in', field: 'id', values: missingUnique }
+            const queryOutput = await this.runtime.execution.query(
+                {
+                    handle,
+                    query: {
+                        filter: { op: 'in', field: 'id', values: missingUnique }
+                    }
+                },
+                {
+                    route: this.resolveQueryRoute(handle)
                 }
-            })
+            )
 
             const before = handle.state.getSnapshot() as Map<EntityId, T>
             const fetchedById = new Map<EntityId, T>()
             const itemsToCache: T[] = []
 
-            for (const rawItem of data) {
-                if (rawItem === undefined) continue
-                const processed = await this.writebackOne(handle, rawItem)
-                if (!processed) continue
+            if (this.isLocalSource(queryOutput.source)) {
+                for (const item of (Array.isArray(queryOutput.data) ? queryOutput.data : []) as T[]) {
+                    fetchedById.set(item.id, item)
+                }
+            } else {
+                for (const rawItem of queryOutput.data) {
+                    if (rawItem === undefined) continue
+                    const processed = await this.writebackOne(handle, rawItem)
+                    if (!processed) continue
 
-                const id = processed.id
-                const existing = before.get(id)
-                const preserved = this.runtime.engine.mutation.preserveRef(existing, processed)
+                    const id = processed.id
+                    const existing = before.get(id)
+                    const preserved = this.runtime.engine.mutation.preserveRef(existing, processed)
 
-                fetchedById.set(id, preserved)
-                if (cache) itemsToCache.push(preserved)
+                    fetchedById.set(id, preserved)
+                    if (cache) itemsToCache.push(preserved)
+                }
             }
 
             if (cache && itemsToCache.length) {
@@ -167,13 +198,13 @@ export class ReadFlow implements Read {
             }
 
             for (let index = 0; index < ids.length; index++) {
-                if (output[index] !== undefined) continue
+                if (resolvedItems[index] !== undefined) continue
                 const id = ids[index]
-                output[index] = fetchedById.get(id)
+                resolvedItems[index] = fetchedById.get(id)
             }
         }
 
-        return output.filter((item): item is T => item !== undefined)
+        return resolvedItems.filter((item): item is T => item !== undefined)
     }
 
     getOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId): Promise<T | undefined> => {
@@ -183,27 +214,41 @@ export class ReadFlow implements Read {
         return items[0]
     }
 
-    fetchOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId): Promise<T | undefined> => {
-        const { data } = await this.runtime.execution.query({
-            storeName: String(handle.storeName),
-            handle,
-            query: {
-                filter: { op: 'eq', field: 'id', value: id },
-                page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
-            }
-        })
-        const one = data[0]
+    fetchOne = async <T extends Entity>(
+        handle: StoreHandle<T>,
+        id: EntityId,
+        options?: StoreReadOptions
+    ): Promise<T | undefined> => {
+        const output = await this.runtime.execution.query(
+            {
+                handle,
+                query: {
+                    filter: { op: 'eq', field: 'id', value: id },
+                    page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
+                }
+            },
+            this.toExecutionOptions(handle, options)
+        )
+        const one = output.data[0]
         if (one === undefined) return undefined
+        if (this.isLocalSource(output.source)) {
+            return one as T
+        }
         return await this.writebackOne(handle, one)
     }
 
-    fetchAll = async <T extends Entity>(handle: StoreHandle<T>): Promise<T[]> => {
-        const { data } = await this.runtime.execution.query({
-            storeName: String(handle.storeName),
-            handle,
-            query: {}
-        })
-        return await this.writebackArray(handle, data)
+    fetchAll = async <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions): Promise<T[]> => {
+        const output = await this.runtime.execution.query(
+            {
+                handle,
+                query: {}
+            },
+            this.toExecutionOptions(handle, options)
+        )
+        if (this.isLocalSource(output.source)) {
+            return Array.isArray(output.data) ? (output.data as T[]) : []
+        }
+        return await this.writebackArray(handle, output.data)
     }
 
     getAll = async <T extends Entity>(
@@ -213,13 +258,22 @@ export class ReadFlow implements Read {
     ): Promise<T[]> => {
         const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
         const mergePolicy = this.resolveGetAllMergePolicy(handle)
-        const { data } = await this.runtime.execution.query({
-            storeName: String(handle.storeName),
-            handle,
-            query: {}
-        })
-        const fetched = Array.isArray(data) ? data : []
-        const output: T[] = []
+        const output = await this.runtime.execution.query(
+            {
+                handle,
+                query: {}
+            },
+            {
+                route: this.resolveQueryRoute(handle)
+            }
+        )
+        const fetched = Array.isArray(output.data) ? output.data : []
+        if (this.isLocalSource(output.source)) {
+            const localOutput = fetched as T[]
+            if (!filter) return localOutput
+            return localOutput.filter(item => filter(item))
+        }
+        const resultItems: T[] = []
         const nonCachedOutput: T[] = []
         const itemsToCache: T[] = []
         const incomingIds = new Set<EntityId>()
@@ -234,7 +288,7 @@ export class ReadFlow implements Read {
 
             const shouldCache = cacheFilter ? cacheFilter(processed) : true
             if (!shouldCache) {
-                output.push(processed)
+                resultItems.push(processed)
                 nonCachedOutput.push(processed)
                 continue
             }
@@ -242,7 +296,7 @@ export class ReadFlow implements Read {
             const existing = existingMap.get(id)
             const preserved = this.runtime.engine.mutation.preserveRef(existing, processed)
             itemsToCache.push(preserved)
-            output.push(preserved)
+            resultItems.push(preserved)
         }
 
         let next = existingMap
@@ -274,7 +328,7 @@ export class ReadFlow implements Read {
             return Array.from(mergedById.values())
         }
 
-        return output
+        return resultItems
     }
 }
 

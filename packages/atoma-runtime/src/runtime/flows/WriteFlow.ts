@@ -5,7 +5,7 @@ import type {
     PartialWithId,
     StoreOperationOptions,
     UpsertWriteOptions,
-    WriteRoute,
+    ExecutionRoute,
     WriteManyResult
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
@@ -20,7 +20,8 @@ import { runAfterSave } from './write/utils/prepareWriteInput'
 
 type WriteContext = {
     opContext: OperationContext
-    route?: WriteRoute
+    route?: ExecutionRoute
+    signal?: AbortSignal
 }
 
 function createWriteContext<T extends Entity>(
@@ -30,7 +31,8 @@ function createWriteContext<T extends Entity>(
 ): WriteContext {
     return {
         opContext: runtime.engine.operation.createContext(options?.opContext),
-        route: options?.route ?? handle.config.defaultRoute
+        route: options?.route ?? handle.config.defaultRoute,
+        signal: options?.signal
     }
 }
 
@@ -52,7 +54,8 @@ export class WriteFlow implements Write {
     private commitWrite = async <T extends Entity>(args: {
         handle: StoreHandle<T>
         opContext: OperationContext
-        route?: WriteRoute
+        route?: ExecutionRoute
+        signal?: AbortSignal
         plan: WritePlan<T>
         source: WriteHookSource
         output?: T
@@ -78,6 +81,7 @@ export class WriteFlow implements Write {
                 handle,
                 opContext,
                 route: args.route,
+                signal: args.signal,
                 plan
             })
 

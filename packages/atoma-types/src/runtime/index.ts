@@ -8,6 +8,8 @@ export type {
     ExecutionBundle,
     ExecutionResolution,
     ExecutionResolutionSource,
+    ExecutionErrorCode,
+    ExecutionError,
     ExecutionEvent,
     ExecutionWriteEvent,
     ExecutionQueryEvent
@@ -43,7 +45,7 @@ export type {
 
 export type {
     WriteExecutor,
-    WriteInput,
+    WriteRequest,
     WriteOutput,
     WriteStatus,
     RuntimeWriteAction,
@@ -62,9 +64,12 @@ export type {
     RuntimeWriteEntry,
     RuntimeWriteError,
     RuntimeWriteItemResult,
+    ExecutionOptions,
     WritePort,
     QueryExecutor,
-    QueryInput,
+    QueryRequest,
+    LocalQueryOutput,
+    RemoteQueryOutput,
     QueryOutput,
     Policy
 } from './persistence'

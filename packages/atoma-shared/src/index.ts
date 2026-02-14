@@ -1,4 +1,5 @@
-export { toError, toErrorWithFallback } from './errors'
+export { toError, toErrorWithFallback, createCodedError, isCodedError } from './errors'
+export type { CodedError } from './errors'
 
 export { createActionId, createEntityId, createId, createIdempotencyKey } from './id'
 export type { CreateIdArgs, IdKind } from './id'

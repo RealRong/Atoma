@@ -1,6 +1,6 @@
-import type { Entity, WriteRoute } from 'atoma-types/core'
+import type { Entity } from 'atoma-types/core'
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
-import type { QueryInput, QueryOutput, RuntimeWriteEntry, RuntimeWriteItemResult, WriteInput, WriteOutput } from 'atoma-types/runtime'
+import type { QueryOutput, QueryRequest, RuntimeWriteEntry, RuntimeWriteItemResult, WriteOutput, WriteRequest } from 'atoma-types/runtime'
 import type { Runtime } from 'atoma-runtime'
 import { createOperationExecutionSpec } from './adapters/operationExecutionAdapter'
 import type { ServiceRegistry } from '../plugins/ServiceRegistry'
@@ -34,30 +34,29 @@ function toLocalWriteResults(entries: ReadonlyArray<RuntimeWriteEntry>): Runtime
 
 export function installDirectStrategy({
     runtime,
-    services,
-    defaultRoute = 'direct-local'
+    services
 }: {
     runtime: Runtime
     services: ServiceRegistry
-    defaultRoute?: WriteRoute
 }): () => void {
     return runtime.execution.apply({
         id: 'builtin.direct',
         executors: {
             local: {
-                query: async <T extends Entity>(input: QueryInput<T>): Promise<QueryOutput> => {
+                query: async <T extends Entity>(request: QueryRequest<T>): Promise<QueryOutput> => {
                     const local = runtime.engine.query.evaluate({
-                        state: input.handle.state,
-                        query: input.query
+                        state: request.handle.state,
+                        query: request.query
                     })
 
                     return {
                         data: local.data,
+                        source: 'local',
                         ...(local.pageInfo !== undefined ? { pageInfo: local.pageInfo } : {})
                     }
                 },
-                write: async <T extends Entity>(input: WriteInput<T>): Promise<WriteOutput<T>> => {
-                    const results = toLocalWriteResults(input.writeEntries)
+                write: async <T extends Entity>(request: WriteRequest<T>): Promise<WriteOutput<T>> => {
+                    const results = toLocalWriteResults(request.entries)
                     return {
                         status: 'confirmed',
                         ...(results.length ? { results } : {})
@@ -78,7 +77,6 @@ export function installDirectStrategy({
                 query: 'operation',
                 write: 'operation'
             }
-        },
-        defaultRoute
+        }
     })
 }

@@ -1,5 +1,5 @@
 import type { Patch } from 'immer'
-import type { OperationContext as CoreOperationContext, Entity, Query, QueryResult, StoreToken } from '../../core'
+import type { OperationContext as CoreOperationContext, Entity, Query, QueryResult, StoreToken, ExecutionRoute } from '../../core'
 import type { Runtime, Hooks, QueryOutput, StoreHandle } from '../../runtime'
 import type { ServiceRegistry, ServiceToken } from '../services'
 
@@ -45,6 +45,7 @@ export type PluginRuntime = Readonly<{
         subscribe: Runtime['execution']['subscribe']
         query: <T extends Entity>(args: {
             storeName: StoreToken
+            route?: ExecutionRoute
             query: Query<T>
             signal?: AbortSignal
         }) => Promise<QueryOutput>

@@ -1,10 +1,11 @@
 import { createId } from 'atoma-shared'
 import type {
     Entity,
-    Store,
     Query,
     QueryOneResult,
     QueryResult,
+    Store,
+    StoreReadOptions,
     StoreDataProcessor,
     StoreToken
 } from 'atoma-types/core'
@@ -16,9 +17,9 @@ import type { Schema, StoreSchema, StoreHandle } from 'atoma-types/runtime'
 import { SimpleStoreState } from './StoreState'
 
 export type StoreEngineApi<T extends Entity = Entity, Relations = {}> = Store<T, Relations> & Readonly<{
-    fetchAll: () => Promise<T[]>
-    query: (query: Query<T>) => Promise<QueryResult<T>>
-    queryOne: (query: Query<T>) => Promise<QueryOneResult<T>>
+    fetchAll: (options?: StoreReadOptions) => Promise<T[]>
+    query: (query: Query<T>, options?: StoreReadOptions) => Promise<QueryResult<T>>
+    queryOne: (query: Query<T>, options?: StoreReadOptions) => Promise<QueryOneResult<T>>
 }>
 
 export type StoreEngine<T extends Entity = Entity, Relations = {}> = Readonly<{
@@ -111,10 +112,10 @@ export class StoreFactory {
         const getAll: StoreEngineApi<T>['getAll'] = (filter, cacheFilter) => this.runtime.read.getAll(handle, filter, cacheFilter)
         const getMany: StoreEngineApi<T>['getMany'] = (ids, cache) => this.runtime.read.getMany(handle, ids, cache)
         const getOne: StoreEngineApi<T>['getOne'] = (id) => this.runtime.read.getOne(handle, id)
-        const fetchOne: StoreEngineApi<T>['fetchOne'] = (id) => this.runtime.read.fetchOne(handle, id)
-        const fetchAll: StoreEngineApi<T>['fetchAll'] = () => this.runtime.read.fetchAll(handle)
-        const query: StoreEngineApi<T>['query'] = (input) => this.runtime.read.query(handle, input)
-        const queryOne: StoreEngineApi<T>['queryOne'] = (input) => this.runtime.read.queryOne(handle, input)
+        const fetchOne: StoreEngineApi<T>['fetchOne'] = (id, options) => this.runtime.read.fetchOne(handle, id, options)
+        const fetchAll: StoreEngineApi<T>['fetchAll'] = (options) => this.runtime.read.fetchAll(handle, options)
+        const query: StoreEngineApi<T>['query'] = (input, options) => this.runtime.read.query(handle, input, options)
+        const queryOne: StoreEngineApi<T>['queryOne'] = (input, options) => this.runtime.read.queryOne(handle, input, options)
 
         const api: StoreEngineApi<T> = {
             addOne,

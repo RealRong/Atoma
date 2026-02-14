@@ -1,11 +1,7 @@
 import { HTTP_PATH_SYNC_SUBSCRIBE, SSE_EVENT_NOTIFY, parseNotifyMessage } from 'atoma-types/protocol-tools'
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import type { NotifyMessage, SyncSubscribeTransport } from 'atoma-types/sync'
-import {
-    registerSyncSubscribeTransport,
-    resolveSyncSubscribeTransport,
-    SYNC_SUBSCRIBE_TRANSPORT_TOKEN
-} from '#sync/services'
+import { SYNC_SUBSCRIBE_TRANSPORT_TOKEN } from '#sync/services'
 
 type HeadersInput = () => Promise<Record<string, string>> | Record<string, string>
 
@@ -42,7 +38,7 @@ export function sseSubscribeDriverPlugin(options: SseSubscribeDriverPluginOption
         id: 'sync.subscribe:sse',
         provides: [SYNC_SUBSCRIBE_TRANSPORT_TOKEN],
         setup: (ctx: PluginContext) => {
-            if (!options?.overwrite && resolveSyncSubscribeTransport(ctx)) return
+            if (!options?.overwrite && ctx.services.resolve(SYNC_SUBSCRIBE_TRANSPORT_TOKEN)) return
 
             const driver: SyncSubscribeTransport = {
                 subscribe: (args) => {
@@ -94,7 +90,7 @@ export function sseSubscribeDriverPlugin(options: SseSubscribeDriverPluginOption
                 }
             }
 
-            const unregister = registerSyncSubscribeTransport(ctx, driver, {
+            const unregister = ctx.services.register(SYNC_SUBSCRIBE_TRANSPORT_TOKEN, driver, {
                 override: options.overwrite === true
             })
 
