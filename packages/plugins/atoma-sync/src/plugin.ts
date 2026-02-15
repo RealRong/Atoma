@@ -1,5 +1,6 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { DEBUG_HUB_TOKEN } from 'atoma-types/devtools'
+import type { CommandResult, Source, StreamEvent } from 'atoma-types/devtools'
+import { HUB_TOKEN } from 'atoma-types/devtools'
 import type { SyncClient, SyncMode, SyncPhase, SyncRuntimeConfig } from 'atoma-types/sync'
 import { SyncEngine } from '#sync/engine/sync-engine'
 import { createStores } from '#sync/storage'
@@ -195,22 +196,43 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
 
     const extension: SyncExtension = { sync }
 
-    const debugHub = ctx.services.resolve(DEBUG_HUB_TOKEN)
-    const syncProviderId = `sync.${runtime.id}`
-    const unregisterDebugProvider = debugHub?.register({
-        id: syncProviderId,
-        kind: 'sync',
-        clientId: runtime.id,
-        priority: 40,
+    const hub = ctx.services.resolve(HUB_TOKEN)
+    const sourceId = `sync.${runtime.id}`
+    let revision = 0
+    const source: Source = {
+        spec: {
+            id: sourceId,
+            clientId: runtime.id,
+            namespace: 'sync',
+            title: 'Sync',
+            priority: 40,
+            panels: [
+                { id: 'sync', title: 'Sync', order: 40, renderer: 'stats' },
+                { id: 'timeline', title: 'Timeline', order: 80, renderer: 'timeline' },
+                { id: 'raw', title: 'Raw', order: 999, renderer: 'raw' }
+            ],
+            capability: {
+                snapshot: true,
+                stream: true,
+                command: true
+            },
+            tags: ['plugin'],
+            commands: [
+                { name: 'sync.start', title: 'Start', argsJson: '{"mode":"full"}' },
+                { name: 'sync.stop', title: 'Stop' },
+                { name: 'sync.pull', title: 'Pull' },
+                { name: 'sync.push', title: 'Push' }
+            ]
+        },
         snapshot: () => {
             const base = devtools.snapshot()
             return {
                 version: 1,
-                providerId: syncProviderId,
-                kind: 'sync',
+                sourceId,
                 clientId: runtime.id,
+                panelId: 'sync',
+                revision,
                 timestamp: now(),
-                scope: { tab: 'sync' },
                 data: {
                     ...base,
                     status: {
@@ -219,8 +241,63 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
                     }
                 }
             }
+        },
+        subscribe: (emit) => {
+            return devtools.subscribe((event: any) => {
+                revision += 1
+                const timestamp = now()
+                const changedEvent: StreamEvent = {
+                    version: 1,
+                    sourceId,
+                    clientId: runtime.id,
+                    panelId: 'sync',
+                    type: 'data:changed',
+                    revision,
+                    timestamp
+                }
+                const timelineEvent: StreamEvent = {
+                    version: 1,
+                    sourceId,
+                    clientId: runtime.id,
+                    panelId: 'timeline',
+                    type: 'timeline:event',
+                    revision,
+                    timestamp,
+                    payload: event
+                }
+                emit(changedEvent)
+                emit(timelineEvent)
+            })
+        },
+        invoke: async (command): Promise<CommandResult> => {
+            try {
+                if (command.name === 'sync.start') {
+                    const mode = typeof command.args?.mode === 'string' ? command.args.mode as SyncMode : undefined
+                    sync.start(mode)
+                    return { ok: true }
+                }
+                if (command.name === 'sync.stop') {
+                    sync.stop()
+                    return { ok: true }
+                }
+                if (command.name === 'sync.pull') {
+                    await sync.pull()
+                    return { ok: true }
+                }
+                if (command.name === 'sync.push') {
+                    await sync.push()
+                    return { ok: true }
+                }
+                return { ok: false, message: `unknown command: ${command.name}` }
+            } catch (error) {
+                const message = error instanceof Error
+                    ? (error.message || 'Unknown error')
+                    : String(error ?? 'Unknown error')
+                return { ok: false, message }
+            }
         }
-    })
+    }
+    const unregisterSource = hub?.register(source)
 
     const dispose = () => {
         try {
@@ -231,7 +308,7 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
         engine = null
 
         try {
-            unregisterDebugProvider?.()
+            unregisterSource?.()
         } catch {
             // ignore
         }

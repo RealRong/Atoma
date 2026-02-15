@@ -1,34 +1,30 @@
-import type {
-    DevtoolsGlobalInspector,
-} from './types'
-import { getEntryById, listEntries } from './registry'
-import { inspectorForEntry } from './inspector'
+import type { GlobalInspector } from './types'
 import { createClientInspector } from './create-client-inspector'
+import { getEntryById, listEntries, subscribeEntries } from './registry'
+import { inspectorForEntry } from './inspector'
 
 export type {
-    DevtoolsStoreSnapshot,
-    DevtoolsIndexManagerSnapshot,
-    DevtoolsSyncSnapshot,
-    DevtoolsHistorySnapshot,
-    DevtoolsClientSnapshot,
-    DevtoolsEvent,
-    DevtoolsClientInspector,
-    DevtoolsGlobalInspector
+    InspectorPanel,
+    PanelSnapshot,
+    ClientSnapshot,
+    InspectorEvent,
+    ClientInspector,
+    GlobalInspector
 } from './types'
 
 export const Devtools = {
     createClientInspector,
 
-    global: (): DevtoolsGlobalInspector => {
+    global: (): GlobalInspector => {
         return {
             clients: {
                 list: () => {
                     return listEntries()
-                        .map(c => ({
-                            id: c.id,
-                            label: c.label,
-                            createdAt: c.createdAt,
-                            lastSeenAt: c.lastSeenAt
+                        .map((client) => ({
+                            id: client.id,
+                            label: client.label,
+                            createdAt: client.createdAt,
+                            lastSeenAt: client.lastSeenAt
                         }))
                 },
                 get: (id: string) => {
@@ -39,8 +35,11 @@ export const Devtools = {
                     return inspectorForEntry(entry)
                 },
                 snapshot: () => {
-                    const clients = listEntries().map(e => inspectorForEntry(e).snapshot())
+                    const clients = listEntries().map(entry => inspectorForEntry(entry).snapshot())
                     return { clients }
+                },
+                subscribe: (fn) => {
+                    return subscribeEntries(fn)
                 }
             }
         }

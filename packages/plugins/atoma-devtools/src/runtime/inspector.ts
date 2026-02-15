@@ -1,170 +1,157 @@
-import type { DebugPayload } from 'atoma-types/devtools'
-import type {
-    DevtoolsClientInspector,
-    DevtoolsClientSnapshot,
-    DevtoolsHistorySnapshot,
-    DevtoolsIndexManagerSnapshot,
-    DevtoolsStoreSnapshot,
-    DevtoolsSyncSnapshot
-} from './types'
+import type { Snapshot, SourceSpec } from 'atoma-types/devtools'
+import type { ClientInspector, ClientSnapshot, InspectorPanel, PanelSnapshot } from './types'
 import type { ClientEntry } from './registry'
 
-const isObject = (value: unknown): value is Record<string, unknown> => {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
+const now = (): number => Date.now()
 
-const toStringValue = (value: unknown): string | undefined => {
-    if (typeof value !== 'string') return undefined
-    const normalized = value.trim()
-    return normalized || undefined
-}
-
-const toNumberValue = (value: unknown): number | undefined => {
-    if (typeof value !== 'number' || Number.isNaN(value)) return undefined
-    return value
-}
-
-const toBooleanValue = (value: unknown): boolean | undefined => {
-    if (typeof value !== 'boolean') return undefined
-    return value
-}
-
-const snapshotStore = (payload: DebugPayload): DevtoolsStoreSnapshot | undefined => {
-    if (payload.kind !== 'store') return undefined
-    const data = isObject(payload.data) ? payload.data : {}
-    const storeName = toStringValue(data.name) ?? payload.scope?.storeName
-    if (!storeName) return undefined
-
-    const sample = Array.isArray(data.sample) ? data.sample : []
+const buildSnapshotError = (args: {
+    source: SourceSpec
+    panelId: string
+    error: unknown
+}): Snapshot => {
+    const message = args.error instanceof Error
+        ? (args.error.message || 'Unknown error')
+        : String(args.error ?? 'Unknown error')
 
     return {
-        clientId: payload.clientId,
-        name: storeName,
-        count: toNumberValue(data.count) ?? 0,
-        approxSize: toNumberValue(data.approxSize) ?? 0,
-        sample,
-        timestamp: toNumberValue(payload.timestamp) ?? Date.now()
+        version: 1,
+        sourceId: args.source.id,
+        clientId: args.source.clientId,
+        panelId: args.panelId,
+        revision: 0,
+        timestamp: now(),
+        data: {
+            error: message
+        },
+        meta: {
+            warnings: ['snapshot:error']
+        }
     }
 }
 
-const snapshotIndex = (payload: DebugPayload): DevtoolsIndexManagerSnapshot | undefined => {
-    if (payload.kind !== 'index') return undefined
-    const data = isObject(payload.data) ? payload.data : {}
-    const storeName = toStringValue(data.name) ?? payload.scope?.storeName
-    if (!storeName) return undefined
+const sortPanels = (left: InspectorPanel, right: InspectorPanel): number => {
+    if (left.order !== right.order) return left.order - right.order
+    return left.id.localeCompare(right.id)
+}
 
-    const indexesRaw = Array.isArray(data.indexes) ? data.indexes : []
-    const indexes = indexesRaw
-        .map((item) => {
-            if (!isObject(item)) return undefined
-            const field = toStringValue(item.field)
-            const type = toStringValue(item.type)
-            if (!field || !type) return undefined
+const collectPanels = (sources: SourceSpec[]): InspectorPanel[] => {
+    const byId = new Map<string, InspectorPanel>()
+
+    for (const source of sources) {
+        for (const panel of source.panels) {
+            const id = String(panel.id ?? '').trim()
+            if (!id) continue
+
+            const existing = byId.get(id)
+            const nextOrder = typeof panel.order === 'number' ? panel.order : 500
+            if (!existing) {
+                byId.set(id, {
+                    id,
+                    title: panel.title || id,
+                    order: nextOrder,
+                    ...(panel.renderer ? { renderer: panel.renderer } : {})
+                })
+                continue
+            }
+
+            if (nextOrder < existing.order) {
+                existing.order = nextOrder
+            }
+            if (!existing.renderer && panel.renderer) {
+                existing.renderer = panel.renderer
+            }
+            if (!existing.title && panel.title) {
+                existing.title = panel.title
+            }
+        }
+    }
+
+    return Array.from(byId.values()).sort(sortPanels)
+}
+
+const includesPanel = (source: SourceSpec, panelId: string): boolean => {
+    return source.panels.some(panel => panel.id === panelId)
+}
+
+const buildPanelSnapshot = ({
+    entry,
+    panel,
+    sources
+}: {
+    entry: ClientEntry
+    panel: InspectorPanel
+    sources: SourceSpec[]
+}): PanelSnapshot => {
+    const items = sources
+        .filter(source => includesPanel(source, panel.id))
+        .map(source => {
+            let snapshot: Snapshot
+            try {
+                snapshot = entry.hub.snapshot({
+                    sourceId: source.id,
+                    query: {
+                        panelId: panel.id,
+                        limit: 100
+                    }
+                })
+            } catch (error) {
+                snapshot = buildSnapshotError({
+                    source,
+                    panelId: panel.id,
+                    error
+                })
+            }
 
             return {
-                field,
-                type,
-                ...(typeof item.dirty === 'boolean' ? { dirty: item.dirty } : {}),
-                ...(typeof item.size === 'number' ? { size: item.size } : {}),
-                ...(typeof item.distinctValues === 'number' ? { distinctValues: item.distinctValues } : {}),
-                ...(typeof item.avgSetSize === 'number' ? { avgSetSize: item.avgSetSize } : {}),
-                ...(typeof item.maxSetSize === 'number' ? { maxSetSize: item.maxSetSize } : {}),
-                ...(typeof item.minSetSize === 'number' ? { minSetSize: item.minSetSize } : {})
+                sourceId: source.id,
+                sourceTitle: source.title,
+                source,
+                snapshot
             }
         })
-        .filter((item): item is NonNullable<typeof item> => Boolean(item))
-
-    const lastQuery = isObject(data.lastQuery) ? data.lastQuery : undefined
+        .sort((left, right) => left.sourceId.localeCompare(right.sourceId))
 
     return {
-        clientId: payload.clientId,
-        name: storeName,
-        indexes,
-        ...(lastQuery ? { lastQuery: lastQuery as DevtoolsIndexManagerSnapshot['lastQuery'] } : {})
+        panel,
+        items
     }
 }
 
-const snapshotSync = (payloads: DebugPayload[]): DevtoolsSyncSnapshot | undefined => {
-    const payload = payloads.find(item => item.kind === 'sync')
-    if (!payload) return undefined
-
-    const data = isObject(payload.data) ? payload.data : {}
-    const status = isObject(data.status) ? data.status : {}
-    const queue = isObject(data.queue) ? data.queue : undefined
-
-    return {
-        status: {
-            configured: toBooleanValue(status.configured) ?? false,
-            started: toBooleanValue(status.started) ?? false
-        },
-        ...(queue
-            ? {
-                queue: {
-                    ...(typeof queue.pending === 'number' ? { pending: queue.pending } : {}),
-                    ...(typeof queue.failed === 'number' ? { failed: queue.failed } : {}),
-                    ...(typeof queue.inFlight === 'number' ? { inFlight: queue.inFlight } : {}),
-                    ...(typeof queue.total === 'number' ? { total: queue.total } : {})
-                }
-            }
-            : {}),
-        ...(typeof data.lastEventAt === 'number' ? { lastEventAt: data.lastEventAt } : {}),
-        ...(typeof data.lastError === 'string' ? { lastError: data.lastError } : {})
-    }
-}
-
-const snapshotHistory = (payloads: DebugPayload[]): DevtoolsHistorySnapshot => {
-    const payload = payloads.find(item => item.kind === 'history')
-    if (!payload) {
-        return { scopes: [] }
-    }
-
-    const data = isObject(payload.data) ? payload.data : {}
-    const scopes = Array.isArray(data.scopes)
-        ? data.scopes
-            .map((item) => {
-                if (!isObject(item)) return undefined
-                const scope = toStringValue(item.scope)
-                if (!scope) return undefined
-                return {
-                    scope,
-                    canUndo: toBooleanValue(item.canUndo) ?? false,
-                    canRedo: toBooleanValue(item.canRedo) ?? false
-                }
-            })
-            .filter((item): item is NonNullable<typeof item> => Boolean(item))
-        : []
-
-    return { scopes }
-}
-
-function buildSnapshot(entry: ClientEntry): DevtoolsClientSnapshot {
-    const payloads = entry.hub.snapshotAll({ clientId: entry.id })
-
-    const stores = payloads
-        .map(snapshotStore)
-        .filter((item): item is DevtoolsStoreSnapshot => Boolean(item))
-        .sort((left, right) => left.name.localeCompare(right.name))
-
-    const indexes = payloads
-        .map(snapshotIndex)
-        .filter((item): item is DevtoolsIndexManagerSnapshot => Boolean(item))
-        .sort((left, right) => left.name.localeCompare(right.name))
+function buildSnapshot(entry: ClientEntry): ClientSnapshot {
+    const sources = entry.hub.list({ clientId: entry.id })
+    const panels = collectPanels(sources).map(panel => {
+        return buildPanelSnapshot({
+            entry,
+            panel,
+            sources
+        })
+    })
 
     return {
         id: entry.id,
         label: entry.label,
         createdAt: entry.createdAt,
-        updatedAt: Date.now(),
-        stores,
-        indexes,
-        ...(snapshotSync(payloads) ? { sync: snapshotSync(payloads) } : {}),
-        history: snapshotHistory(payloads)
+        updatedAt: now(),
+        sources,
+        panels
     }
 }
 
-export function inspectorForEntry(entry: ClientEntry): DevtoolsClientInspector {
-    const snapshot = (): DevtoolsClientSnapshot => {
-        entry.lastSeenAt = Date.now()
+function buildPanel(entry: ClientEntry, panelId: string): PanelSnapshot | undefined {
+    const sources = entry.hub.list({ clientId: entry.id })
+    const panel = collectPanels(sources).find((item) => item.id === panelId)
+    if (!panel) return undefined
+
+    return buildPanelSnapshot({
+        entry,
+        panel,
+        sources: sources.filter(source => includesPanel(source, panel.id))
+    })
+}
+
+export function inspectorForEntry(entry: ClientEntry): ClientInspector {
+    const snapshot = (): ClientSnapshot => {
+        entry.lastSeenAt = now()
         return buildSnapshot(entry)
     }
 
@@ -172,44 +159,30 @@ export function inspectorForEntry(entry: ClientEntry): DevtoolsClientInspector {
         id: entry.id,
         label: entry.label,
         snapshot,
+        panel: (panelId: string) => {
+            const normalizedPanelId = String(panelId ?? '').trim()
+            if (!normalizedPanelId) return undefined
+            entry.lastSeenAt = now()
+            return buildPanel(entry, normalizedPanelId)
+        },
         subscribe: (fn) => {
-            return entry.hub.subscribe((event) => {
-                if (event.clientId !== entry.id) return
+            return entry.hub.subscribe({ clientId: entry.id }, (event) => {
                 fn({
-                    type: `${event.type}:${event.kind}`,
+                    type: event.type,
                     payload: event
                 })
             })
         },
-        stores: {
-            list: () => {
-                return snapshot().stores.map(store => ({ name: store.name }))
-            },
-            snapshot: (name?: string) => {
-                const stores = snapshot().stores
-                if (!name) return stores
-                return stores.filter(store => store.name === String(name))
-            }
-        },
-        indexes: {
-            list: () => {
-                return snapshot().indexes.map(index => ({ name: index.name }))
-            },
-            snapshot: (name?: string) => {
-                const indexes = snapshot().indexes
-                if (!name) return indexes
-                return indexes.filter(index => index.name === String(name))
-            }
-        },
-        sync: {
-            snapshot: () => {
-                return snapshot().sync
-            }
-        },
-        history: {
-            snapshot: () => {
-                return snapshot().history
-            }
+        invoke: async (args) => {
+            const sourceId = String(args.sourceId ?? '').trim()
+            const name = String(args.name ?? '').trim()
+            if (!sourceId) return { ok: false, message: 'sourceId required' }
+            if (!name) return { ok: false, message: 'name required' }
+            return await entry.hub.invoke({
+                sourceId,
+                name,
+                ...(args.args ? { args: args.args } : {})
+            })
         }
     }
 }

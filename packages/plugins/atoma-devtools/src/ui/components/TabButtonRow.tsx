@@ -1,23 +1,22 @@
-const tabs = ['store', 'index', 'sync', 'history', 'trace'] as const
-
 export function TabButtonRow(props: {
-    tab: typeof tabs[number]
-    setTab: (tab: typeof tabs[number]) => void
+    tabs: Array<{ id: string; title: string }>
+    tab?: string
+    setTab: (tab: string) => void
 }) {
-    const { tab, setTab } = props
+    const { tabs, tab, setTab } = props
     return (
         <div className="mb-2 flex gap-1.5">
-            {tabs.map(key => (
+            {tabs.map(({ id, title }) => (
                 <button
-                    key={key}
+                    key={id}
                     className={
-                        tab === key
+                        tab === id
                             ? 'rounded-lg border border-slate-900 bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white'
                             : 'rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                     }
-                    onClick={() => setTab(key)}
+                    onClick={() => setTab(id)}
                 >
-                    {key}
+                    {title}
                 </button>
             ))}
         </div>

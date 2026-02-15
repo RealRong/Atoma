@@ -1,10 +1,8 @@
 export type {
-    DevtoolsStoreSnapshot,
-    DevtoolsIndexManagerSnapshot,
-    DevtoolsSyncSnapshot,
-    DevtoolsHistorySnapshot,
-    DevtoolsClientSnapshot,
-    DevtoolsEvent,
-    DevtoolsClientInspector,
-    DevtoolsGlobalInspector
+    InspectorPanel,
+    PanelSnapshot,
+    ClientSnapshot,
+    InspectorEvent,
+    ClientInspector,
+    GlobalInspector
 } from './runtime/types'

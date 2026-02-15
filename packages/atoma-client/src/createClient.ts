@@ -8,9 +8,9 @@ import type {
 } from 'atoma-types/client'
 import type { Schema } from 'atoma-types/runtime'
 import { buildPluginContext } from './client/composition/buildPluginContext'
-import { installDebugIntegration } from './client/installDebugIntegration'
 import { registerDirectRoutes } from './client/execution/registerDirectRoutes'
 import { setupPlugins } from './plugins'
+import { createBuiltinDebugPlugin } from './plugins/builtinDebugPlugin'
 import { ServiceRegistry } from './plugins/ServiceRegistry'
 
 function disposeInReverse(disposers: Array<() => void>): void {
@@ -38,8 +38,8 @@ export function createClient<
     }
 
     const schema = (options.schema ?? {}) as Schema
-    const rawPlugins = options.plugins ?? []
-    if (!Array.isArray(rawPlugins)) {
+    const userPlugins = options.plugins ?? []
+    if (!Array.isArray(userPlugins)) {
         throw new Error('[Atoma] createClient: plugins 必须是数组')
     }
 
@@ -61,15 +61,18 @@ export function createClient<
         runtime,
         services
     })
+    const plugins = [
+        createBuiltinDebugPlugin({ runtime }),
+        ...userPlugins
+    ]
 
     const disposers: Array<() => void> = []
     let pluginSetup: ReturnType<typeof setupPlugins> | null = null
     try {
-        disposers.push(...installDebugIntegration({ services, runtime }))
         disposers.push(registerDirectRoutes({ runtime }))
         pluginSetup = setupPlugins({
             context,
-            rawPlugins
+            rawPlugins: plugins
         })
         disposers.push(pluginSetup.dispose)
         if (defaultRoute) {

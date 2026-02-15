@@ -1,91 +1,50 @@
-export type DevtoolsStoreSnapshot = {
-    clientId: string
-    name: string
-    count: number
-    approxSize: number
-    sample: any[]
-    timestamp: number
+import type { CommandResult, PanelSpec, Snapshot, SourceSpec, StreamEvent } from 'atoma-types/devtools'
+
+export type InspectorPanel = {
+    id: string
+    title: string
+    order: number
+    renderer?: PanelSpec['renderer']
 }
 
-export type DevtoolsIndexManagerSnapshot = {
-    clientId: string
-    name: string
-    indexes: Array<{
-        field: string
-        type: string
-        dirty?: boolean
-        size?: number
-        distinctValues?: number
-        avgSetSize?: number
-        maxSetSize?: number
-        minSetSize?: number
-        sampleTerms?: Array<{ term: string; ids: Array<string | number> }>
+export type PanelSnapshot = {
+    panel: InspectorPanel
+    items: Array<{
+        sourceId: string
+        sourceTitle: string
+        source: SourceSpec
+        snapshot: Snapshot
     }>
-    lastQuery?: {
-        timestamp: number
-        whereFields: string[]
-        perField: Array<{
-            field: string
-            status: 'no_index' | 'unsupported' | 'empty' | 'candidates'
-            exactness?: 'exact' | 'superset'
-            candidates?: number
-        }>
-        result: { kind: 'unsupported' | 'empty' | 'candidates'; exactness?: 'exact' | 'superset'; candidates?: number }
-    }
 }
 
-export type DevtoolsSyncSnapshot = {
-    status: { configured: boolean; started: boolean }
-    queue?: { pending?: number; failed?: number; inFlight?: number; total?: number }
-    lastEventAt?: number
-    lastError?: string
-}
-
-export type DevtoolsHistorySnapshot = {
-    scopes: Array<{ scope: string; canUndo: boolean; canRedo: boolean }>
-}
-
-export type DevtoolsClientSnapshot = {
+export type ClientSnapshot = {
     id: string
     label?: string
     createdAt: number
     updatedAt: number
-    stores: DevtoolsStoreSnapshot[]
-    indexes: DevtoolsIndexManagerSnapshot[]
-    sync?: DevtoolsSyncSnapshot
-    history: DevtoolsHistorySnapshot
+    sources: SourceSpec[]
+    panels: PanelSnapshot[]
 }
 
-export type DevtoolsEvent = {
-    type: string
-    payload?: any
+export type InspectorEvent = {
+    type: StreamEvent['type']
+    payload: StreamEvent
 }
 
-export type DevtoolsClientInspector = {
+export type ClientInspector = {
     id: string
     label?: string
-    snapshot: () => DevtoolsClientSnapshot
-    subscribe: (fn: (e: DevtoolsEvent) => void) => () => void
-    stores: {
-        list: () => Array<{ name: string }>
-        snapshot: (name?: string) => DevtoolsStoreSnapshot[]
-    }
-    indexes: {
-        list: () => Array<{ name: string }>
-        snapshot: (name?: string) => DevtoolsIndexManagerSnapshot[]
-    }
-    sync?: {
-        snapshot: () => DevtoolsSyncSnapshot | undefined
-    }
-    history: {
-        snapshot: () => DevtoolsHistorySnapshot
-    }
+    snapshot: () => ClientSnapshot
+    panel: (panelId: string) => PanelSnapshot | undefined
+    subscribe: (fn: (event: InspectorEvent) => void) => () => void
+    invoke: (args: { sourceId: string; name: string; args?: Record<string, unknown> }) => Promise<CommandResult>
 }
 
-export type DevtoolsGlobalInspector = {
+export type GlobalInspector = {
     clients: {
         list: () => Array<{ id: string; label?: string; createdAt: number; lastSeenAt: number }>
-        get: (id: string) => DevtoolsClientInspector
-        snapshot: () => { clients: DevtoolsClientSnapshot[] }
+        get: (id: string) => ClientInspector
+        snapshot: () => { clients: ClientSnapshot[] }
+        subscribe: (fn: () => void) => () => void
     }
 }

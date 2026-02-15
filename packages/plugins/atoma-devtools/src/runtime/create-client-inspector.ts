@@ -1,15 +1,15 @@
-import type { DebugHub } from 'atoma-types/devtools'
-import type { DevtoolsClientInspector } from './types'
+import type { Hub } from 'atoma-types/devtools'
+import type { ClientInspector } from './types'
 import { inspectorForEntry } from './inspector'
 import { ensureEntry, removeEntryById } from './registry'
 
-type CreateClientDevtoolsArgs = {
+type CreateClientArgs = {
     clientId: string
-    hub: DebugHub
+    hub: Hub
     label?: string
 }
 
-export function createClientInspector(args: CreateClientDevtoolsArgs): DevtoolsClientInspector & { dispose: () => void } {
+export function createClientInspector(args: CreateClientArgs): ClientInspector & { dispose: () => void } {
     const entry = ensureEntry({
         clientId: args.clientId,
         label: args.label,

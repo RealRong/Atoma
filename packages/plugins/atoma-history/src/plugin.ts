@@ -1,6 +1,9 @@
 import type { AtomaHistory } from 'atoma-types/client'
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { DEBUG_HUB_TOKEN } from 'atoma-types/devtools'
+import type { OperationContext } from 'atoma-types/core'
+import type { CommandResult, Source, StreamEvent } from 'atoma-types/devtools'
+import { HUB_TOKEN } from 'atoma-types/devtools'
+import type { Patch } from 'immer'
 import { HistoryManager } from './history-manager'
 
 const toScope = (scope?: string) => String(scope ?? 'default')
@@ -21,6 +24,68 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
     return {
         id: 'atoma-history',
         setup: (ctx: PluginContext) => {
+            const clientId = ctx.clientId
+            const sourceId = `history.${clientId}`
+            let revision = 0
+            const subscribers = new Set<(event: StreamEvent) => void>()
+
+            const emitChanged = () => {
+                revision += 1
+                const event: StreamEvent = {
+                    version: 1,
+                    sourceId,
+                    clientId,
+                    panelId: 'history',
+                    type: 'data:changed',
+                    revision,
+                    timestamp: ctx.runtime.now()
+                }
+                for (const subscriber of subscribers) {
+                    try {
+                        subscriber(event)
+                    } catch {
+                        // ignore
+                    }
+                }
+            }
+
+            const apply = async (args: {
+                storeName: string
+                patches: Patch[]
+                inversePatches: Patch[]
+                opContext: OperationContext
+            }) => {
+                await ctx.runtime.stores.applyPatches({
+                    storeName: args.storeName,
+                    patches: args.patches,
+                    inversePatches: args.inversePatches,
+                    opContext: args.opContext
+                })
+            }
+
+            const runUndo = async (scope?: string): Promise<boolean> => {
+                const ok = await manager.undo({
+                    scope: toScope(scope),
+                    apply
+                })
+                if (ok) emitChanged()
+                return ok
+            }
+
+            const runRedo = async (scope?: string): Promise<boolean> => {
+                const ok = await manager.redo({
+                    scope: toScope(scope),
+                    apply
+                })
+                if (ok) emitChanged()
+                return ok
+            }
+
+            const runClear = (scope?: string): void => {
+                manager.clear(toScope(scope))
+                emitChanged()
+            }
+
             const stopEvents = ctx.events.register({
                 write: {
                     onPatches: (args) => {
@@ -30,61 +95,95 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                             inversePatches: args.inversePatches,
                             opContext: args.opContext
                         })
+                        emitChanged()
                     }
                 }
             })
 
-            const debugHub = ctx.services.resolve(DEBUG_HUB_TOKEN)
-            const historyProviderId = `history.${ctx.clientId}`
-            const unregisterDebugProvider = debugHub?.register({
-                id: historyProviderId,
-                kind: 'history',
-                clientId: ctx.clientId,
-                priority: 50,
+            const hub = ctx.services.resolve(HUB_TOKEN)
+            const source: Source = {
+                spec: {
+                    id: sourceId,
+                    clientId,
+                    namespace: 'history',
+                    title: 'History',
+                    priority: 50,
+                    panels: [
+                        { id: 'history', title: 'History', order: 50, renderer: 'stats' },
+                        { id: 'raw', title: 'Raw', order: 999, renderer: 'raw' }
+                    ],
+                    capability: {
+                        snapshot: true,
+                        stream: true,
+                        command: true
+                    },
+                    tags: ['plugin'],
+                    commands: [
+                        { name: 'history.undo', title: 'Undo', argsJson: '{"scope":"default"}' },
+                        { name: 'history.redo', title: 'Redo', argsJson: '{"scope":"default"}' },
+                        { name: 'history.clear', title: 'Clear', argsJson: '{"scope":"default"}' }
+                    ]
+                },
                 snapshot: () => {
                     return {
                         version: 1,
-                        providerId: historyProviderId,
-                        kind: 'history',
-                        clientId: ctx.clientId,
+                        sourceId,
+                        clientId,
+                        panelId: 'history',
+                        revision,
                         timestamp: ctx.runtime.now(),
-                        scope: { tab: 'history' },
                         data: buildSnapshot(manager)
                     }
+                },
+                subscribe: (fn) => {
+                    subscribers.add(fn)
+                    return () => {
+                        subscribers.delete(fn)
+                    }
+                },
+                invoke: async (command): Promise<CommandResult> => {
+                    try {
+                        if (command.name === 'history.undo') {
+                            const scope = typeof command.args?.scope === 'string'
+                                ? command.args.scope
+                                : undefined
+                            const ok = await runUndo(scope)
+                            return { ok }
+                        }
+                        if (command.name === 'history.redo') {
+                            const scope = typeof command.args?.scope === 'string'
+                                ? command.args.scope
+                                : undefined
+                            const ok = await runRedo(scope)
+                            return { ok }
+                        }
+                        if (command.name === 'history.clear') {
+                            const scope = typeof command.args?.scope === 'string'
+                                ? command.args.scope
+                                : undefined
+                            runClear(scope)
+                            return { ok: true }
+                        }
+                        return { ok: false, message: `unknown command: ${command.name}` }
+                    } catch (error) {
+                        const message = error instanceof Error
+                            ? (error.message || 'Unknown error')
+                            : String(error ?? 'Unknown error')
+                        return { ok: false, message }
+                    }
                 }
-            })
+            }
+            const unregisterSource = hub?.register(source)
 
             const history: AtomaHistory = {
                 canUndo: (scope) => manager.canUndo(toScope(scope)),
                 canRedo: (scope) => manager.canRedo(toScope(scope)),
-                clear: (scope) => manager.clear(toScope(scope)),
+                clear: (scope) => runClear(scope),
                 undo: async (args) => {
-                    const scope = toScope(args?.scope)
-                    return await manager.undo({
-                        scope,
-                        apply: async (applyArgs) => {
-                            await ctx.runtime.stores.applyPatches({
-                                storeName: applyArgs.storeName,
-                                patches: applyArgs.patches,
-                                inversePatches: applyArgs.inversePatches,
-                                opContext: applyArgs.opContext
-                            })
-                        }
-                    })
+                    return await runUndo(args?.scope)
                 },
                 redo: async (args) => {
-                    const scope = toScope(args?.scope)
-                    return await manager.redo({
-                        scope,
-                        apply: async (applyArgs) => {
-                            await ctx.runtime.stores.applyPatches({
-                                storeName: applyArgs.storeName,
-                                patches: applyArgs.patches,
-                                inversePatches: applyArgs.inversePatches,
-                                opContext: applyArgs.opContext
-                            })
-                        }
-                    })
+                    return await runRedo(args?.scope)
                 }
             }
 
@@ -97,7 +196,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                         // ignore
                     }
                     try {
-                        unregisterDebugProvider?.()
+                        unregisterSource?.()
                     } catch {
                         // ignore
                     }

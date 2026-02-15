@@ -1,5 +1,5 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { DEBUG_HUB_TOKEN } from 'atoma-types/devtools'
+import { HUB_TOKEN } from 'atoma-types/devtools'
 import { createClientInspector } from './runtime/create-client-inspector'
 
 export type DevtoolsPluginOptions = Readonly<{
@@ -14,7 +14,7 @@ export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugi
     return {
         id: 'atoma-devtools',
         setup: (ctx: PluginContext) => {
-            const hub = ctx.services.resolve(DEBUG_HUB_TOKEN)
+            const hub = ctx.services.resolve(HUB_TOKEN)
             if (!hub) {
                 throw new Error('[Atoma Devtools] debug hub missing')
             }

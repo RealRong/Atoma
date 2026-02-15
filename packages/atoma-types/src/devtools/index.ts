@@ -1,57 +1,134 @@
 import { createServiceToken } from '../client/services'
 import type { StoreToken } from '../core'
 
-export type DebugKind = 'store' | 'index' | 'sync' | 'history' | 'trace' | 'custom'
+export type PanelId = string
+export type SourceId = string
 
-export type DebugProviderSnapshotArgs = Readonly<{
-    storeName?: StoreToken
+export type Capability = Readonly<{
+    snapshot?: boolean
+    stream?: boolean
+    command?: boolean
+    schema?: boolean
+    search?: boolean
+    paginate?: boolean
 }>
 
-export type DebugSnapshotArgs = Readonly<{
-    kind?: DebugKind
-    clientId?: string
-    storeName?: StoreToken
+export type PanelSpec = Readonly<{
+    id: PanelId
+    title: string
+    order?: number
+    icon?: string
+    renderer?: 'table' | 'tree' | 'timeline' | 'stats' | 'raw'
 }>
 
-export type DebugPayload = Readonly<{
-    version: 1
-    providerId: string
-    kind: DebugKind
+export type CommandSpec = Readonly<{
+    name: string
+    title?: string
+    argsJson?: string
+}>
+
+export type SourceSpec = Readonly<{
+    id: SourceId
     clientId: string
+    namespace: string
+    title: string
+    priority?: number
+    panels: PanelSpec[]
+    capability: Capability
+    tags?: string[]
+    commands?: CommandSpec[]
+}>
+
+export type SnapshotQuery = Readonly<{
+    panelId?: PanelId
+    storeName?: StoreToken
+    filter?: Record<string, unknown>
+    search?: string
+    cursor?: string
+    limit?: number
+}>
+
+export type Snapshot = Readonly<{
+    version: 1
+    sourceId: SourceId
+    clientId: string
+    panelId?: PanelId
+    revision: number
     timestamp: number
-    scope?: {
-        storeName?: StoreToken
-        tab?: string
-    }
     data: unknown
+    page?: {
+        cursor?: string
+        nextCursor?: string
+        totalApprox?: number
+    }
     meta?: {
         title?: string
         tags?: string[]
-        capabilities?: string[]
+        warnings?: string[]
     }
 }>
 
-export type DebugProvider = Readonly<{
-    id: string
-    kind: DebugKind
+export type StreamEventType =
+    | 'source:registered'
+    | 'source:unregistered'
+    | 'data:changed'
+    | 'timeline:event'
+    | 'command:result'
+    | 'error'
+
+export type StreamEvent = Readonly<{
+    version: 1
+    sourceId: SourceId
     clientId: string
-    priority?: number
-    snapshot: (args?: DebugProviderSnapshotArgs) => DebugPayload
+    panelId?: PanelId
+    type: StreamEventType
+    revision?: number
+    timestamp: number
+    payload?: unknown
 }>
 
-export type DebugHubEvent = Readonly<{
-    type: 'register' | 'unregister'
-    providerId: string
-    kind: DebugKind
-    clientId: string
+export type Command = Readonly<{
+    sourceId: SourceId
+    name: string
+    args?: Record<string, unknown>
 }>
 
-export type DebugHub = Readonly<{
-    register: (provider: DebugProvider) => () => void
-    get: (providerId: string) => DebugProvider | undefined
-    list: (filter?: { kind?: DebugKind; clientId?: string }) => DebugProvider[]
-    snapshotAll: (args?: DebugSnapshotArgs) => DebugPayload[]
-    subscribe: (fn: (e: DebugHubEvent) => void) => () => void
+export type CommandResult = Readonly<{
+    ok: boolean
+    message?: string
+    data?: unknown
 }>
 
-export const DEBUG_HUB_TOKEN = createServiceToken<DebugHub>('debug.hub')
+export type Source = Readonly<{
+    spec: SourceSpec
+    snapshot?: (query?: SnapshotQuery) => Snapshot
+    subscribe?: (fn: (event: StreamEvent) => void) => () => void
+    invoke?: (command: Command) => CommandResult | Promise<CommandResult>
+}>
+
+export type ListArgs = Readonly<{
+    clientId?: string
+    panelId?: PanelId
+    namespace?: string
+}>
+
+export type SubscribeArgs = Readonly<{
+    clientId?: string
+    sourceIds?: SourceId[]
+    panelId?: PanelId
+}>
+
+export type SnapshotArgs = Readonly<{
+    sourceId: SourceId
+    query?: SnapshotQuery
+}>
+
+export type Hub = Readonly<{
+    register: (source: Source) => () => void
+    list: (args?: ListArgs) => SourceSpec[]
+    snapshot: (args: SnapshotArgs) => Snapshot
+    subscribe: (args: SubscribeArgs, fn: (event: StreamEvent) => void) => () => void
+    invoke: (command: Command) => Promise<CommandResult>
+}>
+
+export const HUB_TOKEN = createServiceToken<Hub>('devtools.hub')

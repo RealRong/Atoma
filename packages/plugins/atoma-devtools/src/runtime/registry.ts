@@ -1,14 +1,25 @@
-import type { DebugHub } from 'atoma-types/devtools'
+import type { Hub } from 'atoma-types/devtools'
 
 export type ClientEntry = {
     id: string
     label?: string
     createdAt: number
     lastSeenAt: number
-    hub: DebugHub
+    hub: Hub
 }
 
 const byId = new Map<string, ClientEntry>()
+const subscribers = new Set<() => void>()
+
+const emit = (): void => {
+    for (const subscriber of subscribers) {
+        try {
+            subscriber()
+        } catch {
+            // ignore
+        }
+    }
+}
 
 export function listEntries(): ClientEntry[] {
     return Array.from(byId.values())
@@ -20,12 +31,13 @@ export function getEntryById(id: string): ClientEntry | undefined {
 
 export function removeEntryById(id: string): void {
     byId.delete(String(id))
+    emit()
 }
 
 export function ensureEntry(args: {
     clientId: string
     label?: string
-    hub: DebugHub
+    hub: Hub
 }): ClientEntry {
     const stableId = String(args.clientId)
     const now = Date.now()
@@ -35,6 +47,7 @@ export function ensureEntry(args: {
         existing.lastSeenAt = now
         if (args.label) existing.label = String(args.label)
         existing.hub = args.hub
+        emit()
         return existing
     }
 
@@ -47,5 +60,13 @@ export function ensureEntry(args: {
     }
 
     byId.set(stableId, entry)
+    emit()
     return entry
+}
+
+export function subscribeEntries(fn: () => void): () => void {
+    subscribers.add(fn)
+    return () => {
+        subscribers.delete(fn)
+    }
 }
