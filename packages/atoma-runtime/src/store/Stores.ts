@@ -54,7 +54,7 @@ export class Stores implements StoreCatalog {
             api: built.api
         }
 
-        this.runtime.hooks.emit.storeCreated({
+        this.runtime.events.emit.storeCreated({
             handle: built.handle,
             storeName: name
         })

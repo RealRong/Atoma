@@ -8,7 +8,5 @@ export type CreateClientOptions<
 > = Readonly<{
     schema?: Schema
     plugins?: ReadonlyArray<ClientPlugin>
-    execution?: Readonly<{
-        defaultRoute?: ExecutionRoute
-    }>
+    defaultRoute?: ExecutionRoute
 }>

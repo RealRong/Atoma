@@ -173,9 +173,18 @@
 
 ### 5.1 Implementation Pattern Preferences
 
-- 对单次使用的中间结果，优先内联调用，避免无必要临时变量（例如：`disposers.push(...plugins.init(client))`）。
-- 对“参数对象”风格函数，优先在函数签名处解构并显式标注类型（例如：`function f({ a, b }: Args)`），减少 `args.xxx` 噪音。
-- 资源释放必须保持逆序语义；优先使用逆序 `for` / `while + pop`，不要用 `forEach` 承担逆序清理。
+- For one-time intermediate results, prefer inline calls and avoid unnecessary temporary variables (for example: `disposers.push(...plugins.init(client))`).
+- For parameter-object style functions, prefer destructuring with explicit types in the function signature (for example: `function f({ a, b }: Args)`) to reduce `args.xxx` noise.
+- Resource cleanup must preserve reverse-order semantics; prefer reverse `for` or `while + pop`, and do not use `forEach` for reverse cleanup.
+
+### 5.2 Single-Entry Orchestration and Concise Style (Mandatory)
+
+- For workflow-oriented files (especially plugins/runtime orchestration), the entry function must present the full main flow: `parse -> prepare -> mount/dispose`; readers should understand the lifecycle from one function.
+- Prefer `forEach` by default for pure traversal/collection; use `for`/`while` only when `break/continue`, in-place removal (such as `splice`), or reverse-order semantics are required.
+- Prefer inlining one-off logic: do not create forwarding helper functions for single-use statements; keep helper functions only for independent semantic units (such as dependency sorting, input validation, or low-level utilities).
+- Prefer ternary expressions for value-only branching; when side effects, thrown errors, or multi-step control flow are involved, `if` is required.
+- Reduce boilerplate: prefer returning expressions directly and reusing local expression results; avoid meaningless temporary names.
+- When "shorter" conflicts with "clearer," prioritize readability; do not sacrifice key semantic variables (such as dependency graph state or disposal stacks) merely to reduce lines.
 
 ---
 

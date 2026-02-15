@@ -236,17 +236,12 @@ const sourceLifecycleEvent = ({
     }
 }
 
-export function createDebugHub(): Hub {
+export function createHub(): Hub {
     const entriesById = new Map<SourceId, SourceEntry>()
     const subscribers = new Set<Subscriber>()
-    const recentEvents: StreamEvent[] = []
 
     const dispatchEvent = (event: StreamEvent): void => {
         const normalized = normalizeHubEvent(event)
-        recentEvents.push(normalized)
-        if (recentEvents.length > MAX_EVENTS) {
-            recentEvents.splice(0, recentEvents.length - MAX_EVENTS)
-        }
         emitEvent(subscribers, normalized)
     }
 

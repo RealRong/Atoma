@@ -9,7 +9,7 @@ import type {
     WriteManyResult
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, Write, WriteHookSource, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, Write, WriteEventSource, StoreHandle } from 'atoma-types/runtime'
 import { WriteCommitFlow } from './write/commit/WriteCommitFlow'
 import { WriteEntryFactory } from './write/services/WriteEntryFactory'
 import type { WritePlan, WritePlanEntry } from './write/types'
@@ -48,7 +48,7 @@ export class WriteFlow implements Write {
     }
 
     private shouldEmitWritePatches = (): boolean => {
-        return this.runtime.hooks.has.event('writePatches')
+        return this.runtime.events.has.event('writePatches')
     }
 
     private commitWrite = async <T extends Entity>(args: {
@@ -57,16 +57,16 @@ export class WriteFlow implements Write {
         route?: ExecutionRoute
         signal?: AbortSignal
         plan: WritePlan<T>
-        source: WriteHookSource
+        source: WriteEventSource
         output?: T
         patchPayload: WritePatchPayload
         afterSaveAction?: 'add' | 'update'
     }): Promise<T | void> => {
         const { handle, opContext, plan, source, patchPayload } = args
-        const hooks = this.runtime.hooks
+        const events = this.runtime.events
         const writeEntries = plan.map(planEntry => planEntry.entry)
 
-        hooks.emit.writeStart({
+        events.emit.writeStart({
             handle,
             opContext,
             entryCount: plan.length,
@@ -86,7 +86,7 @@ export class WriteFlow implements Write {
             })
 
             if (patchPayload) {
-                hooks.emit.writePatches({
+                events.emit.writePatches({
                     handle,
                     opContext,
                     patches: patchPayload.patches,
@@ -96,7 +96,7 @@ export class WriteFlow implements Write {
             }
 
             const finalValue = committed ?? args.output
-            hooks.emit.writeCommitted({
+            events.emit.writeCommitted({
                 handle,
                 opContext,
                 route: args.route,
@@ -110,7 +110,7 @@ export class WriteFlow implements Write {
 
             return finalValue
         } catch (error) {
-            hooks.emit.writeFailed({
+            events.emit.writeFailed({
                 handle,
                 opContext,
                 route: args.route,
@@ -125,7 +125,7 @@ export class WriteFlow implements Write {
         handle: StoreHandle<T>
         context: WriteContext
         planEntry: WritePlanEntry<T>
-        source: WriteHookSource
+        source: WriteEventSource
         id?: EntityId
         before?: T
         after?: T

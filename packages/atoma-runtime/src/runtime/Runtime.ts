@@ -10,7 +10,7 @@ import type {
     Debug,
     ExecutionKernel as ExecutionKernelType,
     Engine as EngineType,
-    HookRegistry as HookRegistryType,
+    StoreEventRegistry as StoreEventRegistryType,
     Read,
     Schema,
     Transform,
@@ -19,7 +19,7 @@ import type {
 } from 'atoma-types/runtime'
 import { TransformPipeline } from './transform'
 import { Stores } from '../store/Stores'
-import { HookRegistry } from './registry/HookRegistry'
+import { StoreEventRegistry } from './registry/StoreEventRegistry'
 import { ExecutionKernel } from '../execution/kernel/ExecutionKernel'
 import { ReadFlow } from './flows/ReadFlow'
 import { WriteFlow } from './flows/WriteFlow'
@@ -38,7 +38,7 @@ export interface Options {
     }
     execution?: ExecutionKernelType
     now?: () => number
-    hooks?: HookRegistryType
+    events?: StoreEventRegistryType
     engine?: EngineType
 }
 
@@ -51,7 +51,7 @@ export class Runtime implements RuntimeType {
     readonly stores: StoreCatalog
     readonly read: Read
     readonly write: Write
-    readonly hooks: HookRegistryType
+    readonly events: StoreEventRegistryType
     readonly engine: EngineType
     readonly debug: Debug
 
@@ -69,7 +69,7 @@ export class Runtime implements RuntimeType {
         this.engine = config.engine ?? new Engine()
         this.transform = new TransformPipeline(this)
         this.execution = config.execution ?? new ExecutionKernel()
-        this.hooks = config.hooks ?? new HookRegistry()
+        this.events = config.events ?? new StoreEventRegistry()
 
         this.stores = new Stores(this, {
             schema: config.schema,

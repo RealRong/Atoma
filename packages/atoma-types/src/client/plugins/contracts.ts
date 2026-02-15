@@ -1,9 +1,9 @@
 import type { Patch } from 'immer'
 import type { OperationContext as CoreOperationContext, Entity, Query, QueryResult, StoreToken, ExecutionRoute } from '../../core'
-import type { Runtime, Hooks, QueryOutput, StoreHandle } from '../../runtime'
+import type { Runtime, StoreEvents, QueryOutput, StoreHandle } from '../../runtime'
 import type { ServiceRegistry, ServiceToken } from '../services'
 
-export type EventRegister = (hooks: Hooks) => () => void
+export type EventRegister = (events: StoreEvents) => () => void
 
 export type PluginEvents = Readonly<{
     register: EventRegister
@@ -18,6 +18,7 @@ export type PluginRuntime = Readonly<{
     id: Runtime['id']
     now: Runtime['now']
     stores: Readonly<{
+        list: () => StoreToken[]
         resolveHandle: <T extends Entity>(args: {
             storeName: StoreToken
             reason: string
@@ -39,9 +40,9 @@ export type PluginRuntime = Readonly<{
             versionUpdates?: Array<{ key: string; version: number }>
         }) => Promise<void>
     }>
+    debug: Runtime['debug']
     execution: Readonly<{
         apply: Runtime['execution']['apply']
-        resolvePolicy: Runtime['execution']['resolvePolicy']
         subscribe: Runtime['execution']['subscribe']
         query: <T extends Entity>(args: {
             storeName: StoreToken

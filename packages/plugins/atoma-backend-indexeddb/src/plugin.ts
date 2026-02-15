@@ -1,12 +1,13 @@
 import type { Table } from 'dexie'
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
+import type { ExecutionRoute } from 'atoma-types/core'
 import { buildOperationExecutor } from 'atoma-backend-shared'
 import { IndexedDbOperationClient } from './operation-client'
 import type { IndexedDbBackendPluginOptions } from './types'
 
 const INDEXEDDB_EXECUTOR_ID = 'backend.indexeddb.operation'
-const INDEXEDDB_ROUTE_ID = 'direct-indexeddb'
+export const INDEXEDDB_ROUTE: ExecutionRoute = 'direct-indexeddb'
 
 function safeDispose(dispose?: () => void): void {
     if (typeof dispose !== 'function') return
@@ -45,12 +46,11 @@ export function indexedDbBackendPlugin(options: IndexedDbBackendPluginOptions): 
                         })
                     },
                     routes: {
-                        [INDEXEDDB_ROUTE_ID]: {
+                        [INDEXEDDB_ROUTE]: {
                             query: INDEXEDDB_EXECUTOR_ID,
                             write: INDEXEDDB_EXECUTOR_ID
                         }
-                    },
-                    defaultRoute: INDEXEDDB_ROUTE_ID
+                    }
                 })
             } catch (error) {
                 safeDispose(unregisterService)

@@ -7,7 +7,7 @@ import type {
     WriteItemResult,
     WriteOutput,
     StoreHandle,
-    Policy
+    WriteConsistency
 } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/shared'
 import type { WriteCommitRequest, OptimisticState, WritePlan, WritePlanEntry } from '../types'
@@ -60,14 +60,14 @@ function applyOptimistically<T extends Entity>(
 function applyOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
     plan: WritePlan<T>
-    writePolicy: Policy
+    consistency: WriteConsistency
     preserve: (existing: T | undefined, incoming: T) => T
 }): OptimisticState<T> {
-    const { handle, plan, writePolicy, preserve } = args
+    const { handle, plan, consistency, preserve } = args
     const beforeState = handle.state.getSnapshot() as Map<EntityId, T>
-    const shouldOptimistic = writePolicy.optimistic !== false
+    const useOptimistic = consistency.commit === 'optimistic'
 
-    const optimistic = (shouldOptimistic && plan.length)
+    const optimistic = (useOptimistic && plan.length)
         ? applyOptimistically(beforeState, plan, preserve)
         : { afterState: beforeState }
 
@@ -262,11 +262,11 @@ function ensureWriteResultStatus(args: {
 export class WriteCommitFlow {
     execute = async <T extends Entity>(args: WriteCommitRequest<T>): Promise<T | void> => {
         const plan = args.plan
-        const writePolicy = args.runtime.execution.resolvePolicy(args.route)
+        const consistency = args.runtime.execution.resolveConsistency(args.route)
         const optimisticState = applyOptimisticState({
             handle: args.handle,
             plan,
-            writePolicy,
+            consistency,
             preserve: args.runtime.engine.mutation.preserveRef
         })
 

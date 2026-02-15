@@ -1,7 +1,7 @@
 import type { StoreToken } from '../core'
 import type { Engine } from './engine/api'
 import type { Debug } from './debug'
-import type { HookRegistry } from './hooks'
+import type { StoreEventRegistry } from './storeEvents'
 import type { Read } from './read'
 import type { StoreCatalog } from './storeCatalog'
 import type { ExecutionKernel } from './execution'
@@ -13,7 +13,7 @@ export type Runtime = Readonly<{
     now: () => number
     nextOpId: (storeName: StoreToken, prefix: 'q' | 'w') => string
     stores: StoreCatalog
-    hooks: HookRegistry
+    events: StoreEventRegistry
     execution: ExecutionKernel
     read: Read
     write: Write

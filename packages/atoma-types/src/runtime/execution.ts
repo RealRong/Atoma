@@ -5,7 +5,8 @@ import type {
     QueryOutput,
     WriteRequest,
     WriteOutput,
-    Policy
+    Consistency,
+    WriteConsistency
 } from './persistence'
 
 export type ExecutorId = string
@@ -15,7 +16,7 @@ export type RouteId = ExecutionRoute
 export type RouteSpec = Readonly<{
     query: ExecutorId
     write: ExecutorId
-    policy?: Policy
+    consistency?: Consistency
 }>
 
 export type ExecutionBundle = Readonly<{
@@ -121,12 +122,12 @@ export type ExecutionEvent = ExecutionWriteEvent | ExecutionQueryEvent
 export type ExecutionSpec = Readonly<{
     query?: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<QueryOutput>
     write?: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
-    policy?: Policy
+    consistency?: Consistency
 }>
 
 export type ExecutionKernel = Readonly<{
     apply: (bundle: ExecutionBundle) => () => void
-    resolvePolicy: (route?: RouteId) => Policy
+    resolveConsistency: (route?: RouteId) => WriteConsistency
     subscribe: (listener: (event: ExecutionEvent) => void) => () => void
     query: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<QueryOutput>
     write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>

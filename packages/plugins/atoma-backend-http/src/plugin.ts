@@ -2,10 +2,11 @@ import { HttpOperationClient } from './operation-client'
 import { buildOperationExecutor } from 'atoma-backend-shared'
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
+import type { ExecutionRoute } from 'atoma-types/core'
 import type { HttpBackendPluginOptions } from './types'
 
 const HTTP_EXECUTOR_ID = 'backend.http.operation'
-const HTTP_ROUTE_ID = 'direct-http'
+export const HTTP_ROUTE: ExecutionRoute = 'direct-http'
 
 function safeDispose(dispose?: () => void): void {
     if (typeof dispose !== 'function') return
@@ -61,12 +62,11 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
                         })
                     },
                     routes: {
-                        [HTTP_ROUTE_ID]: {
+                        [HTTP_ROUTE]: {
                             query: HTTP_EXECUTOR_ID,
                             write: HTTP_EXECUTOR_ID
                         }
-                    },
-                    defaultRoute: HTTP_ROUTE_ID
+                    }
                 })
             } catch (error) {
                 safeDispose(unregisterService)

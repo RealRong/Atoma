@@ -1,6 +1,8 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import { HUB_TOKEN } from 'atoma-types/devtools'
 import { createClientInspector } from './runtime/create-client-inspector'
+import { createHub } from './runtime/hub'
+import { registerBuiltinSources } from './runtime/sources'
 
 export type DevtoolsPluginOptions = Readonly<{
     /**
@@ -10,25 +12,46 @@ export type DevtoolsPluginOptions = Readonly<{
     label?: string
 }>
 
+function safeDispose(dispose?: () => void): void {
+    if (typeof dispose !== 'function') return
+    try {
+        dispose()
+    } catch {
+        // ignore
+    }
+}
+
 export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugin {
     return {
         id: 'atoma-devtools',
+        provides: [HUB_TOKEN],
         setup: (ctx: PluginContext) => {
-            const hub = ctx.services.resolve(HUB_TOKEN)
-            if (!hub) {
-                throw new Error('[Atoma Devtools] debug hub missing')
-            }
+            const hub = createHub()
+            const unregisterHub = ctx.services.register(HUB_TOKEN, hub)
+            let unregisterSources: (() => void) | undefined
 
-            const inspector = createClientInspector({
-                clientId: ctx.clientId,
-                hub,
-                label: options.label
-            })
+            try {
+                unregisterSources = registerBuiltinSources({
+                    ctx,
+                    hub
+                })
+                const inspector = createClientInspector({
+                    clientId: ctx.clientId,
+                    hub,
+                    label: options.label
+                })
 
-            return {
-                dispose: () => {
-                    inspector.dispose()
+                return {
+                    dispose: () => {
+                        safeDispose(inspector.dispose)
+                        safeDispose(unregisterSources)
+                        safeDispose(unregisterHub)
+                    }
                 }
+            } catch (error) {
+                safeDispose(unregisterSources)
+                safeDispose(unregisterHub)
+                throw error
             }
         }
     }

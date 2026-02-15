@@ -10,7 +10,7 @@ import type {
     ExecutorId,
     ExecutionResolution,
     ExecutionSpec,
-    Policy,
+    WriteConsistency,
     QueryRequest,
     QueryOutput,
     RouteId,
@@ -56,9 +56,9 @@ export class ExecutionKernel implements ExecutionKernelType {
     }
     private readonly events = new ExecutionEvents()
 
-    private static readonly DEFAULT_POLICY: Policy = {
-        implicitFetch: true,
-        optimistic: true
+    private static readonly DEFAULT_CONSISTENCY: WriteConsistency = {
+        base: 'fetch',
+        commit: 'optimistic'
     }
 
     private createExecutionError = (args: {
@@ -258,20 +258,20 @@ export class ExecutionKernel implements ExecutionKernelType {
         }
     }
 
-    resolvePolicy = (route?: RouteId): Policy => {
+    resolveConsistency = (route?: RouteId): WriteConsistency => {
         const resolved = this.resolveExecution({
             phase: 'write',
             route,
             required: false
         })
-        if (!resolved) return ExecutionKernel.DEFAULT_POLICY
+        if (!resolved) return ExecutionKernel.DEFAULT_CONSISTENCY
 
-        const routePolicy = resolved.routeSpec.policy
-        const executorPolicy = this.snapshot.executors.get(resolved.executor)?.policy
+        const routeConsistency = resolved.routeSpec.consistency
+        const executorConsistency = this.snapshot.executors.get(resolved.executor)?.consistency
         return {
-            ...ExecutionKernel.DEFAULT_POLICY,
-            ...(routePolicy ?? {}),
-            ...(executorPolicy ?? {})
+            ...ExecutionKernel.DEFAULT_CONSISTENCY,
+            ...(routeConsistency ?? {}),
+            ...(executorConsistency ?? {})
         }
     }
 

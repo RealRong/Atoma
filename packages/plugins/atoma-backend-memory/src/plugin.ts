@@ -1,11 +1,12 @@
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
+import type { ExecutionRoute } from 'atoma-types/core'
 import { buildOperationExecutor } from 'atoma-backend-shared'
 import { MemoryOperationClient } from './operation-client'
 import type { MemoryBackendPluginOptions } from './types'
 
 const MEMORY_EXECUTOR_ID = 'backend.memory.operation'
-const MEMORY_ROUTE_ID = 'direct-memory'
+export const MEMORY_ROUTE: ExecutionRoute = 'direct-memory'
 
 function safeDispose(dispose?: () => void): void {
     if (typeof dispose !== 'function') return
@@ -40,12 +41,11 @@ export function memoryBackendPlugin(options?: MemoryBackendPluginOptions): Clien
                         })
                     },
                     routes: {
-                        [MEMORY_ROUTE_ID]: {
+                        [MEMORY_ROUTE]: {
                             query: MEMORY_EXECUTOR_ID,
                             write: MEMORY_EXECUTOR_ID
                         }
-                    },
-                    defaultRoute: MEMORY_ROUTE_ID
+                    }
                 })
             } catch (error) {
                 safeDispose(unregisterService)

@@ -32,10 +32,25 @@ export function setupPlugins({
     rawPlugins: ReadonlyArray<unknown>
 }): PluginsSetup {
     const unregisters: Array<() => void> = []
-    const scopedContext = createTrackedContext({
-        context,
-        unregisters
-    })
+    const scopedContext: PluginContext = {
+        ...context,
+        services: {
+            register: (token, value, opts) => {
+                const unregister = context.services.register(token, value, opts)
+                unregisters.push(unregister)
+                return unregister
+            },
+            resolve: context.services.resolve
+        },
+        events: {
+            register: (events) => {
+                const unregister = context.events.register(events)
+                unregisters.push(unregister)
+                return unregister
+            }
+        }
+    }
+
     let prepared: PreparedPlugins
     try {
         prepared = preparePlugins({
@@ -47,46 +62,15 @@ export function setupPlugins({
         throw error
     }
 
-    const mount: PluginsSetup['mount'] = (client) => {
-        for (const extension of prepared.extensions) {
-            Object.assign(client as unknown as Record<string, unknown>, extension)
-        }
-    }
-
-    const dispose = () => {
-        disposeInReverse(prepared.disposers)
-        disposeInReverse(unregisters)
-    }
-
     return {
-        mount,
-        dispose
-    }
-}
-
-function createTrackedContext({
-    context,
-    unregisters
-}: {
-    context: PluginContext
-    unregisters: Array<() => void>
-}): PluginContext {
-    return {
-        ...context,
-        services: {
-            register: (token, value, opts) => {
-                const unregister = context.services.register(token, value, opts)
-                unregisters.push(unregister)
-                return unregister
-            },
-            resolve: context.services.resolve
+        mount: (client) => {
+            prepared.extensions.forEach((extension) => {
+                Object.assign(client as unknown as Record<string, unknown>, extension)
+            })
         },
-        events: {
-            register: (hooks) => {
-                const unregister = context.events.register(hooks)
-                unregisters.push(unregister)
-                return unregister
-            }
+        dispose: () => {
+            disposeInReverse(prepared.disposers)
+            disposeInReverse(unregisters)
         }
     }
 }
@@ -101,33 +85,45 @@ function preparePlugins({
     const extensions: Array<Record<string, unknown>> = []
     const disposers: Array<() => void> = []
     const orderedPlugins = sortPluginsByDependencies(plugins, context)
+    const assertResolved = ({
+        plugin,
+        tokens,
+        kind
+    }: {
+        plugin: ClientPlugin
+        tokens: ReadonlyArray<ServiceToken<unknown>>
+        kind: 'requires' | 'provides'
+    }): void => {
+        tokens.forEach((token) => {
+            if (context.services.resolve(token) !== undefined) return
+            throw new Error(`[Atoma] plugin ${kind} missing: ${plugin.id} -> ${describeToken(token)}`)
+        })
+    }
 
     try {
-        for (const plugin of orderedPlugins) {
-            assertTokensResolved({
+        orderedPlugins.forEach((plugin) => {
+            assertResolved({
                 plugin,
                 tokens: plugin.requires ?? [],
-                kind: 'requires',
-                context
+                kind: 'requires'
             })
-
             if (typeof plugin.setup === 'function') {
                 const result = normalizePluginInitResult(plugin.id, plugin.setup(context))
-                if (result && isPlainObject(result.extension)) {
-                    extensions.push(result.extension)
+                const extension = result?.extension
+                if (isPlainObject(extension)) {
+                    extensions.push(extension)
                 }
-                if (result && typeof result.dispose === 'function') {
-                    disposers.push(result.dispose)
+                const dispose = result?.dispose
+                if (typeof dispose === 'function') {
+                    disposers.push(dispose)
                 }
             }
-
-            assertTokensResolved({
+            assertResolved({
                 plugin,
                 tokens: plugin.provides ?? [],
-                kind: 'provides',
-                context
+                kind: 'provides'
             })
-        }
+        })
     } catch (error) {
         disposeInReverse(disposers)
         throw error
@@ -143,18 +139,16 @@ function sortPluginsByDependencies(plugins: ReadonlyArray<ClientPlugin>, context
     ensureDependencyCoverage(plugins, context)
 
     const available = new Set<ServiceToken<unknown>>()
-    for (const plugin of plugins) {
-        for (const token of plugin.provides ?? []) {
-            if (context.services.resolve(token) !== undefined) {
-                available.add(token)
-            }
-        }
-        for (const token of plugin.requires ?? []) {
-            if (context.services.resolve(token) !== undefined) {
-                available.add(token)
-            }
-        }
-    }
+    plugins.forEach((plugin) => {
+        ;(plugin.provides ?? []).forEach((token) => {
+            if (context.services.resolve(token) === undefined) return
+            available.add(token)
+        })
+        ;(plugin.requires ?? []).forEach((token) => {
+            if (context.services.resolve(token) === undefined) return
+            available.add(token)
+        })
+    })
 
     const pending = [...plugins]
     const ordered: ClientPlugin[] = []
@@ -162,9 +156,9 @@ function sortPluginsByDependencies(plugins: ReadonlyArray<ClientPlugin>, context
     while (pending.length > 0) {
         let progressed = false
 
-        for (let index = 0; index < pending.length; index++) {
+        for (let index = 0; index < pending.length; index += 1) {
             const plugin = pending[index]
-            const ready = (plugin.requires ?? []).every(token => {
+            const ready = (plugin.requires ?? []).every((token) => {
                 return available.has(token) || context.services.resolve(token) !== undefined
             })
             if (!ready) continue
@@ -174,21 +168,18 @@ function sortPluginsByDependencies(plugins: ReadonlyArray<ClientPlugin>, context
             index -= 1
             progressed = true
 
-            for (const token of plugin.provides ?? []) {
+            ;(plugin.provides ?? []).forEach((token) => {
                 available.add(token)
-            }
+            })
         }
 
         if (progressed) continue
 
-        const blocked = pending.map(plugin => {
-            const missingTokens = (plugin.requires ?? []).filter(token => {
+        const blocked = pending.map((plugin) => {
+            const missingTokens = (plugin.requires ?? []).filter((token) => {
                 return !available.has(token) && context.services.resolve(token) === undefined
             })
-            const renderedTokens = missingTokens.length
-                ? missingTokens.map(token => describeToken(token)).join(', ')
-                : 'unknown'
-            return `${plugin.id}(${renderedTokens})`
+            return `${plugin.id}(${missingTokens.length ? missingTokens.map(describeToken).join(', ') : 'unknown'})`
         })
         throw new Error(`[Atoma] plugin dependency cycle detected: ${blocked.join(' -> ')}`)
     }
@@ -198,44 +189,25 @@ function sortPluginsByDependencies(plugins: ReadonlyArray<ClientPlugin>, context
 
 function ensureDependencyCoverage(plugins: ReadonlyArray<ClientPlugin>, context: PluginContext): void {
     const providedTokens = new Set<ServiceToken<unknown>>()
-    for (const plugin of plugins) {
-        for (const token of plugin.provides ?? []) {
+    plugins.forEach((plugin) => {
+        ;(plugin.provides ?? []).forEach((token) => {
             providedTokens.add(token)
-        }
-    }
+        })
+    })
 
-    for (const plugin of plugins) {
-        for (const token of plugin.requires ?? []) {
-            if (context.services.resolve(token) !== undefined) continue
-            if (providedTokens.has(token)) continue
+    plugins.forEach((plugin) => {
+        ;(plugin.requires ?? []).forEach((token) => {
+            if (context.services.resolve(token) !== undefined || providedTokens.has(token)) return
             throw new Error(`[Atoma] plugin requires unresolved token: ${plugin.id} -> ${describeToken(token)}`)
-        }
-    }
-}
-
-function assertTokensResolved({
-    plugin,
-    tokens,
-    kind,
-    context
-}: {
-    plugin: ClientPlugin
-    tokens: ReadonlyArray<ServiceToken<unknown>>
-    kind: 'requires' | 'provides'
-    context: PluginContext
-}): void {
-    for (const token of tokens) {
-        if (context.services.resolve(token) !== undefined) continue
-        throw new Error(`[Atoma] plugin ${kind} missing: ${plugin.id} -> ${describeToken(token)}`)
-    }
+        })
+    })
 }
 
 function parsePlugins(rawPlugins: ReadonlyArray<unknown>): ClientPlugin[] {
     const seenIds = new Set<string>()
     const plugins: ClientPlugin[] = []
 
-    for (let index = 0; index < rawPlugins.length; index++) {
-        const candidate = rawPlugins[index]
+    rawPlugins.forEach((candidate, index) => {
         if (!isClientPlugin(candidate)) {
             throw new Error(`[Atoma] plugin 定义非法: index=${index}`)
         }
@@ -249,7 +221,7 @@ function parsePlugins(rawPlugins: ReadonlyArray<unknown>): ClientPlugin[] {
             ...candidate,
             id
         })
-    }
+    })
 
     return plugins
 }
@@ -293,16 +265,13 @@ function describeToken(token: ServiceToken<unknown>): string {
 
 function disposeInReverse(disposers: Array<() => void>): void {
     while (disposers.length > 0) {
-        safeDispose(disposers.pop())
-    }
-}
-
-function safeDispose(dispose: (() => void) | undefined): void {
-    if (typeof dispose !== 'function') return
-    try {
-        dispose()
-    } catch {
-        // ignore
+        const dispose = disposers.pop()
+        if (typeof dispose !== 'function') continue
+        try {
+            dispose()
+        } catch {
+            // ignore
+        }
     }
 }
 

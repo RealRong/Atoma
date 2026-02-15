@@ -27,12 +27,12 @@ export type {
 export type { StoreListener, StoreSnapshot, StoreState } from './storeState'
 export type { Schema, StoreSchema } from './schema'
 export type {
-    Hooks,
-    HookEventName,
-    HookEmit,
-    HookHandlers,
-    HookPayloadMap,
-    HookRegistry,
+    StoreEvents,
+    StoreEventName,
+    StoreEventEmit,
+    StoreEventHandlers,
+    StoreEventPayloadMap,
+    StoreEventRegistry,
     ReadStartArgs,
     ReadFinishArgs,
     WriteStartArgs,
@@ -40,8 +40,8 @@ export type {
     WriteCommittedArgs,
     WriteFailedArgs,
     StoreCreatedArgs,
-    WriteHookSource
-} from './hooks'
+    WriteEventSource
+} from './storeEvents'
 
 export type {
     WriteExecutor,
@@ -71,7 +71,10 @@ export type {
     LocalQueryOutput,
     RemoteQueryOutput,
     QueryOutput,
-    Policy
+    WriteBase,
+    WriteCommit,
+    Consistency,
+    WriteConsistency
 } from './persistence'
 
 export type {

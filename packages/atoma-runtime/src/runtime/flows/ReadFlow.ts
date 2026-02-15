@@ -81,9 +81,9 @@ export class ReadFlow implements Read {
         options?: StoreReadOptions
     ): Promise<QueryResult<T>> => {
         const runtime = this.runtime
-        const hooks = runtime.hooks
+        const events = runtime.events
 
-        hooks.emit.readStart({ handle, query: input })
+        events.emit.readStart({ handle, query: input })
 
         try {
             const startedAt = runtime.now()
@@ -99,7 +99,7 @@ export class ReadFlow implements Read {
             const fetched = Array.isArray(output.data) ? output.data : []
             if (this.isLocalSource(output.source)) {
                 const result = this.toQueryResult(fetched as T[], output.pageInfo)
-                hooks.emit.readFinish({ handle, query: input, result, durationMs })
+                events.emit.readFinish({ handle, query: input, result, durationMs })
                 return result
             }
 
@@ -108,13 +108,13 @@ export class ReadFlow implements Read {
             const cachePolicy = queryStorePolicy(input)
             if (cachePolicy.skipStore) {
                 const result = this.toQueryResult(remote, output.pageInfo)
-                hooks.emit.readFinish({ handle, query: input, result, durationMs })
+                events.emit.readFinish({ handle, query: input, result, durationMs })
                 return result
             }
 
             const processed = this.applyQueryWriteback(handle, remote)
             const result = this.toQueryResult(processed, output.pageInfo)
-            hooks.emit.readFinish({ handle, query: input, result, durationMs })
+            events.emit.readFinish({ handle, query: input, result, durationMs })
             return result
         } catch (error) {
             throw toError(error, '[Atoma] query failed')

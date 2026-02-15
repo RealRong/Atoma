@@ -147,10 +147,16 @@ export type QueryExecutor = <T extends Entity>(
     options?: ExecutionOptions
 ) => Promise<QueryOutput>
 
-export type Policy = Readonly<{
-    implicitFetch?: boolean
-    optimistic?: boolean
+export type WriteBase = 'cache' | 'fetch'
+
+export type WriteCommit = 'confirm' | 'optimistic'
+
+export type WriteConsistency = Readonly<{
+    base: WriteBase
+    commit: WriteCommit
 }>
+
+export type Consistency = Readonly<Partial<WriteConsistency>>
 
 export interface WritePort {
     write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
