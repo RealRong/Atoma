@@ -3,8 +3,8 @@ import type {
     StoreWritebackArgs,
 } from 'atoma-types/core'
 import type {
-    RuntimeWriteEntry,
-    RuntimeWriteItemResult,
+    WriteEntry,
+    WriteItemResult,
     WriteOutput,
     StoreHandle,
     Policy
@@ -102,12 +102,12 @@ async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
     runtime: WriteCommitRequest<T>['runtime']
     handle: WriteCommitRequest<T>['handle']
     plan: WritePlan<T>
-    results: ReadonlyArray<RuntimeWriteItemResult>
+    results: ReadonlyArray<WriteItemResult>
     primaryPlan?: WritePlanEntry<T>
 }): Promise<{ writeback?: StoreWritebackArgs<T>; output?: T }> {
     if (!args.plan.length || !args.results.length) return {}
 
-    const resultByEntryId = new Map<string, RuntimeWriteItemResult>()
+    const resultByEntryId = new Map<string, WriteItemResult>()
     for (const itemResult of args.results) {
         if (typeof itemResult.entryId !== 'string' || !itemResult.entryId) {
             throw new Error('[Atoma] write item result missing entryId')
@@ -166,7 +166,7 @@ async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
     return { writeback, output }
 }
 
-function shouldApplyReturnedData(entry: RuntimeWriteEntry): boolean {
+function shouldApplyReturnedData(entry: WriteEntry): boolean {
     const options = entry.options
     if (!options) return true
     if (options.returning === false) return false
@@ -180,8 +180,8 @@ function shouldApplyReturnedData(entry: RuntimeWriteEntry): boolean {
 }
 
 function toWriteItemError(
-    action: RuntimeWriteEntry['action'],
-    result: RuntimeWriteItemResult
+    action: WriteEntry['action'],
+    result: WriteItemResult
 ): Error {
     if (result.ok) return new Error(`[Atoma] write(${action}) failed`)
 
@@ -204,7 +204,7 @@ function fallbackPrimaryOutput<T extends Entity>(primaryPlan?: WritePlanEntry<T>
 async function runWriteTransaction<T extends Entity>(args: {
     request: WriteCommitRequest<T>
     primaryPlan?: WritePlanEntry<T>
-    entries: ReadonlyArray<RuntimeWriteEntry>
+    entries: ReadonlyArray<WriteEntry>
 }): Promise<T | void> {
     const { request, primaryPlan, entries } = args
     const { runtime, handle, opContext, plan } = request

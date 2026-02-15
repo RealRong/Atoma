@@ -8,11 +8,11 @@ import type {
     WriteResultData
 } from 'atoma-types/protocol'
 import type {
-    RuntimeWriteEntry,
-    RuntimeWriteError,
-    RuntimeWriteItemMeta,
-    RuntimeWriteItemResult,
-    RuntimeWriteOptions
+    WriteEntry,
+    WriteError,
+    WriteItemMeta,
+    WriteItemResult,
+    WriteOptions
 } from 'atoma-types/runtime'
 import type { SyncOutboxItem, SyncPushOutcome, SyncTransport } from 'atoma-types/sync'
 
@@ -22,14 +22,14 @@ type ExecuteOperations = (input: {
     signal?: AbortSignal
 }) => Promise<{ results: RemoteOpResult[]; status?: number }>
 
-function toProtocolWriteItemMeta(meta: RuntimeWriteItemMeta | undefined): ProtocolWriteEntry['item']['meta'] {
+function toProtocolWriteItemMeta(meta: WriteItemMeta | undefined): ProtocolWriteEntry['item']['meta'] {
     if (!meta || typeof meta !== 'object') return undefined
     return {
         ...meta
     }
 }
 
-function toProtocolWriteOptions(options: RuntimeWriteOptions | undefined): ProtocolWriteEntry['options'] {
+function toProtocolWriteOptions(options: WriteOptions | undefined): ProtocolWriteEntry['options'] {
     if (!options || typeof options !== 'object') return undefined
     return {
         ...(typeof options.returning === 'boolean' ? { returning: options.returning } : {}),
@@ -39,7 +39,7 @@ function toProtocolWriteOptions(options: RuntimeWriteOptions | undefined): Proto
     }
 }
 
-function toProtocolWriteEntry(entry: RuntimeWriteEntry): ProtocolWriteEntry {
+function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
     const options = toProtocolWriteOptions(entry.options)
 
     if (entry.action === 'create') {
@@ -95,7 +95,7 @@ function toProtocolWriteEntry(entry: RuntimeWriteEntry): ProtocolWriteEntry {
     }
 }
 
-function toRuntimeWriteError(error: unknown, fallbackMessage = 'Write failed'): RuntimeWriteError {
+function toWriteError(error: unknown, fallbackMessage = 'Write failed'): WriteError {
     const raw = (error && typeof error === 'object') ? (error as Record<string, unknown>) : {}
     const code = (typeof raw.code === 'string' && raw.code) ? raw.code : 'WRITE_FAILED'
     const message = (typeof raw.message === 'string' && raw.message) ? raw.message : fallbackMessage
@@ -104,7 +104,7 @@ function toRuntimeWriteError(error: unknown, fallbackMessage = 'Write failed'): 
     const details = (raw.details && typeof raw.details === 'object')
         ? (raw.details as Record<string, unknown>)
         : undefined
-    const cause = raw.cause ? toRuntimeWriteError(raw.cause, fallbackMessage) : undefined
+    const cause = raw.cause ? toWriteError(raw.cause, fallbackMessage) : undefined
 
     return {
         code,
@@ -116,7 +116,7 @@ function toRuntimeWriteError(error: unknown, fallbackMessage = 'Write failed'): 
     }
 }
 
-function toRuntimeWriteItemResult(itemResult: ProtocolWriteItemResult): RuntimeWriteItemResult {
+function toWriteItemResult(itemResult: ProtocolWriteItemResult): WriteItemResult {
     if (itemResult.ok) {
         return {
             entryId: itemResult.entryId,
@@ -130,7 +130,7 @@ function toRuntimeWriteItemResult(itemResult: ProtocolWriteItemResult): RuntimeW
     return {
         entryId: itemResult.entryId,
         ok: false,
-        error: toRuntimeWriteError(itemResult.error),
+        error: toWriteError(itemResult.error),
         ...(itemResult.current
             ? {
                 current: {
@@ -258,7 +258,7 @@ export function createOperationSyncDriver(args: {
                             result: {
                                 entryId: typeof entryId === 'string' && entryId ? entryId : 'missing',
                                 ok: false,
-                                error: toRuntimeWriteError(
+                                error: toWriteError(
                                     { code: 'WRITE_FAILED', message: 'Missing write result', kind: 'internal' },
                                     'Missing write result'
                                 )
@@ -280,7 +280,7 @@ export function createOperationSyncDriver(args: {
                                 result: {
                                     entryId: typeof entryId === 'string' && entryId ? entryId : 'failed',
                                     ok: false,
-                                    error: toRuntimeWriteError(payload)
+                                    error: toWriteError(payload)
                                 } as any
                             }
                     }
@@ -313,7 +313,7 @@ export function createOperationSyncDriver(args: {
                             result: {
                                 entryId: key || 'missing',
                                 ok: false,
-                                error: toRuntimeWriteError(
+                                error: toWriteError(
                                     { code: 'WRITE_FAILED', message: 'Missing write item result', kind: 'internal' },
                                     'Missing write item result'
                                 )
@@ -322,10 +322,10 @@ export function createOperationSyncDriver(args: {
                         continue
                     }
 
-                    const runtimeResult = toRuntimeWriteItemResult(itemResult)
-                    outcomes[mapped.index] = runtimeResult.ok === true
-                        ? { kind: 'ack', result: runtimeResult }
-                        : { kind: 'reject', result: runtimeResult }
+                    const writeResult = toWriteItemResult(itemResult)
+                    outcomes[mapped.index] = writeResult.ok === true
+                        ? { kind: 'ack', result: writeResult }
+                        : { kind: 'reject', result: writeResult }
                 }
             }
 
@@ -336,7 +336,7 @@ export function createOperationSyncDriver(args: {
                         result: {
                             entryId: `missing-${i}`,
                             ok: false,
-                            error: toRuntimeWriteError(
+                            error: toWriteError(
                                 { code: 'WRITE_FAILED', message: 'Missing write outcome', kind: 'internal' },
                                 'Missing write outcome'
                             )

@@ -4,47 +4,47 @@ import type { StoreHandle } from './handle'
 
 export type WriteStatus = 'confirmed' | 'partial' | 'rejected' | 'enqueued'
 
-export type RuntimeWriteAction = 'create' | 'update' | 'delete' | 'upsert'
+export type WriteAction = 'create' | 'update' | 'delete' | 'upsert'
 
-export type RuntimeWriteItemMeta = {
+export type WriteItemMeta = {
     idempotencyKey?: string
     clientTimeMs?: number
     [k: string]: unknown
 }
 
-export type RuntimeWriteItemCreate = {
+export type WriteItemCreate = {
     entityId?: EntityId
     value: unknown
-    meta?: RuntimeWriteItemMeta
+    meta?: WriteItemMeta
 }
 
-export type RuntimeWriteItemUpdate = {
+export type WriteItemUpdate = {
     entityId: EntityId
     baseVersion: Version
     value: unknown
-    meta?: RuntimeWriteItemMeta
+    meta?: WriteItemMeta
 }
 
-export type RuntimeWriteItemUpsert = {
+export type WriteItemUpsert = {
     entityId: EntityId
     baseVersion?: Version
     value: unknown
-    meta?: RuntimeWriteItemMeta
+    meta?: WriteItemMeta
 }
 
-export type RuntimeWriteItemDelete = {
+export type WriteItemDelete = {
     entityId: EntityId
     baseVersion: Version
-    meta?: RuntimeWriteItemMeta
+    meta?: WriteItemMeta
 }
 
-export type RuntimeWriteItem =
-    | RuntimeWriteItemCreate
-    | RuntimeWriteItemUpdate
-    | RuntimeWriteItemDelete
-    | RuntimeWriteItemUpsert
+export type WriteItem =
+    | WriteItemCreate
+    | WriteItemUpdate
+    | WriteItemDelete
+    | WriteItemUpsert
 
-export type RuntimeWriteOptions = {
+export type WriteOptions = {
     returning?: boolean
     select?: Record<string, boolean>
     merge?: boolean
@@ -53,52 +53,52 @@ export type RuntimeWriteOptions = {
     }
 }
 
-export type RuntimeWriteEntryBase = {
+export type WriteEntryBase = {
     entryId: string
-    options?: RuntimeWriteOptions
+    options?: WriteOptions
 }
 
-export type RuntimeWriteEntryCreate = RuntimeWriteEntryBase & {
+export type WriteEntryCreate = WriteEntryBase & {
     action: 'create'
-    item: RuntimeWriteItemCreate
+    item: WriteItemCreate
 }
 
-export type RuntimeWriteEntryUpdate = RuntimeWriteEntryBase & {
+export type WriteEntryUpdate = WriteEntryBase & {
     action: 'update'
-    item: RuntimeWriteItemUpdate
+    item: WriteItemUpdate
 }
 
-export type RuntimeWriteEntryDelete = RuntimeWriteEntryBase & {
+export type WriteEntryDelete = WriteEntryBase & {
     action: 'delete'
-    item: RuntimeWriteItemDelete
+    item: WriteItemDelete
 }
 
-export type RuntimeWriteEntryUpsert = RuntimeWriteEntryBase & {
+export type WriteEntryUpsert = WriteEntryBase & {
     action: 'upsert'
-    item: RuntimeWriteItemUpsert
+    item: WriteItemUpsert
 }
 
-export type RuntimeWriteEntry =
-    | RuntimeWriteEntryCreate
-    | RuntimeWriteEntryUpdate
-    | RuntimeWriteEntryDelete
-    | RuntimeWriteEntryUpsert
+export type WriteEntry =
+    | WriteEntryCreate
+    | WriteEntryUpdate
+    | WriteEntryDelete
+    | WriteEntryUpsert
 
-export type RuntimeWriteError = {
+export type WriteError = {
     code: string
     message: string
     kind: string
     retryable?: boolean
     details?: Record<string, unknown>
-    cause?: RuntimeWriteError
+    cause?: WriteError
 }
 
-export type RuntimeWriteItemResult =
+export type WriteItemResult =
     | { entryId: string; ok: true; entityId: EntityId; version: Version; data?: unknown }
     | {
         entryId: string
         ok: false
-        error: RuntimeWriteError
+        error: WriteError
         current?: { value?: unknown; version?: Version }
     }
 
@@ -110,12 +110,12 @@ export type ExecutionOptions = Readonly<{
 export type WriteRequest<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
     opContext: OperationContext
-    entries: ReadonlyArray<RuntimeWriteEntry>
+    entries: ReadonlyArray<WriteEntry>
 }>
 
 export type WriteOutput<T extends Entity> = Readonly<{
     status: WriteStatus
-    results?: ReadonlyArray<RuntimeWriteItemResult>
+    results?: ReadonlyArray<WriteItemResult>
 }>
 
 export type WriteExecutor = <T extends Entity>(

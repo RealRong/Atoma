@@ -19,6 +19,7 @@
     },
     "dependencies": {
         "atoma-core": "workspace:*",
+        "atoma-shared": "workspace:*",
         "atoma-types": "workspace:*"
     }
 }

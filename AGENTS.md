@@ -8,6 +8,8 @@
 - **Never revert or overwrite existing changes you did not introduce.** Existing modifications in this repo are assumed to be important.
 - Prioritize root-cause fixes; avoid temporary compatibility patches.
 - Unless explicitly requested, do not add transition aliases / compatibility wrappers / deprecated dual paths.
+- 命名重构默认**一步到位**：不保留旧名并存、不保留兼容别名、不保留过渡导出。
+- 对“路径上下文已提供语义”的命名，禁止重复前缀（例如在 `atoma-types/runtime` 下使用 `WriteEntry`，而不是 `RuntimeWriteEntry`）。
 
 ---
 
@@ -77,6 +79,7 @@
 - The same concept should keep the same lexical root across packages.
 - If type and class concepts overlap, resolve local collisions at import sites (type aliasing), not by globally polluting names.
 - Do not add suffixes/prefixes solely for historical compatibility.
+- Rename must converge directly to target vocabulary across affected packages; do not keep old/new names side-by-side.
 
 ### 2.3 File Naming Strategy
 
@@ -106,6 +109,13 @@
 - In `protocol`/`sync`/`transport` domains, use `ResourceToken` and `resource`/`resources` consistently.
 - Cross-domain mapping (`storeName` <-> `resource`) must happen only at boundary adapters.
 - Do not introduce raw `string` fields for these concepts when a token type already exists.
+
+### 2.7 Rename and Alias Policy
+
+- Renaming is **full replacement**, not additive migration.
+- After rename, old symbols must be deleted immediately; do not keep compatibility exports.
+- `import { Xxx as Yyy }` is forbidden when alias only serves backward-compatibility naming retention.
+- Alias is allowed only for true semantic collision at import site (e.g. protocol vs runtime same term in one file), and must not leak as public API.
 
 ---
 

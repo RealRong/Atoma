@@ -1,6 +1,6 @@
 import type { Patch } from 'immer'
 import type { Entity, OperationContext, Query, QueryResult, StoreToken, ExecutionRoute } from '../core'
-import type { RuntimeWriteEntry } from './persistence'
+import type { WriteEntry } from './persistence'
 import type { StoreHandle } from './handle'
 
 export type WriteHookSource =
@@ -27,7 +27,7 @@ export type HookPayloadMap<T extends Entity = Entity> = Readonly<{
         entryCount: number
         source: WriteHookSource
         route?: ExecutionRoute
-        writeEntries: ReadonlyArray<RuntimeWriteEntry>
+        writeEntries: ReadonlyArray<WriteEntry>
     }>
     writePatches: Readonly<{
         handle: StoreHandle<T>
@@ -40,14 +40,14 @@ export type HookPayloadMap<T extends Entity = Entity> = Readonly<{
         handle: StoreHandle<T>
         opContext: OperationContext
         route?: ExecutionRoute
-        writeEntries: ReadonlyArray<RuntimeWriteEntry>
+        writeEntries: ReadonlyArray<WriteEntry>
         result?: unknown
     }>
     writeFailed: Readonly<{
         handle: StoreHandle<T>
         opContext: OperationContext
         route?: ExecutionRoute
-        writeEntries: ReadonlyArray<RuntimeWriteEntry>
+        writeEntries: ReadonlyArray<WriteEntry>
         error: unknown
     }>
     storeCreated: Readonly<{

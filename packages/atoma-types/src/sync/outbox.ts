@@ -1,16 +1,16 @@
 import type { ResourceToken } from '../protocol'
-import type { RuntimeWriteEntry } from '../runtime'
+import type { WriteEntry } from '../runtime'
 import type { EntityId, Version } from '../shared'
 
 export type OutboxWrite = {
     resource: ResourceToken
-    entry: RuntimeWriteEntry
+    entry: WriteEntry
 }
 
 export type SyncOutboxItem = {
     idempotencyKey: string
     resource: ResourceToken
-    entry: RuntimeWriteEntry
+    entry: WriteEntry
     enqueuedAtMs: number
 }
 

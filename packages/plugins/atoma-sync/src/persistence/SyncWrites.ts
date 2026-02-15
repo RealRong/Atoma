@@ -1,11 +1,11 @@
 import type { PluginRuntime } from 'atoma-types/client/plugins'
-import type { RuntimeWriteEntry, RuntimeWriteItemResult, WriteOutput } from 'atoma-types/runtime'
+import type { WriteEntry, WriteItemResult, WriteOutput } from 'atoma-types/runtime'
 import type { OutboxStore, OutboxWrite, SyncEvent, SyncPhase } from 'atoma-types/sync'
 import { toError } from '#sync/internal'
 
 function mapWriteEntriesToOutboxWrites(args: {
     storeName: string
-    writeEntries: ReadonlyArray<RuntimeWriteEntry>
+    writeEntries: ReadonlyArray<WriteEntry>
 }): OutboxWrite[] {
     const out: OutboxWrite[] = []
     const resource = String(args.storeName)
@@ -143,9 +143,9 @@ export class SyncWrites {
 
 function filterWriteEntriesByResults(args: {
     status: WriteOutput<any>['status']
-    writeEntries: ReadonlyArray<RuntimeWriteEntry>
-    results?: ReadonlyArray<RuntimeWriteItemResult>
-}): RuntimeWriteEntry[] {
+    writeEntries: ReadonlyArray<WriteEntry>
+    results?: ReadonlyArray<WriteItemResult>
+}): WriteEntry[] {
     if (!args.results || !args.results.length) {
         if (args.status === 'rejected' || args.status === 'partial' || args.status === 'enqueued') {
             return []

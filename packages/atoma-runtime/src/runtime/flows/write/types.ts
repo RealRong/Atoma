@@ -1,6 +1,6 @@
 import type { Entity, OperationContext, ExecutionRoute } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, RuntimeWriteEntry, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, WriteEntry, StoreHandle } from 'atoma-types/runtime'
 
 export type OptimisticState<T extends Entity> = Readonly<{
     beforeState: Map<EntityId, T>
@@ -8,7 +8,7 @@ export type OptimisticState<T extends Entity> = Readonly<{
 }>
 
 export type WritePlanEntry<T extends Entity> = Readonly<{
-    entry: RuntimeWriteEntry
+    entry: WriteEntry
     optimistic: Readonly<{
         entityId?: EntityId
         value?: T

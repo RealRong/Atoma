@@ -9,9 +9,19 @@ import type {
 import type { Schema } from 'atoma-types/runtime'
 import { buildPluginContext } from './client/composition/buildPluginContext'
 import { installDebugIntegration } from './client/installDebugIntegration'
-import { installDirectStrategy } from './client/installDirectStrategy'
+import { registerDirectRoutes } from './client/execution/registerDirectRoutes'
 import { setupPlugins } from './plugins'
 import { ServiceRegistry } from './plugins/ServiceRegistry'
+
+function disposeInReverse(disposers: Array<() => void>): void {
+    while (disposers.length > 0) {
+        try {
+            disposers.pop()?.()
+        } catch {
+            // ignore
+        }
+    }
+}
 
 /**
  * Creates an Atoma client instance.
@@ -34,10 +44,10 @@ export function createClient<
     }
 
     const rawDefaultRoute = options.execution?.defaultRoute
-    const defaultExecutionRoute = rawDefaultRoute
-        ? String(rawDefaultRoute).trim()
-        : 'direct-local'
-    if (!defaultExecutionRoute) {
+    const defaultRoute = rawDefaultRoute === undefined
+        ? undefined
+        : String(rawDefaultRoute).trim()
+    if (rawDefaultRoute !== undefined && !defaultRoute) {
         throw new Error('[Atoma] createClient: execution.defaultRoute 不能为空')
     }
 
@@ -53,31 +63,43 @@ export function createClient<
     })
 
     const disposers: Array<() => void> = []
-    disposers.push(...installDebugIntegration({ services, runtime }))
-    disposers.push(installDirectStrategy({ runtime, services }))
+    let pluginSetup: ReturnType<typeof setupPlugins> | null = null
+    try {
+        disposers.push(...installDebugIntegration({ services, runtime }))
+        disposers.push(registerDirectRoutes({ runtime }))
+        pluginSetup = setupPlugins({
+            context,
+            rawPlugins
+        })
+        disposers.push(pluginSetup.dispose)
+        if (defaultRoute) {
+            disposers.push(runtime.execution.apply({
+                id: 'client.default-route',
+                defaultRoute
+            }))
+        }
+    } catch (error) {
+        if (pluginSetup && !disposers.includes(pluginSetup.dispose)) {
+            try {
+                pluginSetup.dispose()
+            } catch {
+                // ignore
+            }
+        }
+        disposeInReverse(disposers)
+        throw error
+    }
 
-    const plugins = setupPlugins({
-        context,
-        rawPlugins
-    })
-    disposers.push(plugins.dispose)
-    disposers.push(runtime.execution.apply({
-        id: 'client.default-route',
-        defaultRoute: defaultExecutionRoute
-    }))
+    if (!pluginSetup) {
+        throw new Error('[Atoma] createClient: 插件初始化失败')
+    }
 
     let disposed = false
     const dispose = () => {
         if (disposed) return
         disposed = true
 
-        for (let i = disposers.length - 1; i >= 0; i--) {
-            try {
-                disposers[i]()
-            } catch {
-                // ignore
-            }
-        }
+        disposeInReverse(disposers)
     }
 
     const client: AtomaClient<E, S> = {
@@ -87,7 +109,7 @@ export function createClient<
         dispose
     }
 
-    plugins.mount(client)
+    pluginSetup.mount(client)
 
     return client
 }

@@ -14,19 +14,22 @@ import type {
     ExecutionSpec,
     QueryOutput,
     QueryRequest,
-    RuntimeWriteEntry,
-    RuntimeWriteItemResult,
+    WriteEntry,
+    WriteItemResult,
     WriteRequest,
     WriteOutput
 } from 'atoma-types/runtime'
-import type { Runtime } from 'atoma-runtime'
 
-type EntryGroup = {
-    entries: RuntimeWriteEntry[]
+type OperationRuntime = Readonly<{
+    now: () => number
+}>
+
+type WriteGroup = {
+    entries: WriteEntry[]
 }
 
 function createOperationError(args: {
-    code: 'E_OPERATION_CLIENT_MISSING' | 'E_OPERATION_RESULT_MISSING' | 'E_OPERATION_FAILED'
+    code: 'E_OPERATION_RESULT_MISSING' | 'E_OPERATION_FAILED'
     message: string
     retryable?: boolean
     details?: Readonly<Record<string, unknown>>
@@ -58,7 +61,7 @@ function normalizeOperationError(args: {
     })
 }
 
-function resolveWriteStatus(results: ReadonlyArray<RuntimeWriteItemResult>): WriteOutput<any>['status'] {
+function resolveWriteStatus(results: ReadonlyArray<WriteItemResult>): WriteOutput<any>['status'] {
     if (!results.length) return 'confirmed'
 
     let failed = 0
@@ -71,24 +74,24 @@ function resolveWriteStatus(results: ReadonlyArray<RuntimeWriteItemResult>): Wri
     return 'partial'
 }
 
-function optionsKey(options: RuntimeWriteEntry['options']): string {
+function writeOptionsKey(options: WriteEntry['options']): string {
     if (!options || typeof options !== 'object') return ''
     return JSON.stringify(options)
 }
 
-function groupWriteEntries(entries: ReadonlyArray<RuntimeWriteEntry>): EntryGroup[] {
-    const groupsByKey = new Map<string, EntryGroup>()
-    const groups: EntryGroup[] = []
+function groupWriteEntries(entries: ReadonlyArray<WriteEntry>): WriteGroup[] {
+    const groupsByKey = new Map<string, WriteGroup>()
+    const groups: WriteGroup[] = []
 
     for (const entry of entries) {
-        const key = `${entry.action}::${optionsKey(entry.options)}`
+        const key = `${entry.action}::${writeOptionsKey(entry.options)}`
         const existing = groupsByKey.get(key)
         if (existing) {
             existing.entries.push(entry)
             continue
         }
 
-        const group: EntryGroup = {
+        const group: WriteGroup = {
             entries: [entry]
         }
         groupsByKey.set(key, group)
@@ -99,23 +102,15 @@ function groupWriteEntries(entries: ReadonlyArray<RuntimeWriteEntry>): EntryGrou
 }
 
 async function executeOperationQuery<T extends Entity>(args: {
-    runtime: Runtime
-    resolveOperation: () => OperationClient | undefined
+    runtime: OperationRuntime
+    operationClient: OperationClient
     request: QueryRequest<T>
     options?: ExecutionOptions
 }): Promise<QueryOutput> {
-    const { runtime, resolveOperation, request, options } = args
+    const { runtime, operationClient, request, options } = args
     try {
-        const operation = resolveOperation()
-        if (!operation) {
-            throw createOperationError({
-                code: 'E_OPERATION_CLIENT_MISSING',
-                message: '[Atoma] operation.query: operation client 未注册',
-                retryable: false
-            })
-        }
         const opId = createOpId('q', { now: runtime.now })
-        const envelope = await operation.executeOperations({
+        const envelope = await operationClient.executeOperations({
             ops: [buildQueryOp({
                 opId,
                 resource: request.handle.storeName,
@@ -170,27 +165,19 @@ async function executeOperationQuery<T extends Entity>(args: {
 }
 
 async function executeOperationWrite<T extends Entity>(args: {
-    runtime: Runtime
-    resolveOperation: () => OperationClient | undefined
+    runtime: OperationRuntime
+    operationClient: OperationClient
     request: WriteRequest<T>
     options?: ExecutionOptions
 }): Promise<WriteOutput<T>> {
-    const { runtime, resolveOperation, request, options } = args
+    const { runtime, operationClient, request, options } = args
     try {
-        const operation = resolveOperation()
-        if (!operation) {
-            throw createOperationError({
-                code: 'E_OPERATION_CLIENT_MISSING',
-                message: '[Atoma] operation.write: operation client 未注册',
-                retryable: false
-            })
-        }
         if (!request.entries.length) {
             return { status: 'confirmed' }
         }
 
         const groups = groupWriteEntries(request.entries)
-        const envelope = await operation.executeOperations({
+        const envelope = await operationClient.executeOperations({
             ops: groups.map(group => buildWriteOp({
                 opId: createOpId('w', { now: runtime.now }),
                 write: {
@@ -207,7 +194,7 @@ async function executeOperationWrite<T extends Entity>(args: {
             ...(options?.signal ? { signal: options.signal } : {})
         })
 
-        const results: RuntimeWriteItemResult[] = []
+        const results: WriteItemResult[] = []
         for (let index = 0; index < groups.length; index++) {
             const group = groups[index]
             const result = envelope.results[index]
@@ -249,15 +236,15 @@ async function executeOperationWrite<T extends Entity>(args: {
     }
 }
 
-export function createOperationExecutionSpec(args: {
-    runtime: Runtime
-    resolveOperation: () => OperationClient | undefined
+export function buildOperationExecutor(args: {
+    runtime: OperationRuntime
+    operationClient: OperationClient
 }): ExecutionSpec {
     return {
         query: async <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions): Promise<QueryOutput> => {
             return await executeOperationQuery({
                 runtime: args.runtime,
-                resolveOperation: args.resolveOperation,
+                operationClient: args.operationClient,
                 request,
                 options
             })
@@ -265,7 +252,7 @@ export function createOperationExecutionSpec(args: {
         write: async <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions): Promise<WriteOutput<T>> => {
             return await executeOperationWrite({
                 runtime: args.runtime,
-                resolveOperation: args.resolveOperation,
+                operationClient: args.operationClient,
                 request,
                 options
             })

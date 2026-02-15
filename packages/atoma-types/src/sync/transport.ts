@@ -6,7 +6,7 @@ import type {
     NotifyMessage,
     ResourceToken,
 } from '../protocol'
-import type { RuntimeWriteEntry, RuntimeWriteItemResult } from '../runtime'
+import type { WriteEntry, WriteItemResult } from '../runtime'
 import type { SyncOutboxItem } from './outbox'
 
 export interface CursorStore {
@@ -16,19 +16,19 @@ export interface CursorStore {
 
 export type SyncWriteAck = {
     resource: ResourceToken
-    entry: RuntimeWriteEntry
-    result: Extract<RuntimeWriteItemResult, { ok: true }>
+    entry: WriteEntry
+    result: Extract<WriteItemResult, { ok: true }>
 }
 
 export type SyncWriteReject = {
     resource: ResourceToken
-    entry: RuntimeWriteEntry
-    result: Extract<RuntimeWriteItemResult, { ok: false }>
+    entry: WriteEntry
+    result: Extract<WriteItemResult, { ok: false }>
 }
 
 export type SyncPushOutcome =
-    | { kind: 'ack'; result: Extract<RuntimeWriteItemResult, { ok: true }> }
-    | { kind: 'reject'; result: Extract<RuntimeWriteItemResult, { ok: false }> }
+    | { kind: 'ack'; result: Extract<WriteItemResult, { ok: true }> }
+    | { kind: 'reject'; result: Extract<WriteItemResult, { ok: false }> }
     | { kind: 'retry'; error: unknown }
 
 export interface SyncApplier {
