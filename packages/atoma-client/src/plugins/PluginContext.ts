@@ -1,24 +1,25 @@
 import type { Patch } from 'immer'
 import type { Entity, OperationContext, Query, QueryResult, StoreToken, ExecutionRoute } from 'atoma-types/core'
-import type { PluginContext } from 'atoma-types/client/plugins'
+import type { PluginContext as PluginContextType } from 'atoma-types/client/plugins'
 import type { StoreHandle } from 'atoma-types/runtime'
 import type { Runtime } from 'atoma-runtime'
-import type { ServiceRegistry } from './ServiceRegistry'
+import { ServiceRegistry } from './ServiceRegistry'
 
-export function createPluginContext({
-    runtime,
-    services
-}: {
-    runtime: Runtime
-    services: ServiceRegistry
-}): PluginContext {
-    return {
-        clientId: runtime.id,
-        services: {
+export class PluginContext implements PluginContextType {
+    readonly clientId: string
+    readonly services: PluginContextType['services']
+    readonly runtime: PluginContextType['runtime']
+    readonly events: PluginContextType['events']
+
+    constructor(runtime: Runtime) {
+        const services = new ServiceRegistry()
+
+        this.clientId = runtime.id
+        this.services = {
             register: services.register,
             resolve: services.resolve
-        },
-        runtime: {
+        }
+        this.runtime = {
             id: runtime.id,
             now: runtime.now,
             stores: {
@@ -126,8 +127,8 @@ export function createPluginContext({
                     evaluate: runtime.engine.query.evaluate
                 }
             },
-        },
-        events: {
+        }
+        this.events = {
             register: runtime.events.register
         }
     }

@@ -176,7 +176,11 @@ export class StoreFactory {
             const result = this.runtime.engine.mutation.upsertItems(before, processed)
 
             if (result.after === before) return
-            handle.state.commit({ before, after: result.after })
+            handle.state.commit({
+                before,
+                after: result.after,
+                changedIds: new Set(processed.map(item => item.id))
+            })
         }
 
         return {

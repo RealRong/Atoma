@@ -42,15 +42,3 @@ export function buildEntityPatchPayload<T extends Entity>(args: {
         inversePatches: [{ op: 'remove', path }]
     }
 }
-
-export function buildRawPatchPayload(args: {
-    enabled: boolean
-    patches: Patch[]
-    inversePatches: Patch[]
-}): WritePatchPayload {
-    if (!args.enabled) return null
-    return {
-        patches: args.patches,
-        inversePatches: args.inversePatches
-    }
-}

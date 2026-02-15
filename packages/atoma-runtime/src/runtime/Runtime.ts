@@ -17,14 +17,14 @@ import type {
     Write,
     StoreCatalog
 } from 'atoma-types/runtime'
-import { TransformPipeline } from './transform'
+import { TransformPipeline } from './transform/TransformPipeline'
 import { Stores } from '../store/Stores'
 import { StoreEventRegistry } from './registry/StoreEventRegistry'
-import { ExecutionKernel } from '../execution/kernel/ExecutionKernel'
+import { ExecutionKernel } from '../execution/ExecutionKernel'
 import { ReadFlow } from './flows/ReadFlow'
 import { WriteFlow } from './flows/WriteFlow'
 import { Engine } from '../engine'
-import { Probe } from './debug'
+import { Probe } from './debug/Probe'
 
 /**
  * Configuration for creating a Runtime.

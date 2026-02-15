@@ -39,8 +39,9 @@ export async function prefetchRelations<T extends Entity>(
             )
         } catch (error) {
             if (onError === 'throw') throw error
-            console.warn(`[Atoma Relations] "${entry.relationName}" prefetch failed:`, error)
-            if (onError === 'skip') return
+            if (onError === 'partial') {
+                console.warn(`[Atoma Relations] "${entry.relationName}" prefetch failed:`, error)
+            }
         }
     })
 }
@@ -150,13 +151,14 @@ async function runWithConcurrency<T>(
 ): Promise<void> {
     if (!tasks.length) return
 
-    const queue = tasks.slice()
-    const workerCount = Math.min(limit, queue.length)
+    let index = 0
+    const workerCount = Math.min(limit, tasks.length)
     const workers = Array.from({ length: workerCount }, async () => {
-        while (queue.length > 0) {
-            const next = queue.shift()
-            if (!next) return
-            await runner(next)
+        while (true) {
+            const taskIndex = index
+            index += 1
+            if (taskIndex >= tasks.length) return
+            await runner(tasks[taskIndex])
         }
     })
 

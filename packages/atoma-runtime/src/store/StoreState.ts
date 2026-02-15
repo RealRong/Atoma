@@ -71,16 +71,17 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
     commit = (params: {
         before: Map<EntityId, T>
         after: Map<EntityId, T>
+        changedIds?: ReadonlySet<EntityId>
     }) => {
-        const { before, after } = params
+        const { before, after, changedIds } = params
         const indexes = this.indexes
 
         if (before === after) return
 
-        const changedIds = this.collectChangedIds(before, after)
-        if (!changedIds.size) return
+        const nextChangedIds = changedIds ?? this.collectChangedIds(before, after)
+        if (!nextChangedIds.size) return
 
-        indexes?.applyChangedIds(before, after, changedIds)
+        indexes?.applyChangedIds(before, after, nextChangedIds)
 
         this.snapshot = after
         this.notifyListeners()
@@ -93,7 +94,8 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
 
         this.commit({
             before: result.before,
-            after: result.after
+            after: result.after,
+            changedIds: result.changedIds
         })
     }
 }

@@ -10,6 +10,10 @@ export type StoreState<T extends Entity = Entity> = Readonly<{
     setSnapshot: (next: StoreSnapshot<T>) => void
     subscribe: (listener: StoreListener) => () => void
     indexes: IndexesLike<T> | null
-    commit: (params: { before: Map<EntityId, T>; after: Map<EntityId, T> }) => void
+    commit: (params: {
+        before: Map<EntityId, T>
+        after: Map<EntityId, T>
+        changedIds?: ReadonlySet<EntityId>
+    }) => void
     applyWriteback: (args: StoreWritebackArgs<T>) => void
 }>

@@ -8,21 +8,9 @@ import type { Schema } from 'atoma-types/runtime'
 import { createId } from 'atoma-shared'
 import { Runtime } from 'atoma-runtime'
 import { LOCAL_ROUTE, registerLocalRoute } from './execution/registerLocalRoute'
-import { createPluginContext } from './plugins/createPluginContext'
+import { PluginContext } from './plugins/PluginContext'
 import { setupPlugins } from './plugins/setupPlugins'
-import { ServiceRegistry } from './plugins/ServiceRegistry'
-
 export { LOCAL_ROUTE } from './execution/registerLocalRoute'
-
-function disposeInReverse(disposers: Array<() => void>): void {
-    while (disposers.length > 0) {
-        try {
-            disposers.pop()?.()
-        } catch {
-            // ignore
-        }
-    }
-}
 
 export function createClient<
     const E extends Record<string, Entity>,
@@ -47,10 +35,7 @@ export function createClient<
         id: createId(),
         schema: (options.schema ?? {}) as Schema
     })
-    const context = createPluginContext({
-        runtime,
-        services: new ServiceRegistry()
-    })
+    const context = new PluginContext(runtime)
 
     const disposers: Array<() => void> = []
     let pluginSetup: ReturnType<typeof setupPlugins> | null = null
@@ -93,4 +78,14 @@ export function createClient<
 
     pluginSetup.mount(client)
     return client
+}
+
+function disposeInReverse(disposers: Array<() => void>): void {
+    while (disposers.length > 0) {
+        try {
+            disposers.pop()?.()
+        } catch {
+            // ignore
+        }
+    }
 }

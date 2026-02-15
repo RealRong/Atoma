@@ -15,7 +15,7 @@ import { WriteEntryFactory } from './write/services/WriteEntryFactory'
 import type { WritePlan, WritePlanEntry } from './write/types'
 import { runBatch, runBatchOrThrow } from './write/utils/batch'
 import { buildPatchWritePlan } from './write/utils/patchPlan'
-import { buildEntityPatchPayload, buildRawPatchPayload, type WritePatchPayload } from './write/utils/patchPayload'
+import { buildEntityPatchPayload, type WritePatchPayload } from './write/utils/patchPayload'
 import { runAfterSave } from './write/utils/prepareWriteInput'
 
 type WriteContext = {
@@ -311,11 +311,7 @@ export class WriteFlow implements Write {
             ...context,
             plan,
             source: 'patches',
-            patchPayload: buildRawPatchPayload({
-                enabled: this.shouldEmitWritePatches(),
-                patches,
-                inversePatches
-            })
+            patchPayload: this.shouldEmitWritePatches() ? { patches, inversePatches } : null
         })
     }
 }

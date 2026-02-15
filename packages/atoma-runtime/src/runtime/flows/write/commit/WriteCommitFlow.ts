@@ -57,6 +57,18 @@ function applyOptimistically<T extends Entity>(
     return { afterState: nextState }
 }
 
+function collectPlanChangedIds<T extends Entity>(plan: WritePlan<T>): Set<EntityId> {
+    const changedIds = new Set<EntityId>()
+
+    for (const planEntry of plan) {
+        const entityId = planEntry.optimistic.entityId
+        if (entityId === undefined) continue
+        changedIds.add(entityId)
+    }
+
+    return changedIds
+}
+
 function applyOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
     plan: WritePlan<T>
@@ -72,16 +84,19 @@ function applyOptimisticState<T extends Entity>(args: {
         : { afterState: beforeState }
 
     const { afterState } = optimistic
+    const changedIds = collectPlanChangedIds(plan)
     if (afterState !== beforeState) {
         handle.state.commit({
             before: beforeState,
-            after: afterState
+            after: afterState,
+            ...(changedIds.size ? { changedIds } : {})
         })
     }
 
     return {
         beforeState,
-        afterState
+        afterState,
+        changedIds
     }
 }
 
@@ -93,7 +108,8 @@ function rollbackOptimisticState<T extends Entity>(args: {
     if (optimisticState.afterState !== optimisticState.beforeState) {
         handle.state.commit({
             before: optimisticState.afterState,
-            after: optimisticState.beforeState
+            after: optimisticState.beforeState,
+            ...(optimisticState.changedIds.size ? { changedIds: optimisticState.changedIds } : {})
         })
     }
 }
