@@ -172,14 +172,13 @@ export class StoreFactory {
             }
             if (!processed.length) return
 
-            const before = handle.state.getSnapshot() as Map<EntityId, T>
-            const result = this.runtime.engine.mutation.upsertItems(before, processed)
-
-            if (result.after === before) return
-            handle.state.commit({
-                before,
-                after: result.after,
-                changedIds: new Set(processed.map(item => item.id))
+            handle.state.mutate((draft) => {
+                processed.forEach((item) => {
+                    const existing = draft.get(item.id)
+                    const preserved = this.runtime.engine.mutation.preserveRef(existing, item)
+                    if (draft.has(item.id) && existing === preserved) return
+                    draft.set(item.id, preserved)
+                })
             })
         }
 

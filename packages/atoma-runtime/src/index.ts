@@ -1,5 +1,6 @@
-import { enablePatches } from 'immer'
+import { enableMapSet, enablePatches } from 'immer'
 
+enableMapSet()
 enablePatches()
 
 export { Runtime } from './runtime/Runtime'

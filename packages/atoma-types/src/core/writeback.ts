@@ -1,3 +1,4 @@
+import type { Patch } from 'immer'
 import type { Entity } from './entity'
 import type { EntityId } from '../shared'
 
@@ -7,8 +8,10 @@ export type StoreWritebackArgs<T extends Entity> = Readonly<{
     versionUpdates?: Array<{ key: EntityId; version: number }>
 }>
 
-export type StoreWritebackResult<T extends Entity> = Readonly<{
+export type StoreDelta<T extends Entity> = Readonly<{
     before: Map<EntityId, T>
     after: Map<EntityId, T>
-    changedIds: Set<EntityId>
+    changedIds: ReadonlySet<EntityId>
+    patches: Patch[]
+    inversePatches: Patch[]
 }>

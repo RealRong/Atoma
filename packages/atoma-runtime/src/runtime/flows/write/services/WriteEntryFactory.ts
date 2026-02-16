@@ -74,7 +74,7 @@ export class WriteEntryFactory {
         recipe: (draft: Draft<T>) => void
         opContext: OperationContext
         options?: StoreOperationOptions
-    }): Promise<{ planEntry: WritePlanEntry<T>; output: T; base: PartialWithId<T> }> => {
+    }): Promise<{ planEntry: WritePlanEntry<T>; output: T }> => {
         const base = await resolveWriteBase(this.runtime, args.handle, args.id, args.options)
         const next = produce(base as T, draft => args.recipe(draft)) as PartialWithId<T>
         const patched = { ...next, id: args.id } as PartialWithId<T>
@@ -99,8 +99,7 @@ export class WriteEntryFactory {
                     value: prepared as T
                 }
             },
-            output: prepared as T,
-            base
+            output: prepared as T
         }
     }
 
@@ -109,7 +108,7 @@ export class WriteEntryFactory {
         item: PartialWithId<T>
         opContext: OperationContext
         options?: StoreOperationOptions & UpsertWriteOptions
-    }): Promise<{ planEntry: WritePlanEntry<T>; output: T; afterSaveAction: 'add' | 'update'; base?: PartialWithId<T> }> => {
+    }): Promise<{ planEntry: WritePlanEntry<T>; output: T; afterSaveAction: 'add' | 'update' }> => {
         const id = args.item.id
         const base = args.handle.state.getSnapshot().get(id) as PartialWithId<T> | undefined
         const merge = args.options?.merge !== false
@@ -164,8 +163,7 @@ export class WriteEntryFactory {
                 }
             },
             output: prepared as T,
-            afterSaveAction: base ? 'update' : 'add',
-            base
+            afterSaveAction: base ? 'update' : 'add'
         }
     }
 
@@ -174,7 +172,7 @@ export class WriteEntryFactory {
         id: EntityId
         opContext: OperationContext
         options?: StoreOperationOptions
-    }): Promise<{ planEntry: WritePlanEntry<T>; base: PartialWithId<T> }> => {
+    }): Promise<{ planEntry: WritePlanEntry<T> }> => {
         const base = await resolveWriteBase(this.runtime, args.handle, args.id, args.options)
         const baseVersion = requireBaseVersion(args.id, base)
 
@@ -193,8 +191,7 @@ export class WriteEntryFactory {
                     optimistic: {
                         entityId: args.id
                     }
-                },
-                base
+                }
             }
         }
 
@@ -221,8 +218,7 @@ export class WriteEntryFactory {
                     entityId: args.id,
                     value: optimisticValue
                 }
-            },
-            base
+            }
         }
     }
 

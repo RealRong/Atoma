@@ -92,5 +92,5 @@ export type {
 
 export type {
     StoreWritebackArgs,
-    StoreWritebackResult,
+    StoreDelta,
 } from './writeback'

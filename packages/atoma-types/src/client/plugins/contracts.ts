@@ -1,6 +1,15 @@
 import type { Patch } from 'immer'
-import type { OperationContext as CoreOperationContext, Entity, Query, QueryResult, StoreToken, ExecutionRoute } from '../../core'
-import type { Runtime, StoreEvents, QueryOutput, StoreHandle } from '../../runtime'
+import type {
+    OperationContext,
+    Entity,
+    Query,
+    QueryResult,
+    Store,
+    StoreToken,
+    StoreDelta
+} from '../../core'
+import type { EntityId } from '../../shared'
+import type { Runtime, StoreEvents } from '../../runtime'
 import type { ServiceRegistry, ServiceToken } from '../services'
 
 export type EventRegister = (events: StoreEvents) => () => void
@@ -19,10 +28,7 @@ export type PluginRuntime = Readonly<{
     now: Runtime['now']
     stores: Readonly<{
         list: () => StoreToken[]
-        resolveHandle: <T extends Entity>(args: {
-            storeName: StoreToken
-            reason: string
-        }) => StoreHandle<T>
+        ensure: <T extends Entity>(storeName: StoreToken) => Store<T>
         query: <T extends Entity>(args: {
             storeName: StoreToken
             query: Query<T>
@@ -31,31 +37,22 @@ export type PluginRuntime = Readonly<{
             storeName: StoreToken
             patches: Patch[]
             inversePatches: Patch[]
-            opContext: CoreOperationContext
+            opContext: OperationContext
         }) => Promise<void>
         applyWriteback: <T extends Entity>(args: {
             storeName: StoreToken
             upserts: T[]
-            deletes: string[]
-            versionUpdates?: Array<{ key: string; version: number }>
-        }) => Promise<void>
+            deletes: EntityId[]
+            versionUpdates?: Array<{ key: EntityId; version: number }>
+        }) => Promise<StoreDelta<T> | null>
     }>
-    debug: Runtime['debug']
     execution: Readonly<{
         apply: Runtime['execution']['apply']
         subscribe: Runtime['execution']['subscribe']
-        query: <T extends Entity>(args: {
-            storeName: StoreToken
-            route?: ExecutionRoute
-            query: Query<T>
-            signal?: AbortSignal
-        }) => Promise<QueryOutput>
-        write: Runtime['execution']['write']
     }>
-    engine: Readonly<{
-        query: Readonly<{
-            evaluate: Runtime['engine']['query']['evaluate']
-        }>
+    snapshot: Readonly<{
+        store: Runtime['debug']['snapshotStore']
+        indexes: Runtime['debug']['snapshotIndexes']
     }>
 }>
 

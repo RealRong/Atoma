@@ -1,4 +1,5 @@
-import type { Entity, IndexesLike, StoreWritebackArgs } from 'atoma-types/core'
+import { applyPatches as applyImmerPatches, produceWithPatches, type Patch } from 'immer'
+import type { Entity, IndexesLike, StoreDelta, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Engine, StoreSnapshot, StoreState } from 'atoma-types/runtime'
 
@@ -30,11 +31,6 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         })
     }
 
-    setSnapshot = (next: StoreSnapshot<T>) => {
-        this.snapshot = next
-        this.notifyListeners()
-    }
-
     subscribe = (listener: () => void) => {
         this.listeners.add(listener)
         return () => {
@@ -42,60 +38,77 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         }
     }
 
-    private collectChangedIds = (
-        before: Map<EntityId, T>,
-        after: Map<EntityId, T>
-    ): Set<EntityId> => {
-        const output = new Set<EntityId>()
-
-        before.forEach((beforeItem, id) => {
-            if (!after.has(id)) {
-                output.add(id)
-                return
-            }
-
-            if (after.get(id) !== beforeItem) {
-                output.add(id)
-            }
-        })
-
-        after.forEach((_afterItem, id) => {
-            if (!before.has(id)) {
-                output.add(id)
-            }
-        })
-
-        return output
+    private collectChangedIdsFromPatches = (patches: Patch[], inversePatches: Patch[]): Set<EntityId> => {
+        const changedIds = new Set<EntityId>()
+        const collect = (list: Patch[]) => {
+            list.forEach((patch) => {
+                const root = patch.path?.[0]
+                if (typeof root !== 'string' && typeof root !== 'number') return
+                const id = String(root)
+                if (!id) return
+                changedIds.add(id)
+            })
+        }
+        collect(patches)
+        collect(inversePatches)
+        return changedIds
     }
 
-    commit = (params: {
-        before: Map<EntityId, T>
-        after: Map<EntityId, T>
-        changedIds?: ReadonlySet<EntityId>
-    }) => {
-        const { before, after, changedIds } = params
-        const indexes = this.indexes
+    private applyDelta = (delta: StoreDelta<T>) => {
+        if (delta.before === delta.after || !delta.changedIds.size) return
 
-        if (before === after) return
-
-        const nextChangedIds = changedIds ?? this.collectChangedIds(before, after)
-        if (!nextChangedIds.size) return
-
-        indexes?.applyChangedIds(before, after, nextChangedIds)
-
-        this.snapshot = after
+        this.indexes?.applyChangedIds(delta.before, delta.after, delta.changedIds)
+        this.snapshot = delta.after
         this.notifyListeners()
     }
 
-    applyWriteback = (args: StoreWritebackArgs<T>) => {
+    mutate = (recipe: (draft: Map<EntityId, T>) => void): StoreDelta<T> | null => {
+        const before = this.snapshot as Map<EntityId, T>
+        const [after, patches, inversePatches] = produceWithPatches(before, recipe)
+        const changedIds = this.collectChangedIdsFromPatches(patches, inversePatches)
+        if (before === after || !changedIds.size) return null
+
+        const delta: StoreDelta<T> = {
+            before,
+            after,
+            changedIds,
+            patches,
+            inversePatches
+        }
+        this.applyDelta(delta)
+        return delta
+    }
+
+    applyWriteback = (args: StoreWritebackArgs<T>): StoreDelta<T> | null => {
         const before = this.snapshot as Map<EntityId, T>
         const result = this.engine.mutation.writeback(before, args)
-        if (!result) return
+        if (!result) return null
 
-        this.commit({
-            before: result.before,
-            after: result.after,
-            changedIds: result.changedIds
-        })
+        this.applyDelta(result)
+        return result
+    }
+
+    applyPatches = (patches: Patch[]): StoreDelta<T> | null => {
+        if (!patches.length) return null
+
+        const before = this.snapshot as Map<EntityId, T>
+        const [after, nextPatches, inversePatches] = produceWithPatches(
+            before,
+            ((draft: Map<EntityId, T>) => {
+                return applyImmerPatches(draft as unknown as Map<EntityId, T>, patches) as Map<EntityId, T>
+            }) as any
+        )
+        const changedIds = this.collectChangedIdsFromPatches(nextPatches, inversePatches)
+        if (before === after || !changedIds.size) return null
+
+        const delta: StoreDelta<T> = {
+            before,
+            after,
+            changedIds,
+            patches: nextPatches,
+            inversePatches
+        }
+        this.applyDelta(delta)
+        return delta
     }
 }

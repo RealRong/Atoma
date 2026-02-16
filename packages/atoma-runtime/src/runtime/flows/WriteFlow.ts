@@ -12,10 +12,9 @@ import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Write, WriteEventSource, StoreHandle } from 'atoma-types/runtime'
 import { WriteCommitFlow } from './write/commit/WriteCommitFlow'
 import { WriteEntryFactory } from './write/services/WriteEntryFactory'
-import type { WritePlan, WritePlanEntry } from './write/types'
+import type { WritePatchPayload, WritePlan, WritePlanEntry } from './write/types'
 import { runBatch, runBatchOrThrow } from './write/utils/batch'
 import { buildPatchWritePlan } from './write/utils/patchPlan'
-import { buildEntityPatchPayload, type WritePatchPayload } from './write/utils/patchPayload'
 import { runAfterSave } from './write/utils/prepareWriteInput'
 
 type WriteContext = {
@@ -59,11 +58,12 @@ export class WriteFlow implements Write {
         plan: WritePlan<T>
         source: WriteEventSource
         output?: T
-        patchPayload: WritePatchPayload
+        rawPatchPayload?: WritePatchPayload
         afterSaveAction?: 'add' | 'update'
     }): Promise<T | void> => {
-        const { handle, opContext, plan, source, patchPayload } = args
+        const { handle, opContext, plan, source } = args
         const events = this.runtime.events
+        const shouldEmitWritePatches = this.shouldEmitWritePatches()
         const writeEntries = plan.map(planEntry => planEntry.entry)
 
         events.emit.writeStart({
@@ -76,26 +76,27 @@ export class WriteFlow implements Write {
         })
 
         try {
-            const committed = await this.writeCommitFlow.execute<T>({
+            const commitResult = await this.writeCommitFlow.execute<T>({
                 runtime: this.runtime,
                 handle,
                 opContext,
                 route: args.route,
                 signal: args.signal,
-                plan
+                plan,
+                rawPatchPayload: args.rawPatchPayload
             })
 
-            if (patchPayload) {
+            if (shouldEmitWritePatches && commitResult.patchPayload) {
                 events.emit.writePatches({
                     handle,
                     opContext,
-                    patches: patchPayload.patches,
-                    inversePatches: patchPayload.inversePatches,
+                    patches: commitResult.patchPayload.patches,
+                    inversePatches: commitResult.patchPayload.inversePatches,
                     source
                 })
             }
 
-            const finalValue = committed ?? args.output
+            const finalValue = commitResult.output ?? args.output
             events.emit.writeCommitted({
                 handle,
                 opContext,
@@ -126,27 +127,14 @@ export class WriteFlow implements Write {
         context: WriteContext
         planEntry: WritePlanEntry<T>
         source: WriteEventSource
-        id?: EntityId
-        before?: T
-        after?: T
-        remove?: boolean
         output?: T
         afterSaveAction?: 'add' | 'update'
     }): Promise<T | void> => {
-        const patchPayload = buildEntityPatchPayload({
-            enabled: this.shouldEmitWritePatches(),
-            id: args.id,
-            before: args.before,
-            after: args.after,
-            remove: args.remove
-        })
-
         return await this.commitWrite({
             handle: args.handle,
             ...args.context,
             plan: [args.planEntry],
             source: args.source,
-            patchPayload,
             output: args.output,
             afterSaveAction: args.afterSaveAction
         })
@@ -160,16 +148,8 @@ export class WriteFlow implements Write {
             opContext: context.opContext
         })
 
-        const entityId = planEntry.optimistic.entityId
-        const before = entityId !== undefined
-            ? handle.state.getSnapshot().get(entityId)
-            : undefined
-
         const committed = await this.commitEntityWrite({
             handle,
-            id: entityId,
-            before,
-            after: output,
             context,
             planEntry,
             source: 'addOne',
@@ -190,7 +170,7 @@ export class WriteFlow implements Write {
 
     updateOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, recipe: (draft: ImmerDraft<T>) => void, options?: StoreOperationOptions): Promise<T> => {
         const context = createWriteContext(this.runtime, handle, options)
-        const { planEntry, output, base } = await this.writeEntryFactory.prepareUpdateEntry<T>({
+        const { planEntry, output } = await this.writeEntryFactory.prepareUpdateEntry<T>({
             handle,
             id,
             recipe,
@@ -200,9 +180,6 @@ export class WriteFlow implements Write {
 
         const committed = await this.commitEntityWrite({
             handle,
-            id,
-            before: base as T,
-            after: output,
             context,
             planEntry,
             source: 'updateOne',
@@ -227,7 +204,7 @@ export class WriteFlow implements Write {
 
     upsertOne = async <T extends Entity>(handle: StoreHandle<T>, item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T> => {
         const context = createWriteContext(this.runtime, handle, options)
-        const { planEntry, output, afterSaveAction, base } = await this.writeEntryFactory.prepareUpsertEntry<T>({
+        const { planEntry, output, afterSaveAction } = await this.writeEntryFactory.prepareUpsertEntry<T>({
             handle,
             item,
             opContext: context.opContext,
@@ -236,9 +213,6 @@ export class WriteFlow implements Write {
 
         const committed = await this.commitEntityWrite({
             handle,
-            id: planEntry.optimistic.entityId,
-            before: base as T | undefined,
-            after: output,
             context,
             planEntry,
             source: 'upsertOne',
@@ -259,7 +233,7 @@ export class WriteFlow implements Write {
 
     deleteOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<boolean> => {
         const context = createWriteContext(this.runtime, handle, options)
-        const { planEntry, base } = await this.writeEntryFactory.prepareDeleteEntry<T>({
+        const { planEntry } = await this.writeEntryFactory.prepareDeleteEntry<T>({
             handle,
             id,
             opContext: context.opContext,
@@ -268,10 +242,6 @@ export class WriteFlow implements Write {
 
         await this.commitEntityWrite({
             handle,
-            id,
-            before: base as T,
-            after: planEntry.optimistic.value,
-            remove: planEntry.entry.action === 'delete',
             context,
             planEntry,
             source: 'deleteOne'
@@ -311,7 +281,7 @@ export class WriteFlow implements Write {
             ...context,
             plan,
             source: 'patches',
-            patchPayload: this.shouldEmitWritePatches() ? { patches, inversePatches } : null
+            rawPatchPayload: (patches.length || inversePatches.length) ? { patches, inversePatches } : null
         })
     }
 }

@@ -10,64 +10,14 @@ import type {
     WriteConsistency
 } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/shared'
-import type { WriteCommitRequest, OptimisticState, WritePlan, WritePlanEntry } from '../types'
-
-function applyOptimistically<T extends Entity>(
-    baseState: Map<EntityId, T>,
-    plan: WritePlan<T>,
-    preserve: (existing: T | undefined, incoming: T) => T
-): { afterState: Map<EntityId, T> } {
-    let nextState = baseState
-
-    const ensureMutableState = () => {
-        if (nextState === baseState) {
-            nextState = new Map(baseState)
-        }
-        return nextState
-    }
-
-    const upsert = (id: EntityId, value: T) => {
-        const currentState = nextState === baseState ? baseState : nextState
-        const current = currentState.get(id)
-        const preserved = preserve(current, value)
-        if (currentState.has(id) && current === preserved) return
-        ensureMutableState().set(id, preserved)
-    }
-
-    const remove = (id: EntityId) => {
-        const currentState = nextState === baseState ? baseState : nextState
-        if (!currentState.has(id)) return
-        ensureMutableState().delete(id)
-    }
-
-    for (const planEntry of plan) {
-        const entityId = planEntry.optimistic.entityId
-        if (!entityId) continue
-
-        if (planEntry.entry.action === 'delete') {
-            remove(entityId as EntityId)
-            continue
-        }
-
-        if (planEntry.optimistic.value !== undefined) {
-            upsert(entityId as EntityId, planEntry.optimistic.value as T)
-        }
-    }
-
-    return { afterState: nextState }
-}
-
-function collectPlanChangedIds<T extends Entity>(plan: WritePlan<T>): Set<EntityId> {
-    const changedIds = new Set<EntityId>()
-
-    for (const planEntry of plan) {
-        const entityId = planEntry.optimistic.entityId
-        if (entityId === undefined) continue
-        changedIds.add(entityId)
-    }
-
-    return changedIds
-}
+import type {
+    WriteCommitRequest,
+    OptimisticState,
+    WritePlan,
+    WritePlanEntry,
+    WriteCommitResult,
+    WritePatchPayload
+} from '../types'
 
 function applyOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
@@ -76,27 +26,57 @@ function applyOptimisticState<T extends Entity>(args: {
     preserve: (existing: T | undefined, incoming: T) => T
 }): OptimisticState<T> {
     const { handle, plan, consistency, preserve } = args
-    const beforeState = handle.state.getSnapshot() as Map<EntityId, T>
-    const useOptimistic = consistency.commit === 'optimistic'
+    const before = handle.state.getSnapshot() as Map<EntityId, T>
+    if (consistency.commit !== 'optimistic' || !plan.length) {
+        return {
+            before,
+            after: before,
+            changedIds: new Set<EntityId>(),
+            patches: [],
+            inversePatches: []
+        }
+    }
 
-    const optimistic = (useOptimistic && plan.length)
-        ? applyOptimistically(beforeState, plan, preserve)
-        : { afterState: beforeState }
+    const changedIds = new Set<EntityId>(
+        plan
+            .map((entry) => entry.optimistic.entityId)
+            .filter((id): id is EntityId => id !== undefined)
+    )
+    const optimistic = handle.state.mutate((draft) => {
+        for (const planEntry of plan) {
+            const entityId = planEntry.optimistic.entityId
+            if (!entityId) continue
 
-    const { afterState } = optimistic
-    const changedIds = collectPlanChangedIds(plan)
-    if (afterState !== beforeState) {
-        handle.state.commit({
-            before: beforeState,
-            after: afterState,
-            ...(changedIds.size ? { changedIds } : {})
-        })
+            if (planEntry.entry.action === 'delete') {
+                draft.delete(entityId as EntityId)
+                continue
+            }
+
+            if (planEntry.optimistic.value === undefined) continue
+
+            const id = entityId as EntityId
+            const current = draft.get(id) as T | undefined
+            const preserved = preserve(current, planEntry.optimistic.value as T)
+            if (draft.has(id) && current === preserved) continue
+            draft.set(id, preserved)
+        }
+    })
+    if (!optimistic) {
+        return {
+            before,
+            after: before,
+            changedIds,
+            patches: [],
+            inversePatches: []
+        }
     }
 
     return {
-        beforeState,
-        afterState,
-        changedIds
+        before,
+        after: optimistic.after,
+        changedIds,
+        patches: optimistic.patches,
+        inversePatches: optimistic.inversePatches
     }
 }
 
@@ -104,14 +84,8 @@ function rollbackOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
     optimisticState: OptimisticState<T>
 }) {
-    const { handle, optimisticState } = args
-    if (optimisticState.afterState !== optimisticState.beforeState) {
-        handle.state.commit({
-            before: optimisticState.afterState,
-            after: optimisticState.beforeState,
-            ...(optimisticState.changedIds.size ? { changedIds: optimisticState.changedIds } : {})
-        })
-    }
+    if (!args.optimisticState.inversePatches.length) return
+    args.handle.state.applyPatches(args.optimisticState.inversePatches)
 }
 
 async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
@@ -217,16 +191,62 @@ function fallbackPrimaryOutput<T extends Entity>(primaryPlan?: WritePlanEntry<T>
     return primaryPlan.optimistic.value as T | undefined
 }
 
+function applyWritebackResult<T extends Entity>(args: {
+    handle: WriteCommitRequest<T>['handle']
+    writeback?: StoreWritebackArgs<T>
+}): {
+    patchPayload: WritePatchPayload
+} {
+    if (!args.writeback) {
+        return {
+            patchPayload: null
+        }
+    }
+
+    const writeback = args.handle.state.applyWriteback(args.writeback)
+    if (!writeback) {
+        return {
+            patchPayload: null
+        }
+    }
+
+    return {
+        patchPayload: (!writeback.patches.length && !writeback.inversePatches.length)
+            ? null
+            : {
+                patches: writeback.patches,
+                inversePatches: writeback.inversePatches
+            }
+    }
+}
+
+function mergePatchPayload(...payloads: ReadonlyArray<WritePatchPayload>): WritePatchPayload {
+    let merged: WritePatchPayload = null
+    payloads.forEach((payload) => {
+        if (!payload) return
+        merged = !merged
+            ? payload
+            : {
+                patches: [...merged.patches, ...payload.patches],
+                inversePatches: [...payload.inversePatches, ...merged.inversePatches]
+            }
+    })
+    return merged
+}
+
 async function runWriteTransaction<T extends Entity>(args: {
     request: WriteCommitRequest<T>
     primaryPlan?: WritePlanEntry<T>
     entries: ReadonlyArray<WriteEntry>
-}): Promise<T | void> {
+}): Promise<{ output?: T; patchPayload: WritePatchPayload }> {
     const { request, primaryPlan, entries } = args
     const { runtime, handle, opContext, plan } = request
 
     if (!entries.length) {
-        return fallbackPrimaryOutput(primaryPlan)
+        return {
+            output: fallbackPrimaryOutput(primaryPlan),
+            patchPayload: null
+        }
     }
 
     const writeResult = await runtime.execution.write(
@@ -253,11 +273,15 @@ async function runWriteTransaction<T extends Entity>(args: {
         })
         : {}
 
-    if (resolved.writeback) {
-        handle.state.applyWriteback(resolved.writeback)
-    }
+    const writebackResult = applyWritebackResult({
+        handle,
+        writeback: resolved.writeback
+    })
 
-    return resolved.output ?? fallbackPrimaryOutput(primaryPlan)
+    return {
+        output: resolved.output ?? fallbackPrimaryOutput(primaryPlan),
+        patchPayload: writebackResult.patchPayload
+    }
 }
 
 function ensureWriteResultStatus(args: {
@@ -276,7 +300,7 @@ function ensureWriteResultStatus(args: {
 }
 
 export class WriteCommitFlow {
-    execute = async <T extends Entity>(args: WriteCommitRequest<T>): Promise<T | void> => {
+    execute = async <T extends Entity>(args: WriteCommitRequest<T>): Promise<WriteCommitResult<T>> => {
         const plan = args.plan
         const consistency = args.runtime.execution.resolveConsistency(args.route)
         const optimisticState = applyOptimisticState({
@@ -290,11 +314,24 @@ export class WriteCommitFlow {
         const entries = plan.map(entry => entry.entry)
 
         try {
-            return await runWriteTransaction({
+            const transaction = await runWriteTransaction({
                 request: args,
                 primaryPlan,
                 entries
             })
+
+            return {
+                patchPayload: args.rawPatchPayload ?? mergePatchPayload(
+                    (optimisticState.patches.length || optimisticState.inversePatches.length)
+                        ? {
+                            patches: optimisticState.patches,
+                            inversePatches: optimisticState.inversePatches
+                        }
+                        : null,
+                    transaction.patchPayload
+                ),
+                ...(transaction.output !== undefined ? { output: transaction.output } : {})
+            }
         } catch (error) {
             rollbackOptimisticState({
                 handle: args.handle,

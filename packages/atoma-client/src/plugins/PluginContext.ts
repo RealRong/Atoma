@@ -1,7 +1,15 @@
 import type { Patch } from 'immer'
-import type { Entity, OperationContext, Query, QueryResult, StoreToken, ExecutionRoute } from 'atoma-types/core'
+import type {
+    Entity,
+    OperationContext,
+    Query,
+    QueryResult,
+    Store,
+    StoreToken,
+    StoreDelta
+} from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/shared'
 import type { PluginContext as PluginContextType } from 'atoma-types/client/plugins'
-import type { StoreHandle } from 'atoma-types/runtime'
 import type { Runtime } from 'atoma-runtime'
 import { ServiceRegistry } from './ServiceRegistry'
 
@@ -32,13 +40,7 @@ export class PluginContext implements PluginContextType {
                     })
                     return names
                 },
-                resolveHandle: <T extends Entity>({
-                    storeName,
-                    reason
-                }: {
-                    storeName: StoreToken
-                    reason: string
-                }) => runtime.stores.resolveHandle(storeName, reason) as unknown as StoreHandle<T>,
+                ensure: <T extends Entity>(storeName: StoreToken) => runtime.stores.ensure(storeName) as unknown as Store<T>,
                 query: <T extends Entity>({
                     storeName,
                     query
@@ -79,53 +81,27 @@ export class PluginContext implements PluginContextType {
                 }: {
                     storeName: StoreToken
                     upserts: T[]
-                    deletes: string[]
-                    versionUpdates?: Array<{ key: string; version: number }>
+                    deletes: EntityId[]
+                    versionUpdates?: Array<{ key: EntityId; version: number }>
                 }) => {
                     const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.stores.applyWriteback')
                     const processed = await Promise.all(
                         upserts.map((item) => runtime.transform.writeback(handle, item))
                     ) as Array<T | undefined>
-                    handle.state.applyWriteback({
+                    return handle.state.applyWriteback({
                         upserts: processed.filter((item): item is T => item !== undefined),
                         deletes,
                         ...(versionUpdates ? { versionUpdates } : {})
-                    } as any)
+                    } as any) as StoreDelta<T> | null
                 }
             },
-            debug: runtime.debug,
             execution: {
                 apply: runtime.execution.apply,
-                subscribe: runtime.execution.subscribe,
-                query: <T extends Entity>({
-                    storeName,
-                    route,
-                    query,
-                    signal
-                }: {
-                    storeName: StoreToken
-                    route?: ExecutionRoute
-                    query: Query<T>
-                    signal?: AbortSignal
-                }) => {
-                    const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.execution.query')
-                    return runtime.execution.query<T>(
-                        {
-                            handle: handle as any,
-                            query
-                        },
-                        {
-                            ...(route !== undefined ? { route } : {}),
-                            ...(signal ? { signal } : {})
-                        }
-                    )
-                },
-                write: runtime.execution.write
+                subscribe: runtime.execution.subscribe
             },
-            engine: {
-                query: {
-                    evaluate: runtime.engine.query.evaluate
-                }
+            snapshot: {
+                store: runtime.debug.snapshotStore,
+                indexes: runtime.debug.snapshotIndexes
             },
         }
         this.events = {

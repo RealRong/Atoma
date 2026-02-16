@@ -17,24 +17,24 @@ export class ReadFlow implements Read {
         this.runtime = runtime
     }
 
-    private toQueryResult = <T extends Entity>(data: T[], pageInfo?: unknown): QueryResult<T> => {
-        return pageInfo ? { data, pageInfo: pageInfo as QueryResult<T>['pageInfo'] } : { data }
+    private toQueryResult = <T extends Entity>(data: T[], pageInfo?: QueryResult<T>['pageInfo']): QueryResult<T> => {
+        return pageInfo ? { data, pageInfo } : { data }
     }
 
-    private trackRead = async <T extends Entity>(args: {
+    private trackRead = async <T extends Entity>({ handle, query, run }: {
         handle: StoreHandle<T>
         query: StoreQuery<T>
         run: () => Promise<QueryResult<T>>
     }): Promise<QueryResult<T>> => {
         const startedAt = this.runtime.now()
         this.runtime.events.emit.readStart({
-            handle: args.handle,
-            query: args.query
+            handle,
+            query
         })
-        const result = await args.run()
+        const result = await run()
         this.runtime.events.emit.readFinish({
-            handle: args.handle,
-            query: args.query,
+            handle,
+            query,
             result,
             durationMs: this.runtime.now() - startedAt
         })
@@ -77,18 +77,17 @@ export class ReadFlow implements Read {
     }
 
     private applyQueryWriteback = <T extends Entity>(handle: StoreHandle<T>, remote: T[]): T[] => {
-        const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
-        const result = this.runtime.engine.mutation.upsertItems(existingMap, remote)
-
-        if (result.after !== existingMap) {
-            handle.state.commit({
-                before: existingMap,
-                after: result.after,
-                changedIds: new Set(remote.map(item => item.id))
+        const output: T[] = []
+        handle.state.mutate((draft) => {
+            remote.forEach((item) => {
+                const existing = draft.get(item.id)
+                const preserved = this.runtime.engine.mutation.preserveRef(existing, item)
+                output.push(preserved)
+                if (draft.has(item.id) && existing === preserved) return
+                draft.set(item.id, preserved)
             })
-        }
-
-        return result.items
+        })
+        return output
     }
 
     private resolveGetAllMergePolicy = <T extends Entity>(handle: StoreHandle<T>): GetAllMergePolicy => {
@@ -215,14 +214,12 @@ export class ReadFlow implements Read {
                     }
 
                     if (cache && itemsToCache.length) {
-                        const after = this.runtime.engine.mutation.addMany(itemsToCache, before)
-                        if (after !== before) {
-                            handle.state.commit({
-                                before,
-                                after,
-                                changedIds: new Set(itemsToCache.map(item => item.id))
+                        handle.state.mutate((draft) => {
+                            itemsToCache.forEach((item) => {
+                                if (draft.has(item.id) && draft.get(item.id) === item) return
+                                draft.set(item.id, item)
                             })
-                        }
+                        })
                     }
 
                     for (let index = 0; index < ids.length; index++) {
@@ -356,25 +353,26 @@ export class ReadFlow implements Read {
                     existingMap.forEach((_value, id) => {
                         if (!incomingIds.has(id)) toRemove.push(id)
                     })
-                    next = this.runtime.engine.mutation.removeMany(toRemove, existingMap)
-                }
-
-                if (itemsToCache.length) {
-                    next = this.runtime.engine.mutation.addMany(itemsToCache, next)
-                }
-
-                if (next !== existingMap) {
-                    const changedIds = new Set<EntityId>(incomingIds)
-                    if (mergePolicy === 'replace') {
-                        existingMap.forEach((_value, id) => {
-                            if (!incomingIds.has(id)) changedIds.add(id)
+                    if (toRemove.length || itemsToCache.length) {
+                        handle.state.mutate((draft) => {
+                            toRemove.forEach((id) => {
+                                draft.delete(id)
+                            })
+                            itemsToCache.forEach((item) => {
+                                if (draft.has(item.id) && draft.get(item.id) === item) return
+                                draft.set(item.id, item)
+                            })
                         })
+                        next = handle.state.getSnapshot() as Map<EntityId, T>
                     }
-                    handle.state.commit({
-                        before: existingMap,
-                        after: next,
-                        ...(changedIds.size ? { changedIds } : {})
+                } else if (itemsToCache.length) {
+                    handle.state.mutate((draft) => {
+                        itemsToCache.forEach((item) => {
+                            if (draft.has(item.id) && draft.get(item.id) === item) return
+                            draft.set(item.id, item)
+                        })
                     })
+                    next = handle.state.getSnapshot() as Map<EntityId, T>
                 }
 
                 if (mergePolicy === 'preserve-missing') {

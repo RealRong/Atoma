@@ -1,8 +1,8 @@
 import type {
     Entity,
     PartialWithId,
+    StoreDelta,
     StoreWritebackArgs,
-    StoreWritebackResult,
 } from '../../core'
 import type { EntityId } from '../../shared'
 
@@ -22,5 +22,5 @@ export type MutationEngine = Readonly<{
     writeback: <T extends Entity>(
         before: Map<EntityId, T>,
         args: StoreWritebackArgs<T>
-    ) => StoreWritebackResult<T> | null
+    ) => StoreDelta<T> | null
 }>
