@@ -8,7 +8,7 @@ export type AtomaStoreSchema<
     relations?: RelationsSchema<Entities, Name>
 } & Pick<
     StoreConfig<Entities[Name]>,
-    'indexes' | 'hooks' | 'idGenerator' | 'dataProcessor' | 'read' | 'write'
+    'indexes' | 'idGenerator' | 'dataProcessor' | 'read' | 'write'
 >
 
 export type AtomaSchema<

@@ -68,7 +68,7 @@ export function createClient<
 
     let disposed = false
     const client: AtomaClient<E, S> = {
-        stores: ((name: keyof E & string) => runtime.stores.ensure(String(name))) as AtomaClient<E, S>['stores'],
+        stores: ((name: keyof E & string) => runtime.stores.ensure(String(name)) as unknown) as AtomaClient<E, S>['stores'],
         dispose: () => {
             if (disposed) return
             disposed = true

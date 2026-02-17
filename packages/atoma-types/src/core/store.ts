@@ -1,4 +1,3 @@
-import type { Draft } from 'immer'
 import type { EntityId } from '../shared'
 import type { Entity, PartialWithId } from './entity'
 import type { OperationContext } from './operation'
@@ -30,6 +29,8 @@ export type WriteManyItemErr = {
 }
 
 export type WriteManyResult<T> = Array<WriteManyItemOk<T> | WriteManyItemErr>
+
+export type StoreUpdater<T> = (current: Readonly<T>) => T
 
 export type DeleteItem = {
     id: EntityId
@@ -64,15 +65,9 @@ export interface IndexDefinition<T> {
     }
 }
 
-export interface LifecycleHooks<T> {
-    beforeSave?: (args: { action: 'add' | 'update'; item: PartialWithId<T> }) => PartialWithId<T> | Promise<PartialWithId<T>>
-    afterSave?: (args: { action: 'add' | 'update'; item: PartialWithId<T> }) => void | Promise<void>
-}
-
 export interface StoreConfig<T> {
     idGenerator?: () => EntityId
     dataProcessor?: StoreDataProcessor<T>
-    hooks?: LifecycleHooks<T>
     indexes?: Array<IndexDefinition<T>>
     storeName?: StoreToken
     read?: Readonly<{
@@ -94,9 +89,9 @@ export interface Store<T, Relations = {}> {
 
     addOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
     addMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
-    updateOne(id: EntityId, recipe: (draft: Draft<T>) => void, options?: StoreOperationOptions): Promise<T>
+    updateOne(id: EntityId, updater: StoreUpdater<T>, options?: StoreOperationOptions): Promise<T>
     updateMany(
-        items: Array<{ id: EntityId; recipe: (draft: Draft<T>) => void }>,
+        items: Array<{ id: EntityId; updater: StoreUpdater<T> }>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>>
     deleteOne(id: EntityId, options?: StoreOperationOptions): Promise<boolean>

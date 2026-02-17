@@ -12,7 +12,7 @@ import type {
     ExecutionError,
     ExecutionOptions,
     ExecutionSpec,
-    QueryOutput,
+    ExecutionQueryOutput,
     QueryRequest,
     WriteEntry,
     WriteItemResult,
@@ -106,7 +106,7 @@ async function executeOperationQuery<T extends Entity>(args: {
     operationClient: OperationClient
     request: QueryRequest<T>
     options?: ExecutionOptions
-}): Promise<QueryOutput> {
+}): Promise<ExecutionQueryOutput<T>> {
     const { runtime, operationClient, request, options } = args
     try {
         const opId = createOpId('q', { now: runtime.now })
@@ -241,7 +241,7 @@ export function buildOperationExecutor(args: {
     operationClient: OperationClient
 }): ExecutionSpec {
     return {
-        query: async <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions): Promise<QueryOutput> => {
+        query: async <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions): Promise<ExecutionQueryOutput<T>> => {
             return await executeOperationQuery({
                 runtime: args.runtime,
                 operationClient: args.operationClient,

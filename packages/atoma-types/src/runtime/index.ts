@@ -36,7 +36,6 @@ export type {
     ReadStartArgs,
     ReadFinishArgs,
     WriteStartArgs,
-    WritePatchesArgs,
     WriteCommittedArgs,
     WriteFailedArgs,
     StoreCreatedArgs,
@@ -68,9 +67,9 @@ export type {
     WritePort,
     QueryExecutor,
     QueryRequest,
-    LocalQueryOutput,
-    RemoteQueryOutput,
-    QueryOutput,
+    ExecutionQueryLocalOutput,
+    ExecutionQueryRemoteOutput,
+    ExecutionQueryOutput,
     WriteBase,
     WriteCommit,
     Consistency,
@@ -84,7 +83,7 @@ export type {
 } from './engine/shared'
 export type { IndexEngine } from './engine/indexes'
 export type { QueryEngine, QueryState } from './engine/query'
-export type { RelationEngine } from './engine/relations'
+export type { RelationEngine, RelationStore } from './engine/relations'
 export type { MutationEngine } from './engine/mutation'
 export type { OperationEngine } from './engine/operation'
 export type { Engine } from './engine/api'

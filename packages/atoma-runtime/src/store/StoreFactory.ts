@@ -84,7 +84,6 @@ export class StoreFactory {
             config: {
                 defaultRoute: storeSchema.write?.route,
                 getAllMergePolicy: storeSchema.read?.getAllMergePolicy,
-                hooks: storeSchema.hooks,
                 idGenerator,
                 dataProcessor
             }
@@ -102,7 +101,7 @@ export class StoreFactory {
 
         const addOne: StoreEngineApi<T>['addOne'] = (item, options) => this.runtime.write.addOne(handle, item, options)
         const addMany: StoreEngineApi<T>['addMany'] = (items, options) => this.runtime.write.addMany(handle, items, options)
-        const updateOne: StoreEngineApi<T>['updateOne'] = (id, recipe, options) => this.runtime.write.updateOne(handle, id, recipe, options)
+        const updateOne: StoreEngineApi<T>['updateOne'] = (id, updater, options) => this.runtime.write.updateOne(handle, id, updater, options)
         const updateMany: StoreEngineApi<T>['updateMany'] = (items, options) => this.runtime.write.updateMany(handle, items, options)
         const deleteOne: StoreEngineApi<T>['deleteOne'] = (id, options) => this.runtime.write.deleteOne(handle, id, options)
         const deleteMany: StoreEngineApi<T>['deleteMany'] = (ids, options) => this.runtime.write.deleteMany(handle, ids, options)

@@ -1,9 +1,9 @@
-import { produce, type Draft } from 'immer'
 import type {
     Entity,
     OperationContext,
     PartialWithId,
     StoreOperationOptions,
+    StoreUpdater,
     UpsertWriteOptions,
 } from 'atoma-types/core'
 import type {
@@ -17,8 +17,7 @@ import type { WritePlanEntry } from '../types'
 import {
     prepareCreateInput,
     prepareUpdateInput,
-    resolveWriteBase,
-    runBeforeSave
+    resolveWriteBase
 } from '../utils/prepareWriteInput'
 
 function buildUpsertWriteOptions(options?: UpsertWriteOptions): WriteOptions | undefined {
@@ -71,13 +70,19 @@ export class WriteEntryFactory {
     prepareUpdateEntry = async <T extends Entity>(args: {
         handle: StoreHandle<T>
         id: EntityId
-        recipe: (draft: Draft<T>) => void
+        updater: StoreUpdater<T>
         opContext: OperationContext
         options?: StoreOperationOptions
     }): Promise<{ planEntry: WritePlanEntry<T>; output: T }> => {
         const base = await resolveWriteBase(this.runtime, args.handle, args.id, args.options)
-        const next = produce(base as T, draft => args.recipe(draft)) as PartialWithId<T>
-        const patched = { ...next, id: args.id } as PartialWithId<T>
+        const next = args.updater(base as Readonly<T>)
+        if (!next || typeof next !== 'object') {
+            throw new Error('[Atoma] updateOne: updater must return entity object')
+        }
+        if ((next as PartialWithId<T>).id !== args.id) {
+            throw new Error(`[Atoma] updateOne: updater must keep id unchanged (id=${String(args.id)})`)
+        }
+        const patched = next as PartialWithId<T>
         const prepared = await prepareUpdateInput(this.runtime, args.handle, base, patched, args.opContext)
         const outbound = await this.toOutboundValue(args.handle, prepared as T, args.opContext)
         const baseVersion = requireBaseVersion(args.id, base)
@@ -108,7 +113,7 @@ export class WriteEntryFactory {
         item: PartialWithId<T>
         opContext: OperationContext
         options?: StoreOperationOptions & UpsertWriteOptions
-    }): Promise<{ planEntry: WritePlanEntry<T>; output: T; afterSaveAction: 'add' | 'update' }> => {
+    }): Promise<{ planEntry: WritePlanEntry<T>; output: T }> => {
         const id = args.item.id
         const base = args.handle.state.getSnapshot().get(id) as PartialWithId<T> | undefined
         const merge = args.options?.merge !== false
@@ -132,8 +137,7 @@ export class WriteEntryFactory {
                 _etag: (args.item as Record<string, unknown>)._etag ?? (base as Record<string, unknown>)._etag
             } as unknown) as PartialWithId<T>
 
-            const next = await runBeforeSave(args.handle.config.hooks, candidate, 'update')
-            const processed = await this.runtime.transform.inbound(args.handle, next as T, args.opContext)
+            const processed = await this.runtime.transform.inbound(args.handle, candidate as T, args.opContext)
             if (!processed) {
                 throw new Error('[Atoma] upsertOne: transform returned empty')
             }
@@ -162,8 +166,7 @@ export class WriteEntryFactory {
                     value: prepared as T
                 }
             },
-            output: prepared as T,
-            afterSaveAction: base ? 'update' : 'add'
+            output: prepared as T
         }
     }
 

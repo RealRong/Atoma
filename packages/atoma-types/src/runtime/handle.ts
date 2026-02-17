@@ -8,7 +8,6 @@ export type StoreHandle<T extends Entity = Entity> = {
     config: Readonly<{
         defaultRoute?: ExecutionRoute
         getAllMergePolicy?: GetAllMergePolicy
-        hooks: StoreConfig<T>['hooks']
         idGenerator: StoreConfig<T>['idGenerator']
         dataProcessor: StoreConfig<T>['dataProcessor']
     }>

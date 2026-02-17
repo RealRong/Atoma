@@ -1,5 +1,4 @@
-import { applyPatches as applyImmerPatches, produceWithPatches, type Patch } from 'immer'
-import type { Entity, IndexesLike, StoreDelta, StoreWritebackArgs } from 'atoma-types/core'
+import type { Entity, IndexesLike, StoreChange, StoreDelta, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Engine, StoreSnapshot, StoreState } from 'atoma-types/runtime'
 
@@ -38,19 +37,43 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         }
     }
 
-    private collectChangedIdsFromPatches = (patches: Patch[], inversePatches: Patch[]): Set<EntityId> => {
-        const changedIds = new Set<EntityId>()
-        const collect = (list: Patch[]) => {
-            list.forEach((patch) => {
-                const root = patch.path?.[0]
-                if (typeof root !== 'string' && typeof root !== 'number') return
-                const id = String(root)
-                if (!id) return
-                changedIds.add(id)
+    private buildChanges = (before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: ReadonlySet<EntityId>): StoreChange<T>[] => {
+        const changes: StoreChange<T>[] = []
+        changedIds.forEach((id) => {
+            changes.push({
+                id,
+                ...(before.has(id) ? { before: before.get(id) as T } : {}),
+                ...(after.has(id) ? { after: after.get(id) as T } : {})
             })
-        }
-        collect(patches)
-        collect(inversePatches)
+        })
+        return changes
+    }
+
+    private collectChangedIds = (before: Map<EntityId, T>, after: Map<EntityId, T>): Set<EntityId> => {
+        const changedIds = new Set<EntityId>()
+
+        before.forEach((beforeValue, id) => {
+            if (!after.has(id)) {
+                changedIds.add(id)
+                return
+            }
+            const afterValue = after.get(id) as T
+            if (beforeValue !== afterValue) {
+                changedIds.add(id)
+            }
+        })
+
+        after.forEach((afterValue, id) => {
+            if (!before.has(id)) {
+                changedIds.add(id)
+                return
+            }
+            const beforeValue = before.get(id) as T
+            if (beforeValue !== afterValue) {
+                changedIds.add(id)
+            }
+        })
+
         return changedIds
     }
 
@@ -62,21 +85,48 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         this.notifyListeners()
     }
 
-    mutate = (recipe: (draft: Map<EntityId, T>) => void): StoreDelta<T> | null => {
-        const before = this.snapshot as Map<EntityId, T>
-        const [after, patches, inversePatches] = produceWithPatches(before, recipe)
-        const changedIds = this.collectChangedIdsFromPatches(patches, inversePatches)
-        if (before === after || !changedIds.size) return null
+    private commit = (before: Map<EntityId, T>, after: Map<EntityId, T>): StoreDelta<T> | null => {
+        if (before === after) return null
+        const changedIds = this.collectChangedIds(before, after)
+        if (!changedIds.size) return null
 
         const delta: StoreDelta<T> = {
             before,
             after,
             changedIds,
-            patches,
-            inversePatches
+            changes: this.buildChanges(before, after, changedIds)
         }
         this.applyDelta(delta)
         return delta
+    }
+
+    mutate = (recipe: (draft: Map<EntityId, T>) => void): StoreDelta<T> | null => {
+        const before = this.snapshot as Map<EntityId, T>
+        const draft = new Map(before)
+        recipe(draft)
+        return this.commit(before, draft)
+    }
+
+    applyChanges = (changes: ReadonlyArray<StoreChange<T>>): StoreDelta<T> | null => {
+        if (!changes.length) return null
+
+        const before = this.snapshot as Map<EntityId, T>
+        const next = new Map(before)
+        changes.forEach((change) => {
+            const id = change.id
+            const target = change.after
+            if (target === undefined) {
+                if (!next.has(id)) return
+                next.delete(id)
+                return
+            }
+            const existing = next.get(id)
+            const preserved = this.engine.mutation.preserveRef(existing, target)
+            if (next.has(id) && existing === preserved) return
+            next.set(id, preserved)
+        })
+
+        return this.commit(before, next)
     }
 
     applyWriteback = (args: StoreWritebackArgs<T>): StoreDelta<T> | null => {
@@ -86,29 +136,5 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
 
         this.applyDelta(result)
         return result
-    }
-
-    applyPatches = (patches: Patch[]): StoreDelta<T> | null => {
-        if (!patches.length) return null
-
-        const before = this.snapshot as Map<EntityId, T>
-        const [after, nextPatches, inversePatches] = produceWithPatches(
-            before,
-            ((draft: Map<EntityId, T>) => {
-                return applyImmerPatches(draft as unknown as Map<EntityId, T>, patches) as Map<EntityId, T>
-            }) as any
-        )
-        const changedIds = this.collectChangedIdsFromPatches(nextPatches, inversePatches)
-        if (before === after || !changedIds.size) return null
-
-        const delta: StoreDelta<T> = {
-            before,
-            after,
-            changedIds,
-            patches: nextPatches,
-            inversePatches
-        }
-        this.applyDelta(delta)
-        return delta
     }
 }

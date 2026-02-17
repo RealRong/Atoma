@@ -1,9 +1,10 @@
-import type { Patch } from 'immer'
 import type {
+    ChangeDirection,
     OperationContext,
     Entity,
     Query,
     QueryResult,
+    StoreChange,
     Store,
     StoreToken,
     StoreDelta
@@ -33,10 +34,10 @@ export type PluginRuntime = Readonly<{
             storeName: StoreToken
             query: Query<T>
         }) => QueryResult<T>
-        applyPatches: <T extends Entity>(args: {
+        applyChanges: <T extends Entity>(args: {
             storeName: StoreToken
-            patches: Patch[]
-            inversePatches: Patch[]
+            changes: ReadonlyArray<StoreChange<T>>
+            direction: ChangeDirection
             opContext: OperationContext
         }) => Promise<void>
         applyWriteback: <T extends Entity>(args: {

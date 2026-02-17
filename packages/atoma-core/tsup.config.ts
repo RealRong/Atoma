@@ -15,7 +15,6 @@ export default defineConfig({
     clean: true,
     treeshake: true,
     external: [
-        'atoma-types',
-        'immer'
+        'atoma-types'
     ]
 })

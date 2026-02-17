@@ -1,19 +1,17 @@
-import type { Patch } from 'immer'
-import type { OperationContext } from 'atoma-types/core'
+import type { ChangeDirection, Entity, OperationContext, StoreChange } from 'atoma-types/core'
 import { createOperationContext } from 'atoma-core/operation'
 import type { ActionRecord, ChangeRecord, UndoStack } from './types'
 
 export type HistoryRecordArgs = Readonly<{
     storeName: string
-    patches: Patch[]
-    inversePatches: Patch[]
+    changes: StoreChange<Entity>[]
     opContext: OperationContext
 }>
 
 export type HistoryApplyArgs = Readonly<{
     storeName: string
-    patches: Patch[]
-    inversePatches: Patch[]
+    changes: StoreChange<Entity>[]
+    direction: ChangeDirection
     opContext: OperationContext
 }>
 
@@ -34,8 +32,7 @@ export class HistoryManager {
     record(args: HistoryRecordArgs) {
         this.history.recordChange({
             storeName: args.storeName,
-            patches: args.patches,
-            inversePatches: args.inversePatches,
+            changes: args.changes,
             ctx: args.opContext
         })
     }
@@ -71,8 +68,8 @@ export class HistoryManager {
                 const change = action.changes[i]
                 await args.apply({
                     storeName: change.storeName,
-                    patches: change.inversePatches,
-                    inversePatches: change.patches,
+                    changes: change.changes,
+                    direction: 'backward',
                     opContext
                 })
             }
@@ -99,8 +96,8 @@ export class HistoryManager {
                 const change = action.changes[i]
                 await args.apply({
                     storeName: change.storeName,
-                    patches: change.patches,
-                    inversePatches: change.inversePatches,
+                    changes: change.changes,
+                    direction: 'forward',
                     opContext
                 })
             }

@@ -1,5 +1,6 @@
 import type {
     Entity,
+    StoreChange,
     StoreWritebackArgs,
 } from 'atoma-types/core'
 import type {
@@ -16,7 +17,6 @@ import type {
     WritePlan,
     WritePlanEntry,
     WriteCommitResult,
-    WritePatchPayload
 } from '../types'
 
 function applyOptimisticState<T extends Entity>(args: {
@@ -32,16 +32,10 @@ function applyOptimisticState<T extends Entity>(args: {
             before,
             after: before,
             changedIds: new Set<EntityId>(),
-            patches: [],
-            inversePatches: []
+            changes: []
         }
     }
 
-    const changedIds = new Set<EntityId>(
-        plan
-            .map((entry) => entry.optimistic.entityId)
-            .filter((id): id is EntityId => id !== undefined)
-    )
     const optimistic = handle.state.mutate((draft) => {
         for (const planEntry of plan) {
             const entityId = planEntry.optimistic.entityId
@@ -61,31 +55,70 @@ function applyOptimisticState<T extends Entity>(args: {
             draft.set(id, preserved)
         }
     })
+
     if (!optimistic) {
         return {
             before,
             after: before,
-            changedIds,
-            patches: [],
-            inversePatches: []
+            changedIds: new Set<EntityId>(),
+            changes: []
         }
     }
 
     return {
         before,
         after: optimistic.after,
-        changedIds,
-        patches: optimistic.patches,
-        inversePatches: optimistic.inversePatches
+        changedIds: optimistic.changedIds,
+        changes: optimistic.changes
     }
+}
+
+function invertChanges<T extends Entity>(changes: ReadonlyArray<StoreChange<T>>): StoreChange<T>[] {
+    return changes.map((change) => ({
+        id: change.id,
+        ...(change.after !== undefined ? { before: change.after } : {}),
+        ...(change.before !== undefined ? { after: change.before } : {})
+    }))
+}
+
+function mergeChanges<T extends Entity>(...groups: ReadonlyArray<ReadonlyArray<StoreChange<T>>>): StoreChange<T>[] {
+    const order: EntityId[] = []
+    const merged = new Map<EntityId, { before: T | undefined; after: T | undefined }>()
+
+    groups.forEach((group) => {
+        group.forEach((change) => {
+            const id = change.id
+            const current = merged.get(id)
+            if (!current) {
+                order.push(id)
+                merged.set(id, {
+                    before: change.before,
+                    after: change.after
+                })
+                return
+            }
+
+            current.after = change.after
+        })
+    })
+
+    return order.map((id) => {
+        const change = merged.get(id)
+        if (!change) return { id } as StoreChange<T>
+        return {
+            id,
+            ...(change.before !== undefined ? { before: change.before } : {}),
+            ...(change.after !== undefined ? { after: change.after } : {})
+        }
+    })
 }
 
 function rollbackOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
     optimisticState: OptimisticState<T>
 }) {
-    if (!args.optimisticState.inversePatches.length) return
-    args.handle.state.applyPatches(args.optimisticState.inversePatches)
+    if (!args.optimisticState.changes.length) return
+    args.handle.state.applyChanges(invertChanges(args.optimisticState.changes))
 }
 
 async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
@@ -195,57 +228,38 @@ function applyWritebackResult<T extends Entity>(args: {
     handle: WriteCommitRequest<T>['handle']
     writeback?: StoreWritebackArgs<T>
 }): {
-    patchPayload: WritePatchPayload
+    changes: ReadonlyArray<StoreChange<T>>
 } {
     if (!args.writeback) {
         return {
-            patchPayload: null
+            changes: []
         }
     }
 
     const writeback = args.handle.state.applyWriteback(args.writeback)
     if (!writeback) {
         return {
-            patchPayload: null
+            changes: []
         }
     }
 
     return {
-        patchPayload: (!writeback.patches.length && !writeback.inversePatches.length)
-            ? null
-            : {
-                patches: writeback.patches,
-                inversePatches: writeback.inversePatches
-            }
+        changes: writeback.changes
     }
-}
-
-function mergePatchPayload(...payloads: ReadonlyArray<WritePatchPayload>): WritePatchPayload {
-    let merged: WritePatchPayload = null
-    payloads.forEach((payload) => {
-        if (!payload) return
-        merged = !merged
-            ? payload
-            : {
-                patches: [...merged.patches, ...payload.patches],
-                inversePatches: [...payload.inversePatches, ...merged.inversePatches]
-            }
-    })
-    return merged
 }
 
 async function runWriteTransaction<T extends Entity>(args: {
     request: WriteCommitRequest<T>
     primaryPlan?: WritePlanEntry<T>
     entries: ReadonlyArray<WriteEntry>
-}): Promise<{ output?: T; patchPayload: WritePatchPayload }> {
+}): Promise<{ output?: T; changes: ReadonlyArray<StoreChange<T>> }> {
     const { request, primaryPlan, entries } = args
     const { runtime, handle, opContext, plan } = request
 
     if (!entries.length) {
         return {
             output: fallbackPrimaryOutput(primaryPlan),
-            patchPayload: null
+            changes: []
         }
     }
 
@@ -280,7 +294,7 @@ async function runWriteTransaction<T extends Entity>(args: {
 
     return {
         output: resolved.output ?? fallbackPrimaryOutput(primaryPlan),
-        patchPayload: writebackResult.patchPayload
+        changes: writebackResult.changes
     }
 }
 
@@ -321,15 +335,7 @@ export class WriteCommitFlow {
             })
 
             return {
-                patchPayload: args.rawPatchPayload ?? mergePatchPayload(
-                    (optimisticState.patches.length || optimisticState.inversePatches.length)
-                        ? {
-                            patches: optimisticState.patches,
-                            inversePatches: optimisticState.inversePatches
-                        }
-                        : null,
-                    transaction.patchPayload
-                ),
+                changes: mergeChanges(optimisticState.changes, transaction.changes),
                 ...(transaction.output !== undefined ? { output: transaction.output } : {})
             }
         } catch (error) {

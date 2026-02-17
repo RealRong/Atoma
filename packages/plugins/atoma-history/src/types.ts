@@ -1,5 +1,4 @@
-import type { Patch } from 'immer'
-import type { OperationContext } from 'atoma-types/core'
+import type { Entity, OperationContext, StoreChange } from 'atoma-types/core'
 
 export interface PatchMetadata {
     storeName: string
@@ -11,8 +10,7 @@ export interface PatchMetadata {
 }
 
 export interface HistoryChange {
-    patches: Patch[]
-    inversePatches: Patch[]
+    changes: StoreChange<Entity>[]
     storeName: string
     databaseName?: string
     timestamp: number
@@ -20,8 +18,7 @@ export interface HistoryChange {
 
 export type ChangeRecord = Readonly<{
     storeName: string
-    patches: Patch[]
-    inversePatches: Patch[]
+    changes: StoreChange<Entity>[]
     ctx: OperationContext
 }>
 

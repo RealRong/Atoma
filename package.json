@@ -26,7 +26,6 @@
     },
     "keywords": [
         "react",
-        "immer",
         "state-management",
         "atomic",
         "persistence",
@@ -39,7 +38,6 @@
     "license": "MIT",
     "peerDependencies": {
         "@prisma/client": "^5.0.0",
-        "immer": "^9.0.0 || ^10.0.0",
         "typeorm": "^0.3.20"
     },
     "peerDependenciesMeta": {
@@ -65,7 +63,6 @@
         "@vitejs/plugin-react": "^5.1.2",
         "concurrently": "^9.1.2",
         "dexie": "^4.0.0",
-        "immer": "^9.0.0 || ^10.0.0",
         "jsdom": "^25.0.0",
         "mitt": "^3.0.1",
         "p-retry": "^7.1.1",

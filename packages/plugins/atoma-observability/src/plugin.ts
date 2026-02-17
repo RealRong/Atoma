@@ -6,7 +6,6 @@ import type {
     ReadStartArgs,
     WriteCommittedArgs,
     WriteFailedArgs,
-    WritePatchesArgs,
     WriteStartArgs,
 } from 'atoma-types/runtime'
 import type { SnapshotQuery, Source, StreamEvent } from 'atoma-types/devtools'
@@ -249,21 +248,13 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                             entryCount
                         })
                     },
-                    onPatches: <T extends Entity>(args: WritePatchesArgs<T>) => {
-                        const { handle, opContext, patches } = args
-                        const entry = getWriteContext(String(handle.storeName), opContext.actionId)
-                        entry.ctx.emit(`${prefix}:write:patches`, {
-                            storeName: entry.storeName,
-                            actionId: opContext.actionId,
-                            patchCount: Array.isArray(patches) ? patches.length : 0
-                        })
-                    },
                     onCommitted: <T extends Entity>(args: WriteCommittedArgs<T>) => {
                         const { handle, opContext } = args
                         const entry = getWriteContext(String(handle.storeName), opContext.actionId)
                         entry.ctx.emit(`${prefix}:write:finish`, {
                             storeName: entry.storeName,
-                            actionId: opContext.actionId
+                            actionId: opContext.actionId,
+                            changeCount: Array.isArray(args.changes) ? args.changes.length : 0
                         })
                         releaseWriteContext(opContext.actionId)
                     },

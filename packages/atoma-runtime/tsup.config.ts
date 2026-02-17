@@ -15,7 +15,6 @@ export default defineConfig({
         'atoma-shared',
         'atoma-observability',
         'atoma-types',
-        'atoma-types/internal',
-        'immer'
+        'atoma-types/internal'
     ]
 })

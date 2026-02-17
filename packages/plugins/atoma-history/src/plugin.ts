@@ -1,9 +1,8 @@
 import type { AtomaHistory } from 'atoma-types/client'
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import type { OperationContext } from 'atoma-types/core'
+import type { ChangeDirection, Entity, OperationContext, StoreChange } from 'atoma-types/core'
 import type { CommandResult, Source, StreamEvent } from 'atoma-types/devtools'
 import { HUB_TOKEN } from 'atoma-types/devtools'
-import type { Patch } from 'immer'
 import { HistoryManager } from './history-manager'
 
 const toScope = (scope?: string) => String(scope ?? 'default')
@@ -51,14 +50,14 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
 
             const apply = async (args: {
                 storeName: string
-                patches: Patch[]
-                inversePatches: Patch[]
+                changes: StoreChange<Entity>[]
+                direction: ChangeDirection
                 opContext: OperationContext
             }) => {
-                await ctx.runtime.stores.applyPatches({
+                await ctx.runtime.stores.applyChanges({
                     storeName: args.storeName,
-                    patches: args.patches,
-                    inversePatches: args.inversePatches,
+                    changes: args.changes,
+                    direction: args.direction,
                     opContext: args.opContext
                 })
             }
@@ -88,11 +87,11 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
 
             const stopEvents = ctx.events.register({
                 write: {
-                    onPatches: (args) => {
+                    onCommitted: (args) => {
+                        if (!args.changes?.length) return
                         manager.record({
                             storeName: String(args.handle.storeName),
-                            patches: args.patches,
-                            inversePatches: args.inversePatches,
+                            changes: args.changes as StoreChange<Entity>[],
                             opContext: args.opContext
                         })
                         emitChanged()

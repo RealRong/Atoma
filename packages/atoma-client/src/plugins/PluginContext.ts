@@ -1,9 +1,10 @@
-import type { Patch } from 'immer'
 import type {
+    ChangeDirection,
     Entity,
     OperationContext,
     Query,
     QueryResult,
+    StoreChange,
     Store,
     StoreToken,
     StoreDelta
@@ -54,22 +55,22 @@ export class PluginContext implements PluginContextType {
                         query
                     }) as QueryResult<T>
                 },
-                applyPatches: async ({
+                applyChanges: async <T extends Entity>({
                     storeName,
-                    patches,
-                    inversePatches,
+                    changes,
+                    direction,
                     opContext
                 }: {
                     storeName: StoreToken
-                    patches: Patch[]
-                    inversePatches: Patch[]
+                    changes: ReadonlyArray<StoreChange<T>>
+                    direction: ChangeDirection
                     opContext: OperationContext
                 }) => {
-                    const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.stores.applyPatches')
-                    await runtime.write.patches(
+                    const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.stores.applyChanges')
+                    await runtime.write.applyChanges(
                         handle,
-                        patches,
-                        inversePatches,
+                        changes,
+                        direction,
                         { opContext }
                     )
                 },

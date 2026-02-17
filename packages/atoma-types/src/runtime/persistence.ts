@@ -1,4 +1,4 @@
-import type { Entity, ExecutionRoute, OperationContext, Query } from '../core'
+import type { Entity, ExecutionRoute, OperationContext, PageInfo, Query } from '../core'
 import type { EntityId, Version } from '../shared'
 import type { StoreHandle } from './handle'
 
@@ -128,24 +128,26 @@ export type QueryRequest<T extends Entity> = Readonly<{
     query: Query<T>
 }>
 
-export type LocalQueryOutput = Readonly<{
+export type ExecutionQueryLocalOutput<T extends Entity = Entity> = Readonly<{
     source: 'local'
-    data: unknown[]
-    pageInfo?: unknown
+    data: T[]
+    pageInfo?: PageInfo
 }>
 
-export type RemoteQueryOutput = Readonly<{
+export type ExecutionQueryRemoteOutput = Readonly<{
     source: 'remote'
     data: unknown[]
-    pageInfo?: unknown
+    pageInfo?: PageInfo
 }>
 
-export type QueryOutput = LocalQueryOutput | RemoteQueryOutput
+export type ExecutionQueryOutput<T extends Entity = Entity> =
+    | ExecutionQueryLocalOutput<T>
+    | ExecutionQueryRemoteOutput
 
 export type QueryExecutor = <T extends Entity>(
     request: QueryRequest<T>,
     options?: ExecutionOptions
-) => Promise<QueryOutput>
+) => Promise<ExecutionQueryOutput<T>>
 
 export type WriteBase = 'cache' | 'fetch'
 

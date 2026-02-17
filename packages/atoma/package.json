@@ -24,8 +24,5 @@
     "dependencies": {
         "atoma-client": "workspace:*",
         "atoma-types": "workspace:*"
-    },
-    "peerDependencies": {
-        "immer": "^9.0.0 || ^10.0.0"
     }
 }

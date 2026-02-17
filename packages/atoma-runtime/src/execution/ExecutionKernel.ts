@@ -6,7 +6,7 @@ import type {
     ExecutionKernel as ExecutionKernelType,
     ExecutionOptions,
     QueryRequest,
-    QueryOutput,
+    ExecutionQueryOutput,
     RouteId,
     WriteConsistency,
     WriteRequest,
@@ -191,7 +191,7 @@ export class ExecutionKernel implements ExecutionKernelType {
         }
     }
 
-    query = async <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions): Promise<QueryOutput> => {
+    query = async <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions): Promise<ExecutionQueryOutput<T>> => {
         return await this.executePhase({
             phase: 'query',
             request,

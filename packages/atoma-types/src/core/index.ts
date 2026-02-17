@@ -63,12 +63,12 @@ export type {
     WriteManyItemOk,
     WriteManyItemErr,
     WriteManyResult,
+    StoreUpdater,
     DeleteItem,
     StoreOperationOptions,
     StoreReadOptions,
     IndexType,
     IndexDefinition,
-    LifecycleHooks,
     StoreConfig,
     StoreToken,
     ExecutionRoute,
@@ -91,6 +91,8 @@ export type {
 } from './indexes'
 
 export type {
+    StoreChange,
+    ChangeDirection,
     StoreWritebackArgs,
     StoreDelta,
 } from './writeback'

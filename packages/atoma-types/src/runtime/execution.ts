@@ -2,7 +2,7 @@ import type { Entity, ExecutionRoute } from '../core'
 import type {
     ExecutionOptions,
     QueryRequest,
-    QueryOutput,
+    ExecutionQueryOutput,
     WriteRequest,
     WriteOutput,
     Consistency,
@@ -104,7 +104,7 @@ export type ExecutionQueryEvent = Readonly<
         resolution: ExecutionResolution
         request: QueryRequest<any>
         options?: ExecutionOptions
-        output: QueryOutput
+        output: ExecutionQueryOutput<any>
     }
     | {
         type: 'query.failed'
@@ -120,7 +120,7 @@ export type ExecutionQueryEvent = Readonly<
 export type ExecutionEvent = ExecutionWriteEvent | ExecutionQueryEvent
 
 export type ExecutionSpec = Readonly<{
-    query?: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<QueryOutput>
+    query?: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<ExecutionQueryOutput<T>>
     write?: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
     consistency?: Consistency
 }>
@@ -129,6 +129,6 @@ export type ExecutionKernel = Readonly<{
     apply: (bundle: ExecutionBundle) => () => void
     resolveConsistency: (route?: RouteId) => WriteConsistency
     subscribe: (listener: (event: ExecutionEvent) => void) => () => void
-    query: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<QueryOutput>
+    query: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<ExecutionQueryOutput<T>>
     write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
 }>

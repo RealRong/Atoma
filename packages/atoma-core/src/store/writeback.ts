@@ -1,10 +1,10 @@
-import { produceWithPatches, type Draft } from 'immer'
 import type {
     Entity,
+    StoreChange,
     StoreDelta,
     StoreWritebackArgs,
 } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { EntityId } from 'atoma-types/shared'
 import { preserveRef } from './mutation'
 
 type VersionedEntity = Entity & {
@@ -22,56 +22,89 @@ export function writeback<T extends Entity>(
     if (!upserts.length && !deletes.length && !versionUpdates.length) return null
 
     const changedIds = new Set<EntityId>()
-    const versionByKey = new Map<EntityId, number>()
+    let after = before
+    let writable = false
+    const changesById = new Map<EntityId, { before?: T; after?: T }>()
+    const ensureWritable = (): Map<EntityId, T> => {
+        if (!writable) {
+            after = new Map(before)
+            writable = true
+        }
+        return after
+    }
+    const markBefore = (id: EntityId, value: T | undefined) => {
+        if (changesById.has(id)) return
+        changesById.set(id, { before: value })
+    }
+    const markAfter = (id: EntityId, value: T | undefined) => {
+        const entry = changesById.get(id)
+        if (entry) {
+            entry.after = value
+            return
+        }
+        changesById.set(id, { after: value })
+    }
+
+    deletes.forEach((id) => {
+        if (!after.has(id)) return
+        markBefore(id, after.get(id))
+        ensureWritable().delete(id)
+        changedIds.add(id)
+        markAfter(id, undefined)
+    })
+
+    upserts.forEach((item) => {
+        if (!item) return
+        const id = item.id
+        if (id === undefined || id === null) return
+
+        const existing = after.get(id)
+        const next = existing
+            ? preserveRef(existing as T, item)
+            : item
+        if (after.has(id) && existing === next) return
+
+        markBefore(id, existing)
+        ensureWritable().set(id, next)
+        changedIds.add(id)
+        markAfter(id, next)
+    })
+
     versionUpdates.forEach((value) => {
         if (!value) return
-        versionByKey.set(value.key, value.version)
+        const key = value.key
+        const version = value.version
+        const current = after.get(key)
+        if (!current || typeof current !== 'object') return
+        if ((current as VersionedEntity).version === version) return
+
+        const next = {
+            ...current,
+            version
+        } as T
+        markBefore(key, current)
+        ensureWritable().set(key, next)
+        changedIds.add(key)
+        markAfter(key, next)
     })
-    const [after, patches, inversePatches] = produceWithPatches(
-        before,
-        (draft) => {
-            deletes.forEach((id) => {
-                if (!draft.has(id)) return
-                draft.delete(id)
-                changedIds.add(id)
-            })
 
-            upserts.forEach((item) => {
-                if (!item) return
-                const id = item.id
-                if (id === undefined || id === null) return
+    if (!changedIds.size) return null
 
-                const existing = draft.get(id)
-                const next = existing
-                    ? preserveRef(existing as unknown as T, item)
-                    : item
-                if (draft.has(id) && existing === next) return
-
-                draft.set(id, next as Draft<T>)
-                changedIds.add(id)
-            })
-
-            versionByKey.forEach((version, key) => {
-                const current = draft.get(key)
-                if (!current || typeof current !== 'object') return
-
-                if ((current as VersionedEntity).version === version) return
-                draft.set(key, {
-                    ...current,
-                    version
-                })
-                changedIds.add(key)
-            })
-        }
-    )
-
-    if (!changedIds.size || (!patches.length && !inversePatches.length)) return null
+    const changes: StoreChange<T>[] = []
+    changedIds.forEach((id) => {
+        const change = changesById.get(id)
+        if (!change) return
+        changes.push({
+            id,
+            ...(change.before !== undefined ? { before: change.before } : {}),
+            ...(change.after !== undefined ? { after: change.after } : {})
+        })
+    })
 
     return {
         before,
         after,
         changedIds,
-        patches,
-        inversePatches
+        changes
     }
 }

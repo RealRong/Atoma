@@ -12,7 +12,6 @@ const STORE_EVENT_NAMES: StoreEventName[] = [
     'readStart',
     'readFinish',
     'writeStart',
-    'writePatches',
     'writeCommitted',
     'writeFailed',
     'storeCreated'
@@ -31,7 +30,6 @@ function createHandlerSets(): HandlerSetMap {
         readStart: new Set(),
         readFinish: new Set(),
         writeStart: new Set(),
-        writePatches: new Set(),
         writeCommitted: new Set(),
         writeFailed: new Set(),
         storeCreated: new Set()
@@ -43,8 +41,7 @@ export class StoreEventRegistry implements StoreEventRegistryType {
 
     get has() {
         return {
-            event: (name: StoreEventName) => this.handlers[name].size > 0,
-            writePatches: this.handlers.writePatches.size > 0
+            event: (name: StoreEventName) => this.handlers[name].size > 0
         }
     }
 
@@ -70,7 +67,6 @@ export class StoreEventRegistry implements StoreEventRegistryType {
         readStart: <T extends Entity>(args: StoreEventPayloadMap<T>['readStart']) => this.emitEvent('readStart', args),
         readFinish: <T extends Entity>(args: StoreEventPayloadMap<T>['readFinish']) => this.emitEvent('readFinish', args),
         writeStart: <T extends Entity>(args: StoreEventPayloadMap<T>['writeStart']) => this.emitEvent('writeStart', args),
-        writePatches: <T extends Entity>(args: StoreEventPayloadMap<T>['writePatches']) => this.emitEvent('writePatches', args),
         writeCommitted: <T extends Entity>(args: StoreEventPayloadMap<T>['writeCommitted']) => this.emitEvent('writeCommitted', args),
         writeFailed: <T extends Entity>(args: StoreEventPayloadMap<T>['writeFailed']) => this.emitEvent('writeFailed', args),
         storeCreated: <T extends Entity>(args: StoreEventPayloadMap<T>['storeCreated']) => this.emitEvent('storeCreated', args)
@@ -81,7 +77,6 @@ export class StoreEventRegistry implements StoreEventRegistryType {
             readStart: events.read?.onStart,
             readFinish: events.read?.onFinish,
             writeStart: events.write?.onStart,
-            writePatches: events.write?.onPatches,
             writeCommitted: events.write?.onCommitted,
             writeFailed: events.write?.onFailed,
             storeCreated: events.store?.onCreated

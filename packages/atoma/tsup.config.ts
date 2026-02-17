@@ -19,7 +19,6 @@ export default defineConfig({
         'atoma-shared',
         'atoma-observability',
         'react',
-        'immer',
         'lodash'
     ]
 })

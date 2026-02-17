@@ -1,5 +1,4 @@
-import type { Patch } from 'immer'
-import type { Entity, OperationContext, Query, QueryResult, StoreToken, ExecutionRoute } from '../core'
+import type { Entity, OperationContext, Query, QueryResult, StoreToken, ExecutionRoute, StoreChange } from '../core'
 import type { WriteEntry } from './persistence'
 import type { StoreHandle } from './handle'
 
@@ -8,7 +7,7 @@ export type WriteEventSource =
     | 'updateOne'
     | 'upsertOne'
     | 'deleteOne'
-    | 'patches'
+    | 'applyChanges'
 
 export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
     readStart: Readonly<{
@@ -29,19 +28,13 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
         route?: ExecutionRoute
         writeEntries: ReadonlyArray<WriteEntry>
     }>
-    writePatches: Readonly<{
-        handle: StoreHandle<T>
-        opContext: OperationContext
-        patches: Patch[]
-        inversePatches: Patch[]
-        source: WriteEventSource
-    }>
     writeCommitted: Readonly<{
         handle: StoreHandle<T>
         opContext: OperationContext
         route?: ExecutionRoute
         writeEntries: ReadonlyArray<WriteEntry>
         result?: unknown
+        changes?: ReadonlyArray<StoreChange<T>>
     }>
     writeFailed: Readonly<{
         handle: StoreHandle<T>
@@ -59,7 +52,6 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
 export type ReadStartArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['readStart']
 export type ReadFinishArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['readFinish']
 export type WriteStartArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['writeStart']
-export type WritePatchesArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['writePatches']
 export type WriteCommittedArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['writeCommitted']
 export type WriteFailedArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['writeFailed']
 export type StoreCreatedArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['storeCreated']
@@ -81,7 +73,6 @@ export type StoreEvents = Readonly<{
     }>
     write?: Readonly<{
         onStart?: StoreEventHandlers['writeStart']
-        onPatches?: StoreEventHandlers['writePatches']
         onCommitted?: StoreEventHandlers['writeCommitted']
         onFailed?: StoreEventHandlers['writeFailed']
     }>
@@ -94,7 +85,6 @@ export type StoreEventRegistry = Readonly<{
     register: (events: StoreEvents) => () => void
     has: Readonly<{
         event: (name: StoreEventName) => boolean
-        writePatches: boolean
     }>
     emit: StoreEventEmit
 }>

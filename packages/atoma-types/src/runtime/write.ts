@@ -1,8 +1,10 @@
-import type { Draft, Patch } from 'immer'
 import type {
+    ChangeDirection,
     Entity,
     PartialWithId,
+    StoreChange,
     StoreOperationOptions,
+    StoreUpdater,
     UpsertWriteOptions,
     WriteManyResult,
 } from '../core'
@@ -15,12 +17,12 @@ export type Write = Readonly<{
     updateOne: <T extends Entity>(
         handle: StoreHandle<T>,
         id: EntityId,
-        recipe: (draft: Draft<T>) => void,
+        updater: StoreUpdater<T>,
         options?: StoreOperationOptions
     ) => Promise<T>
     updateMany: <T extends Entity>(
         handle: StoreHandle<T>,
-        items: Array<{ id: EntityId; recipe: (draft: Draft<T>) => void }>,
+        items: Array<{ id: EntityId; updater: StoreUpdater<T> }>,
         options?: StoreOperationOptions
     ) => Promise<WriteManyResult<T>>
     upsertOne: <T extends Entity>(
@@ -39,10 +41,10 @@ export type Write = Readonly<{
         ids: EntityId[],
         options?: StoreOperationOptions
     ) => Promise<WriteManyResult<boolean>>
-    patches: <T extends Entity>(
+    applyChanges: <T extends Entity>(
         handle: StoreHandle<T>,
-        patches: Patch[],
-        inversePatches: Patch[],
+        changes: ReadonlyArray<StoreChange<T>>,
+        direction: ChangeDirection,
         options?: StoreOperationOptions
     ) => Promise<void>
 }>

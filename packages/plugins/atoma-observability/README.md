@@ -21,7 +21,7 @@ The plugin registers `ctx.events.register(...)` and listens to:
 
 - `store.onCreated`
 - `read.onStart/onFinish`
-- `write.onStart/onPatches/onCommitted/onFailed`
+- `write.onStart/onCommitted/onFailed`
 
 It then uses `StoreObservability` to emit debug events (default prefix: `obs:*`).
 When `injectTraceMeta` is enabled (default), the plugin also writes `traceId/requestId` into `op.meta` for ops it can associate with a trace.

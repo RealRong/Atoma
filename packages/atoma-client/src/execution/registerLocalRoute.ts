@@ -1,6 +1,6 @@
 import type { Entity, ExecutionRoute } from 'atoma-types/core'
 import type {
-    QueryOutput,
+    ExecutionQueryOutput,
     QueryRequest,
     WriteItemResult,
     WriteOutput,
@@ -16,7 +16,7 @@ export function registerLocalRoute(runtime: Runtime): () => void {
         id: 'builtin.direct',
         executors: {
             [EXECUTOR_ID]: {
-                query: async <T extends Entity>({ handle, query }: QueryRequest<T>): Promise<QueryOutput> => {
+                query: async <T extends Entity>({ handle, query }: QueryRequest<T>): Promise<ExecutionQueryOutput<T>> => {
                     const { data, pageInfo } = runtime.engine.query.evaluate({
                         state: handle.state,
                         query

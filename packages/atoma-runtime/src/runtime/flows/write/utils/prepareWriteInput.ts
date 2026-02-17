@@ -1,4 +1,4 @@
-import type { Entity, LifecycleHooks, OperationContext, PartialWithId, StoreOperationOptions } from 'atoma-types/core'
+import type { Entity, OperationContext, PartialWithId, StoreOperationOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 
@@ -8,8 +8,7 @@ export async function prepareCreateInput<T extends Entity>(
     item: Partial<T>,
     opContext?: OperationContext
 ): Promise<PartialWithId<T>> {
-    let initialized = runtime.engine.mutation.init<T>(item, handle.config.idGenerator)
-    initialized = await runBeforeSave(handle.config.hooks, initialized, 'add')
+    const initialized = runtime.engine.mutation.init<T>(item, handle.config.idGenerator)
     const processed = await runtime.transform.inbound(handle, initialized as T, opContext)
     return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareCreateInput')
 }
@@ -21,8 +20,7 @@ export async function prepareUpdateInput<T extends Entity>(
     patch: PartialWithId<T>,
     opContext?: OperationContext
 ): Promise<PartialWithId<T>> {
-    let mergedInput = runtime.engine.mutation.merge(base, patch)
-    mergedInput = await runBeforeSave(handle.config.hooks, mergedInput, 'update')
+    const mergedInput = runtime.engine.mutation.merge(base, patch)
     const processed = await runtime.transform.inbound(handle, mergedInput as T, opContext)
     return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareUpdateInput')
 }
@@ -67,19 +65,6 @@ export async function resolveWriteBase<T extends Entity>(
         throw new Error(`Item with id ${id} not found`)
     }
     return processed as PartialWithId<T>
-}
-
-export async function runBeforeSave<T>(hooks: LifecycleHooks<T> | undefined, item: PartialWithId<T>, action: 'add' | 'update'): Promise<PartialWithId<T>> {
-    if (hooks?.beforeSave) {
-        return await hooks.beforeSave({ action, item })
-    }
-    return item
-}
-
-export async function runAfterSave<T>(hooks: LifecycleHooks<T> | undefined, item: PartialWithId<T>, action: 'add' | 'update'): Promise<void> {
-    if (hooks?.afterSave) {
-        await hooks.afterSave({ action, item })
-    }
 }
 
 function requireProcessed<T>(value: T | undefined, tag: string): T {
