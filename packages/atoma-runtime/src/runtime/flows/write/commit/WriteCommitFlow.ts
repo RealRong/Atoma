@@ -19,6 +19,23 @@ import type {
     WriteCommitResult,
 } from '../types'
 
+type CommitSession<T extends Entity> = Readonly<{
+    runtime: WriteCommitRequest<T>['runtime']
+    handle: WriteCommitRequest<T>['handle']
+    opContext: WriteCommitRequest<T>['opContext']
+    route?: WriteCommitRequest<T>['route']
+    signal?: WriteCommitRequest<T>['signal']
+}>
+
+function createEmptyOptimisticState<T extends Entity>(before: Map<EntityId, T>): OptimisticState<T> {
+    return {
+        before,
+        after: before,
+        changedIds: new Set<EntityId>(),
+        changes: []
+    }
+}
+
 function applyOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
     plan: WritePlan<T>
@@ -28,41 +45,31 @@ function applyOptimisticState<T extends Entity>(args: {
     const { handle, plan, consistency, preserve } = args
     const before = handle.state.getSnapshot() as Map<EntityId, T>
     if (consistency.commit !== 'optimistic' || !plan.length) {
-        return {
-            before,
-            after: before,
-            changedIds: new Set<EntityId>(),
-            changes: []
-        }
+        return createEmptyOptimisticState(before)
     }
 
     const optimistic = handle.state.mutate((draft) => {
-        for (const planEntry of plan) {
-            const entityId = planEntry.optimistic.entityId
-            if (!entityId) continue
+        plan.forEach(({ entry, optimistic: optimisticEntry }) => {
+            const id = optimisticEntry.entityId
+            if (!id) return
 
-            if (planEntry.entry.action === 'delete') {
-                draft.delete(entityId as EntityId)
-                continue
+            if (entry.action === 'delete') {
+                draft.delete(id)
+                return
             }
 
-            if (planEntry.optimistic.value === undefined) continue
+            const value = optimisticEntry.value
+            if (value === undefined) return
 
-            const id = entityId as EntityId
-            const current = draft.get(id) as T | undefined
-            const preserved = preserve(current, planEntry.optimistic.value as T)
-            if (draft.has(id) && current === preserved) continue
+            const current = draft.get(id)
+            const preserved = preserve(current, value)
+            if (draft.has(id) && current === preserved) return
             draft.set(id, preserved)
-        }
+        })
     })
 
     if (!optimistic) {
-        return {
-            before,
-            after: before,
-            changedIds: new Set<EntityId>(),
-            changes: []
-        }
+        return createEmptyOptimisticState(before)
     }
 
     return {
@@ -113,25 +120,29 @@ function mergeChanges<T extends Entity>(...groups: ReadonlyArray<ReadonlyArray<S
     })
 }
 
-function rollbackOptimisticState<T extends Entity>(args: {
-    handle: StoreHandle<T>
-    optimisticState: OptimisticState<T>
-}) {
-    if (!args.optimisticState.changes.length) return
-    args.handle.state.applyChanges(invertChanges(args.optimisticState.changes))
+function rollbackOptimisticState<T extends Entity>(handle: StoreHandle<T>, optimisticState: OptimisticState<T>) {
+    if (!optimisticState.changes.length) return
+    handle.state.applyChanges(invertChanges(optimisticState.changes))
 }
 
-async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
-    runtime: WriteCommitRequest<T>['runtime']
-    handle: WriteCommitRequest<T>['handle']
+function toExecutionOptions<T extends Entity>(session: CommitSession<T>) {
+    return {
+        ...(session.route !== undefined ? { route: session.route } : {}),
+        ...(session.signal ? { signal: session.signal } : {})
+    }
+}
+
+async function resolveWriteResult<T extends Entity>(args: {
+    session: CommitSession<T>
     plan: WritePlan<T>
     results: ReadonlyArray<WriteItemResult>
     primaryPlan?: WritePlanEntry<T>
 }): Promise<{ writeback?: StoreWritebackArgs<T>; output?: T }> {
-    if (!args.plan.length || !args.results.length) return {}
+    const { session, plan, results, primaryPlan } = args
+    if (!plan.length || !results.length) return {}
 
     const resultByEntryId = new Map<string, WriteItemResult>()
-    for (const itemResult of args.results) {
+    for (const itemResult of results) {
         if (typeof itemResult.entryId !== 'string' || !itemResult.entryId) {
             throw new Error('[Atoma] write item result missing entryId')
         }
@@ -142,14 +153,14 @@ async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
     const versionUpdates: Array<{ key: EntityId; version: number }> = []
     let output: T | undefined
 
-    const primary = args.primaryPlan
+    const primary = primaryPlan
         ? {
-            action: args.primaryPlan.entry.action,
-            entityId: args.primaryPlan.optimistic.entityId
+            action: primaryPlan.entry.action,
+            entityId: primaryPlan.optimistic.entityId
         }
         : undefined
 
-    for (const planEntry of args.plan) {
+    for (const planEntry of plan) {
         const { entry, optimistic } = planEntry
         const itemResult = resultByEntryId.get(entry.entryId)
         if (!itemResult) {
@@ -159,16 +170,16 @@ async function resolveWriteResultFromWriteOutput<T extends Entity>(args: {
         if (!itemResult.ok) throw toWriteItemError(entry.action, itemResult)
 
         if (typeof itemResult.version === 'number' && Number.isFinite(itemResult.version) && itemResult.version > 0) {
-            const fallbackEntityId = (entry.item as any)?.entityId
+            const fallbackEntityId = entry.item.entityId
             const entityId = itemResult.entityId ?? optimistic.entityId ?? fallbackEntityId
             if (entityId) {
-                versionUpdates.push({ key: entityId as EntityId, version: itemResult.version })
+                versionUpdates.push({ key: entityId, version: itemResult.version })
             }
         }
 
         if (!shouldApplyReturnedData(entry) || !itemResult.data || typeof itemResult.data !== 'object') continue
 
-        const normalized = await args.runtime.transform.writeback(args.handle, itemResult.data as T)
+        const normalized = await session.runtime.transform.writeback(session.handle, itemResult.data as T)
         if (!normalized) continue
 
         upserts.push(normalized)
@@ -221,87 +232,20 @@ function resolvePrimaryPlan<T extends Entity>(plan: WritePlan<T>): WritePlanEntr
 function fallbackPrimaryOutput<T extends Entity>(primaryPlan?: WritePlanEntry<T>): T | undefined {
     if (!primaryPlan) return undefined
     if (primaryPlan.entry.action === 'delete') return undefined
-    return primaryPlan.optimistic.value as T | undefined
+    return primaryPlan.optimistic.value
 }
 
-function applyWritebackResult<T extends Entity>(args: {
-    handle: WriteCommitRequest<T>['handle']
+function applyWriteback<T extends Entity>(
+    handle: WriteCommitRequest<T>['handle'],
     writeback?: StoreWritebackArgs<T>
-}): {
-    changes: ReadonlyArray<StoreChange<T>>
-} {
-    if (!args.writeback) {
-        return {
-            changes: []
-        }
-    }
-
-    const writeback = args.handle.state.applyWriteback(args.writeback)
-    if (!writeback) {
-        return {
-            changes: []
-        }
-    }
-
-    return {
-        changes: writeback.changes
-    }
+): ReadonlyArray<StoreChange<T>> {
+    if (!writeback) return []
+    const applied = handle.state.applyWriteback(writeback)
+    if (!applied) return []
+    return applied.changes
 }
 
-async function runWriteTransaction<T extends Entity>(args: {
-    request: WriteCommitRequest<T>
-    primaryPlan?: WritePlanEntry<T>
-    entries: ReadonlyArray<WriteEntry>
-}): Promise<{ output?: T; changes: ReadonlyArray<StoreChange<T>> }> {
-    const { request, primaryPlan, entries } = args
-    const { runtime, handle, opContext, plan } = request
-
-    if (!entries.length) {
-        return {
-            output: fallbackPrimaryOutput(primaryPlan),
-            changes: []
-        }
-    }
-
-    const writeResult = await runtime.execution.write(
-        {
-            handle,
-            opContext,
-            entries
-        },
-        {
-            ...(request.route !== undefined ? { route: request.route } : {}),
-            ...(request.signal ? { signal: request.signal } : {})
-        }
-    )
-
-    ensureWriteResultStatus({ writeResult })
-
-    const resolved = (writeResult.results && writeResult.results.length)
-        ? await resolveWriteResultFromWriteOutput<T>({
-            runtime,
-            handle,
-            plan,
-            results: writeResult.results,
-            primaryPlan
-        })
-        : {}
-
-    const writebackResult = applyWritebackResult({
-        handle,
-        writeback: resolved.writeback
-    })
-
-    return {
-        output: resolved.output ?? fallbackPrimaryOutput(primaryPlan),
-        changes: writebackResult.changes
-    }
-}
-
-function ensureWriteResultStatus(args: {
-    writeResult: WriteOutput<any>
-}) {
-    const { writeResult } = args
+function ensureWriteResultStatus(writeResult: WriteOutput<any>) {
     if (writeResult.status === 'rejected') {
         if (writeResult.results?.length) return
         throw new Error('[Atoma] execution.write rejected without item results')
@@ -313,25 +257,71 @@ function ensureWriteResultStatus(args: {
     }
 }
 
-export class WriteCommitFlow {
-    execute = async <T extends Entity>(args: WriteCommitRequest<T>): Promise<WriteCommitResult<T>> => {
-        const plan = args.plan
-        const consistency = args.runtime.execution.resolveConsistency(args.route)
-        const optimisticState = applyOptimisticState({
-            handle: args.handle,
-            plan,
-            consistency,
-            preserve: args.runtime.engine.mutation.preserveRef
-        })
+async function runWriteTransaction<T extends Entity>(args: {
+    session: CommitSession<T>
+    plan: WritePlan<T>
+    primaryPlan?: WritePlanEntry<T>
+}): Promise<{ output?: T; changes: ReadonlyArray<StoreChange<T>> }> {
+    const { session, plan, primaryPlan } = args
+    if (!plan.length) {
+        return {
+            output: fallbackPrimaryOutput(primaryPlan),
+            changes: []
+        }
+    }
 
-        const primaryPlan = resolvePrimaryPlan(plan)
-        const entries = plan.map(entry => entry.entry)
+    const writeResult = await session.runtime.execution.write(
+        {
+            handle: session.handle,
+            opContext: session.opContext,
+            entries: plan.map((entry) => entry.entry)
+        },
+        toExecutionOptions(session)
+    )
+    ensureWriteResultStatus(writeResult)
+
+    const resolved = (writeResult.results && writeResult.results.length)
+        ? await resolveWriteResult({
+            session,
+            plan,
+            results: writeResult.results,
+            primaryPlan
+        })
+        : {}
+
+    return {
+        output: resolved.output ?? fallbackPrimaryOutput(primaryPlan),
+        changes: applyWriteback(session.handle, resolved.writeback)
+    }
+}
+
+function resolveSession<T extends Entity>(request: WriteCommitRequest<T>): CommitSession<T> {
+    return {
+        runtime: request.runtime,
+        handle: request.handle,
+        opContext: request.opContext,
+        route: request.route,
+        signal: request.signal
+    }
+}
+
+export class WriteCommitFlow {
+    execute = async <T extends Entity>(request: WriteCommitRequest<T>): Promise<WriteCommitResult<T>> => {
+        const session = resolveSession(request)
+        const consistency = session.runtime.execution.resolveConsistency(session.route)
+        const optimisticState = applyOptimisticState({
+            handle: session.handle,
+            plan: request.plan,
+            consistency,
+            preserve: session.runtime.engine.mutation.preserveRef
+        })
+        const primaryPlan = resolvePrimaryPlan(request.plan)
 
         try {
             const transaction = await runWriteTransaction({
-                request: args,
-                primaryPlan,
-                entries
+                session,
+                plan: request.plan,
+                primaryPlan
             })
 
             return {
@@ -339,10 +329,7 @@ export class WriteCommitFlow {
                 ...(transaction.output !== undefined ? { output: transaction.output } : {})
             }
         } catch (error) {
-            rollbackOptimisticState({
-                handle: args.handle,
-                optimisticState
-            })
+            rollbackOptimisticState(session.handle, optimisticState)
             throw error
         }
     }

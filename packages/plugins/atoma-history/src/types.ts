@@ -5,7 +5,6 @@ export interface PatchMetadata {
     databaseName?: string
     timestamp: number
     baseVersion?: number
-    etag?: string
     traceId?: string
 }
 
