@@ -1,6 +1,6 @@
 import type {
     Entity,
-    OperationContext,
+    ActionContext,
     ExecutionRoute,
     StoreChange,
     PartialWithId,
@@ -21,7 +21,7 @@ export type OptimisticState<T extends Entity> = Readonly<{
 export type WritePlanEntry<T extends Entity> = Readonly<{
     entry: WriteEntry
     optimistic: Readonly<{
-        entityId?: EntityId
+        id?: EntityId
         value?: T
     }>
 }>
@@ -31,7 +31,7 @@ export type WritePlan<T extends Entity> = ReadonlyArray<WritePlanEntry<T>>
 export type WriteCommitRequest<T extends Entity> = Readonly<{
     runtime: Runtime
     handle: StoreHandle<T>
-    opContext: OperationContext
+    context: ActionContext
     route?: ExecutionRoute
     signal?: AbortSignal
     plan: WritePlan<T>
@@ -63,7 +63,7 @@ type IntentInputMap<T extends Entity> = {
         kind: 'intent'
         action: A
         handle: StoreHandle<T>
-        opContext: OperationContext
+        context: ActionContext
         options?: IntentOptions[A]
     } & IntentPayload<T>[A]>
 }

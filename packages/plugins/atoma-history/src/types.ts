@@ -1,4 +1,4 @@
-import type { Entity, OperationContext, StoreChange } from 'atoma-types/core'
+import type { Entity, ActionContext, StoreChange } from 'atoma-types/core'
 
 export interface PatchMetadata {
     storeName: string
@@ -18,12 +18,12 @@ export interface HistoryChange {
 export type ChangeRecord = Readonly<{
     storeName: string
     changes: StoreChange<Entity>[]
-    ctx: OperationContext
+    context: ActionContext
 }>
 
 export type ActionRecord = {
     scope: string
-    actionId: string
+    id: string
     origin: 'user'
     label?: string
     changes: ChangeRecord[]

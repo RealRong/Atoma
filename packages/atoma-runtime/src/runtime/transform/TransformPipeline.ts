@@ -5,7 +5,7 @@ import type {
     DataProcessorStageFn,
     DataProcessorValidate,
     Entity,
-    OperationContext,
+    ActionContext,
     SchemaValidator,
     StoreDataProcessor
 } from 'atoma-types/core'
@@ -95,14 +95,14 @@ export class TransformPipeline {
         this.runtime = runtime
     }
 
-    async process<T>(mode: DataProcessorMode, data: T, context: {
+    async process<T>(mode: DataProcessorMode, data: T, args: {
         storeName: string
         runtime: Runtime
-        opContext?: OperationContext
+        context?: ActionContext
         adapter?: unknown
         dataProcessor?: StoreDataProcessor<T>
     }): Promise<T | undefined> {
-        const pipeline = context.dataProcessor
+        const pipeline = args.dataProcessor
         if (!pipeline) return data
 
         let current: T | undefined = data
@@ -112,10 +112,10 @@ export class TransformPipeline {
             if (!handler) continue
 
             const stageContext: DataProcessorContext<T> = {
-                storeName: context.storeName,
-                runtime: context.runtime,
-                opContext: context.opContext,
-                adapter: context.adapter,
+                storeName: args.storeName,
+                runtime: args.runtime,
+                context: args.context,
+                adapter: args.adapter,
                 mode,
                 stage
             }
@@ -131,13 +131,13 @@ export class TransformPipeline {
     async inbound<T extends Entity>(
         handle: StoreHandle<T>,
         data: T,
-        opContext?: OperationContext
+        context?: ActionContext
     ): Promise<T | undefined> {
         const runtime = this.runtime
         return this.process('inbound', data, {
             storeName: handle.storeName,
             runtime,
-            opContext,
+            context,
             dataProcessor: handle.config.dataProcessor
         })
     }
@@ -145,13 +145,13 @@ export class TransformPipeline {
     async writeback<T extends Entity>(
         handle: StoreHandle<T>,
         data: T,
-        opContext?: OperationContext
+        context?: ActionContext
     ): Promise<T | undefined> {
         const runtime = this.runtime
         return this.process('writeback', data, {
             storeName: handle.storeName,
             runtime,
-            opContext,
+            context,
             dataProcessor: handle.config.dataProcessor
         })
     }
@@ -159,13 +159,13 @@ export class TransformPipeline {
     async outbound<T extends Entity>(
         handle: StoreHandle<T>,
         data: T,
-        opContext?: OperationContext
+        context?: ActionContext
     ): Promise<T | undefined> {
         const runtime = this.runtime
         return this.process('outbound', data, {
             storeName: handle.storeName,
             runtime,
-            opContext,
+            context,
             dataProcessor: handle.config.dataProcessor
         })
     }

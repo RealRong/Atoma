@@ -4,7 +4,7 @@ export type ChangeKind = 'upsert' | 'delete'
 
 export type Change = {
     resource: ResourceToken
-    entityId: EntityId
+    id: EntityId
     kind: ChangeKind
     version: Version
     changedAtMs: number

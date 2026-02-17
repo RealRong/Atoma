@@ -240,7 +240,7 @@ export class PushLane {
         const rejectedKeys: string[] = []
         const retryableKeys: string[] = []
 
-        const rebaseByEntityId = new Map<string, { resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs: number }>()
+        const rebaseById = new Map<string, { resource: string; id: string; baseVersion: number; afterEnqueuedAtMs: number }>()
         let retryError: Error | undefined
 
         for (let i = 0; i < outcomes.length; i++) {
@@ -266,15 +266,15 @@ export class PushLane {
                 })
                 ackedKeys.push(entry.idempotencyKey)
 
-                const entityId = outcome.result.entityId
+                const id = outcome.result.id
                 const version = outcome.result.version
                 if (Number.isFinite(version) && version > 0) {
-                    const existing = rebaseByEntityId.get(entityId)
+                    const existing = rebaseById.get(id)
                     const afterEnqueuedAtMs = entry.enqueuedAtMs
                     if (!existing || afterEnqueuedAtMs > existing.afterEnqueuedAtMs) {
-                        rebaseByEntityId.set(entityId, {
+                        rebaseById.set(id, {
                             resource: entry.resource,
-                            entityId,
+                            id,
                             baseVersion: version,
                             afterEnqueuedAtMs
                         })
@@ -341,7 +341,7 @@ export class PushLane {
             ack: ackedKeys,
             reject: rejectedKeys,
             retryable: retryableKeys,
-            rebase: Array.from(rebaseByEntityId.values())
+            rebase: Array.from(rebaseById.values())
         })
 
         if (retryableKeys.length) {

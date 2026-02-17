@@ -34,7 +34,7 @@ export interface OutboxStore {
         ack: string[]
         reject: string[]
         retryable: string[]
-        rebase?: Array<{ resource: ResourceToken; entityId: EntityId; baseVersion: Version; afterEnqueuedAtMs?: number }>
+        rebase?: Array<{ resource: ResourceToken; id: EntityId; baseVersion: Version; afterEnqueuedAtMs?: number }>
     }) => Promise<void>
 
     recover: (args: { nowMs: number; inFlightTimeoutMs: number }) => Promise<void>

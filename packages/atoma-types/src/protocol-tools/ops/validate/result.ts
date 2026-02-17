@@ -73,9 +73,9 @@ function assertWriteItemResult(value: unknown): WriteItemResult {
     }
 
     if (ok === true) {
-        const entityId = (value as any).entityId
-        if (typeof entityId !== 'string' || !entityId) {
-            throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing entityId)', detailsFor('entityId', { entryId }))
+        const id = (value as any).id
+        if (typeof id !== 'string' || !id) {
+            throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing id)', detailsFor('id', { entryId }))
         }
         assertPositiveVersion((value as any).version, {
             code: 'INVALID_RESPONSE',

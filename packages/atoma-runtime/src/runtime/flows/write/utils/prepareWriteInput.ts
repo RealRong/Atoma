@@ -1,4 +1,4 @@
-import type { Entity, OperationContext, PartialWithId, StoreOperationOptions } from 'atoma-types/core'
+import type { Entity, ActionContext, PartialWithId, StoreOperationOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 
@@ -6,10 +6,10 @@ export async function prepareCreateInput<T extends Entity>(
     runtime: Runtime,
     handle: StoreHandle<T>,
     item: Partial<T>,
-    opContext?: OperationContext
+    context?: ActionContext
 ): Promise<PartialWithId<T>> {
     const initialized = runtime.engine.mutation.init<T>(item, handle.config.idGenerator)
-    const processed = await runtime.transform.inbound(handle, initialized as T, opContext)
+    const processed = await runtime.transform.inbound(handle, initialized as T, context)
     return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareCreateInput')
 }
 
@@ -18,10 +18,10 @@ export async function prepareUpdateInput<T extends Entity>(
     handle: StoreHandle<T>,
     base: PartialWithId<T>,
     patch: PartialWithId<T>,
-    opContext?: OperationContext
+    context?: ActionContext
 ): Promise<PartialWithId<T>> {
     const mergedInput = runtime.engine.mutation.merge(base, patch)
-    const processed = await runtime.transform.inbound(handle, mergedInput as T, opContext)
+    const processed = await runtime.transform.inbound(handle, mergedInput as T, context)
     return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareUpdateInput')
 }
 
@@ -29,7 +29,8 @@ export async function resolveWriteBase<T extends Entity>(
     runtime: Runtime,
     handle: StoreHandle<T>,
     id: EntityId,
-    options?: StoreOperationOptions
+    options?: StoreOperationOptions,
+    context?: ActionContext
 ): Promise<PartialWithId<T>> {
     const cached = handle.state.getSnapshot().get(id) as T | undefined
     if (cached) return cached as PartialWithId<T>
@@ -60,7 +61,7 @@ export async function resolveWriteBase<T extends Entity>(
         throw new Error(`Item with id ${id} not found`)
     }
 
-    const processed = await runtime.transform.writeback(handle, fetched, options?.opContext)
+    const processed = await runtime.transform.writeback(handle, fetched, context)
     if (!processed) {
         throw new Error(`Item with id ${id} not found`)
     }

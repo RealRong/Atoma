@@ -13,7 +13,7 @@ type PersistedOutboxEntry = {
     enqueuedAtMs: number
     status: OutboxStatus
     inFlightAtMs?: number
-    entityId?: string
+    id?: string
 }
 
 const DEFAULT_DB_NAME = 'atoma-sync-db'
@@ -22,31 +22,36 @@ const OUTBOX_STORE_NAME = 'outbox_entries'
 const OUTBOX_INDEX_BY_OUTBOX = 'by_outbox'
 const OUTBOX_INDEX_BY_OUTBOX_STATUS_ENQUEUED = 'by_outbox_status_enqueued'
 const OUTBOX_INDEX_BY_OUTBOX_STATUS_INFLIGHT_AT = 'by_outbox_status_inFlightAt'
-const OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ENTITY_ENQUEUED = 'by_outbox_status_resource_entity_enqueued'
-const DB_VERSION = 2
+const OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ID_ENQUEUED = 'by_outbox_status_resource_id_enqueued'
+const DB_VERSION = 3
 const MIN_TIME_MS = 0
 const MAX_TIME_MS = Number.MAX_SAFE_INTEGER
 
-function ensureOutboxSchema(db: IDBPDatabase<any>) {
+function ensureOutboxSchema(db: IDBPDatabase<any>, args?: { recreateOutbox?: boolean }) {
     if (!db.objectStoreNames.contains(KV_STORE_NAME)) {
         db.createObjectStore(KV_STORE_NAME)
     }
 
-    if (db.objectStoreNames.contains(OUTBOX_STORE_NAME)) return
+    if (db.objectStoreNames.contains(OUTBOX_STORE_NAME)) {
+        if (!args?.recreateOutbox) return
+        db.deleteObjectStore(OUTBOX_STORE_NAME)
+    }
 
     const store = db.createObjectStore(OUTBOX_STORE_NAME, { keyPath: 'pk' })
     store.createIndex(OUTBOX_INDEX_BY_OUTBOX, 'outboxKey')
     store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_ENQUEUED, ['outboxKey', 'status', 'enqueuedAtMs'])
     store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_INFLIGHT_AT, ['outboxKey', 'status', 'inFlightAtMs'])
-    store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ENTITY_ENQUEUED, ['outboxKey', 'status', 'resource', 'entityId', 'enqueuedAtMs'])
+    store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ID_ENQUEUED, ['outboxKey', 'status', 'resource', 'id', 'enqueuedAtMs'])
 }
 
 async function openSyncDb(): Promise<IDBPDatabase<any>> {
     return openDB(DEFAULT_DB_NAME, DB_VERSION, {
-        upgrade(db) {
+        upgrade(db, oldVersion) {
             // Note: we intentionally do not migrate old KV-based outbox state.
             // This package is currently internal-only; breaking persistence is acceptable.
-            ensureOutboxSchema(db)
+            ensureOutboxSchema(db, {
+                recreateOutbox: oldVersion > 0 && oldVersion < 3
+            })
         }
     })
 }
@@ -138,7 +143,7 @@ export class DefaultOutboxStore implements OutboxStore {
             const existing = await store.get(pk)
             if (existing) continue
 
-            const entityId = this.extractEntityId(item.entry)
+            const id = this.extractId(item.entry)
             const persisted: PersistedOutboxEntry = {
                 pk,
                 outboxKey: this.storageKey,
@@ -147,7 +152,7 @@ export class DefaultOutboxStore implements OutboxStore {
                 entry: item.entry,
                 enqueuedAtMs: item.enqueuedAtMs,
                 status: 'pending',
-                ...(entityId ? { entityId } : {})
+                ...(id ? { id } : {})
             }
             await store.put(persisted)
             insertedKeys.push(item.idempotencyKey)
@@ -196,7 +201,7 @@ export class DefaultOutboxStore implements OutboxStore {
         ack: string[]
         reject: string[]
         retryable: string[]
-        rebase?: Array<{ resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs?: number }>
+        rebase?: Array<{ resource: string; id: string; baseVersion: number; afterEnqueuedAtMs?: number }>
     }): Promise<void> {
         await this.initialized
         if (this.memory) return this.memory.commit(args)
@@ -209,7 +214,7 @@ export class DefaultOutboxStore implements OutboxStore {
         const db = await openSyncDb()
         const tx = db.transaction(OUTBOX_STORE_NAME, 'readwrite')
         const store = tx.store
-        const index = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ENTITY_ENQUEUED)
+        const index = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ID_ENQUEUED)
 
         for (const idempotencyKey of ackSet) {
             await store.delete(this.pk(idempotencyKey))
@@ -230,18 +235,18 @@ export class DefaultOutboxStore implements OutboxStore {
         if (Array.isArray(args.rebase)) {
             for (const r of args.rebase) {
                 const resource = String((r as any)?.resource ?? '')
-                const entityId = String((r as any)?.entityId ?? '')
+                const id = String((r as any)?.id ?? '')
                 const baseVersion = (r as any)?.baseVersion
                 const after = (typeof (r as any)?.afterEnqueuedAtMs === 'number' && Number.isFinite((r as any)?.afterEnqueuedAtMs))
                     ? Math.floor((r as any).afterEnqueuedAtMs)
                     : undefined
 
-                if (!resource || !entityId) continue
+                if (!resource || !id) continue
                 if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) continue
 
                 const range = IDBKeyRange.bound(
-                    [this.storageKey, 'pending', resource, entityId, MIN_TIME_MS],
-                    [this.storageKey, 'pending', resource, entityId, MAX_TIME_MS]
+                    [this.storageKey, 'pending', resource, id, MIN_TIME_MS],
+                    [this.storageKey, 'pending', resource, id, MAX_TIME_MS]
                 )
 
                 for (let cursor = await index.openCursor(range); cursor; cursor = await cursor.continue()) {
@@ -378,8 +383,8 @@ export class DefaultOutboxStore implements OutboxStore {
         }
     }
 
-    private extractEntityId(entry: any): string | undefined {
-        const id = entry?.item?.entityId
+    private extractId(entry: any): string | undefined {
+        const id = entry?.item?.id
         return (typeof id === 'string' && id) ? id : undefined
     }
 
@@ -484,7 +489,7 @@ class MemoryOutboxStore {
         return out
     }
 
-    async commit(args: { ack: string[]; reject: string[]; retryable: string[]; rebase?: Array<{ resource: string; entityId: string; baseVersion: number; afterEnqueuedAtMs?: number }> }): Promise<void> {
+    async commit(args: { ack: string[]; reject: string[]; retryable: string[]; rebase?: Array<{ resource: string; id: string; baseVersion: number; afterEnqueuedAtMs?: number }> }): Promise<void> {
         const ackSet = new Set([...(args.ack ?? []), ...(args.reject ?? [])])
         const retrySet = new Set(args.retryable ?? [])
 
@@ -501,13 +506,13 @@ class MemoryOutboxStore {
         if (Array.isArray(args.rebase)) {
             for (const r of args.rebase) {
                 const resource = String((r as any)?.resource ?? '')
-                const entityId = String((r as any)?.entityId ?? '')
+                const id = String((r as any)?.id ?? '')
                 const baseVersion = (r as any)?.baseVersion
                 const after = (typeof (r as any)?.afterEnqueuedAtMs === 'number' && Number.isFinite((r as any)?.afterEnqueuedAtMs))
                     ? Math.floor((r as any).afterEnqueuedAtMs)
                     : undefined
 
-                if (!resource || !entityId) continue
+                if (!resource || !id) continue
                 if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) continue
 
                 for (const key of this.order) {
@@ -516,7 +521,7 @@ class MemoryOutboxStore {
                     if (after !== undefined && e.enqueuedAtMs <= after) continue
                     if (e.resource !== resource) continue
                     const item: any = e.entry?.item
-                    if (item?.entityId !== entityId) continue
+                    if (item?.id !== id) continue
                     if (typeof item.baseVersion !== 'number' || !Number.isFinite(item.baseVersion) || item.baseVersion <= 0) continue
                     if (item.baseVersion < baseVersion) {
                         item.baseVersion = baseVersion

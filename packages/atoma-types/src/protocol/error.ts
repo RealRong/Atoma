@@ -26,7 +26,7 @@ export type LimitsErrorDetails = {
 
 export type ConflictErrorDetails = {
     resource: ResourceToken
-    entityId: EntityId
+    id: EntityId
     currentVersion?: Version
     hint?: 'rebase' | 'server-wins' | 'manual'
     [k: string]: unknown
@@ -34,7 +34,7 @@ export type ConflictErrorDetails = {
 
 export type NotFoundErrorDetails = {
     resource: ResourceToken
-    entityId?: EntityId
+    id?: EntityId
     [k: string]: unknown
 }
 

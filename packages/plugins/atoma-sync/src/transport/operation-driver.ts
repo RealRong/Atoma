@@ -47,7 +47,7 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
             entryId: entry.entryId,
             action: 'create',
             item: {
-                ...(entry.item.entityId ? { entityId: entry.item.entityId } : {}),
+                ...(entry.item.id ? { id: entry.item.id } : {}),
                 value: entry.item.value,
                 ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
             },
@@ -60,7 +60,7 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
             entryId: entry.entryId,
             action: 'update',
             item: {
-                entityId: entry.item.entityId,
+                id: entry.item.id,
                 baseVersion: entry.item.baseVersion,
                 value: entry.item.value,
                 ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
@@ -74,7 +74,7 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
             entryId: entry.entryId,
             action: 'upsert',
             item: {
-                entityId: entry.item.entityId,
+                id: entry.item.id,
                 ...(typeof entry.item.baseVersion === 'number' ? { baseVersion: entry.item.baseVersion } : {}),
                 value: entry.item.value,
                 ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
@@ -87,7 +87,7 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
         entryId: entry.entryId,
         action: 'delete',
         item: {
-            entityId: entry.item.entityId,
+            id: entry.item.id,
             baseVersion: entry.item.baseVersion,
             ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
         },
@@ -121,7 +121,7 @@ function toWriteItemResult(itemResult: ProtocolWriteItemResult): WriteItemResult
         return {
             entryId: itemResult.entryId,
             ok: true,
-            entityId: itemResult.entityId,
+            id: itemResult.id,
             version: itemResult.version,
             ...(itemResult.data !== undefined ? { data: itemResult.data } : {})
         }

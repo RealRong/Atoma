@@ -2,7 +2,7 @@ import type { Engine as EngineType, QueryState } from 'atoma-types/runtime'
 import type { Entity, Query, IndexesLike, IndexDefinition } from 'atoma-types/core'
 import { Indexes } from 'atoma-core/indexes'
 import { init, merge, addMany, removeMany, preserveRef, upsertItems, writeback } from 'atoma-core/store'
-import { createOperationContext } from 'atoma-core/operation'
+import { createActionContext } from 'atoma-core/action'
 import { runQuery } from 'atoma-core/query'
 import { projectRelationsBatch } from 'atoma-core/relations'
 import { prefetchRelations } from '../relations/prefetch'
@@ -43,7 +43,7 @@ export class Engine implements EngineType {
         writeback
     }
 
-    readonly operation = {
-        createContext: createOperationContext
+    readonly action = {
+        createContext: createActionContext
     }
 }

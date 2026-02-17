@@ -30,17 +30,17 @@ export class MemoryOperationClient extends StorageOperationClient {
                 if (!Array.isArray(items)) return
                 const store = this.requireStore(resource)
                 items.forEach(item => {
-                    const id = (item as any)?.id
-                    if (id === undefined) return
-                    const entityId = String(id)
+                    const rawId = (item as any)?.id
+                    if (rawId === undefined) return
+                    const id = String(rawId)
                     const current = isPlainObject(item) ? { ...(item as any) } : item
                     if (isPlainObject(current)) {
-                        current.id = entityId
+                        current.id = id
                         if (!(typeof current.version === 'number' && Number.isFinite(current.version) && current.version >= 1)) {
                             current.version = 1
                         }
                     }
-                    store.set(entityId, current)
+                    store.set(id, current)
                 })
             })
         }

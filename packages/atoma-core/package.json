@@ -24,10 +24,10 @@
             "import": "./dist/indexes.js",
             "source": "./src/indexes/index.ts"
         },
-        "./operation": {
-            "types": "./dist/operation.d.ts",
-            "import": "./dist/operation.js",
-            "source": "./src/operation.ts"
+        "./action": {
+            "types": "./dist/action.d.ts",
+            "import": "./dist/action.js",
+            "source": "./src/action.ts"
         }
     },
     "scripts": {

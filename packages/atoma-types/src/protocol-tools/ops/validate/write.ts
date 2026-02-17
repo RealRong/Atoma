@@ -42,55 +42,55 @@ function assertWriteItemValue(value: unknown, ctx: WriteEntryCtx): Record<string
     return value
 }
 
-function assertEntityIdString(value: unknown, ctx: WriteEntryCtx): string {
+function assertIdString(value: unknown, ctx: WriteEntryCtx): string {
     return assertNonEmptyString(value, {
         code: 'INVALID_WRITE',
-        message: 'Missing item.entityId',
-        details: detailsForWrite(ctx, 'item.entityId')
+        message: 'Missing item.id',
+        details: detailsForWrite(ctx, 'item.id')
     })
 }
 
-function assertValueIdMatchesEntityId(args: { entityId?: string; value: Record<string, unknown> } & WriteEntryCtx) {
+function assertValueIdMatchesId(args: { id?: string; value: Record<string, unknown> } & WriteEntryCtx) {
     if (!Object.prototype.hasOwnProperty.call(args.value, 'id')) return
     const id = (args.value as any).id
     if (typeof id !== 'string' || !id) {
         throw invalid('INVALID_WRITE', 'Invalid item.value.id (must be a non-empty string)', detailsForWrite(args, 'item.value.id'))
     }
-    if (args.entityId && id !== args.entityId) {
-        throw invalid('INVALID_WRITE', 'item.value.id must match item.entityId', detailsForWrite(args, 'item.value.id'))
+    if (args.id && id !== args.id) {
+        throw invalid('INVALID_WRITE', 'item.value.id must match item.id', detailsForWrite(args, 'item.value.id'))
     }
 }
 
 function assertCreateItem(raw: Record<string, unknown>, ctx: WriteEntryCtx) {
-    const entityId = (raw as any).entityId
-    if (entityId !== undefined && entityId !== null) {
-        assertEntityIdString(entityId, ctx)
+    const id = (raw as any).id
+    if (id !== undefined && id !== null) {
+        assertIdString(id, ctx)
     }
 
     const val = assertWriteItemValue((raw as any).value, ctx)
 
-    if (entityId === undefined || entityId === null) {
+    if (id === undefined || id === null) {
         if (Object.prototype.hasOwnProperty.call(val, 'id') && (val as any).id !== undefined && (val as any).id !== null) {
             throw invalid('INVALID_WRITE', 'server-assigned create must not include item.value.id', detailsForWrite(ctx, 'item.value.id'))
         }
     }
 
-    assertValueIdMatchesEntityId({ entityId: typeof entityId === 'string' ? entityId : undefined, value: val, ...ctx })
+    assertValueIdMatchesId({ id: typeof id === 'string' ? id : undefined, value: val, ...ctx })
 }
 
 function assertUpdateItem(raw: Record<string, unknown>, ctx: WriteEntryCtx) {
-    const entityId = assertEntityIdString((raw as any).entityId, ctx)
+    const id = assertIdString((raw as any).id, ctx)
     assertPositiveVersion((raw as any).baseVersion, {
         code: 'INVALID_WRITE',
         message: 'Missing item.baseVersion',
         details: detailsForWrite(ctx, 'item.baseVersion')
     })
     const val = assertWriteItemValue((raw as any).value, ctx)
-    assertValueIdMatchesEntityId({ entityId, value: val, ...ctx })
+    assertValueIdMatchesId({ id, value: val, ...ctx })
 }
 
 function assertDeleteItem(raw: Record<string, unknown>, ctx: WriteEntryCtx) {
-    assertEntityIdString((raw as any).entityId, ctx)
+    assertIdString((raw as any).id, ctx)
     assertPositiveVersion((raw as any).baseVersion, {
         code: 'INVALID_WRITE',
         message: 'Missing item.baseVersion',
@@ -99,7 +99,7 @@ function assertDeleteItem(raw: Record<string, unknown>, ctx: WriteEntryCtx) {
 }
 
 function assertUpsertItem(raw: Record<string, unknown>, ctx: WriteEntryCtx) {
-    const entityId = assertEntityIdString((raw as any).entityId, ctx)
+    const id = assertIdString((raw as any).id, ctx)
     const baseVersion = (raw as any).baseVersion
     if (baseVersion !== undefined && baseVersion !== null) {
         assertPositiveVersion(baseVersion, {
@@ -109,7 +109,7 @@ function assertUpsertItem(raw: Record<string, unknown>, ctx: WriteEntryCtx) {
         })
     }
     const val = assertWriteItemValue((raw as any).value, ctx)
-    assertValueIdMatchesEntityId({ entityId, value: val, ...ctx })
+    assertValueIdMatchesId({ id, value: val, ...ctx })
 }
 
 function assertWriteAction(value: unknown, ctx: { opId: string; resource: ResourceToken; entryId: string }): WriteAction {

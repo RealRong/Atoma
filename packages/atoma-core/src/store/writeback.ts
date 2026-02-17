@@ -72,9 +72,9 @@ export function writeback<T extends Entity>(
 
     versionUpdates.forEach((value) => {
         if (!value) return
-        const key = value.key
+        const id = value.id
         const version = value.version
-        const current = after.get(key)
+        const current = after.get(id)
         if (!current || typeof current !== 'object') return
         if ((current as VersionedEntity).version === version) return
 
@@ -82,10 +82,10 @@ export function writeback<T extends Entity>(
             ...current,
             version
         } as T
-        markBefore(key, current)
-        ensureWritable().set(key, next)
-        changedIds.add(key)
-        markAfter(key, next)
+        markBefore(id, current)
+        ensureWritable().set(id, next)
+        changedIds.add(id)
+        markAfter(id, next)
     })
 
     if (!changedIds.size) return null

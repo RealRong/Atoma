@@ -29,12 +29,12 @@ export function registerLocalRoute(runtime: Runtime): () => void {
                 },
                 write: async <T extends Entity>({ entries }: WriteRequest<T>): Promise<WriteOutput<T>> => {
                     const results = entries.map((entry): WriteItemResult => {
-                        const rawEntityId = (entry.item as { entityId?: unknown })?.entityId
+                        const rawId = (entry.item as { id?: unknown })?.id
                         const rawBaseVersion = (entry.item as { baseVersion?: unknown })?.baseVersion
                         return {
                             entryId: entry.entryId,
                             ok: true,
-                            entityId: typeof rawEntityId === 'string' && rawEntityId.length ? rawEntityId : entry.entryId,
+                            id: typeof rawId === 'string' && rawId.length ? rawId : entry.entryId,
                             version: (
                                 typeof rawBaseVersion === 'number'
                                 && Number.isFinite(rawBaseVersion)

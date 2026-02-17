@@ -200,7 +200,7 @@ export function createOpsExecutor<Ctx>(args: {
                                 nextCursor: String(nextCursor),
                                 changes: raw.map((c: any) => ({
                                     resource: c.resource,
-                                    entityId: c.id,
+                                    id: c.id,
                                     kind: c.kind,
                                     version: c.serverVersion,
                                     changedAtMs: c.changedAt

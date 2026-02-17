@@ -53,18 +53,18 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
     const readContextByQuery = new WeakMap<object, ObservabilityContext>()
     const writeContextByAction = new Map<string, WriteContextEntry>()
 
-    const getWriteContext = (storeName: string, actionId: string): WriteContextEntry => {
-        const key = String(actionId)
+    const getWriteContext = (storeName: string, id: string): WriteContextEntry => {
+        const key = String(id)
         const existing = writeContextByAction.get(key)
         if (existing) return existing
-        const ctxInstance = storeObs.createContext(storeName, { traceId: actionId })
+        const ctxInstance = storeObs.createContext(storeName, { traceId: id })
         const created: WriteContextEntry = { ctx: ctxInstance, storeName }
         writeContextByAction.set(key, created)
         return created
     }
 
-    const releaseWriteContext = (actionId: string) => {
-        const key = String(actionId)
+    const releaseWriteContext = (id: string) => {
+        const key = String(id)
         if (!writeContextByAction.has(key)) return
         writeContextByAction.delete(key)
     }
@@ -238,35 +238,35 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 },
                 write: {
                     onStart: <T extends Entity>(args: WriteStartArgs<T>) => {
-                        const { handle, opContext, entryCount } = args
-                        const entry = getWriteContext(String(handle.storeName), opContext.actionId)
+                        const { handle, context } = args
+                        const entry = getWriteContext(String(handle.storeName), context.id)
                         entry.ctx.emit(`${prefix}:write:start`, {
                             storeName: entry.storeName,
-                            actionId: opContext.actionId,
-                            origin: opContext.origin,
-                            scope: opContext.scope,
-                            entryCount
+                            id: context.id,
+                            origin: context.origin,
+                            scope: context.scope,
+                            entryCount: Array.isArray(args.writeEntries) ? args.writeEntries.length : 0
                         })
                     },
                     onCommitted: <T extends Entity>(args: WriteCommittedArgs<T>) => {
-                        const { handle, opContext } = args
-                        const entry = getWriteContext(String(handle.storeName), opContext.actionId)
+                        const { handle, context } = args
+                        const entry = getWriteContext(String(handle.storeName), context.id)
                         entry.ctx.emit(`${prefix}:write:finish`, {
                             storeName: entry.storeName,
-                            actionId: opContext.actionId,
+                            id: context.id,
                             changeCount: Array.isArray(args.changes) ? args.changes.length : 0
                         })
-                        releaseWriteContext(opContext.actionId)
+                        releaseWriteContext(context.id)
                     },
                     onFailed: <T extends Entity>(args: WriteFailedArgs<T>) => {
-                        const { handle, opContext, error } = args
-                        const entry = getWriteContext(String(handle.storeName), opContext.actionId)
+                        const { handle, context, error } = args
+                        const entry = getWriteContext(String(handle.storeName), context.id)
                         entry.ctx.emit(`${prefix}:write:failed`, {
                             storeName: entry.storeName,
-                            actionId: opContext.actionId,
+                            id: context.id,
                             message: error instanceof Error ? error.message : String(error)
                         })
-                        releaseWriteContext(opContext.actionId)
+                        releaseWriteContext(context.id)
                     }
                 }
             })

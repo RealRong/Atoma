@@ -195,19 +195,19 @@ export class StorageOperationClient implements OperationClient {
 
             try {
                 if (action === 'create') {
-                    const entityId = raw?.entityId
-                    if (entityId === undefined || entityId === null || entityId === '') {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing entityId for create', kind: 'validation', details: { resource } }) }
+                    const rawId = raw?.id
+                    if (rawId === undefined || rawId === null || rawId === '') {
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing id for create', kind: 'validation', details: { resource } }) }
                         continue
                     }
-                    const id = String(entityId)
+                    const id = String(rawId)
                     const current = await this.adapter.get(resource, id)
                     if (current) {
                         const currentVersion = (current as any)?.version
                         results[index] = {
                             entryId,
                             ok: false,
-                            error: standardError({ code: 'CONFLICT', message: 'Already exists', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
+                            error: standardError({ code: 'CONFLICT', message: 'Already exists', kind: 'conflict', details: { resource, id: id, currentVersion } }),
                             current: { value: this.toResponseValue(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
                         }
                         continue
@@ -227,7 +227,7 @@ export class StorageOperationClient implements OperationClient {
                     results[index] = {
                         entryId,
                         ok: true,
-                        entityId: id,
+                        id: id,
                         version,
                         ...(returning ? { data: projectSelect(this.toResponseValue(next), select) } : {})
                     }
@@ -235,23 +235,22 @@ export class StorageOperationClient implements OperationClient {
                 }
 
                 if (action === 'update') {
-                    const entityId = raw?.entityId
-                    const id = String(entityId ?? '')
+                    const id = String(raw?.id ?? '')
                     if (!id) {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing entityId for update', kind: 'validation', details: { resource } }) }
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing id for update', kind: 'validation', details: { resource } }) }
                         continue
                     }
 
                     const current = await this.adapter.get(resource, id)
                     if (!current) {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'NOT_FOUND', message: 'Not found', kind: 'not_found', details: { resource, entityId: id } }) }
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'NOT_FOUND', message: 'Not found', kind: 'not_found', details: { resource, id: id } }) }
                         continue
                     }
 
                     const baseVersion = raw?.baseVersion
                     const currentVersion = (current as any)?.version
                     if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for update', kind: 'validation', details: { resource, entityId: id } }) }
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for update', kind: 'validation', details: { resource, id: id } }) }
                         continue
                     }
                     if (typeof currentVersion !== 'number') {
@@ -262,7 +261,7 @@ export class StorageOperationClient implements OperationClient {
                         results[index] = {
                             entryId,
                             ok: false,
-                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
+                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, id: id, currentVersion } }),
                             current: { value: this.toResponseValue(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
                         }
                         continue
@@ -270,7 +269,7 @@ export class StorageOperationClient implements OperationClient {
 
                     const candidate = raw?.value
                     if (!isPlainObject(candidate)) {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing value for update', kind: 'validation', details: { resource, entityId: id } }) }
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing value for update', kind: 'validation', details: { resource, id: id } }) }
                         continue
                     }
 
@@ -288,7 +287,7 @@ export class StorageOperationClient implements OperationClient {
                     results[index] = {
                         entryId,
                         ok: true,
-                        entityId: id,
+                        id: id,
                         version: nextVersion,
                         ...(returning ? { data: projectSelect(this.toResponseValue(next), select) } : {})
                     }
@@ -296,16 +295,15 @@ export class StorageOperationClient implements OperationClient {
                 }
 
                 if (action === 'upsert') {
-                    const entityId = raw?.entityId
-                    const id = String(entityId ?? '')
+                    const id = String(raw?.id ?? '')
                     if (!id) {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing entityId for upsert', kind: 'validation', details: { resource } }) }
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing id for upsert', kind: 'validation', details: { resource } }) }
                         continue
                     }
 
                     const candidate = raw?.value
                     if (!isPlainObject(candidate)) {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing value for upsert', kind: 'validation', details: { resource, entityId: id } }) }
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing value for upsert', kind: 'validation', details: { resource, id: id } }) }
                         continue
                     }
 
@@ -321,7 +319,7 @@ export class StorageOperationClient implements OperationClient {
                                     code: 'CONFLICT',
                                     message: 'Strict upsert requires baseVersion for existing entity',
                                     kind: 'conflict',
-                                    details: { resource, entityId: id, hint: 'rebase' }
+                                    details: { resource, id: id, hint: 'rebase' }
                                 })
                             }
                             continue
@@ -332,7 +330,7 @@ export class StorageOperationClient implements OperationClient {
                         results[index] = {
                             entryId,
                             ok: true,
-                            entityId: id,
+                            id: id,
                             version: 1,
                             ...(returning ? { data: projectSelect(this.toResponseValue(next), select) } : {})
                         }
@@ -349,7 +347,7 @@ export class StorageOperationClient implements OperationClient {
                                     code: 'CONFLICT',
                                     message: 'Strict upsert requires baseVersion for existing entity',
                                     kind: 'conflict',
-                                    details: { resource, entityId: id, currentVersion, hint: 'rebase' }
+                                    details: { resource, id: id, currentVersion, hint: 'rebase' }
                                 }),
                                 current: { value: this.toResponseValue(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
                             }
@@ -363,7 +361,7 @@ export class StorageOperationClient implements OperationClient {
                             results[index] = {
                                 entryId,
                                 ok: false,
-                                error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
+                                error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, id: id, currentVersion } }),
                                 current: { value: this.toResponseValue(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
                             }
                             continue
@@ -387,7 +385,7 @@ export class StorageOperationClient implements OperationClient {
                     results[index] = {
                         entryId,
                         ok: true,
-                        entityId: id,
+                        id: id,
                         version: nextVersion,
                         ...(returning ? { data: projectSelect(this.toResponseValue(next), select) } : {})
                     }
@@ -395,22 +393,21 @@ export class StorageOperationClient implements OperationClient {
                 }
 
                 if (action === 'delete') {
-                    const entityId = raw?.entityId
-                    const id = String(entityId ?? '')
+                    const id = String(raw?.id ?? '')
                     if (!id) {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing entityId for delete', kind: 'validation', details: { resource } }) }
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing id for delete', kind: 'validation', details: { resource } }) }
                         continue
                     }
 
                     const current = await this.adapter.get(resource, id)
                     if (!current) {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'NOT_FOUND', message: 'Not found', kind: 'not_found', details: { resource, entityId: id } }) }
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'NOT_FOUND', message: 'Not found', kind: 'not_found', details: { resource, id: id } }) }
                         continue
                     }
                     const baseVersion = raw?.baseVersion
                     const currentVersion = (current as any)?.version
                     if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
-                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for delete', kind: 'validation', details: { resource, entityId: id } }) }
+                        results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for delete', kind: 'validation', details: { resource, id: id } }) }
                         continue
                     }
                     if (typeof currentVersion !== 'number') {
@@ -421,14 +418,14 @@ export class StorageOperationClient implements OperationClient {
                         results[index] = {
                             entryId,
                             ok: false,
-                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, entityId: id, currentVersion } }),
+                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, id: id, currentVersion } }),
                             current: { value: this.toResponseValue(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
                         }
                         continue
                     }
                     const nextVersion = baseVersion + 1
                     await this.adapter.delete(resource, id)
-                    results[index] = { entryId, ok: true, entityId: id, version: nextVersion }
+                    results[index] = { entryId, ok: true, id: id, version: nextVersion }
                     continue
                 }
 

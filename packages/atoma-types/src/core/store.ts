@@ -1,6 +1,6 @@
 import type { EntityId } from '../shared'
 import type { Entity, PartialWithId } from './entity'
-import type { OperationContext } from './operation'
+import type { ActionContext } from './action'
 import type { StoreDataProcessor } from './processor'
 import type { Query, QueryOneResult, QueryResult } from './query'
 
@@ -44,7 +44,7 @@ export interface StoreOperationOptions {
     }
     route?: ExecutionRoute
     signal?: AbortSignal
-    opContext?: OperationContext
+    context?: Partial<ActionContext>
 }
 
 export type StoreReadOptions = Readonly<{

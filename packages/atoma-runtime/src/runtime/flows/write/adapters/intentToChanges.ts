@@ -33,7 +33,7 @@ async function resolveUpsertPreparedValue<T extends Entity>(args: {
                 args.runtime,
                 args.input.handle,
                 args.input.item as Partial<T>,
-                args.input.opContext
+                args.input.context
             )
         }
     }
@@ -46,7 +46,7 @@ async function resolveUpsertPreparedValue<T extends Entity>(args: {
                 args.input.handle,
                 base,
                 args.input.item,
-                args.input.opContext
+                args.input.context
             )
         }
     }
@@ -59,7 +59,7 @@ async function resolveUpsertPreparedValue<T extends Entity>(args: {
         updatedAt: now,
         version: (args.input.item as Record<string, unknown>).version ?? (base as Record<string, unknown>).version
     } as unknown) as PartialWithId<T>
-    const processed = await args.runtime.transform.inbound(args.input.handle, candidate as T, args.input.opContext)
+    const processed = await args.runtime.transform.inbound(args.input.handle, candidate as T, args.input.context)
     if (!processed) {
         throw new Error('[Atoma] upsertOne: transform returned empty')
     }
@@ -75,7 +75,7 @@ export async function adaptIntentToChanges<T extends Entity>(args: {
     input: IntentInput<T>
 }): Promise<IntentToChangesResult<T>> {
     if (args.input.action === 'add') {
-        const prepared = await prepareCreateInput(args.runtime, args.input.handle, args.input.item, args.input.opContext)
+        const prepared = await prepareCreateInput(args.runtime, args.input.handle, args.input.item, args.input.context)
         return {
             changes: [{ id: prepared.id, after: prepared as T }],
             output: prepared as T,
@@ -84,14 +84,20 @@ export async function adaptIntentToChanges<T extends Entity>(args: {
     }
 
     if (args.input.action === 'update') {
-        const base = await resolveWriteBase(args.runtime, args.input.handle, args.input.id, args.input.options)
+        const base = await resolveWriteBase(
+            args.runtime,
+            args.input.handle,
+            args.input.id,
+            args.input.options,
+            args.input.context
+        )
         const next = requireEntityObject(args.input.updater(base as Readonly<T>), args.input.id)
         const prepared = await prepareUpdateInput(
             args.runtime,
             args.input.handle,
             base,
             next as PartialWithId<T>,
-            args.input.opContext
+            args.input.context
         )
 
         return {
@@ -122,7 +128,13 @@ export async function adaptIntentToChanges<T extends Entity>(args: {
         }
     }
 
-    const base = await resolveWriteBase(args.runtime, args.input.handle, args.input.id, args.input.options)
+    const base = await resolveWriteBase(
+        args.runtime,
+        args.input.handle,
+        args.input.id,
+        args.input.options,
+        args.input.context
+    )
     return args.input.options?.force
         ? {
             changes: [{ id: args.input.id, before: base as T }],

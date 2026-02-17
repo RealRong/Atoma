@@ -1,28 +1,30 @@
-import type { ChangeDirection, Entity, OperationContext, StoreChange } from 'atoma-types/core'
-import { createOperationContext } from 'atoma-core/operation'
+import type { ChangeDirection, Entity, ActionContext, StoreChange } from 'atoma-types/core'
 import type { ActionRecord, ChangeRecord, UndoStack } from './types'
 
 export type HistoryRecordArgs = Readonly<{
     storeName: string
     changes: StoreChange<Entity>[]
-    opContext: OperationContext
+    context: ActionContext
 }>
 
 export type HistoryApplyArgs = Readonly<{
     storeName: string
     changes: StoreChange<Entity>[]
     direction: ChangeDirection
-    opContext: OperationContext
+    context: ActionContext
 }>
 
 export type HistoryApply = (args: HistoryApplyArgs) => Promise<void>
 
+type ContextBuilder = (context?: Partial<ActionContext>) => ActionContext
 
 export class HistoryManager {
     private readonly history: InMemoryHistory
+    private readonly createContext: ContextBuilder
 
-    constructor() {
+    constructor(createContext: ContextBuilder) {
         this.history = new InMemoryHistory()
+        this.createContext = createContext
     }
 
     listScopes(): string[] {
@@ -33,7 +35,7 @@ export class HistoryManager {
         this.history.recordChange({
             storeName: args.storeName,
             changes: args.changes,
-            ctx: args.opContext
+            context: args.context
         })
     }
 
@@ -45,8 +47,8 @@ export class HistoryManager {
         return this.history.canRedo(scope)
     }
 
-    beginAction(args: { scope: string; label?: string; origin?: OperationContext['origin'] }): OperationContext {
-        return createOperationContext({
+    beginAction(args: { scope: string; label?: string; origin?: ActionContext['origin'] }): ActionContext {
+        return this.createContext({
             scope: String(args.scope || 'default'),
             origin: args.origin ?? 'user',
             label: args.label
@@ -57,7 +59,7 @@ export class HistoryManager {
         const action = this.history.popUndo(args.scope)
         if (!action) return false
 
-        const opContext: OperationContext = createOperationContext({
+        const context = this.createContext({
             scope: String(args.scope || 'default'),
             origin: 'history',
             label: action.label
@@ -70,7 +72,7 @@ export class HistoryManager {
                     storeName: change.storeName,
                     changes: change.changes,
                     direction: 'backward',
-                    opContext
+                    context
                 })
             }
             this.history.pushRedo(args.scope, action)
@@ -85,7 +87,7 @@ export class HistoryManager {
         const action = this.history.popRedo(args.scope)
         if (!action) return false
 
-        const opContext: OperationContext = createOperationContext({
+        const context = this.createContext({
             scope: String(args.scope || 'default'),
             origin: 'history',
             label: action.label
@@ -98,7 +100,7 @@ export class HistoryManager {
                     storeName: change.storeName,
                     changes: change.changes,
                     direction: 'forward',
-                    opContext
+                    context
                 })
             }
             this.history.pushUndo(args.scope, action)
@@ -131,19 +133,19 @@ class InMemoryHistory {
     }
 
     recordChange(change: ChangeRecord) {
-        if (change.ctx.origin !== 'user') return
+        if (change.context.origin !== 'user') return
         if (!change.storeName) return
 
-        const scope = change.ctx.scope || 'default'
-        const actionId = change.ctx.actionId
+        const scope = change.context.scope || 'default'
+        const id = change.context.id
 
         const stack = this.getStack(scope)
         const last = stack.undo[stack.undo.length - 1]
 
-        if (last && last.actionId === actionId) {
+        if (last && last.id === id) {
             last.changes.push(change)
-            if (!last.label && change.ctx.label) {
-                last.label = change.ctx.label
+            if (!last.label && change.context.label) {
+                last.label = change.context.label
             }
             stack.redo = []
             return
@@ -151,9 +153,9 @@ class InMemoryHistory {
 
         const next: ActionRecord = {
             scope,
-            actionId,
+            id,
             origin: 'user',
-            label: change.ctx.label,
+            label: change.context.label,
             changes: [change]
         }
 

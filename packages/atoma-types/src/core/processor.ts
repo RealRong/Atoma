@@ -1,4 +1,4 @@
-import type { OperationContext } from './operation'
+import type { ActionContext } from './action'
 import type { StoreToken } from './store'
 
 /**
@@ -26,7 +26,7 @@ export type DataProcessorStage = 'deserialize' | 'normalize' | 'transform' | 'va
 export type DataProcessorBaseContext<T> = Readonly<{
     storeName: StoreToken
     runtime: unknown
-    opContext?: OperationContext
+    context?: ActionContext
     adapter?: unknown
 }>
 

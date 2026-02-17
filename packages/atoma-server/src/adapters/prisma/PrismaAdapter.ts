@@ -209,7 +209,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             const delegate = this.requireDelegateFromClient(client, resource, 'update')
             const current = await this.findOneByKey(client, resource, this.idField, item.id)
             if (!current) {
-                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
+                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(item.id) })
             }
 
             if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
@@ -258,7 +258,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             const delegate = this.requireDelegateFromClient(this.client, resource, 'delete')
             const current = await this.findOneByKey(this.client, resource, this.idField, id)
             if (!current) {
-                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(id) })
+                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(id) })
             }
             const currentVersion = (current as any).version
             if (typeof currentVersion !== 'number') {
@@ -331,7 +331,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                 throwError('CONFLICT', 'Strict upsert requires baseVersion for existing entity', {
                     kind: 'conflict',
                     resource,
-                    entityId: String(id),
+                    id: String(id),
                     currentVersion,
                     currentValue: current,
                     hint: 'rebase'

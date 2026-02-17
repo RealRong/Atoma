@@ -6,9 +6,9 @@ export type {
 } from './entity'
 
 export type {
-    OperationOrigin,
-    OperationContext,
-} from './operation'
+    ActionOrigin,
+    ActionContext,
+} from './action'
 
 export type {
     CursorToken,

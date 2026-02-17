@@ -187,9 +187,9 @@ async function executeOperationWrite<T extends Entity>(args: {
             })),
             meta: {
                 v: 1,
-                clientTimeMs: request.opContext.timestamp,
-                requestId: request.opContext.actionId,
-                traceId: request.opContext.actionId
+                clientTimeMs: request.context.timestamp,
+                requestId: request.context.id,
+                traceId: request.context.id
             },
             ...(options?.signal ? { signal: options.signal } : {})
         })
@@ -230,7 +230,7 @@ async function executeOperationWrite<T extends Entity>(args: {
             error,
             fallbackMessage: '[Atoma] operation.write failed',
             details: {
-                actionId: request.opContext.actionId
+                id: request.context.id
             }
         })
     }

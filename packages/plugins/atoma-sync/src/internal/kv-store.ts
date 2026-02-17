@@ -23,22 +23,25 @@ export type KVStore = {
 }
 
 const KV_STORE_CACHE = new Map<string, KVStore>()
-const DB_VERSION = 2
+const DB_VERSION = 3
 const DEFAULT_STORE_NAME = 'sync'
 const OUTBOX_STORE_NAME = 'outbox_entries'
 
-function ensureSchema(db: any, storeName: string) {
+function ensureSchema(db: any, storeName: string, args?: { recreateOutbox?: boolean }) {
     if (!db.objectStoreNames.contains(storeName)) {
         db.createObjectStore(storeName)
     }
     // Ensure the outbox objectStore exists as well; see `storage/outbox-store.ts`.
-    if (!db.objectStoreNames.contains(OUTBOX_STORE_NAME)) {
-        const store = db.createObjectStore(OUTBOX_STORE_NAME, { keyPath: 'pk' })
-        store.createIndex('by_outbox', 'outboxKey')
-        store.createIndex('by_outbox_status_enqueued', ['outboxKey', 'status', 'enqueuedAtMs'])
-        store.createIndex('by_outbox_status_inFlightAt', ['outboxKey', 'status', 'inFlightAtMs'])
-        store.createIndex('by_outbox_status_resource_entity_enqueued', ['outboxKey', 'status', 'resource', 'entityId', 'enqueuedAtMs'])
+    if (db.objectStoreNames.contains(OUTBOX_STORE_NAME)) {
+        if (!args?.recreateOutbox) return
+        db.deleteObjectStore(OUTBOX_STORE_NAME)
     }
+
+    const store = db.createObjectStore(OUTBOX_STORE_NAME, { keyPath: 'pk' })
+    store.createIndex('by_outbox', 'outboxKey')
+    store.createIndex('by_outbox_status_enqueued', ['outboxKey', 'status', 'enqueuedAtMs'])
+    store.createIndex('by_outbox_status_inFlightAt', ['outboxKey', 'status', 'inFlightAtMs'])
+    store.createIndex('by_outbox_status_resource_id_enqueued', ['outboxKey', 'status', 'resource', 'id', 'enqueuedAtMs'])
 }
 
 export function createKVStore(options?: { dbName?: string; storeName?: string }): KVStore {
@@ -75,8 +78,10 @@ export function createKVStore(options?: { dbName?: string; storeName?: string })
     }
 
     const dbPromise = openDB(dbName, DB_VERSION, {
-        upgrade(db) {
-            ensureSchema(db as any, storeName)
+        upgrade(db, oldVersion) {
+            ensureSchema(db as any, storeName, {
+                recreateOutbox: oldVersion > 0 && oldVersion < 3
+            })
         }
     })
 

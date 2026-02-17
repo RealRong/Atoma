@@ -20,30 +20,29 @@ export class WritebackApplier implements SyncApplier {
 
         for (const [resource, changesForResource] of byResource.entries()) {
             const deleteKeys: EntityId[] = []
-            const upsertEntityIds: EntityId[] = []
+            const upsertIds: EntityId[] = []
 
             for (const c of changesForResource) {
                 if (c.kind === 'delete') {
-                    deleteKeys.push(String(c.entityId) as EntityId)
+                    deleteKeys.push(String(c.id) as EntityId)
                     continue
                 }
-                upsertEntityIds.push(String(c.entityId) as EntityId)
+                upsertIds.push(String(c.id) as EntityId)
             }
 
-            const uniqueUpsertKeys = Array.from(new Set(upsertEntityIds))
+            const uniqueUpsertKeys = Array.from(new Set(upsertIds))
             const uniqueDeleteKeys = Array.from(new Set(deleteKeys))
 
             const upsertsRaw = uniqueUpsertKeys.length
-                ? this.deps.runtime.stores.query<any>({
-                    storeName: resource as any,
-                    query: {
+                ? this.deps.runtime.stores.query<any>(
+                    resource as any,
+                    {
                         filter: { op: 'in', field: 'id', values: uniqueUpsertKeys }
-                    },
-                }).data.filter((i: any): i is any => i !== undefined)
+                    }
+                ).data.filter((i: any): i is any => i !== undefined)
                 : []
 
-            await this.deps.runtime.stores.applyWriteback({
-                storeName: resource as any,
+            await this.deps.runtime.stores.applyWriteback(resource as any, {
                 upserts: upsertsRaw,
                 deletes: uniqueDeleteKeys
             } as any)
@@ -53,11 +52,11 @@ export class WritebackApplier implements SyncApplier {
     applyWriteAck = async (ack: SyncWriteAck) => {
         const upserts: any[] = []
         const deletes: EntityId[] = []
-        const versionUpdates: Array<{ key: EntityId; version: number }> = []
+        const versionUpdates: Array<{ id: EntityId; version: number }> = []
 
         const version = (ack.result as any)?.version
         if (typeof version === 'number' && Number.isFinite(version)) {
-            versionUpdates.push({ key: String((ack.result as any).entityId) as EntityId, version })
+            versionUpdates.push({ id: String((ack.result as any).id) as EntityId, version })
         }
 
         const serverData = (ack.result as any)?.data
@@ -65,8 +64,7 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(serverData)
         }
 
-        await this.deps.runtime.stores.applyWriteback({
-            storeName: ack.resource as any,
+        await this.deps.runtime.stores.applyWriteback(ack.resource as any, {
             upserts,
             deletes,
             versionUpdates
@@ -80,9 +78,9 @@ export class WritebackApplier implements SyncApplier {
         const deletes: EntityId[] = []
 
         if (reject.entry.action === 'create') {
-            const tempEntityId = (reject.entry.item as any)?.entityId
-            const tempKey = (typeof tempEntityId === 'string' && tempEntityId)
-                ? (tempEntityId as EntityId)
+            const tempId = (reject.entry.item as any)?.id
+            const tempKey = (typeof tempId === 'string' && tempId)
+                ? (tempId as EntityId)
                 : null
             if (tempKey !== null) {
                 deletes.push(tempKey)
@@ -95,8 +93,7 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(current.value)
         }
 
-        await this.deps.runtime.stores.applyWriteback({
-            storeName: reject.resource as any,
+        await this.deps.runtime.stores.applyWriteback(reject.resource as any, {
             upserts,
             deletes
         } as any)

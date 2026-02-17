@@ -1,5 +1,5 @@
 import { createIdempotencyKey, ensureWriteItemMeta, requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
-import type { Entity, OperationContext, StoreChange, StoreOperationOptions } from 'atoma-types/core'
+import type { Entity, ActionContext, StoreChange, StoreOperationOptions } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, StoreHandle, WriteEntry, WriteItemMeta, WriteOptions } from 'atoma-types/runtime'
 import type { WritePlan, WritePlanEntry, WritePlanPolicy } from '../types'
@@ -39,7 +39,7 @@ function createPlanEntry<T extends Entity>(args: {
     return {
         entry: args.entry,
         optimistic: {
-            entityId: args.id,
+            id: args.id,
             ...(args.value !== undefined ? { value: args.value } : {})
         }
     }
@@ -48,7 +48,7 @@ function createPlanEntry<T extends Entity>(args: {
 type WritePlanFromChangesInput<T extends Entity> = {
     runtime: Runtime
     handle: StoreHandle<T>
-    opContext: OperationContext
+    context: ActionContext
     options?: StoreOperationOptions
     changes: ReadonlyArray<StoreChange<T>>
     policy?: WritePlanPolicy
@@ -76,7 +76,7 @@ export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFrom
 
             const base = current
                 ? current
-                : await resolveWriteBase(args.runtime, args.handle, id, args.options)
+                : await resolveWriteBase(args.runtime, args.handle, id, args.options, args.context)
             const baseVersion = requireBaseVersion(id, base)
 
             plan.push(createPlanEntry({
@@ -85,7 +85,7 @@ export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFrom
                     entryId: args.createEntryId(),
                     action: 'delete',
                     item: {
-                        entityId: id,
+                        id,
                         baseVersion,
                         meta
                     }
@@ -102,7 +102,7 @@ export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFrom
             throw new Error(`[Atoma] buildPlanFromChanges: target id mismatch (change.id=${String(id)} target.id=${String(target.id)})`)
         }
 
-        const outbound = await args.runtime.transform.outbound(args.handle, target, args.opContext)
+        const outbound = await args.runtime.transform.outbound(args.handle, target, args.context)
         if (outbound === undefined) {
             throw new Error('[Atoma] transform returned empty for outbound write')
         }
@@ -111,7 +111,7 @@ export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFrom
         const updateBaseVersion = action === 'update'
             ? requireBaseVersion(
                 id,
-                current ? current : await resolveWriteBase(args.runtime, args.handle, id, args.options)
+                current ? current : await resolveWriteBase(args.runtime, args.handle, id, args.options, args.context)
             )
             : undefined
         const upsertBaseVersion = action === 'upsert'
@@ -123,7 +123,7 @@ export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFrom
                 entryId,
                 action: 'create',
                 item: {
-                    entityId: id,
+                    id,
                     value: outbound,
                     meta
                 }
@@ -133,7 +133,7 @@ export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFrom
                     entryId,
                     action: 'update',
                     item: {
-                        entityId: id,
+                        id,
                         baseVersion: updateBaseVersion as number,
                         value: outbound,
                         meta
@@ -143,7 +143,7 @@ export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFrom
                     entryId,
                     action: 'upsert',
                     item: {
-                        entityId: id,
+                        id,
                         ...(typeof upsertBaseVersion === 'number' ? { baseVersion: upsertBaseVersion } : {}),
                         value: outbound,
                         meta

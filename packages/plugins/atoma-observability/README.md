@@ -50,7 +50,7 @@ client.observe.registerStore({
 ## Notes
 
 - `query.explain` is no longer part of core APIs. If you want explain-like artifacts, implement them at the plugin layer (e.g. buffer events per trace and build a summary).
-- The plugin’s default trace id uses `actionId` for writes and a per-query context for reads. You can always create custom contexts via the plugin extension.
+- The plugin’s default trace id uses `id` for writes and a per-query context for reads. You can always create custom contexts via the plugin extension.
 - If the server doesn’t consume `op.meta.traceId/requestId`, this still works for client-side correlation and future server upgrades.
 - For best results, call `observe.registerStore(...)` before issuing reads/writes for that store.
 

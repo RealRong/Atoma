@@ -1,4 +1,4 @@
-import type { Entity, ExecutionRoute, OperationContext, PageInfo, Query } from '../core'
+import type { Entity, ExecutionRoute, ActionContext, PageInfo, Query } from '../core'
 import type { EntityId, Version } from '../shared'
 import type { StoreHandle } from './handle'
 
@@ -13,27 +13,27 @@ export type WriteItemMeta = {
 }
 
 export type WriteItemCreate = {
-    entityId?: EntityId
+    id?: EntityId
     value: unknown
     meta?: WriteItemMeta
 }
 
 export type WriteItemUpdate = {
-    entityId: EntityId
+    id: EntityId
     baseVersion: Version
     value: unknown
     meta?: WriteItemMeta
 }
 
 export type WriteItemUpsert = {
-    entityId: EntityId
+    id: EntityId
     baseVersion?: Version
     value: unknown
     meta?: WriteItemMeta
 }
 
 export type WriteItemDelete = {
-    entityId: EntityId
+    id: EntityId
     baseVersion: Version
     meta?: WriteItemMeta
 }
@@ -94,7 +94,7 @@ export type WriteError = {
 }
 
 export type WriteItemResult =
-    | { entryId: string; ok: true; entityId: EntityId; version: Version; data?: unknown }
+    | { entryId: string; ok: true; id: EntityId; version: Version; data?: unknown }
     | {
         entryId: string
         ok: false
@@ -109,7 +109,7 @@ export type ExecutionOptions = Readonly<{
 
 export type WriteRequest<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
-    opContext: OperationContext
+    context: ActionContext
     entries: ReadonlyArray<WriteEntry>
 }>
 

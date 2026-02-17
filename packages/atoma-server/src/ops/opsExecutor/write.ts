@@ -51,20 +51,20 @@ function requiredSelectFields(action: string): string[] {
     return []
 }
 
-function validateCreateEntityIdMatchesValue(raw: any): { ok: true } | { ok: false; reason: string } {
-    const entityId = raw?.entityId
+function validateCreateIdMatchesValue(raw: any): { ok: true } | { ok: false; reason: string } {
+    const id = raw?.id
     const value = raw?.value
-    if (entityId === undefined || entityId === null) return { ok: true }
+    if (id === undefined || id === null) return { ok: true }
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: true }
     if (!hasOwn(value, 'id')) return { ok: true }
 
     const valueId = (value as any).id
     if (valueId === undefined || valueId === null) return { ok: true }
 
-    const a = normalizeId(entityId)
+    const a = normalizeId(id)
     const b = normalizeId(valueId)
     if (!a || !b) return { ok: true }
-    if (a !== b) return { ok: false, reason: 'Create entityId does not match value.id' }
+    if (a !== b) return { ok: false, reason: 'Create id does not match value.id' }
     return { ok: true }
 }
 
@@ -93,7 +93,7 @@ function toOkItemResult(entryId: string, res: any) {
     return {
         entryId,
         ok: true,
-        entityId: res.replay.id,
+        id: res.replay.id,
         version: res.replay.serverVersion,
         ...(res.data !== undefined ? { data: res.data } : {})
     }
@@ -206,7 +206,7 @@ export async function executeWriteOps<Ctx>(args: {
                     }
 
                     if (action === 'create') {
-                        const match = validateCreateEntityIdMatchesValue(raw)
+                        const match = validateCreateIdMatchesValue(raw)
                         if (!match.ok) {
                             const standard = invalidWrite(match.reason)
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
@@ -219,7 +219,7 @@ export async function executeWriteOps<Ctx>(args: {
                                 resource,
                                 action,
                                 index,
-                                entityId: raw?.entityId,
+                                id: raw?.id,
                                 baseVersion: raw?.baseVersion,
                                 idempotencyKey,
                                 error: standard
@@ -241,7 +241,7 @@ export async function executeWriteOps<Ctx>(args: {
                                 return {
                                     kind: 'create',
                                     ...base,
-                                    id: raw?.entityId,
+                                    id: raw?.id,
                                     data: raw?.value,
                                     ...(writeOptions !== undefined ? { options: writeOptions as any } : {})
                                 }
@@ -250,7 +250,7 @@ export async function executeWriteOps<Ctx>(args: {
                                 return {
                                     kind: 'update',
                                     ...base,
-                                    id: raw?.entityId,
+                                    id: raw?.id,
                                     baseVersion: raw?.baseVersion,
                                     data: raw?.value,
                                     ...(writeOptions !== undefined ? { options: writeOptions as any } : {})
@@ -260,7 +260,7 @@ export async function executeWriteOps<Ctx>(args: {
                                 return {
                                     kind: 'upsert',
                                     ...base,
-                                    id: raw?.entityId,
+                                    id: raw?.id,
                                     baseVersion: raw?.baseVersion,
                                     data: raw?.value,
                                     ...(timestamp !== undefined ? { timestamp } : {}),
@@ -270,7 +270,7 @@ export async function executeWriteOps<Ctx>(args: {
                             return {
                                 kind: 'delete',
                                 ...base,
-                                id: raw?.entityId,
+                                id: raw?.id,
                                 baseVersion: raw?.baseVersion,
                                 ...(writeOptions !== undefined ? { options: writeOptions as any } : {})
                             }
@@ -287,7 +287,7 @@ export async function executeWriteOps<Ctx>(args: {
                         resource,
                         action,
                         index,
-                        entityId: raw?.entityId,
+                        id: raw?.id,
                         baseVersion: raw?.baseVersion,
                         idempotencyKey,
                         error: serializeErrorForLog(err)
@@ -351,7 +351,7 @@ export async function executeWriteOps<Ctx>(args: {
 
                     if (action === 'update') {
                         const baseVersion = raw?.baseVersion
-                        if (raw?.entityId === undefined) {
+                        if (raw?.id === undefined) {
                             const standard = invalidWrite('Missing id for update')
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
                             if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
@@ -370,7 +370,7 @@ export async function executeWriteOps<Ctx>(args: {
                     }
 
                     if (action === 'upsert') {
-                        if (raw?.entityId === undefined) {
+                        if (raw?.id === undefined) {
                             const standard = invalidWrite('Missing id for upsert')
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
                             if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
@@ -381,7 +381,7 @@ export async function executeWriteOps<Ctx>(args: {
                     }
 
                     if (action === 'create') {
-                        const match = validateCreateEntityIdMatchesValue(raw)
+                        const match = validateCreateIdMatchesValue(raw)
                         if (!match.ok) {
                             const standard = invalidWrite(match.reason)
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
@@ -394,7 +394,7 @@ export async function executeWriteOps<Ctx>(args: {
 
                     if (action === 'delete') {
                         const baseVersion = raw?.baseVersion
-                        if (raw?.entityId === undefined) {
+                        if (raw?.id === undefined) {
                             const standard = invalidWrite('Missing id for delete')
                             const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
                             if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
@@ -430,8 +430,8 @@ export async function executeWriteOps<Ctx>(args: {
                             const data = (value && typeof value === 'object' && !Array.isArray(value))
                                 ? { ...(value as any) }
                                 : {}
-                            if (p.raw?.entityId !== undefined && p.raw?.entityId !== null) {
-                                ;(data as any).id = p.raw?.entityId
+                            if (p.raw?.id !== undefined && p.raw?.id !== null) {
+                                ;(data as any).id = p.raw?.id
                             }
                             const v = (data as any).version
                             if (!(typeof v === 'number' && Number.isFinite(v) && v >= 1)) (data as any).version = 1
@@ -444,7 +444,7 @@ export async function executeWriteOps<Ctx>(args: {
                             const data = (value && typeof value === 'object' && !Array.isArray(value))
                                 ? { ...(value as any) }
                                 : {}
-                            return { id: p.raw?.entityId, data, baseVersion: p.raw?.baseVersion }
+                            return { id: p.raw?.id, data, baseVersion: p.raw?.baseVersion }
                         })
                     }
                     if (action === 'upsert') {
@@ -454,7 +454,7 @@ export async function executeWriteOps<Ctx>(args: {
                                 ? { ...(value as any) }
                                 : {}
                             return {
-                                id: p.raw?.entityId,
+                                id: p.raw?.id,
                                 data,
                                 baseVersion: p.raw?.baseVersion,
                                 ...(p.timestamp !== undefined ? { timestamp: p.timestamp } : {}),
@@ -463,7 +463,7 @@ export async function executeWriteOps<Ctx>(args: {
                             }
                         })
                     }
-                    return pending.map(p => ({ id: p.raw?.entityId, baseVersion: p.raw?.baseVersion }))
+                    return pending.map(p => ({ id: p.raw?.id, baseVersion: p.raw?.baseVersion }))
                 })()
 
                 const bulkOptions = (() => {
@@ -486,12 +486,12 @@ export async function executeWriteOps<Ctx>(args: {
 
                         if (r.ok) {
                             const row = r.data
-                            const expected = normalizeId(p.raw?.entityId)
+                            const expected = normalizeId(p.raw?.id)
                             const actual = normalizeId((row as any)?.id)
 
                             const id = action === 'create'
                                 ? (expected ? expected : actual)
-                                : normalizeId(p.raw?.entityId)
+                                : normalizeId(p.raw?.id)
 
                             if (action === 'create' && !id) {
                                 throw createError('INTERNAL', 'Create returned missing id', { kind: 'internal', resource })
@@ -578,7 +578,7 @@ export async function executeWriteOps<Ctx>(args: {
                             resource,
                             action,
                             index: p.index,
-                            entityId: p.raw?.entityId,
+                            id: p.raw?.id,
                             baseVersion: p.raw?.baseVersion,
                             idempotencyKey: p.idempotencyKey,
                             rawError: serializeErrorForLog(r.error),
@@ -599,7 +599,7 @@ export async function executeWriteOps<Ctx>(args: {
                             resource,
                             action,
                             index: p.index,
-                            entityId: p.raw?.entityId,
+                            id: p.raw?.id,
                             baseVersion: p.raw?.baseVersion,
                             idempotencyKey: p.idempotencyKey,
                             error: serializeErrorForLog(err)

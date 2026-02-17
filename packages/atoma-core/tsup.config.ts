@@ -6,7 +6,7 @@ export default defineConfig({
         query: 'src/query/index.ts',
         relations: 'src/relations/index.ts',
         indexes: 'src/indexes/index.ts',
-        operation: 'src/operation.ts'
+        action: 'src/action.ts'
     },
     format: ['esm'],
     dts: true,

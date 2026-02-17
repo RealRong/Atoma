@@ -1,4 +1,4 @@
-import type { Entity, OperationContext, Query, QueryResult, StoreToken, ExecutionRoute, StoreChange } from '../core'
+import type { Entity, ActionContext, Query, QueryResult, StoreToken, ExecutionRoute, StoreChange } from '../core'
 import type { WriteEntry } from './persistence'
 import type { StoreHandle } from './handle'
 
@@ -22,15 +22,14 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
     }>
     writeStart: Readonly<{
         handle: StoreHandle<T>
-        opContext: OperationContext
-        entryCount: number
+        context: ActionContext
         source: WriteEventSource
         route?: ExecutionRoute
         writeEntries: ReadonlyArray<WriteEntry>
     }>
     writeCommitted: Readonly<{
         handle: StoreHandle<T>
-        opContext: OperationContext
+        context: ActionContext
         route?: ExecutionRoute
         writeEntries: ReadonlyArray<WriteEntry>
         result?: unknown
@@ -38,7 +37,7 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
     }>
     writeFailed: Readonly<{
         handle: StoreHandle<T>
-        opContext: OperationContext
+        context: ActionContext
         route?: ExecutionRoute
         writeEntries: ReadonlyArray<WriteEntry>
         error: unknown

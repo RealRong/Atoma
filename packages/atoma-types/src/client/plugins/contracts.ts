@@ -1,6 +1,6 @@
 import type {
     ChangeDirection,
-    OperationContext,
+    ActionContext,
     Entity,
     Query,
     QueryResult,
@@ -24,28 +24,37 @@ export type PluginServices = Readonly<{
     resolve: ServiceRegistry['resolve']
 }>
 
+export type StoreActionOptions = Readonly<{
+    context?: Partial<ActionContext>
+}>
+
+export type WritebackData<T extends Entity> = Readonly<{
+    upserts: T[]
+    deletes: EntityId[]
+    versionUpdates?: Array<{ id: EntityId; version: number }>
+}>
+
 export type PluginRuntime = Readonly<{
     id: Runtime['id']
     now: Runtime['now']
     stores: Readonly<{
         list: () => StoreToken[]
         ensure: <T extends Entity>(storeName: StoreToken) => Store<T>
-        query: <T extends Entity>(args: {
-            storeName: StoreToken
-            query: Query<T>
-        }) => QueryResult<T>
-        applyChanges: <T extends Entity>(args: {
-            storeName: StoreToken
-            changes: ReadonlyArray<StoreChange<T>>
-            direction: ChangeDirection
-            opContext: OperationContext
-        }) => Promise<void>
-        applyWriteback: <T extends Entity>(args: {
-            storeName: StoreToken
-            upserts: T[]
-            deletes: EntityId[]
-            versionUpdates?: Array<{ key: EntityId; version: number }>
-        }) => Promise<StoreDelta<T> | null>
+        query: <T extends Entity>(storeName: StoreToken, query: Query<T>) => QueryResult<T>
+        applyChanges: <T extends Entity>(
+            storeName: StoreToken,
+            changes: ReadonlyArray<StoreChange<T>>,
+            direction: ChangeDirection,
+            options?: StoreActionOptions
+        ) => Promise<void>
+        applyWriteback: <T extends Entity>(
+            storeName: StoreToken,
+            data: WritebackData<T>,
+            options?: StoreActionOptions
+        ) => Promise<StoreDelta<T> | null>
+    }>
+    action: Readonly<{
+        createContext: (context?: Partial<ActionContext>) => ActionContext
     }>
     execution: Readonly<{
         apply: Runtime['execution']['apply']

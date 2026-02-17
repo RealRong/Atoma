@@ -180,7 +180,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
             const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
             if (!current) {
-                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
+                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(item.id) })
             }
 
             const base = this.toPlain(current)
@@ -236,7 +236,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 if (id === undefined) throw new Error('delete requires id')
                 const current = await repo.findOne({ where: { [this.idField]: id } as any })
                 if (!current) {
-                    throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(id) })
+                    throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(id) })
                 }
                 const currentPlain = this.toPlain(current)
                 const currentVersion = (currentPlain as any).version
@@ -302,7 +302,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 if (item.id === undefined) throw new Error('bulkUpdate item missing id')
 
                 const current = await repo.findOne({ where: { [this.idField]: item.id } as any })
-                if (!current) throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, entityId: String(item.id) })
+                if (!current) throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(item.id) })
 
                 const base = this.toPlain(current)
                 if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
@@ -433,7 +433,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                         throwError('CONFLICT', 'Strict upsert requires baseVersion for existing entity', {
                             kind: 'conflict',
                             resource,
-                            entityId: String(item.id),
+                            id: String(item.id),
                             currentVersion,
                             currentValue: current,
                             hint: 'rebase'

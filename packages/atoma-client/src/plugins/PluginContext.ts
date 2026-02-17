@@ -1,7 +1,6 @@
 import type {
     ChangeDirection,
     Entity,
-    OperationContext,
     Query,
     QueryResult,
     StoreChange,
@@ -9,8 +8,11 @@ import type {
     StoreToken,
     StoreDelta
 } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
-import type { PluginContext as PluginContextType } from 'atoma-types/client/plugins'
+import type {
+    PluginContext as PluginContextType,
+    StoreActionOptions,
+    WritebackData
+} from 'atoma-types/client/plugins'
 import type { Runtime } from 'atoma-runtime'
 import { ServiceRegistry } from './ServiceRegistry'
 
@@ -42,59 +44,48 @@ export class PluginContext implements PluginContextType {
                     return names
                 },
                 ensure: <T extends Entity>(storeName: StoreToken) => runtime.stores.ensure(storeName) as unknown as Store<T>,
-                query: <T extends Entity>({
-                    storeName,
-                    query
-                }: {
-                    storeName: StoreToken
-                    query: Query<T>
-                }) => {
+                query: <T extends Entity>(storeName: StoreToken, query: Query<T>) => {
                     const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.stores.query')
                     return runtime.engine.query.evaluate({
                         state: handle.state,
                         query
                     }) as QueryResult<T>
                 },
-                applyChanges: async <T extends Entity>({
-                    storeName,
-                    changes,
-                    direction,
-                    opContext
-                }: {
-                    storeName: StoreToken
-                    changes: ReadonlyArray<StoreChange<T>>
-                    direction: ChangeDirection
-                    opContext: OperationContext
-                }) => {
+                applyChanges: async <T extends Entity>(
+                    storeName: StoreToken,
+                    changes: ReadonlyArray<StoreChange<T>>,
+                    direction: ChangeDirection,
+                    options?: StoreActionOptions
+                ) => {
                     const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.stores.applyChanges')
                     await runtime.write.applyChanges(
                         handle,
                         changes,
                         direction,
-                        { opContext }
+                        options
                     )
                 },
-                applyWriteback: async <T extends Entity>({
-                    storeName,
-                    upserts,
-                    deletes,
-                    versionUpdates
-                }: {
-                    storeName: StoreToken
-                    upserts: T[]
-                    deletes: EntityId[]
-                    versionUpdates?: Array<{ key: EntityId; version: number }>
-                }) => {
+                applyWriteback: async <T extends Entity>(
+                    storeName: StoreToken,
+                    data: WritebackData<T>,
+                    options?: StoreActionOptions
+                ) => {
                     const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.stores.applyWriteback')
+                    const context = options?.context
+                        ? runtime.engine.action.createContext(options.context)
+                        : undefined
                     const processed = await Promise.all(
-                        upserts.map((item) => runtime.transform.writeback(handle, item))
+                        data.upserts.map((item) => runtime.transform.writeback(handle, item, context))
                     ) as Array<T | undefined>
                     return handle.state.applyWriteback({
                         upserts: processed.filter((item): item is T => item !== undefined),
-                        deletes,
-                        ...(versionUpdates ? { versionUpdates } : {})
-                    } as any) as StoreDelta<T> | null
+                        deletes: data.deletes,
+                        ...(data.versionUpdates ? { versionUpdates: data.versionUpdates } : {})
+                    }) as StoreDelta<T> | null
                 }
+            },
+            action: {
+                createContext: runtime.engine.action.createContext
             },
             execution: {
                 apply: runtime.execution.apply,

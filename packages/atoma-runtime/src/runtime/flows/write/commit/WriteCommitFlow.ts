@@ -22,7 +22,7 @@ import type {
 type CommitSession<T extends Entity> = Readonly<{
     runtime: WriteCommitRequest<T>['runtime']
     handle: WriteCommitRequest<T>['handle']
-    opContext: WriteCommitRequest<T>['opContext']
+    context: WriteCommitRequest<T>['context']
     route?: WriteCommitRequest<T>['route']
     signal?: WriteCommitRequest<T>['signal']
 }>
@@ -50,7 +50,7 @@ function applyOptimisticState<T extends Entity>(args: {
 
     const optimistic = handle.state.mutate((draft) => {
         plan.forEach(({ entry, optimistic: optimisticEntry }) => {
-            const id = optimisticEntry.entityId
+            const id = optimisticEntry.id
             if (!id) return
 
             if (entry.action === 'delete') {
@@ -150,13 +150,13 @@ async function resolveWriteResult<T extends Entity>(args: {
     }
 
     const upserts: T[] = []
-    const versionUpdates: Array<{ key: EntityId; version: number }> = []
+    const versionUpdates: Array<{ id: EntityId; version: number }> = []
     let output: T | undefined
 
     const primary = primaryPlan
         ? {
             action: primaryPlan.entry.action,
-            entityId: primaryPlan.optimistic.entityId
+            id: primaryPlan.optimistic.id
         }
         : undefined
 
@@ -170,10 +170,10 @@ async function resolveWriteResult<T extends Entity>(args: {
         if (!itemResult.ok) throw toWriteItemError(entry.action, itemResult)
 
         if (typeof itemResult.version === 'number' && Number.isFinite(itemResult.version) && itemResult.version > 0) {
-            const fallbackEntityId = entry.item.entityId
-            const entityId = itemResult.entityId ?? optimistic.entityId ?? fallbackEntityId
-            if (entityId) {
-                versionUpdates.push({ key: entityId, version: itemResult.version })
+            const fallbackId = entry.item.id
+            const id = itemResult.id ?? optimistic.id ?? fallbackId
+            if (id) {
+                versionUpdates.push({ id, version: itemResult.version })
             }
         }
 
@@ -184,7 +184,7 @@ async function resolveWriteResult<T extends Entity>(args: {
 
         upserts.push(normalized)
         if (!output && primary && entry.action === primary.action) {
-            if (!primary.entityId || optimistic.entityId === primary.entityId) {
+            if (!primary.id || optimistic.id === primary.id) {
                 output = normalized
             }
         }
@@ -273,7 +273,7 @@ async function runWriteTransaction<T extends Entity>(args: {
     const writeResult = await session.runtime.execution.write(
         {
             handle: session.handle,
-            opContext: session.opContext,
+            context: session.context,
             entries: plan.map((entry) => entry.entry)
         },
         toExecutionOptions(session)
@@ -299,7 +299,7 @@ function resolveSession<T extends Entity>(request: WriteCommitRequest<T>): Commi
     return {
         runtime: request.runtime,
         handle: request.handle,
-        opContext: request.opContext,
+        context: request.context,
         route: request.route,
         signal: request.signal
     }

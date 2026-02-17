@@ -4,7 +4,7 @@ import type { EntityId } from '../shared'
 export type StoreWritebackArgs<T extends Entity> = Readonly<{
     upserts?: T[]
     deletes?: EntityId[]
-    versionUpdates?: Array<{ key: EntityId; version: number }>
+    versionUpdates?: Array<{ id: EntityId; version: number }>
 }>
 
 export type StoreChange<T extends Entity> = Readonly<{

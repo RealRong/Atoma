@@ -29,27 +29,27 @@ export type WriteItemMeta = {
 }
 
 export type WriteItemCreate = {
-    entityId?: EntityId
+    id?: EntityId
     value: unknown
     meta?: WriteItemMeta
 }
 
 export type WriteItemUpdate = {
-    entityId: EntityId
+    id: EntityId
     baseVersion: Version
     value: unknown
     meta?: WriteItemMeta
 }
 
 export type WriteItemUpsert = {
-    entityId: EntityId
+    id: EntityId
     baseVersion?: Version
     value: unknown
     meta?: WriteItemMeta
 }
 
 export type WriteItemDelete = {
-    entityId: EntityId
+    id: EntityId
     baseVersion: Version
     meta?: WriteItemMeta
 }
@@ -148,7 +148,7 @@ export type QueryResultData = {
 }
 
 export type WriteItemResult =
-    | { entryId: string; ok: true; entityId: EntityId; version: Version; data?: unknown }
+    | { entryId: string; ok: true; id: EntityId; version: Version; data?: unknown }
     | { entryId: string; ok: false; error: StandardError; current?: { value?: unknown; version?: Version } }
 
 export type WriteEntryResult = WriteItemResult

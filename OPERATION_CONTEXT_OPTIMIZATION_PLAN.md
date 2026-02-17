@@ -4,13 +4,13 @@
 
 ## 1. 结论
 
-`OperationContext` 这条能力需要保留，但应一步到位收敛到 `ActionContext` 方案。
+`ActionContext` 这条能力需要保留，但应一步到位收敛到 `ActionContext` 方案。
 
 目标：
 
-1. 核心类型统一为 `ActionContext`，字段 `actionId` 统一改为 `id`。
+1. 核心类型统一为 `ActionContext`，字段 `id` 统一改为 `id`。
 2. 不引入 `ActionContextInput`，外部输入统一 `Partial<ActionContext>`。
-3. 全链路参数名统一 `context`（禁用 `opContext/ctx`）。
+3. 全链路参数名统一 `context`（禁用 `context/ctx`）。
 4. PluginContext stores API 调整为：`storeName` 第一参数，数据第二参数，控制项第三参数。
 5. `stores.query` 采用 `query(storeName, query)`，不使用 options 包裹单参数。
 6. `applyWriteback` 采用 `applyWriteback(storeName, data, options?)`，与行业常见三段式保持一致。
@@ -21,12 +21,12 @@
 
 ### 2.1 入口与创建
 
-- `StoreOperationOptions` 当前字段为 `opContext?: OperationContext`（待收敛）
+- `StoreOperationOptions` 当前字段为 `context?: ActionContext`（待收敛）
   - `packages/atoma-types/src/core/store.ts:40`
 - 写入入口创建上下文
   - `packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:47`
 - 创建函数位于 core
-  - `packages/atoma-core/src/operation.ts:6`
+  - `packages/atoma-core/src/action.ts:6`
 
 ### 2.2 传播路径
 
@@ -106,7 +106,7 @@ type StoreActionOptions = Readonly<{
 type WritebackData<T extends Entity> = Readonly<{
     upserts: T[]
     deletes: EntityId[]
-    versionUpdates?: Array<{ entityId: EntityId; version: number }>
+    versionUpdates?: Array<{ id: EntityId; version: number }>
 }>
 
 type PluginRuntimeStores = Readonly<{
@@ -185,9 +185,9 @@ action: Readonly<{
 全仓统一：
 
 - 类型：`ActionContext` / `ActionOrigin`
-- 字段：`id`（替代 `actionId`）
+- 字段：`id`（替代 `id`）
 - 参数：`context`
-- 禁用：`opContext`、`ctx`
+- 禁用：`context`、`ctx`
 
 示例：
 
@@ -201,27 +201,27 @@ action: Readonly<{
 
 ### P0（核心链路）
 
-1. `packages/atoma-types/src/core/operation.ts`
-   - `OperationContext` -> `ActionContext`
-   - `OperationOrigin` -> `ActionOrigin`
-   - 字段 `actionId` -> `id`
+1. `packages/atoma-types/src/core/action.ts`
+   - `ActionContext` -> `ActionContext`
+   - `ActionOrigin` -> `ActionOrigin`
+   - 字段 `id` -> `id`
 2. `packages/atoma-types/src/core/store.ts`
-   - `StoreOperationOptions.opContext` -> `context?: Partial<ActionContext>`
-3. `packages/atoma-types/src/runtime/engine/operation.ts`
+   - `StoreOperationOptions.context` -> `context?: Partial<ActionContext>`
+3. `packages/atoma-types/src/runtime/engine/action.ts`
    - `createContext` 入参使用 `Partial<ActionContext>`
 4. `packages/atoma-types/src/runtime/persistence.ts`
-   - `WriteRequest.opContext` -> `context`
-5. `packages/atoma-core/src/operation.ts`
-   - `createOperationContext` -> `createActionContext`
+   - `WriteRequest.context` -> `context`
+5. `packages/atoma-core/src/action.ts`
+   - `createActionContext` -> `createActionContext`
    - 入参改为 `Partial<ActionContext>`
 6. `packages/atoma-runtime/src/runtime/flows/WriteFlow.ts`
-   - 全量 `opContext` -> `context`
+   - 全量 `context` -> `context`
    - context 创建注入 `now: runtime.now`
    - `*Many` 共享同一 `context.id`
 7. `packages/atoma-runtime/src/runtime/flows/write/*`
-   - 全量 `opContext` -> `context`
+   - 全量 `context` -> `context`
 8. `packages/atoma-runtime/src/runtime/transform/TransformPipeline.ts`
-   - `opContext` 参数与 stage context 字段统一改 `context`
+   - `context` 参数与 stage context 字段统一改 `context`
 
 ### P1（PluginContext 与插件）
 
@@ -235,7 +235,7 @@ action: Readonly<{
    - 暴露 `runtime.action.createContext`
 3. `packages/plugins/atoma-history/src/*`
    - 调用方式同步至新 stores API
-   - `actionId` 字段使用改为 `id`
+   - `id` 字段使用改为 `id`
 4. `packages/plugins/atoma-observability/src/plugin.ts`
    - 事件读取 `context.id`
 5. `packages/plugins/atoma-backend-shared/src/buildOperationExecutor.ts`
@@ -251,7 +251,7 @@ action: Readonly<{
 
 按仓库“无兼容负担”原则：
 
-- 不保留 `OperationContext` / `opContext` / `actionId` 别名
+- 不保留 `ActionContext` / `context` / `id` 别名
 - 不保留双字段并存
 - 一次性替换到位
 
@@ -270,7 +270,7 @@ action: Readonly<{
 
 验收标准：
 
-- 无 `opContext`/`actionId` 遗留
+- 无 `context`/`id` 遗留
 - 插件 API 统一为固定参数位次（`storeName -> data -> semantic args -> options?`）
 - 写入、undo/redo、observability 链路行为一致
 - 批量写入默认共享 `context.id`

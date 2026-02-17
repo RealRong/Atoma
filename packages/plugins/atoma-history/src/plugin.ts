@@ -1,6 +1,6 @@
 import type { AtomaHistory } from 'atoma-types/client'
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import type { ChangeDirection, Entity, OperationContext, StoreChange } from 'atoma-types/core'
+import type { ChangeDirection, Entity, ActionContext, StoreChange } from 'atoma-types/core'
 import type { CommandResult, Source, StreamEvent } from 'atoma-types/devtools'
 import { HUB_TOKEN } from 'atoma-types/devtools'
 import { HistoryManager } from './history-manager'
@@ -18,11 +18,10 @@ const buildSnapshot = (manager: HistoryManager) => {
 }
 
 export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
-    const manager = new HistoryManager()
-
     return {
         id: 'atoma-history',
         setup: (ctx: PluginContext) => {
+            const manager = new HistoryManager(ctx.runtime.action.createContext)
             const clientId = ctx.clientId
             const sourceId = `history.${clientId}`
             let revision = 0
@@ -52,14 +51,14 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                 storeName: string
                 changes: StoreChange<Entity>[]
                 direction: ChangeDirection
-                opContext: OperationContext
+                context: ActionContext
             }) => {
-                await ctx.runtime.stores.applyChanges({
-                    storeName: args.storeName,
-                    changes: args.changes,
-                    direction: args.direction,
-                    opContext: args.opContext
-                })
+                await ctx.runtime.stores.applyChanges(
+                    args.storeName,
+                    args.changes,
+                    args.direction,
+                    { context: args.context }
+                )
             }
 
             const runUndo = async (scope?: string): Promise<boolean> => {
@@ -92,7 +91,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                         manager.record({
                             storeName: String(args.handle.storeName),
                             changes: args.changes as StoreChange<Entity>[],
-                            opContext: args.opContext
+                            context: args.context
                         })
                         emitChanged()
                     }
