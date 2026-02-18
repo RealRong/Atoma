@@ -17,7 +17,6 @@ export type {
     FilterExpr,
     Query,
     PageInfo,
-    FetchPolicy,
     QueryResult,
     QueryOneResult,
 } from './query'

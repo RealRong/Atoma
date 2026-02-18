@@ -1,4 +1,4 @@
-import type { FetchPolicy } from 'atoma-types/core'
+export type FetchPolicy = 'cache-only' | 'network-only' | 'cache-and-network'
 
 export type FetchPolicyRuntime = Readonly<{
     remoteEnabled: boolean

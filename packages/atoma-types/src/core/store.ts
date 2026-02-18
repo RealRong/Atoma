@@ -2,7 +2,7 @@ import type { EntityId } from '../shared'
 import type { Entity, PartialWithId } from './entity'
 import type { ActionContext } from './action'
 import type { StoreDataProcessor } from './processor'
-import type { FetchPolicy, Query, QueryOneResult, QueryResult } from './query'
+import type { Query, QueryOneResult, QueryResult } from './query'
 
 export type UpsertMode = 'strict' | 'loose'
 export type GetAllMergePolicy = 'replace' | 'upsert-only' | 'preserve-missing'
@@ -47,17 +47,13 @@ export type StoreReadOptions = Readonly<{
     signal?: AbortSignal
 }>
 
-export type StoreGetOptions = Readonly<StoreReadOptions & {
-    fetchPolicy?: FetchPolicy
-}>
+export type StoreGetOptions = StoreReadOptions
 
 export type StoreGetManyOptions = Readonly<StoreReadOptions & {
     cache?: boolean
-    fetchPolicy?: FetchPolicy
 }>
 
 export type StoreListOptions<T> = Readonly<StoreReadOptions & {
-    fetchPolicy?: FetchPolicy
     filter?: (item: T) => boolean
     cacheFilter?: (item: T) => boolean
 }>

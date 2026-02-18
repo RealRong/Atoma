@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
-import type { Entity, FetchPolicy, Store, PageInfo, Query, RelationIncludeInput, WithRelations } from 'atoma-types/core'
+import type { Entity, Store, PageInfo, Query, RelationIncludeInput, WithRelations } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useRelations } from './useRelations'
 import { useStoreQuery } from './useStoreQuery'
 import { useRemoteQuery } from './useRemoteQuery'
-import { evaluateFetchPolicyRuntime, resolveRemoteEnabled } from './internal/fetchPolicy'
+import { evaluateFetchPolicyRuntime, resolveRemoteEnabled, type FetchPolicy } from './internal/fetchPolicy'
 
 type UseQueryResultMode = 'entities' | 'ids'
 

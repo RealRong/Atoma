@@ -1,6 +1,5 @@
 import type {
     Entity,
-    FetchPolicy,
     GetAllMergePolicy,
     Query as StoreQuery,
     QueryOneResult,
@@ -56,13 +55,6 @@ export class ReadFlow implements Read {
 
     private resolveQueryRoute = <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions) => {
         return options?.route ?? handle.config.defaultRoute
-    }
-
-    private resolveFetchPolicy = (policy?: FetchPolicy): FetchPolicy => {
-        if (policy === 'cache-only' || policy === 'network-only' || policy === 'cache-and-network') {
-            return policy
-        }
-        return 'cache-and-network'
     }
 
     private toExecutionOptions = <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions) => {
@@ -137,21 +129,6 @@ export class ReadFlow implements Read {
         return 'replace'
     }
 
-    private readCachedList = async <T extends Entity>(
-        handle: StoreHandle<T>,
-        filter?: (item: T) => boolean
-    ): Promise<T[]> => {
-        const result = await this.trackRead({
-            handle,
-            query: {},
-            run: async () => {
-                const cached = Array.from((handle.state.getSnapshot() as Map<EntityId, T>).values())
-                return this.toQueryResult(filter ? cached.filter((item) => filter(item)) : cached)
-            }
-        })
-        return result.data
-    }
-
     query = async <T extends Entity>(
         handle: StoreHandle<T>,
         input: StoreQuery<T>,
@@ -194,25 +171,6 @@ export class ReadFlow implements Read {
         }
         const result = await this.query(handle, next, options)
         return { data: result.data[0] }
-    }
-
-    private fetchAll = async <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions): Promise<T[]> => {
-        const result = await this.trackRead({
-            handle,
-            query: {},
-            run: async () => {
-                const output = await this.executeQuery({
-                    handle,
-                    query: {},
-                    options
-                })
-                if (output.source === 'local') {
-                    return this.toQueryResult(this.getOutputData(output) as T[], output.pageInfo)
-                }
-                return this.toQueryResult(await this.writebackArray(handle, this.getOutputData(output)), output.pageInfo)
-            }
-        })
-        return result.data
     }
 
     private getAll = async <T extends Entity>(handle: StoreHandle<T>, options?: StoreListOptions<T>): Promise<T[]> => {
@@ -307,11 +265,9 @@ export class ReadFlow implements Read {
         id: EntityId,
         options?: StoreGetOptions
     ): Promise<T | undefined> => {
-        const fetchPolicy = this.resolveFetchPolicy(options?.fetchPolicy)
         const items = await this.getMany(handle, [id], {
             ...options,
-            fetchPolicy,
-            cache: fetchPolicy === 'network-only' ? false : true
+            cache: true
         })
         return items[0]
     }
@@ -321,8 +277,7 @@ export class ReadFlow implements Read {
         ids: EntityId[],
         options?: StoreGetManyOptions
     ): Promise<T[]> => {
-        const fetchPolicy = this.resolveFetchPolicy(options?.fetchPolicy)
-        const cache = options?.cache ?? (fetchPolicy !== 'network-only')
+        const cache = options?.cache ?? true
         const readQuery: StoreQuery<T> = {
             filter: { op: 'in', field: 'id', values: ids }
         }
@@ -331,59 +286,55 @@ export class ReadFlow implements Read {
             query: readQuery,
             run: async () => {
                 const beforeMap = handle.state.getSnapshot() as Map<EntityId, T>
-                if (fetchPolicy === 'cache-only') {
-                    const cached = ids
-                        .map((id) => beforeMap.get(id))
-                        .filter((item): item is T => item !== undefined)
-                    return this.toQueryResult(cached)
+                const resolvedItems: Array<T | undefined> = new Array(ids.length)
+                const missingUnique: EntityId[] = []
+                const missingSet = new Set<EntityId>()
+
+                for (let index = 0; index < ids.length; index++) {
+                    const id = ids[index]
+                    const cached = beforeMap.get(id)
+                    if (cached !== undefined) {
+                        resolvedItems[index] = cached
+                        continue
+                    }
+                    resolvedItems[index] = undefined
+                    if (missingSet.has(id)) continue
+                    missingSet.add(id)
+                    missingUnique.push(id)
                 }
 
-                const useCacheFallback = fetchPolicy === 'cache-and-network'
-                const resolvedItems: Array<T | undefined> = ids.map((id) => (
-                    useCacheFallback ? beforeMap.get(id) : undefined
-                ))
-                const uniqueIds = Array.from(new Set(ids))
-                const emptyOutput: ExecutionQueryOutput<T> = {
-                    source: 'local',
-                    data: []
-                }
-                const output = uniqueIds.length
-                    ? await this.executeQuery({
+                if (missingUnique.length) {
+                    const output = await this.executeQuery({
                         handle,
                         query: {
-                            filter: { op: 'in', field: 'id', values: uniqueIds }
+                            filter: { op: 'in', field: 'id', values: missingUnique }
                         },
                         options
                     })
-                    : emptyOutput
 
-                const fetchedById = new Map<EntityId, T>()
-                if (output.source === 'local') {
-                    ;(this.getOutputData(output) as T[]).forEach((item) => {
-                        fetchedById.set(item.id, item)
-                    })
-                } else {
-                    const remote = await this.writebackArray(handle, this.getOutputData(output))
-                    const itemsToCache: T[] = []
+                    const fetchedById = new Map<EntityId, T>()
+                    if (output.source === 'local') {
+                        ;(this.getOutputData(output) as T[]).forEach((item) => {
+                            fetchedById.set(item.id, item)
+                        })
+                    } else {
+                        const remote = await this.writebackArray(handle, this.getOutputData(output))
+                        const itemsToCache: T[] = []
 
-                    remote.forEach((item) => {
-                        const preserved = this.runtime.engine.mutation.reuse(beforeMap.get(item.id), item)
-                        const resolved = fetchPolicy === 'network-only' && !cache
-                            ? item
-                            : preserved
-                        fetchedById.set(item.id, resolved)
-                        if (cache) itemsToCache.push(preserved)
-                    })
+                        remote.forEach((item) => {
+                            const preserved = this.runtime.engine.mutation.reuse(beforeMap.get(item.id), item)
+                            fetchedById.set(item.id, preserved)
+                            if (cache) itemsToCache.push(preserved)
+                        })
 
-                    if (cache) {
-                        this.cacheItems(handle, itemsToCache)
+                        if (cache) {
+                            this.cacheItems(handle, itemsToCache)
+                        }
                     }
-                }
 
-                for (let index = 0; index < ids.length; index++) {
-                    const fetched = fetchedById.get(ids[index])
-                    if (fetched !== undefined) {
-                        resolvedItems[index] = fetched
+                    for (let index = 0; index < ids.length; index++) {
+                        if (resolvedItems[index] !== undefined) continue
+                        resolvedItems[index] = fetchedById.get(ids[index])
                     }
                 }
 
@@ -398,18 +349,6 @@ export class ReadFlow implements Read {
         handle: StoreHandle<T>,
         options?: StoreListOptions<T>
     ): Promise<T[]> => {
-        const fetchPolicy = this.resolveFetchPolicy(options?.fetchPolicy)
-        const filter = options?.filter
-
-        if (fetchPolicy === 'cache-only') {
-            return await this.readCachedList(handle, filter)
-        }
-
-        if (fetchPolicy === 'network-only') {
-            const remote = await this.fetchAll(handle, options)
-            return filter ? remote.filter((item) => filter(item)) : remote
-        }
-
         return await this.getAll(handle, options)
     }
 }

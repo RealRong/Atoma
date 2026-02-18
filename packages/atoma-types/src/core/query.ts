@@ -40,7 +40,5 @@ export type PageInfo = {
     total?: number
 }
 
-export type FetchPolicy = 'cache-only' | 'network-only' | 'cache-and-network'
-
 export type QueryResult<T> = { data: T[]; pageInfo?: PageInfo }
 export type QueryOneResult<T> = { data?: T }
