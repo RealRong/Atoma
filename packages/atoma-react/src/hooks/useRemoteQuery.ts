@@ -97,11 +97,6 @@ export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
 
     const runFetch = async (options: Query<T> | undefined, mode: 'refetch' | 'fetchMore'): Promise<T[]> => {
         if (!enabled) return []
-        if (!args.store.query) {
-            const err = new Error('query not implemented')
-            publish(entry, { error: err, isFetching: false })
-            throw err
-        }
 
         if (entry.promise) return entry.promise
 

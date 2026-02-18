@@ -3,10 +3,10 @@ import type { WriteEntry } from './persistence'
 import type { StoreHandle } from './handle'
 
 export type WriteEventSource =
-    | 'addOne'
-    | 'updateOne'
-    | 'upsertOne'
-    | 'deleteOne'
+    | 'create'
+    | 'update'
+    | 'upsert'
+    | 'delete'
     | 'applyChanges'
 
 export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{

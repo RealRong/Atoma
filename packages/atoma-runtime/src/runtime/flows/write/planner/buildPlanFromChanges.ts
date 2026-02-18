@@ -40,7 +40,7 @@ function createPlanEntry<T extends Entity>(args: {
         entry: args.entry,
         optimistic: {
             id: args.id,
-            ...(args.value !== undefined ? { value: args.value } : {})
+            ...(args.value !== undefined ? { next: args.value } : {})
         }
     }
 }

@@ -17,7 +17,9 @@ import { adaptIntentToChanges } from './write/adapters/intentToChanges'
 import { adaptReplayChanges } from './write/adapters/replayToChanges'
 import { buildPlanFromChanges } from './write/planner/buildPlanFromChanges'
 import type {
+    EntityIntentCommand,
     IntentInput,
+    IntentCommand,
     WriteInput,
     WritePlan
 } from './write/types'
@@ -31,11 +33,8 @@ type WriteSession<T extends Entity> = Readonly<{
     createEntryId: () => string
 }>
 
-type DistributiveOmit<T, K extends keyof any> = T extends unknown ? Omit<T, K> : never
-type IntentCommand<T extends Entity> = DistributiveOmit<IntentInput<T>, 'kind' | 'handle' | 'context'>
-type EntityIntentCommand<T extends Entity> = Exclude<IntentCommand<T>, { action: 'delete' }>
 type IntentSource = Exclude<WriteEventSource, 'applyChanges'>
-type EntityIntentSource = Exclude<IntentSource, 'deleteOne'>
+type EntityIntentSource = Exclude<IntentSource, 'delete'>
 
 function createWriteSession<T extends Entity>(
     runtime: Runtime,
@@ -205,19 +204,45 @@ export class WriteFlow implements Write {
         return output as T
     }
 
-    addOne = async <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {
-        return await this.runEntityIntent({
-            handle,
-            source: 'addOne',
-            intent: {
-                action: 'add',
-                options,
-                item
-            }
+    private runEntityBatch = async <T extends Entity, Input>({
+        handle,
+        items,
+        options,
+        source,
+        createIntent
+    }: {
+        handle: StoreHandle<T>
+        items: Input[]
+        options?: StoreOperationOptions
+        source: EntityIntentSource
+        createIntent: (item: Input) => EntityIntentCommand<T>
+    }): Promise<WriteManyResult<T>> => {
+        const session = createWriteSession(this.runtime, handle, options)
+        return await runBatch({
+            items,
+            options,
+            runner: (entry) => this.runEntityIntent({
+                handle,
+                session,
+                source,
+                intent: createIntent(entry)
+            })
         })
     }
 
-    addMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]> => {
+    private runEntityBatchOrThrow = async <T extends Entity, Input>({
+        handle,
+        items,
+        options,
+        source,
+        createIntent
+    }: {
+        handle: StoreHandle<T>
+        items: Input[]
+        options?: StoreOperationOptions
+        source: EntityIntentSource
+        createIntent: (item: Input) => EntityIntentCommand<T>
+    }): Promise<T[]> => {
         const session = createWriteSession(this.runtime, handle, options)
         return await runBatchOrThrow({
             items,
@@ -225,20 +250,68 @@ export class WriteFlow implements Write {
             runner: (entry) => this.runEntityIntent({
                 handle,
                 session,
-                source: 'addOne',
-                intent: {
-                    action: 'add',
-                    options,
-                    item: entry
-                }
+                source,
+                intent: createIntent(entry)
             })
         })
     }
 
-    updateOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, updater: StoreUpdater<T>, options?: StoreOperationOptions): Promise<T> => {
+    private runDeleteBatch = async <T extends Entity>({
+        handle,
+        ids,
+        options
+    }: {
+        handle: StoreHandle<T>
+        ids: EntityId[]
+        options?: StoreOperationOptions
+    }): Promise<WriteManyResult<boolean>> => {
+        const session = createWriteSession(this.runtime, handle, options)
+        return await runBatch({
+            items: ids,
+            options,
+            runner: (id) => this.runIntent({
+                handle,
+                session,
+                source: 'delete',
+                intent: {
+                    action: 'delete',
+                    options,
+                    id
+                }
+            }).then(() => true)
+        })
+    }
+
+    create = async <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {
         return await this.runEntityIntent({
             handle,
-            source: 'updateOne',
+            source: 'create',
+            intent: {
+                action: 'create',
+                options,
+                item
+            }
+        })
+    }
+
+    createMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]> => {
+        return await this.runEntityBatchOrThrow({
+            handle,
+            items,
+            options,
+            source: 'create',
+            createIntent: (entry) => ({
+                action: 'create',
+                options,
+                item: entry
+            })
+        })
+    }
+
+    update = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, updater: StoreUpdater<T>, options?: StoreOperationOptions): Promise<T> => {
+        return await this.runEntityIntent({
+            handle,
+            source: 'update',
             intent: {
                 action: 'update',
                 options,
@@ -253,28 +326,24 @@ export class WriteFlow implements Write {
         items: Array<{ id: EntityId; updater: StoreUpdater<T> }>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>> => {
-        const session = createWriteSession(this.runtime, handle, options)
-        return await runBatch({
+        return await this.runEntityBatch({
+            handle,
             items,
             options,
-            runner: (entry) => this.runEntityIntent({
-                handle,
-                session,
-                source: 'updateOne',
-                intent: {
-                    action: 'update',
-                    options,
-                    id: entry.id,
-                    updater: entry.updater
-                }
+            source: 'update',
+            createIntent: (entry) => ({
+                action: 'update',
+                options,
+                id: entry.id,
+                updater: entry.updater
             })
         })
     }
 
-    upsertOne = async <T extends Entity>(handle: StoreHandle<T>, item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T> => {
+    upsert = async <T extends Entity>(handle: StoreHandle<T>, item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T> => {
         return await this.runEntityIntent({
             handle,
-            source: 'upsertOne',
+            source: 'upsert',
             intent: {
                 action: 'upsert',
                 options,
@@ -284,27 +353,23 @@ export class WriteFlow implements Write {
     }
 
     upsertMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>> => {
-        const session = createWriteSession(this.runtime, handle, options)
-        return await runBatch({
+        return await this.runEntityBatch({
+            handle,
             items,
             options,
-            runner: (entry) => this.runEntityIntent({
-                handle,
-                session,
-                source: 'upsertOne',
-                intent: {
-                    action: 'upsert',
-                    options,
-                    item: entry
-                }
+            source: 'upsert',
+            createIntent: (entry) => ({
+                action: 'upsert',
+                options,
+                item: entry
             })
         })
     }
 
-    deleteOne = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<boolean> => {
+    delete = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<boolean> => {
         await this.runIntent({
             handle,
-            source: 'deleteOne',
+            source: 'delete',
             intent: {
                 action: 'delete',
                 options,
@@ -316,20 +381,10 @@ export class WriteFlow implements Write {
     }
 
     deleteMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
-        const session = createWriteSession(this.runtime, handle, options)
-        return await runBatch({
-            items: ids,
-            options,
-            runner: (idValue) => this.runIntent({
-                handle,
-                session,
-                source: 'deleteOne',
-                intent: {
-                    action: 'delete',
-                    options,
-                    id: idValue
-                }
-            }).then(() => true)
+        return await this.runDeleteBatch({
+            handle,
+            ids,
+            options
         })
     }
 

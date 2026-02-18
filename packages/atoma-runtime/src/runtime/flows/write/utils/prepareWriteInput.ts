@@ -8,7 +8,7 @@ export async function prepareCreateInput<T extends Entity>(
     item: Partial<T>,
     context?: ActionContext
 ): Promise<PartialWithId<T>> {
-    const initialized = runtime.engine.mutation.init<T>(item, handle.config.idGenerator)
+    const initialized = runtime.engine.mutation.create<T>(item, handle.config.idGenerator)
     const processed = await runtime.transform.inbound(handle, initialized as T, context)
     return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareCreateInput')
 }

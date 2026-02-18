@@ -12,9 +12,9 @@ import type { EntityId } from '../shared'
 import type { StoreHandle } from './handle'
 
 export type Write = Readonly<{
-    addOne: <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions) => Promise<T>
-    addMany: <T extends Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: StoreOperationOptions) => Promise<T[]>
-    updateOne: <T extends Entity>(
+    create: <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions) => Promise<T>
+    createMany: <T extends Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: StoreOperationOptions) => Promise<T[]>
+    update: <T extends Entity>(
         handle: StoreHandle<T>,
         id: EntityId,
         updater: StoreUpdater<T>,
@@ -25,7 +25,7 @@ export type Write = Readonly<{
         items: Array<{ id: EntityId; updater: StoreUpdater<T> }>,
         options?: StoreOperationOptions
     ) => Promise<WriteManyResult<T>>
-    upsertOne: <T extends Entity>(
+    upsert: <T extends Entity>(
         handle: StoreHandle<T>,
         item: PartialWithId<T>,
         options?: StoreOperationOptions & UpsertWriteOptions
@@ -35,7 +35,7 @@ export type Write = Readonly<{
         items: Array<PartialWithId<T>>,
         options?: StoreOperationOptions & UpsertWriteOptions
     ) => Promise<WriteManyResult<T>>
-    deleteOne: <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions) => Promise<boolean>
+    delete: <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions) => Promise<boolean>
     deleteMany: <T extends Entity>(
         handle: StoreHandle<T>,
         ids: EntityId[],

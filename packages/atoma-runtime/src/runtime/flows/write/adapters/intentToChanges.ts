@@ -11,11 +11,11 @@ export type IntentToChangesResult<T extends Entity> = Readonly<{
 
 function requireEntityObject<T extends Entity>(value: unknown, id: string): T {
     if (!value || typeof value !== 'object') {
-        throw new Error('[Atoma] updateOne: updater must return entity object')
+        throw new Error('[Atoma] update: updater must return entity object')
     }
 
     if ((value as PartialWithId<T>).id !== id) {
-        throw new Error(`[Atoma] updateOne: updater must keep id unchanged (id=${String(id)})`)
+        throw new Error(`[Atoma] update: updater must keep id unchanged (id=${String(id)})`)
     }
 
     return value as T
@@ -61,7 +61,7 @@ async function resolveUpsertPreparedValue<T extends Entity>(args: {
     } as unknown) as PartialWithId<T>
     const processed = await args.runtime.transform.inbound(args.input.handle, candidate as T, args.input.context)
     if (!processed) {
-        throw new Error('[Atoma] upsertOne: transform returned empty')
+        throw new Error('[Atoma] upsert: transform returned empty')
     }
 
     return {
@@ -74,7 +74,7 @@ export async function adaptIntentToChanges<T extends Entity>(args: {
     runtime: Runtime
     input: IntentInput<T>
 }): Promise<IntentToChangesResult<T>> {
-    if (args.input.action === 'add') {
+    if (args.input.action === 'create') {
         const prepared = await prepareCreateInput(args.runtime, args.input.handle, args.input.item, args.input.context)
         return {
             changes: [{ id: prepared.id, after: prepared as T }],

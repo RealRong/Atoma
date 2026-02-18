@@ -14,7 +14,7 @@ const toObjectRecord = (value: unknown): Record<string, unknown> | null => {
     return value as Record<string, unknown>
 }
 
-export function init<T>(
+export function create<T>(
     obj: Partial<T>,
     idGenerator?: () => EntityId,
     options?: MutationTimeOptions
@@ -24,7 +24,7 @@ export function init<T>(
     const hasId = typeof base.id === 'string' && base.id.length > 0
 
     if (!hasId && typeof idGenerator !== 'function') {
-        throw new Error('[Atoma] init: id missing and idGenerator is required')
+        throw new Error('[Atoma] create: id missing and idGenerator is required')
     }
 
     return {
@@ -50,7 +50,7 @@ export function merge<T>(
     }) as PartialWithId<T>
 }
 
-export function addMany<T>(items: PartialWithId<T>[], data: Map<EntityId, T>): Map<EntityId, T> {
+export function putMany<T>(items: PartialWithId<T>[], data: Map<EntityId, T>): Map<EntityId, T> {
     if (!items.length) return data
 
     let next = data
@@ -77,7 +77,7 @@ export function addMany<T>(items: PartialWithId<T>[], data: Map<EntityId, T>): M
     return next
 }
 
-export function removeMany<T>(ids: EntityId[], data: Map<EntityId, T>): Map<EntityId, T> {
+export function deleteMany<T>(ids: EntityId[], data: Map<EntityId, T>): Map<EntityId, T> {
     if (!ids.length) return data
 
     let next = data
@@ -99,7 +99,7 @@ export function removeMany<T>(ids: EntityId[], data: Map<EntityId, T>): Map<Enti
     return next
 }
 
-export function preserveRef<T>(existing: T | undefined, incoming: T): T {
+export function reuse<T>(existing: T | undefined, incoming: T): T {
     if (existing === undefined || existing === null) return incoming
     if (existing === incoming) return existing
 
@@ -120,7 +120,7 @@ export function preserveRef<T>(existing: T | undefined, incoming: T): T {
     return existing
 }
 
-export function upsertItems<T extends { id: EntityId }>(
+export function upsertMany<T extends { id: EntityId }>(
     before: Map<EntityId, T>,
     items: ReadonlyArray<T>
 ): { after: Map<EntityId, T>; items: T[] } {
@@ -141,7 +141,7 @@ export function upsertItems<T extends { id: EntityId }>(
         const item = items[index]
         const id = item.id
         const existing = before.get(id)
-        const preserved = preserveRef(existing, item)
+        const preserved = reuse(existing, item)
         output[index] = preserved
 
         if (existing === preserved) continue

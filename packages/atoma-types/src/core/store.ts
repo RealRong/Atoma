@@ -2,7 +2,7 @@ import type { EntityId } from '../shared'
 import type { Entity, PartialWithId } from './entity'
 import type { ActionContext } from './action'
 import type { StoreDataProcessor } from './processor'
-import type { Query, QueryOneResult, QueryResult } from './query'
+import type { FetchPolicy, Query, QueryOneResult, QueryResult } from './query'
 
 export type UpsertMode = 'strict' | 'loose'
 export type GetAllMergePolicy = 'replace' | 'upsert-only' | 'preserve-missing'
@@ -32,11 +32,6 @@ export type WriteManyResult<T> = Array<WriteManyItemOk<T> | WriteManyItemErr>
 
 export type StoreUpdater<T> = (current: Readonly<T>) => T
 
-export type DeleteItem = {
-    id: EntityId
-    baseVersion: number
-}
-
 export interface StoreOperationOptions {
     force?: boolean
     batch?: {
@@ -50,6 +45,21 @@ export interface StoreOperationOptions {
 export type StoreReadOptions = Readonly<{
     route?: ExecutionRoute
     signal?: AbortSignal
+}>
+
+export type StoreGetOptions = Readonly<StoreReadOptions & {
+    fetchPolicy?: FetchPolicy
+}>
+
+export type StoreGetManyOptions = Readonly<StoreReadOptions & {
+    cache?: boolean
+    fetchPolicy?: FetchPolicy
+}>
+
+export type StoreListOptions<T> = Readonly<StoreReadOptions & {
+    fetchPolicy?: FetchPolicy
+    filter?: (item: T) => boolean
+    cacheFilter?: (item: T) => boolean
 }>
 
 export type IndexType = 'number' | 'date' | 'string' | 'substring' | 'text'
@@ -87,22 +97,20 @@ declare const RELATIONS_BRAND: unique symbol
 export interface Store<T, Relations = {}> {
     readonly [RELATIONS_BRAND]?: Relations
 
-    addOne(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
-    addMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
-    updateOne(id: EntityId, updater: StoreUpdater<T>, options?: StoreOperationOptions): Promise<T>
+    create(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
+    createMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
+    update(id: EntityId, updater: StoreUpdater<T>, options?: StoreOperationOptions): Promise<T>
     updateMany(
         items: Array<{ id: EntityId; updater: StoreUpdater<T> }>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>>
-    deleteOne(id: EntityId, options?: StoreOperationOptions): Promise<boolean>
+    delete(id: EntityId, options?: StoreOperationOptions): Promise<boolean>
     deleteMany(ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>>
-    upsertOne(item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T>
+    upsert(item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T>
     upsertMany(items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>>
-    getOne(id: EntityId): Promise<T | undefined>
-    fetchOne(id: EntityId, options?: StoreReadOptions): Promise<T | undefined>
-    getAll(filter?: (item: T) => boolean, cacheFilter?: (item: T) => boolean): Promise<T[]>
-    fetchAll?(options?: StoreReadOptions): Promise<T[]>
-    getMany(ids: EntityId[], cache?: boolean): Promise<T[]>
-    query?(query: Query<T>, options?: StoreReadOptions): Promise<QueryResult<T>>
-    queryOne?(query: Query<T>, options?: StoreReadOptions): Promise<QueryOneResult<T>>
+    get(id: EntityId, options?: StoreGetOptions): Promise<T | undefined>
+    getMany(ids: EntityId[], options?: StoreGetManyOptions): Promise<T[]>
+    list(options?: StoreListOptions<T>): Promise<T[]>
+    query(query: Query<T>, options?: StoreReadOptions): Promise<QueryResult<T>>
+    queryOne(query: Query<T>, options?: StoreReadOptions): Promise<QueryOneResult<T>>
 }

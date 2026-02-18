@@ -13,7 +13,6 @@ export default defineConfig({
     external: [
         'atoma-runtime',
         'atoma-shared',
-        'atoma-observability',
         'atoma-types'
     ]
 })

@@ -1,11 +1,7 @@
 import { createId } from 'atoma-shared'
 import type {
     Entity,
-    Query,
-    QueryOneResult,
-    QueryResult,
     Store,
-    StoreReadOptions,
     StoreDataProcessor,
     StoreToken
 } from 'atoma-types/core'
@@ -16,11 +12,7 @@ import type { Runtime } from 'atoma-types/runtime'
 import type { Schema, StoreSchema, StoreHandle } from 'atoma-types/runtime'
 import { SimpleStoreState } from './StoreState'
 
-export type StoreEngineApi<T extends Entity = Entity, Relations = {}> = Store<T, Relations> & Readonly<{
-    fetchAll: (options?: StoreReadOptions) => Promise<T[]>
-    query: (query: Query<T>, options?: StoreReadOptions) => Promise<QueryResult<T>>
-    queryOne: (query: Query<T>, options?: StoreReadOptions) => Promise<QueryOneResult<T>>
-}>
+export type StoreEngineApi<T extends Entity = Entity, Relations = {}> = Store<T, Relations>
 
 export type StoreEngine<T extends Entity = Entity, Relations = {}> = Readonly<{
     handle: StoreHandle<T>
@@ -99,37 +91,33 @@ export class StoreFactory {
             }
         }
 
-        const addOne: StoreEngineApi<T>['addOne'] = (item, options) => this.runtime.write.addOne(handle, item, options)
-        const addMany: StoreEngineApi<T>['addMany'] = (items, options) => this.runtime.write.addMany(handle, items, options)
-        const updateOne: StoreEngineApi<T>['updateOne'] = (id, updater, options) => this.runtime.write.updateOne(handle, id, updater, options)
+        const create: StoreEngineApi<T>['create'] = (item, options) => this.runtime.write.create(handle, item, options)
+        const createMany: StoreEngineApi<T>['createMany'] = (items, options) => this.runtime.write.createMany(handle, items, options)
+        const update: StoreEngineApi<T>['update'] = (id, updater, options) => this.runtime.write.update(handle, id, updater, options)
         const updateMany: StoreEngineApi<T>['updateMany'] = (items, options) => this.runtime.write.updateMany(handle, items, options)
-        const deleteOne: StoreEngineApi<T>['deleteOne'] = (id, options) => this.runtime.write.deleteOne(handle, id, options)
+        const deleteOne: StoreEngineApi<T>['delete'] = (id, options) => this.runtime.write.delete(handle, id, options)
         const deleteMany: StoreEngineApi<T>['deleteMany'] = (ids, options) => this.runtime.write.deleteMany(handle, ids, options)
-        const upsertOne: StoreEngineApi<T>['upsertOne'] = (item, options) => this.runtime.write.upsertOne(handle, item, options)
+        const upsertOne: StoreEngineApi<T>['upsert'] = (item, options) => this.runtime.write.upsert(handle, item, options)
         const upsertMany: StoreEngineApi<T>['upsertMany'] = (items, options) => this.runtime.write.upsertMany(handle, items, options)
 
-        const getAll: StoreEngineApi<T>['getAll'] = (filter, cacheFilter) => this.runtime.read.getAll(handle, filter, cacheFilter)
-        const getMany: StoreEngineApi<T>['getMany'] = (ids, cache) => this.runtime.read.getMany(handle, ids, cache)
-        const getOne: StoreEngineApi<T>['getOne'] = (id) => this.runtime.read.getOne(handle, id)
-        const fetchOne: StoreEngineApi<T>['fetchOne'] = (id, options) => this.runtime.read.fetchOne(handle, id, options)
-        const fetchAll: StoreEngineApi<T>['fetchAll'] = (options) => this.runtime.read.fetchAll(handle, options)
+        const list: StoreEngineApi<T>['list'] = (options) => this.runtime.read.list(handle, options)
+        const getMany: StoreEngineApi<T>['getMany'] = (ids, options) => this.runtime.read.getMany(handle, ids, options)
+        const get: StoreEngineApi<T>['get'] = (id, options) => this.runtime.read.get(handle, id, options)
         const query: StoreEngineApi<T>['query'] = (input, options) => this.runtime.read.query(handle, input, options)
         const queryOne: StoreEngineApi<T>['queryOne'] = (input, options) => this.runtime.read.queryOne(handle, input, options)
 
         const api: StoreEngineApi<T> = {
-            addOne,
-            addMany,
-            updateOne,
+            create,
+            createMany,
+            update,
             updateMany,
-            deleteOne,
+            delete: deleteOne,
             deleteMany,
-            upsertOne,
+            upsert: upsertOne,
             upsertMany,
-            getOne,
-            fetchOne,
-            getAll,
-            fetchAll,
+            get,
             getMany,
+            list,
             query,
             queryOne
         }
@@ -174,7 +162,7 @@ export class StoreFactory {
             handle.state.mutate((draft) => {
                 processed.forEach((item) => {
                     const existing = draft.get(item.id)
-                    const preserved = this.runtime.engine.mutation.preserveRef(existing, item)
+                    const preserved = this.runtime.engine.mutation.reuse(existing, item)
                     if (draft.has(item.id) && existing === preserved) return
                     draft.set(item.id, preserved)
                 })

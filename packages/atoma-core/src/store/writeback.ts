@@ -5,7 +5,7 @@ import type {
     StoreWritebackArgs,
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import { preserveRef } from './mutation'
+import { reuse } from './mutation'
 
 type VersionedEntity = Entity & {
     version?: unknown
@@ -15,9 +15,7 @@ export function writeback<T extends Entity>(
     before: Map<EntityId, T>,
     args: StoreWritebackArgs<T>
 ): StoreDelta<T> | null {
-    const upserts = args.upserts ?? []
-    const deletes = args.deletes ?? []
-    const versionUpdates = args.versionUpdates ?? []
+    const { upserts = [], deletes = [], versionUpdates = [] } = args
 
     if (!upserts.length && !deletes.length && !versionUpdates.length) return null
 
@@ -25,6 +23,7 @@ export function writeback<T extends Entity>(
     let after = before
     let writable = false
     const changesById = new Map<EntityId, { before?: T; after?: T }>()
+
     const ensureWritable = (): Map<EntityId, T> => {
         if (!writable) {
             after = new Map(before)
@@ -32,25 +31,27 @@ export function writeback<T extends Entity>(
         }
         return after
     }
-    const markBefore = (id: EntityId, value: T | undefined) => {
-        if (changesById.has(id)) return
-        changesById.set(id, { before: value })
-    }
-    const markAfter = (id: EntityId, value: T | undefined) => {
-        const entry = changesById.get(id)
-        if (entry) {
-            entry.after = value
-            return
+
+    const commitChange = (id: EntityId, current: T | undefined, next: T | undefined) => {
+        const change = changesById.get(id)
+        if (change) {
+            change.after = next
+        } else {
+            changesById.set(id, { before: current, after: next })
         }
-        changesById.set(id, { after: value })
+
+        if (next === undefined) {
+            ensureWritable().delete(id)
+        } else {
+            ensureWritable().set(id, next)
+        }
+
+        changedIds.add(id)
     }
 
     deletes.forEach((id) => {
         if (!after.has(id)) return
-        markBefore(id, after.get(id))
-        ensureWritable().delete(id)
-        changedIds.add(id)
-        markAfter(id, undefined)
+        commitChange(id, after.get(id), undefined)
     })
 
     upserts.forEach((item) => {
@@ -60,14 +61,11 @@ export function writeback<T extends Entity>(
 
         const existing = after.get(id)
         const next = existing
-            ? preserveRef(existing as T, item)
+            ? reuse(existing as T, item)
             : item
         if (after.has(id) && existing === next) return
 
-        markBefore(id, existing)
-        ensureWritable().set(id, next)
-        changedIds.add(id)
-        markAfter(id, next)
+        commitChange(id, existing, next)
     })
 
     versionUpdates.forEach((value) => {
@@ -82,10 +80,7 @@ export function writeback<T extends Entity>(
             ...current,
             version
         } as T
-        markBefore(id, current)
-        ensureWritable().set(id, next)
-        changedIds.add(id)
-        markAfter(id, next)
+        commitChange(id, current, next)
     })
 
     if (!changedIds.size) return null

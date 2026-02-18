@@ -62,7 +62,7 @@ async function prefetchPlanEntry(
 
     if (shouldUseIdLookup && typeof store.getMany === 'function') {
         if (signal.aborted) return
-        await store.getMany(entry.uniqueKeys, true)
+        await store.getMany(entry.uniqueKeys, { cache: true })
         return
     }
 
@@ -82,7 +82,7 @@ async function prefetchPlanEntry(
     }
 
     if (signal.aborted) return
-    await store.query?.(query)
+    await store.query(query)
 }
 
 function validateIncludeQuery(relName: string, query?: Query<unknown>) {

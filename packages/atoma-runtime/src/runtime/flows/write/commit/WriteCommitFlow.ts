@@ -27,7 +27,7 @@ type CommitSession<T extends Entity> = Readonly<{
     signal?: WriteCommitRequest<T>['signal']
 }>
 
-function createEmptyOptimisticState<T extends Entity>(before: Map<EntityId, T>): OptimisticState<T> {
+function createEmptyOptimisticState<T extends Entity>(before: ReadonlyMap<EntityId, T>): OptimisticState<T> {
     return {
         before,
         after: before,
@@ -40,9 +40,9 @@ function applyOptimisticState<T extends Entity>(args: {
     handle: StoreHandle<T>
     plan: WritePlan<T>
     consistency: WriteConsistency
-    preserve: (existing: T | undefined, incoming: T) => T
+    reuse: (existing: T | undefined, incoming: T) => T
 }): OptimisticState<T> {
-    const { handle, plan, consistency, preserve } = args
+    const { handle, plan, consistency, reuse } = args
     const before = handle.state.getSnapshot() as Map<EntityId, T>
     if (consistency.commit !== 'optimistic' || !plan.length) {
         return createEmptyOptimisticState(before)
@@ -58,11 +58,11 @@ function applyOptimisticState<T extends Entity>(args: {
                 return
             }
 
-            const value = optimisticEntry.value
+            const value = optimisticEntry.next
             if (value === undefined) return
 
             const current = draft.get(id)
-            const preserved = preserve(current, value)
+            const preserved = reuse(current, value)
             if (draft.has(id) && current === preserved) return
             draft.set(id, preserved)
         })
@@ -232,7 +232,7 @@ function resolvePrimaryPlan<T extends Entity>(plan: WritePlan<T>): WritePlanEntr
 function fallbackPrimaryOutput<T extends Entity>(primaryPlan?: WritePlanEntry<T>): T | undefined {
     if (!primaryPlan) return undefined
     if (primaryPlan.entry.action === 'delete') return undefined
-    return primaryPlan.optimistic.value
+    return primaryPlan.optimistic.next
 }
 
 function applyWriteback<T extends Entity>(
@@ -313,7 +313,7 @@ export class WriteCommitFlow {
             handle: session.handle,
             plan: request.plan,
             consistency,
-            preserve: session.runtime.engine.mutation.preserveRef
+            reuse: session.runtime.engine.mutation.reuse
         })
         const primaryPlan = resolvePrimaryPlan(request.plan)
 

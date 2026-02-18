@@ -121,23 +121,22 @@ export function useRelations<T extends Entity>(
         if (cached) return cached
 
         const storeName = normalizeStoreName(store, name)
-        const query = typeof store.query === 'function' ? store.query.bind(store) : undefined
+        const query = store.query.bind(store)
         const getMany = store.getMany.bind(store)
 
         const wrapped: RelationStore = {
             ...store,
-            query: query
-                ? (queryInput: Query<Entity>) => {
-                    const key = `rel:query:${storeName}:${stableStringify(queryInput)}`
-                    return dedupePrefetch(key, () => Promise.resolve(query(queryInput)))
-                }
-                : query,
-            getMany: (ids: EntityId[], cache?: boolean) => {
+            query: (queryInput: Query<Entity>) => {
+                const key = `rel:query:${storeName}:${stableStringify(queryInput)}`
+                return dedupePrefetch(key, () => Promise.resolve(query(queryInput)))
+            },
+            getMany: (ids: EntityId[], options?: { cache?: boolean }) => {
+                const cache = options?.cache ?? true
                 const normalizedIds = Array.isArray(ids)
                     ? [...new Set(ids.map(String))].sort()
                     : []
                 const key = `rel:getMany:${storeName}:${stableStringify(normalizedIds)}:${cache ? '1' : '0'}`
-                return dedupePrefetch(key, () => Promise.resolve(getMany(ids, cache)))
+                return dedupePrefetch(key, () => Promise.resolve(getMany(ids, options)))
             }
         }
 

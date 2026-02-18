@@ -121,7 +121,7 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
                 return
             }
             const existing = next.get(id)
-            const preserved = this.engine.mutation.preserveRef(existing, target)
+            const preserved = this.engine.mutation.reuse(existing, target)
             if (next.has(id) && existing === preserved) return
             next.set(id, preserved)
         })

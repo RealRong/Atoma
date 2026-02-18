@@ -1,9 +1,9 @@
 export {
-    init,
+    create,
     merge,
-    addMany,
-    removeMany,
-    preserveRef,
-    upsertItems
+    putMany,
+    deleteMany,
+    reuse,
+    upsertMany
 } from './mutation'
 export { writeback } from './writeback'

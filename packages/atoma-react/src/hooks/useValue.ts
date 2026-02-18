@@ -25,7 +25,7 @@ export function useOne<T extends Entity, Relations = {}, const Include extends R
     useEffect(() => {
         if (!id) return
         if (base !== undefined) return
-        store.getOne(id)
+        store.get(id)
     }, [id, base, store])
 
     const bindings = getStoreBindings(store, 'useOne')

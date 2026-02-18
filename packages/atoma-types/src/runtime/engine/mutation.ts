@@ -7,12 +7,12 @@ import type {
 import type { EntityId } from '../../shared'
 
 export type MutationEngine = Readonly<{
-    init: <T>(obj: Partial<T>, idGenerator?: () => EntityId) => PartialWithId<T>
+    create: <T>(obj: Partial<T>, idGenerator?: () => EntityId) => PartialWithId<T>
     merge: <T>(base: PartialWithId<T>, patch: PartialWithId<T>) => PartialWithId<T>
-    addMany: <T>(items: PartialWithId<T>[], data: Map<EntityId, T>) => Map<EntityId, T>
-    removeMany: <T>(ids: EntityId[], data: Map<EntityId, T>) => Map<EntityId, T>
-    preserveRef: <T>(existing: T | undefined, incoming: T) => T
-    upsertItems: <T extends { id: EntityId }>(
+    putMany: <T>(items: PartialWithId<T>[], data: Map<EntityId, T>) => Map<EntityId, T>
+    deleteMany: <T>(ids: EntityId[], data: Map<EntityId, T>) => Map<EntityId, T>
+    reuse: <T>(existing: T | undefined, incoming: T) => T
+    upsertMany: <T extends { id: EntityId }>(
         before: Map<EntityId, T>,
         items: ReadonlyArray<T>
     ) => {
