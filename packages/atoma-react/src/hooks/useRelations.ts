@@ -383,17 +383,21 @@ export function useRelations<T extends Entity>(
             })
 
             await Promise.all(tasks)
+            if (options?.cancelled?.()) return stableItems
             markDone.forEach(key => prefetchDoneRef.current.add(key))
         } catch (error) {
+            if (options?.cancelled?.()) return stableItems
             const normalizedError = error instanceof Error ? error : new Error(String(error))
             patchState({ error: normalizedError })
         } finally {
-            if (!options?.cancelled?.()) patchState({ loading: false })
-            prevIdsRef.current = currentIds
+            if (!options?.cancelled?.()) {
+                patchState({ loading: false })
+            }
         }
 
         if (options?.cancelled?.()) return stableItems
 
+        prevIdsRef.current = currentIds
         buildSnapshot(stableItems)
         const projected = project(stableItems)
         patchState({ data: projected })

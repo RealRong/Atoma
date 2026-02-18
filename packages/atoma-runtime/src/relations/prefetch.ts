@@ -1,19 +1,10 @@
 import {
-    buildRelationPlan,
+    buildPrefetchPlan,
     type IncludeInput,
-    type PlannedRelation,
-    type StandardRelationConfig
+    type PrefetchPlanEntry
 } from 'atoma-core/relations'
 import type { Entity, FilterExpr, Query, RelationMap, StoreToken } from 'atoma-types/core'
 import type { RelationPrefetchOptions, RelationStore } from 'atoma-types/runtime'
-
-type RelationOptionsCarrier = {
-    options?: Query<unknown>
-}
-
-function getRelationOptions<T extends Entity>(relation: StandardRelationConfig<T>): Query<unknown> | undefined {
-    return (relation as RelationOptionsCarrier).options
-}
 
 export async function prefetchRelations<T extends Entity>(
     items: T[],
@@ -25,7 +16,7 @@ export async function prefetchRelations<T extends Entity>(
     if (!items.length || !include || !relations) return
 
     const { onError = 'partial', timeout = 5000, maxConcurrency = 10 } = options
-    const plan = buildRelationPlan(items, include, relations)
+    const plan = buildPrefetchPlan(items, include, relations)
     const concurrencyLimit = normalizeConcurrency(maxConcurrency ?? 10)
 
     await runWithConcurrency(plan, concurrencyLimit, async (entry) => {
@@ -46,16 +37,15 @@ export async function prefetchRelations<T extends Entity>(
     })
 }
 
-async function prefetchPlanEntry<T extends Entity>(
-    entry: PlannedRelation<T>,
+async function prefetchPlanEntry(
+    entry: PrefetchPlanEntry,
     resolveStore: (name: StoreToken) => RelationStore | undefined,
     signal: AbortSignal
 ): Promise<void> {
     if (signal.aborted) return
 
-    const userQuery = typeof entry.includeValue === 'object' ? entry.includeValue : undefined
-    validateIncludeQuery(entry.relationName, userQuery)
-    validateIncludeQuery(entry.relationName, getRelationOptions(entry.relation))
+    validateIncludeQuery(entry.relationName, entry.includeQuery)
+    validateIncludeQuery(entry.relationName, entry.relationQuery)
 
     if (!entry.uniqueKeys.length) return
 
@@ -67,8 +57,8 @@ async function prefetchPlanEntry<T extends Entity>(
 
     const shouldUseIdLookup = entry.relationType === 'belongsTo'
         && entry.targetKeyField === 'id'
-        && entry.mergedQuery.include === undefined
-        && entry.mergedQuery.filter === undefined
+        && entry.query.include === undefined
+        && entry.query.filter === undefined
 
     if (shouldUseIdLookup && typeof store.getMany === 'function') {
         if (signal.aborted) return
@@ -81,12 +71,12 @@ async function prefetchPlanEntry<T extends Entity>(
         field: entry.targetKeyField,
         values: entry.uniqueKeys
     }
-    const filter: FilterExpr = entry.mergedQuery.filter
-        ? { op: 'and', args: [entry.mergedQuery.filter, keyFilter] }
+    const filter: FilterExpr = entry.query.filter
+        ? { op: 'and', args: [entry.query.filter, keyFilter] }
         : keyFilter
 
     const query: Query<unknown> = {
-        ...entry.mergedQuery,
+        ...entry.query,
         filter,
         page: undefined
     }

@@ -7,7 +7,7 @@ import { TextIndex } from './impl/TextIndex'
 import { planCandidates } from './plan'
 import type { IndexDriver, IndexQueryPlan } from './types'
 
-export class Indexes<T> {
+export class Indexes<T extends { id: EntityId }> {
     private readonly indexes = new Map<string, IndexDriver<T>>()
     private lastQueryPlan: IndexQueryPlan | undefined
 
@@ -51,18 +51,12 @@ export class Indexes<T> {
     }
 
     debugIndexSnapshots(): Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> {
-        const snapshots: Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> = []
-
-        this.indexes.forEach((index, field) => {
-            snapshots.push({
-                field,
-                type: index.type,
-                dirty: index.isDirty(),
-                ...index.getStats()
-            })
-        })
-
-        return snapshots
+        return Array.from(this.indexes, ([field, index]) => ({
+            field,
+            type: index.type,
+            dirty: index.isDirty(),
+            ...index.getStats()
+        }))
     }
 
     debugLastQueryPlan() {
@@ -80,9 +74,9 @@ export class Indexes<T> {
     }
 
     private addItem(item: T): void {
-        const id = readEntityId(item)
+        const id = item.id
         this.indexes.forEach(index => {
-            const value = readFieldValue(item, index.config.field)
+            const value = item[index.config.field]
             if (value !== undefined && value !== null) {
                 index.add(id, value)
             }
@@ -90,20 +84,12 @@ export class Indexes<T> {
     }
 
     private removeItem(item: T): void {
-        const id = readEntityId(item)
+        const id = item.id
         this.indexes.forEach(index => {
-            const value = readFieldValue(item, index.config.field)
+            const value = item[index.config.field]
             if (value !== undefined && value !== null) {
                 index.remove(id, value)
             }
         })
     }
-}
-
-function readEntityId<T>(item: T): EntityId {
-    return (item as { id: EntityId }).id
-}
-
-function readFieldValue<T>(item: T, field: string): unknown {
-    return (item as Record<string, unknown>)[field]
 }

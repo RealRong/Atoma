@@ -20,6 +20,19 @@ type WhereCondition = {
 type WhereMap = Record<string, WhereCondition>
 
 const STRING_LIKE_KEYS: Array<keyof WhereCondition> = ['startsWith', 'endsWith', 'contains']
+const WHERE_CONDITION_KEYS: Array<keyof WhereCondition> = [
+    'eq',
+    'in',
+    'gt',
+    'gte',
+    'lt',
+    'lte',
+    'startsWith',
+    'endsWith',
+    'contains',
+    'match',
+    'fuzzy'
+]
 
 const WHERE_KEY_BY_OP = {
     eq: 'eq',
@@ -49,53 +62,63 @@ export function planCandidates<T>(args: {
     const where = filterToWhere(args.filter)
     if (!where) return buildUnsupportedResult([], [], now)
 
-    const whereFields = Object.keys(where)
     const candidateSets: Set<EntityId>[] = []
+    const whereFields: string[] = []
     let hasUnsupportedCondition = false
+    let hasEmptyCondition = false
     let exactness: CandidateExactness = 'exact'
     const perField: IndexQueryPlan['perField'] = []
 
-    Object.entries(where).forEach(([field, condition]) => {
+    for (const field in where) {
+        if (!Object.prototype.hasOwnProperty.call(where, field)) continue
+        const condition = where[field]
+        whereFields.push(field)
+
         const index = args.indexes.get(field)
         if (!index) {
             hasUnsupportedCondition = true
             perField.push({ field, status: 'no_index' })
-            return
+            continue
         }
 
         const candidate = index.queryCandidates(condition)
         if (candidate.kind === 'unsupported') {
             hasUnsupportedCondition = true
             perField.push({ field, status: 'unsupported' })
-            return
+            continue
         }
 
         if (candidate.kind === 'empty') {
+            hasEmptyCondition = true
             exactness = 'superset'
-            candidateSets.length = 0
-            candidateSets.push(new Set())
             perField.push({ field, status: 'empty' })
-            return
+            continue
         }
 
         if (candidate.exactness === 'superset') exactness = 'superset'
-        candidateSets.push(candidate.ids)
+        if (!hasEmptyCondition) {
+            candidateSets.push(candidate.ids)
+        }
         perField.push({
             field,
             status: 'candidates',
             exactness: candidate.exactness,
             candidates: candidate.ids.size
         })
-    })
+    }
 
-    if (!candidateSets.length) {
+    if (!candidateSets.length && !hasEmptyCondition) {
         return buildUnsupportedResult(whereFields, perField, now)
     }
 
     if (hasUnsupportedCondition) exactness = 'superset'
 
-    const ids = intersectAll(candidateSets)
-    const result = toCandidateResult(ids, exactness)
+    const result = hasEmptyCondition
+        ? ({ kind: 'empty' } as CandidateResult)
+        : toCandidateResult(
+            candidateSets.length === 1 ? candidateSets[0] : intersectAll(candidateSets),
+            exactness
+        )
 
     return {
         result,
@@ -111,48 +134,53 @@ export function planCandidates<T>(args: {
 function filterToWhere(filter?: FilterExpr): WhereMap | undefined {
     if (!filter) return undefined
 
+    const output: WhereMap = {}
+    return collectWhereConditions(filter, output) && Object.keys(output).length
+        ? output
+        : undefined
+}
+
+function collectWhereConditions(filter: FilterExpr, output: WhereMap): boolean {
     if (filter.op === 'and' && Array.isArray(filter.args)) {
-        const output: WhereMap = {}
-
         for (const child of filter.args) {
-            const partial = filterToWhere(child)
-            if (!partial) return undefined
-
-            for (const [field, incoming] of Object.entries(partial)) {
-                const existing = output[field]
-                const merged = mergeFieldCondition(existing, incoming)
-                if (!merged) return undefined
-                output[field] = merged
+            if (!collectWhereConditions(child, output)) {
+                return false
             }
         }
-
-        return Object.keys(output).length ? output : undefined
+        return true
     }
 
+    const fieldCondition = toFieldCondition(filter)
+    if (!fieldCondition) return false
+
+    const existing = output[fieldCondition.field]
+    const merged = mergeFieldCondition(existing, fieldCondition.condition)
+    if (!merged) return false
+    output[fieldCondition.field] = merged
+    return true
+}
+
+function toFieldCondition(filter: FilterExpr): { field: string; condition: WhereCondition } | null {
     if (isWhereSimpleFilter(filter)) {
         const key = WHERE_KEY_BY_OP[filter.op]
-        if (filter.op === 'in') {
-            return singleCondition(filter.field, key, filter.values)
+        return {
+            field: filter.field,
+            condition: {
+                [key]: filter.op === 'in' ? filter.values : filter.value
+            } as WhereCondition
         }
-        return singleCondition(filter.field, key, filter.value)
     }
 
     if (filter.op === 'text') {
-        if (filter.mode === 'fuzzy') {
-            return singleCondition(filter.field, 'fuzzy', { q: filter.query, distance: filter.distance })
+        return {
+            field: filter.field,
+            condition: filter.mode === 'fuzzy'
+                ? { fuzzy: { q: filter.query, distance: filter.distance } }
+                : { match: { q: filter.query } }
         }
-        return singleCondition(filter.field, 'match', { q: filter.query })
     }
 
-    return undefined
-}
-
-function singleCondition(field: string, key: keyof WhereCondition, value: unknown): WhereMap {
-    return {
-        [field]: {
-            [key]: value
-        } as WhereCondition
-    }
+    return null
 }
 
 function mergeFieldCondition(existing: WhereCondition | undefined, incoming: WhereCondition): WhereCondition | undefined {
@@ -160,7 +188,9 @@ function mergeFieldCondition(existing: WhereCondition | undefined, incoming: Whe
 
     const merged: WhereCondition = { ...existing }
 
-    for (const [key, value] of Object.entries(incoming) as Array<[keyof WhereCondition, unknown]>) {
+    for (const key of WHERE_CONDITION_KEYS) {
+        const value = incoming[key]
+        if (value === undefined) continue
         const current = merged[key]
         if (current !== undefined) {
             if (!Object.is(current, value)) return undefined

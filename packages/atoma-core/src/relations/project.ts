@@ -9,7 +9,7 @@ import type {
 import type { EntityId } from 'atoma-types/protocol'
 import { runQuery } from '../query'
 import { extractKeyValue, pickFirstKey } from './key'
-import { buildRelationPlan, type IncludeInput, type PlannedRelation } from './plan'
+import { buildProjectPlan, type IncludeInput, type ProjectPlanEntry } from './plan'
 
 export type RelationStoreState = {
     map: ReadonlyMap<EntityId, Entity>
@@ -26,7 +26,7 @@ const createEqFilter = (field: string, value: EntityId): FilterExpr => ({
     value
 })
 
-const getDefaultRelationValue = (relationType: PlannedRelation<Entity>['relationType']): null | [] => {
+const getDefaultRelationValue = (relationType: ProjectPlanEntry<Entity>['relationType']): null | [] => {
     return relationType === 'hasMany' ? [] : null
 }
 
@@ -76,47 +76,47 @@ export function projectRelationsBatch<T extends Entity>(
     if (!items.length || !include || !relations) return items
 
     const results = items.map(item => ({ ...item })) as T[]
-    const plan = buildRelationPlan(results, include, relations)
+    const plan = buildProjectPlan(results, include, relations)
 
     plan.forEach(entry => {
-        projectPlanned(results, entry, storeStates)
+        projectPlanned(entry, storeStates)
     })
 
     return results
 }
 
 function projectPlanned<TSource extends Entity>(
-    results: TSource[],
-    entry: PlannedRelation<TSource>,
+    entry: ProjectPlanEntry<TSource>,
     storeStates: RelationStoreStates
 ) {
+    const items = entry.items
     const runtime = storeStates.get(entry.store)
     const map = runtime?.map
     const indexes = runtime?.indexes ?? null
 
     if (!map) {
-        results.forEach(item => {
+        items.forEach(item => {
             setRelationValue(item, entry.relationName, getDefaultRelationValue(entry.relationType))
         })
         return
     }
 
     if (entry.relationType === 'belongsTo') {
-        projectBelongsTo(results, entry, map, indexes)
+        projectBelongsTo(items, entry, map, indexes)
         return
     }
 
-    projectHasManyOrHasOne(results, entry, map, indexes)
+    projectHasManyOrHasOne(items, entry, map, indexes)
 }
 
 function projectBelongsTo<TSource extends Entity>(
-    results: TSource[],
-    entry: PlannedRelation<TSource>,
+    items: TSource[],
+    entry: ProjectPlanEntry<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
     indexes: IndexQueryLike<Entity> | null
 ) {
     if (entry.targetKeyField === 'id') {
-        results.forEach(item => {
+        items.forEach(item => {
             const fk = pickFirstKey(extractKeyValue(item, entry.sourceKeySelector))
             const target = fk !== undefined ? map.get(fk) : undefined
             setRelationValue(item, entry.relationName, target ?? null)
@@ -169,7 +169,7 @@ function projectBelongsTo<TSource extends Entity>(
         return target
     }
 
-    results.forEach(item => {
+    items.forEach(item => {
         const fk = pickFirstKey(extractKeyValue(item, entry.sourceKeySelector))
         const target = fk !== undefined ? getTargetByKey(fk) : undefined
         setRelationValue(item, entry.relationName, target ?? null)
@@ -177,8 +177,8 @@ function projectBelongsTo<TSource extends Entity>(
 }
 
 function projectHasManyOrHasOne<TSource extends Entity>(
-    results: TSource[],
-    entry: PlannedRelation<TSource>,
+    items: TSource[],
+    entry: ProjectPlanEntry<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
     indexes: IndexQueryLike<Entity> | null
 ) {
@@ -230,7 +230,7 @@ function projectHasManyOrHasOne<TSource extends Entity>(
         return output
     }
 
-    results.forEach(item => {
+    items.forEach(item => {
         const keyValue = extractKeyValue(item, entry.sourceKeySelector)
         if (keyValue === undefined || keyValue === null) {
             setRelationValue(item, entry.relationName, isHasOne ? null : [])
@@ -251,9 +251,9 @@ function projectHasManyOrHasOne<TSource extends Entity>(
             return
         }
 
-        const limit = isHasOne ? 1 : entry.projectionOptions.limit
-        const sortRules = entry.projectionOptions.sort?.length
-            ? entry.projectionOptions.sort
+        const limit = isHasOne ? 1 : entry.limit
+        const sortRules = entry.sort?.length
+            ? entry.sort
             : DEFAULT_STABLE_SORT
 
         const projected = runQuery({
