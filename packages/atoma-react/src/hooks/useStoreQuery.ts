@@ -70,13 +70,7 @@ export function useStoreQuery<T extends Entity, Relations = {}>(
     options?: UseStoreQueryOptions<T>
 ): T[] {
     const resultMode: UseStoreQueryResultMode = options?.result ?? 'entities'
-    const baseQuery = stripResult(options)
-
-    const effectiveOptions = resultMode === 'ids'
-        ? ({ ...(baseQuery ?? {}), select: undefined } as UseStoreQueryOptions<T>)
-        : options
-
-    const result = useStoreQueryInternal(store, effectiveOptions)
+    const result = useStoreQueryInternal(store, options)
     return resultMode === 'ids'
         ? result.ids as unknown as T[]
         : result.data

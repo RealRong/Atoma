@@ -29,12 +29,6 @@ function normalizeOffset(value: unknown): number | undefined {
     return Math.max(0, Math.floor(value))
 }
 
-function normalizeFields(fields: unknown): string[] | undefined {
-    if (!Array.isArray(fields) || !fields.length) return undefined
-    const out = fields.filter(f => typeof f === 'string' && f) as string[]
-    return out.length ? out : undefined
-}
-
 export class AtomaTypeormAdapter implements IOrmAdapter {
     private paramIndex = 0
     private readonly idField: string
@@ -92,14 +86,9 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         const { queryOrderBy, reverseResult } = this.applyKeysetIfNeeded(qb, cursor, orderBy, alias)
         this.applyOrderBy(qb, queryOrderBy, alias)
 
-        const fields = normalizeFields(query.select)
-        const { selectFields, project } = this.buildSelectFieldsWithProjection(fields, orderBy, alias)
-        if (selectFields) qb.select(selectFields)
-
         if (!page) {
             const data = await qb.getMany()
-            const projected = project ? data.map(project) : data
-            return { data: projected }
+            return { data }
         }
 
         if (pageMode === 'offset') {
@@ -112,9 +101,8 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
             if (includeTotal) {
                 const [data, total] = await qb.getManyAndCount()
-                const projected = project ? data.map(project) : data
                 const hasNext = typeof limit === 'number' ? ((offset ?? 0) + limit < total) : false
-                return { data: projected, pageInfo: { total, hasNext } }
+                return { data, pageInfo: { total, hasNext } }
             }
 
             // 不返回 total：用 limit+1 判断 hasNext
@@ -123,13 +111,11 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 const dataPlus = await qb.getMany()
                 const hasNext = dataPlus.length > limit
                 const sliced = dataPlus.slice(0, limit)
-                const projected = project ? sliced.map(project) : sliced
-                return { data: projected, pageInfo: { hasNext } }
+                return { data: sliced, pageInfo: { hasNext } }
             }
 
             const data = await qb.getMany()
-            const projected = project ? data.map(project) : data
-            return { data: projected, pageInfo: { hasNext: false } }
+            return { data, pageInfo: { hasNext: false } }
         }
 
         // cursor keyset：默认不返回 total
@@ -139,7 +125,6 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         const hasNext = dataPlus.length > cursorLimit
         const sliced = dataPlus.slice(0, cursorLimit)
         const finalRows = reverseResult ? sliced.reverse() : sliced
-        const projected = project ? finalRows.map(project) : finalRows
 
         const cursorRow = cursor?.before ? finalRows[0] : finalRows[finalRows.length - 1]
         const nextCursor = cursorRow
@@ -147,7 +132,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
             : undefined
 
         return {
-            data: projected,
+            data: finalRows,
             pageInfo: { hasNext, cursor: nextCursor }
         }
     }
@@ -614,30 +599,6 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
         }
 
         qb.andWhere(`(${orParts.join(' OR ')})`, params)
-    }
-
-    private buildSelectFields(select: Record<string, boolean>, alias: string) {
-        const fields = Object.entries(select).filter(([, enabled]) => enabled).map(([key]) => `${alias}.${key}`)
-        return fields.length ? fields : undefined
-    }
-
-    private buildSelectFieldsWithProjection(fields: string[] | undefined, orderBy: SortRule[], alias: string) {
-        if (!fields?.length) {
-            return { selectFields: undefined as string[] | undefined, project: undefined as ((row: any) => any) | undefined }
-        }
-
-        const merged: Record<string, boolean> = {}
-        fields.forEach(field => { merged[field] = true })
-        orderBy.forEach(r => { merged[r.field] = true })
-
-        const selectFields = this.buildSelectFields(merged, alias)
-        const project = (row: any) => {
-            const out: any = {}
-            fields.forEach(field => { out[field] = row?.[field] })
-            return out
-        }
-
-        return { selectFields, project }
     }
 
     private buildSelect(select: Record<string, boolean> | undefined, columns?: Array<{ propertyName: string }>) {

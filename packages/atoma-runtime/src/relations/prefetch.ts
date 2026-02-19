@@ -57,7 +57,6 @@ async function prefetchPlanEntry(
 
     const shouldUseIdLookup = entry.relationType === 'belongsTo'
         && entry.targetKeyField === 'id'
-        && entry.query.include === undefined
         && entry.query.filter === undefined
 
     if (shouldUseIdLookup && typeof store.getMany === 'function') {

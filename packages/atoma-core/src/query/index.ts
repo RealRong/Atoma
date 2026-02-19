@@ -3,7 +3,6 @@ import type { EntityId } from 'atoma-types/shared'
 import { matchesFilter } from './internal/filter'
 import { normalizeQuery } from './internal/normalize'
 import { applyPage } from './internal/page'
-import { projectSelect } from './internal/select'
 import { compareBy } from './internal/sort'
 
 export function runQuery<T extends Entity>(args: {
@@ -38,12 +37,12 @@ export function runQuery<T extends Entity>(args: {
     const sorted = filtered.slice().sort(compareBy(normalized.sort))
 
     if (!normalized.page) {
-        return { data: projectSelect(sorted, normalized.select) as T[] }
+        return { data: sorted }
     }
 
     const paged = applyPage(sorted, normalized.page, normalized.sort)
     return {
-        data: projectSelect(paged.data, normalized.select) as T[],
+        data: paged.data,
         pageInfo: paged.pageInfo
     }
 }

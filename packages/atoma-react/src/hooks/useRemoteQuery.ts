@@ -10,10 +10,6 @@ type RemoteState<T extends Entity> = Readonly<{
     data?: T[]
 }>
 
-type RemoteBehavior =
-    | { hydrate: true; transient?: false }
-    | { hydrate?: false; transient: true }
-
 type UseRemoteQueryResult<T extends Entity> = RemoteState<T> & Readonly<{
     refetch: () => Promise<T[]>
     fetchMore: (options: Query<T>) => Promise<T[]>
@@ -69,7 +65,6 @@ function publish<T extends Entity>(entry: CacheEntry<T>, patch: Partial<RemoteSt
 export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
     store: Store<T, Relations>
     options?: Query<T>
-    behavior: RemoteBehavior
     enabled?: boolean
 }): UseRemoteQueryResult<T> {
     const enabled = args.enabled !== false
@@ -79,9 +74,8 @@ export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
 
     const key = useMemo(() => {
         const optionsKey = stableStringify(stripRuntimeOptions(args.options))
-        const modeKey = args.behavior.transient ? 'transient' : 'hydrate'
-        return `${storeName}:${modeKey}:${optionsKey}`
-    }, [storeName, args.behavior.transient, args.options])
+        return `${storeName}:hydrate:${optionsKey}`
+    }, [storeName, args.options])
 
     const entry = useMemo(() => getOrCreateEntry<T>(runtime as unknown as object | null, key), [runtime, key])
     const [state, setState] = useState<RemoteState<T>>(() => entry.state)
@@ -112,9 +106,7 @@ export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
                     isFetching: false,
                     error: undefined,
                     pageInfo,
-                    ...(args.behavior.transient
-                        ? { data: mode === 'fetchMore' ? [...(entry.state.data ?? []), ...data] : data }
-                        : {})
+                    data: mode === 'fetchMore' ? [...(entry.state.data ?? []), ...data] : data
                 })
                 return data
             })

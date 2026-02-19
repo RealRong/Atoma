@@ -9,15 +9,6 @@ import type { EntityId } from 'atoma-types/shared'
 import { toErrorWithFallback as toError } from 'atoma-shared'
 import type { ExecutionQueryOutput, Runtime, Read, StoreHandle } from 'atoma-types/runtime'
 
-const shouldSkipStore = <T extends Entity>(query?: StoreQuery<T>): boolean => {
-    if (Array.isArray(query?.select) && query.select.length > 0) {
-        return true
-    }
-
-    const include = query?.include
-    return Boolean(include && typeof include === 'object' && Object.keys(include).length > 0)
-}
-
 export class ReadFlow implements Read {
     private readonly runtime: Runtime
 
@@ -111,19 +102,14 @@ export class ReadFlow implements Read {
                     }
 
                     const remote = await this.writebackArray(handle, this.getOutputData(output))
-                    const skipStore = shouldSkipStore(input)
-                    const snapshot = skipStore
-                        ? undefined
-                        : this.applyStoreWriteback({
-                            handle,
-                            upserts: remote
-                        })
-                    return skipStore
-                        ? this.toQueryResult(remote, output.pageInfo)
-                        : this.toQueryResult(
-                            remote.map((item) => snapshot?.get(item.id) ?? item),
-                            output.pageInfo
-                        )
+                    const snapshot = this.applyStoreWriteback({
+                        handle,
+                        upserts: remote
+                    })
+                    return this.toQueryResult(
+                        remote.map((item) => snapshot.get(item.id) ?? item),
+                        output.pageInfo
+                    )
                 }
             })
         } catch (error) {

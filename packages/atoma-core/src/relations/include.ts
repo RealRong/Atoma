@@ -11,28 +11,9 @@ function pickQuery(value: unknown): Query<unknown> | undefined {
 
     if ('filter' in value) output.filter = value.filter as Query<unknown>['filter']
     if ('sort' in value) output.sort = value.sort as Query<unknown>['sort']
-    if ('select' in value) output.select = value.select as Query<unknown>['select']
     if ('page' in value) output.page = value.page as Query<unknown>['page']
 
-    if ('include' in value) {
-        const nested = pickInclude(value.include)
-        if (nested !== undefined) output.include = nested
-    }
-
     return output
-}
-
-function pickInclude(value: unknown): Record<string, Query<unknown>> | undefined {
-    if (!isRecord(value)) return undefined
-
-    const output: Record<string, Query<unknown>> = {}
-    Object.entries(value).forEach(([name, entry]) => {
-        const query = pickQuery(entry)
-        if (!query) return
-        output[name] = query
-    })
-
-    return Object.keys(output).length ? output : undefined
 }
 
 export function pickIncludeQuery(value: unknown): Query<unknown> | undefined {
@@ -88,8 +69,6 @@ export function mergeIncludeQuery(base?: Query<unknown>, override?: Query<unknow
     return {
         filter,
         sort: overrideQuery.sort !== undefined ? overrideQuery.sort : baseQuery.sort,
-        select: overrideQuery.select !== undefined ? overrideQuery.select : baseQuery.select,
-        include: overrideQuery.include !== undefined ? overrideQuery.include : baseQuery.include,
         page: mergeIncludePage(baseQuery.page, overrideQuery.page)
     }
 }

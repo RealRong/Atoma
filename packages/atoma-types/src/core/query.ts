@@ -30,8 +30,6 @@ export type Query<T = unknown> = {
     filter?: FilterExpr<T>
     sort?: SortRule<T>[]
     page?: PageSpec
-    select?: Array<keyof T & string> | string[]
-    include?: Record<string, Query<unknown>>
 }
 
 export type PageInfo = {

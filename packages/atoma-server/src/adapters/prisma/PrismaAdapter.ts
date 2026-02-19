@@ -46,12 +46,6 @@ function normalizeOffset(value: unknown): number | undefined {
     return Math.max(0, Math.floor(value))
 }
 
-function normalizeFields(fields: unknown): string[] | undefined {
-    if (!Array.isArray(fields) || !fields.length) return undefined
-    const out = fields.filter(f => typeof f === 'string' && f) as string[]
-    return out.length ? out : undefined
-}
-
 export class AtomaPrismaAdapter implements IOrmAdapter {
     private readonly idField: string
     private readonly defaultSort?: SortRule[]
@@ -103,13 +97,9 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const { prismaOrderBy, reverseResult, keysetWhere } = this.buildKeysetWhere(cursor, orderBy)
         const where = keysetWhere ? this.andWhere(baseWhere, keysetWhere) : baseWhere
 
-        const fields = normalizeFields(query.select)
-        const { select, project } = this.buildSelectWithProjection(fields, orderBy)
-
         if (!page) {
-            const data = await delegate.findMany({ where, orderBy: prismaOrderBy, select })
-            const projected = project ? data.map(project) : data
-            return { data: projected }
+            const data = await delegate.findMany({ where, orderBy: prismaOrderBy })
+            return { data }
         }
 
         if (pageMode === 'offset') {
@@ -119,12 +109,11 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
 
             if (includeTotal && delegate.count && typeof take === 'number') {
                 const [data, total] = await Promise.all([
-                    delegate.findMany({ where, orderBy: prismaOrderBy, select, skip, take }),
+                    delegate.findMany({ where, orderBy: prismaOrderBy, skip, take }),
                     delegate.count({ where })
                 ])
-                const projected = project ? data.map(project) : data
                 return {
-                    data: projected,
+                    data,
                     pageInfo: {
                         total,
                         hasNext: skip + take < total
@@ -133,20 +122,18 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             }
 
             if (typeof take === 'number') {
-                const data = await delegate.findMany({ where, orderBy: prismaOrderBy, select, skip, take: take + 1 })
+                const data = await delegate.findMany({ where, orderBy: prismaOrderBy, skip, take: take + 1 })
                 const hasNext = data.length > take
                 const sliced = data.slice(0, take)
-                const projected = project ? sliced.map(project) : sliced
                 return {
-                    data: projected,
+                    data: sliced,
                     pageInfo: { hasNext, ...(includeTotal && delegate.count ? { total: await delegate.count({ where }) } : {}) }
                 }
             }
 
-            const data = await delegate.findMany({ where, orderBy: prismaOrderBy, select, skip })
-            const projected = project ? data.map(project) : data
+            const data = await delegate.findMany({ where, orderBy: prismaOrderBy, skip })
             return {
-                data: projected,
+                data,
                 pageInfo: { hasNext: false, ...(includeTotal && delegate.count ? { total: await delegate.count({ where }) } : {}) }
             }
         }
@@ -156,21 +143,19 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const data = await delegate.findMany({
             where,
             orderBy: prismaOrderBy,
-            select,
             take: take + 1
         })
         const hasNext = data.length > take
         const sliced = data.slice(0, take)
         const finalRows = reverseResult ? sliced.reverse() : sliced
 
-        const projected = project ? finalRows.map(project) : finalRows
         const cursorRow = cursor?.before ? finalRows[0] : finalRows[finalRows.length - 1]
         const nextCursor = cursorRow
             ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy), orderBy)
             : undefined
 
         return {
-            data: projected,
+            data: finalRows,
             pageInfo: {
                 hasNext,
                 cursor: nextCursor
@@ -595,28 +580,5 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     private andWhere(a: any, b: any) {
         if (a && b) return { AND: [a, b] }
         return a || b
-    }
-
-    private buildSelectWithProjection(fields: string[] | undefined, orderBy: SortRule[]) {
-        if (!fields?.length) {
-            return { select: undefined as any, project: undefined as ((row: any) => any) | undefined }
-        }
-
-        const requiredFields = orderBy.map(r => r.field)
-        const prismaSelect: Record<string, boolean> = {}
-
-        fields.forEach(field => { prismaSelect[field] = true })
-        requiredFields.forEach(field => {
-            prismaSelect[field] = true
-        })
-
-        const finalSelect = Object.keys(prismaSelect).length ? prismaSelect : undefined
-        const project = (row: any) => {
-            const out: any = {}
-            fields.forEach(field => { out[field] = row?.[field] })
-            return out
-        }
-
-        return { select: finalSelect, project }
     }
 }

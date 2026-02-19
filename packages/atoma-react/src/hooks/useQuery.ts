@@ -33,7 +33,7 @@ type UseQueryIdsResult<T extends Entity> = UseQueryStatus & {
 }
 
 type UseQueryOptions<T extends Entity, Relations, Include extends RelationIncludeInput<Relations>> =
-    & Omit<Query<T>, 'include'>
+    & Query<T>
     & {
         include?: RelationIncludeInput<Relations> & Include
         fetchPolicy?: FetchPolicy
@@ -63,8 +63,6 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
     const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'cache-and-network'
     const resultMode: UseQueryResultMode = (options as any)?.result || 'entities'
 
-    const wantsTransientRemote = Boolean(options?.select?.length)
-
     const optionsForStoreQuery = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
 
     const localEntities = useStoreQuery(store, optionsForStoreQuery
@@ -77,24 +75,19 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
     )
 
     const remoteEnabled = resolveRemoteEnabled(fetchPolicy)
-    const remoteBehavior = wantsTransientRemote ? ({ transient: true } as const) : ({ hydrate: true } as const)
 
     const optionsForRemote = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
 
     const remote = useRemoteQuery<T, Relations>({
         store,
         options: optionsForRemote,
-        behavior: remoteBehavior,
         enabled: remoteEnabled
     })
 
     const data = (() => {
         if (resultMode === 'ids') {
-            const remoteIds = remote.data !== undefined ? (remote.data ?? []).map(item => item.id) as Array<T['id']> : undefined
-            if (remoteBehavior.transient && remoteIds !== undefined) return remoteIds
             return localIds
         }
-        if (remoteBehavior.transient && remote.data !== undefined) return (remote.data ?? []) as T[]
         return localEntities
     })()
 
