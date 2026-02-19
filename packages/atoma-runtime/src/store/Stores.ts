@@ -100,7 +100,7 @@ export class Stores implements StoreCatalog {
         }
     }
 
-    resolveHandle = (name: StoreToken, tag?: string): StoreHandle<Entity> => {
+    ensureHandle = (name: StoreToken, tag?: string): StoreHandle<Entity> => {
         const key = toStoreName(name)
         const existing = this.engineByName.get(key)
         if (existing) return existing.handle
@@ -109,6 +109,6 @@ export class Stores implements StoreCatalog {
         const created = this.engineByName.get(key)
         if (created) return created.handle
 
-        throw new Error(`[Atoma] ${tag || 'resolveHandle'}: 未找到 store handle（storeName=${key}）`)
+        throw new Error(`[Atoma] ${tag || 'ensureHandle'}: 未找到 store handle（storeName=${key}）`)
     }
 }

@@ -12,6 +12,7 @@ import type {
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Write, WriteEventSource, StoreHandle } from 'atoma-types/runtime'
+import { createId } from 'atoma-shared'
 import { WriteCommitFlow } from './write/commit/WriteCommitFlow'
 import { adaptIntentToChanges } from './write/adapters/intentToChanges'
 import { adaptReplayChanges } from './write/adapters/replayToChanges'
@@ -41,12 +42,19 @@ function createWriteSession<T extends Entity>(
     handle: StoreHandle<T>,
     options?: StoreOperationOptions
 ): WriteSession<T> {
+    const createEntryId = () => createId({
+        kind: 'action',
+        sortable: true,
+        prefix: 'w',
+        now: runtime.now
+    })
+
     return {
         handle,
         context: runtime.engine.action.createContext(options?.context),
         route: options?.route ?? handle.config.defaultRoute,
         signal: options?.signal,
-        createEntryId: () => runtime.nextOpId(handle.storeName, 'w')
+        createEntryId
     }
 }
 
@@ -238,7 +246,7 @@ export class WriteFlow implements Write {
         handle: StoreHandle<T>
         ids: EntityId[]
         options?: StoreOperationOptions
-    }): Promise<WriteManyResult<boolean>> => {
+    }): Promise<WriteManyResult<void>> => {
         const session = createWriteSession(this.runtime, handle, options)
         return await runBatch({
             items: ids,
@@ -252,7 +260,7 @@ export class WriteFlow implements Write {
                     options,
                     id
                 }
-            }).then(() => true)
+            }).then(() => undefined)
         })
     }
 
@@ -344,7 +352,7 @@ export class WriteFlow implements Write {
         })
     }
 
-    delete = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<boolean> => {
+    delete = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions): Promise<void> => {
         await this.runIntent({
             handle,
             source: 'delete',
@@ -354,11 +362,9 @@ export class WriteFlow implements Write {
                 id
             }
         })
-
-        return true
     }
 
-    deleteMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>> => {
+    deleteMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<void>> => {
         return await this.runDeleteBatch({
             handle,
             ids,

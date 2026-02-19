@@ -39,12 +39,12 @@ export type Write = Readonly<{
         items: Array<PartialWithId<T>>,
         options?: StoreOperationOptions & UpsertWriteOptions
     ) => Promise<WriteManyResult<T>>
-    delete: <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions) => Promise<boolean>
+    delete: <T extends Entity>(handle: StoreHandle<T>, id: EntityId, options?: StoreOperationOptions) => Promise<void>
     deleteMany: <T extends Entity>(
         handle: StoreHandle<T>,
         ids: EntityId[],
         options?: StoreOperationOptions
-    ) => Promise<WriteManyResult<boolean>>
+    ) => Promise<WriteManyResult<void>>
     applyChanges: <T extends Entity>(
         handle: StoreHandle<T>,
         changes: ReadonlyArray<StoreChange<T>>,

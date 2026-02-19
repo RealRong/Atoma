@@ -85,8 +85,8 @@ export interface Store<T, Relations = {}> {
         items: Array<{ id: EntityId; updater: StoreUpdater<T> }>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>>
-    delete(id: EntityId, options?: StoreOperationOptions): Promise<boolean>
-    deleteMany(ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>>
+    delete(id: EntityId, options?: StoreOperationOptions): Promise<void>
+    deleteMany(ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<void>>
     upsert(item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T>
     upsertMany(items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>>
     get(id: EntityId, options?: StoreReadOptions): Promise<T | undefined>

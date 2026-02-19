@@ -82,12 +82,12 @@ ATOMA 核心层协议与约束（稳定版）
 - 作用：统一入口，负责编排读写/持久化/transform/registry
 
 稳定字段
-- `read / write / persistence / transform / stores / hooks / io / now / nextOpId`
+- `read / write / persistence / transform / stores / hooks / io / now`
 
 约束
 - runtime 是唯一上下文
 - hooks 由 runtime 统一触发
-- opId 生成统一由 runtime 提供
+- op/entry id 生成由各流程内部负责，不暴露为 runtime 公共字段
 
 
 5. Plugin 协议（扩展边界）

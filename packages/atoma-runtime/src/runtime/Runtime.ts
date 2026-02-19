@@ -45,7 +45,6 @@ export interface Options {
 export class Runtime implements RuntimeType {
     readonly id: string
     readonly now: () => number
-    readonly nextOpId: RuntimeType['nextOpId']
     readonly execution: ExecutionKernelType
     readonly transform: Transform
     readonly stores: StoreCatalog
@@ -56,15 +55,8 @@ export class Runtime implements RuntimeType {
     readonly debug: Debug
 
     constructor(config: Options) {
-        const opSeq = new Map<string, number>()
         this.id = String(config.id)
         this.now = config.now ?? (() => Date.now())
-        this.nextOpId = (storeName: string, prefix: 'q' | 'w') => {
-            const key = String(storeName)
-            const next = (opSeq.get(key) ?? 0) + 1
-            opSeq.set(key, next)
-            return `${prefix}_${this.now()}_${next}`
-        }
 
         this.engine = config.engine ?? new Engine()
         this.transform = new TransformPipeline(this)

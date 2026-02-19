@@ -35,7 +35,7 @@ export class Probe implements Debug {
         const name = String(storeName)
 
         try {
-            const handle = this.stores.resolveHandle(name, `runtime.debug.snapshotStore:${name}`)
+            const handle = this.stores.ensureHandle(name, `runtime.debug.snapshotStore:${name}`)
             const map = handle.state.getSnapshot() as Map<unknown, unknown>
             const sample = Array.from(map.values()).slice(0, 5)
 
@@ -55,7 +55,7 @@ export class Probe implements Debug {
         const name = String(storeName)
 
         try {
-            const handle = this.stores.resolveHandle(name, `runtime.debug.snapshotIndexes:${name}`)
+            const handle = this.stores.ensureHandle(name, `runtime.debug.snapshotIndexes:${name}`)
             const indexes = handle.state.indexes as IndexDebugLike<T> | null
 
             if (!indexes || typeof indexes.debugIndexSnapshots !== 'function') {

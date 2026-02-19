@@ -6,5 +6,5 @@ export type StoreCatalog = Readonly<{
     ensure: (name: StoreToken) => Store<Entity>
     list: () => Iterable<Store<Entity>>
     onCreated: (listener: (store: Store<Entity>) => void, options?: { replay?: boolean }) => () => void
-    resolveHandle: (name: StoreToken, tag?: string) => StoreHandle<Entity>
+    ensureHandle: (name: StoreToken, tag?: string) => StoreHandle<Entity>
 }>

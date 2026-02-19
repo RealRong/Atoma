@@ -45,7 +45,7 @@ export class PluginContext implements PluginContextType {
                 },
                 ensure: <T extends Entity>(storeName: StoreToken) => runtime.stores.ensure(storeName) as unknown as Store<T>,
                 query: <T extends Entity>(storeName: StoreToken, query: Query<T>) => {
-                    const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.stores.query')
+                    const handle = runtime.stores.ensureHandle(storeName, 'plugin.runtime.stores.query')
                     return runtime.engine.query.evaluate({
                         state: handle.state,
                         query
@@ -57,7 +57,7 @@ export class PluginContext implements PluginContextType {
                     direction: ChangeDirection,
                     options?: StoreActionOptions
                 ) => {
-                    const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.stores.applyChanges')
+                    const handle = runtime.stores.ensureHandle(storeName, 'plugin.runtime.stores.applyChanges')
                     await runtime.write.applyChanges(
                         handle,
                         changes,
@@ -70,7 +70,7 @@ export class PluginContext implements PluginContextType {
                     data: WritebackData<T>,
                     options?: StoreActionOptions
                 ) => {
-                    const handle = runtime.stores.resolveHandle(storeName, 'plugin.runtime.stores.applyWriteback')
+                    const handle = runtime.stores.ensureHandle(storeName, 'plugin.runtime.stores.applyWriteback')
                     const context = options?.context
                         ? runtime.engine.action.createContext(options.context)
                         : undefined

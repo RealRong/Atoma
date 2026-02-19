@@ -26,29 +26,18 @@
 - `createMany/updateMany/upsertMany/deleteMany` 统一返回 `WriteManyResult`，同名同失败模型（逐项结果）。
 - “任一失败即抛错”若有需要，应由上层 helper 明确封装，不放在底层 `Store.*Many` 公共契约里。
 
-### P0：`delete` 返回 `boolean` 语义信息为零
+### P0（已完成）：`delete` 返回值收敛为 `void`
 
-现状：
-- 签名是 `Promise<boolean>`，但实现中只要不抛错就固定 `return true`，见 `packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:369`、`packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:380`。
-- 契约定义也要求 `boolean`，见 `packages/atoma-types/src/core/store.ts:92`、`packages/atoma-types/src/runtime/write.ts:38`。
+落地结果：
+- `Store.delete` 与 `runtime.write.delete` 均改为 `Promise<void>`。
+- `Store.deleteMany` 与 `runtime.write.deleteMany` 的 item 值也收敛为 `void`（`WriteManyResult<void>`）。
+- 删除单条记录的成功语义只由“是否抛错”表达，不再返回恒为 `true` 的冗余布尔值。
 
-问题：
-- `boolean` 不承载额外信息，反而暗示“可能 false”。
+### P1（已完成）：`resolveHandle` 命名收敛为 `ensureHandle`
 
-建议（推荐）：
-- 改为 `Promise<void>`；批量删除保留逐项结果即可。
-
-### P1：`resolveHandle` 命名与行为不一致
-
-现状：
-- 类型名是 `resolveHandle`，见 `packages/atoma-types/src/runtime/storeCatalog.ts:9`。
-- 实现会在不存在时自动创建（`ensureEngine`），见 `packages/atoma-runtime/src/store/Stores.ts:103`、`packages/atoma-runtime/src/store/Stores.ts:108`。
-
-问题：
-- `resolve` 语义通常是“只解析不创建”，当前行为更接近 `ensure`。
-
-建议（推荐）：
-- 要么改名 `ensureHandle`，要么拆成 `resolveHandle`（不创建）+ `ensureHandle`（创建）。
+落地结果：
+- `StoreCatalog` 接口由 `resolveHandle` 改为 `ensureHandle`，名称与“必要时创建 handle”的行为一致。
+- `Stores` 实现、debug probe、plugin runtime 上下文调用点均已同步改名。
 
 ### P1：`query` 的缓存写回策略是隐式推断，非显式契约
 
@@ -74,23 +63,17 @@
 建议（可选）：
 - 增加 `readFailed`，或把 `readFinish` 扩展为 success/error 联合载荷，保证每次 `readStart` 都有终态。
 
-### P2：`Runtime.nextOpId` 对外暴露过宽
+### P2（已完成）：移除 `Runtime.nextOpId` 对外暴露
 
-现状：
-- 对外签名要求 `prefix: 'q' | 'w'`，见 `packages/atoma-types/src/runtime/runtime.ts:14`。
-- 当前仅写流程使用 `'w'`，见 `packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:49`。
-
-问题：
-- 对外暴露了尚未形成稳定语义的“q/w”细节，增加 API 噪音。
-
-建议（可选）：
-- 改为内部能力，或收敛为更具体的方法（如仅写入 entryId 生成）。
+落地结果：
+- `Runtime` 公共类型删除 `nextOpId` 字段，避免暴露 `q/w` 前缀细节。
+- 写入 `entryId` 生成收敛到 `WriteFlow` 内部，使用统一 ID 工具生成。
 
 ## 建议落地顺序
 
-1. 已完成 `createMany` 语义统一；下一步做 `delete` 返回值收敛（P0）。
-2. 再做 `resolveHandle` 命名收敛（P1）。
-3. 最后处理事件终态与 `nextOpId` 暴露面（P1/P2，属 API 清洁与观测增强）。
+1. 已完成 `createMany` 语义统一与 `delete` 返回值收敛（P0）。
+2. 已完成 `resolveHandle -> ensureHandle` 命名收敛（P1）。
+3. 下一步处理读事件终态对称性（P1，属观测增强）。
 
 ## 总结
 
