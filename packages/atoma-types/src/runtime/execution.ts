@@ -5,7 +5,6 @@ import type {
     ExecutionQueryOutput,
     WriteRequest,
     WriteOutput,
-    Consistency,
     WriteConsistency
 } from './persistence'
 import type { StoreHandle } from './handle'
@@ -15,7 +14,7 @@ export type ExecutorId = string
 export type RouteSpec = Readonly<{
     query: ExecutorId
     write: ExecutorId
-    consistency?: Consistency
+    consistency?: Partial<WriteConsistency>
 }>
 
 export type ExecutionBundle = Readonly<{
@@ -68,7 +67,7 @@ export type ExecutionWriteEvent = Readonly<
         resolution: ExecutionResolution
         request: WriteRequest<any>
         options?: ExecutionOptions
-        output: WriteOutput<any>
+        output: WriteOutput
     }
     | {
         type: 'write.failed'
@@ -114,8 +113,8 @@ export type ExecutionEvent = ExecutionWriteEvent | ExecutionQueryEvent
 
 export type ExecutionSpec = Readonly<{
     query?: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<ExecutionQueryOutput<T>>
-    write?: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
-    consistency?: Consistency
+    write?: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput>
+    consistency?: Partial<WriteConsistency>
 }>
 
 export type ExecutionKernel = Readonly<{
@@ -123,5 +122,5 @@ export type ExecutionKernel = Readonly<{
     resolveConsistency: <T extends Entity>(handle: StoreHandle<T>, options?: ExecutionOptions) => WriteConsistency
     subscribe: (listener: (event: ExecutionEvent) => void) => () => void
     query: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<ExecutionQueryOutput<T>>
-    write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
+    write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput>
 }>

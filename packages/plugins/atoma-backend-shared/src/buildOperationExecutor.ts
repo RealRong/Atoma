@@ -61,7 +61,7 @@ function normalizeOperationError(args: {
     })
 }
 
-function resolveWriteStatus(results: ReadonlyArray<WriteItemResult>): WriteOutput<any>['status'] {
+function resolveWriteStatus(results: ReadonlyArray<WriteItemResult>): WriteOutput['status'] {
     if (!results.length) return 'confirmed'
 
     let failed = 0
@@ -169,7 +169,7 @@ async function executeOperationWrite<T extends Entity>(args: {
     operationClient: OperationClient
     request: WriteRequest<T>
     options?: ExecutionOptions
-}): Promise<WriteOutput<T>> {
+}): Promise<WriteOutput> {
     const { runtime, operationClient, request, options } = args
     try {
         if (!request.entries.length) {
@@ -249,7 +249,7 @@ export function buildOperationExecutor(args: {
                 options
             })
         },
-        write: async <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions): Promise<WriteOutput<T>> => {
+        write: async <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions): Promise<WriteOutput> => {
             return await executeOperationWrite({
                 runtime: args.runtime,
                 operationClient: args.operationClient,

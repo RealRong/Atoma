@@ -88,8 +88,12 @@ export type ReplayInput<T extends Entity> = Readonly<{
 
 export type WriteInput<T extends Entity> = IntentInput<T> | ReplayInput<T>
 
-export type WritePlanPolicy = Readonly<{
-    action?: WriteEntry['action']
-    upsertConflict?: 'cas' | 'lww'
-    upsertApply?: 'merge' | 'replace'
-}>
+export type WritePlanPolicy =
+    | Readonly<{
+        action: 'upsert'
+        conflict: 'cas' | 'lww'
+        apply: 'merge' | 'replace'
+    }>
+    | Readonly<{
+        action: Exclude<WriteEntry['action'], 'upsert'>
+    }>

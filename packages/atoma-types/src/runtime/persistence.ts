@@ -4,45 +4,38 @@ import type { StoreHandle } from './handle'
 
 export type WriteStatus = 'confirmed' | 'partial' | 'rejected' | 'enqueued'
 
-export type WriteAction = 'create' | 'update' | 'delete' | 'upsert'
-
 export type WriteItemMeta = {
     idempotencyKey?: string
     clientTimeMs?: number
     [k: string]: unknown
 }
 
-export type WriteItemCreate = {
-    id?: EntityId
-    value: unknown
-    meta?: WriteItemMeta
+type WriteItemByAction = {
+    create: {
+        id?: EntityId
+        value: unknown
+        meta?: WriteItemMeta
+    }
+    update: {
+        id: EntityId
+        baseVersion: Version
+        value: unknown
+        meta?: WriteItemMeta
+    }
+    upsert: {
+        id: EntityId
+        expectedVersion?: Version
+        value: unknown
+        meta?: WriteItemMeta
+    }
+    delete: {
+        id: EntityId
+        baseVersion: Version
+        meta?: WriteItemMeta
+    }
 }
 
-export type WriteItemUpdate = {
-    id: EntityId
-    baseVersion: Version
-    value: unknown
-    meta?: WriteItemMeta
-}
-
-export type WriteItemUpsert = {
-    id: EntityId
-    expectedVersion?: Version
-    value: unknown
-    meta?: WriteItemMeta
-}
-
-export type WriteItemDelete = {
-    id: EntityId
-    baseVersion: Version
-    meta?: WriteItemMeta
-}
-
-export type WriteItem =
-    | WriteItemCreate
-    | WriteItemUpdate
-    | WriteItemDelete
-    | WriteItemUpsert
+export type WriteItem = WriteItemByAction[keyof WriteItemByAction]
 
 export type WriteOptions = {
     returning?: boolean
@@ -53,36 +46,14 @@ export type WriteOptions = {
     }
 }
 
-export type WriteEntryBase = {
-    entryId: string
-    options?: WriteOptions
-}
-
-export type WriteEntryCreate = WriteEntryBase & {
-    action: 'create'
-    item: WriteItemCreate
-}
-
-export type WriteEntryUpdate = WriteEntryBase & {
-    action: 'update'
-    item: WriteItemUpdate
-}
-
-export type WriteEntryDelete = WriteEntryBase & {
-    action: 'delete'
-    item: WriteItemDelete
-}
-
-export type WriteEntryUpsert = WriteEntryBase & {
-    action: 'upsert'
-    item: WriteItemUpsert
-}
-
-export type WriteEntry =
-    | WriteEntryCreate
-    | WriteEntryUpdate
-    | WriteEntryDelete
-    | WriteEntryUpsert
+export type WriteEntry = {
+    [A in keyof WriteItemByAction]: {
+        entryId: string
+        action: A
+        item: WriteItemByAction[A]
+        options?: WriteOptions
+    }
+}[keyof WriteItemByAction]
 
 export type WriteError = {
     code: string
@@ -113,7 +84,7 @@ export type WriteRequest<T extends Entity> = Readonly<{
     entries: ReadonlyArray<WriteEntry>
 }>
 
-export type WriteOutput<T extends Entity> = Readonly<{
+export type WriteOutput = Readonly<{
     status: WriteStatus
     results?: ReadonlyArray<WriteItemResult>
 }>
@@ -121,7 +92,7 @@ export type WriteOutput<T extends Entity> = Readonly<{
 export type WriteExecutor = <T extends Entity>(
     request: WriteRequest<T>,
     options?: ExecutionOptions
-) => Promise<WriteOutput<T>>
+) => Promise<WriteOutput>
 
 export type QueryRequest<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
@@ -149,17 +120,7 @@ export type QueryExecutor = <T extends Entity>(
     options?: ExecutionOptions
 ) => Promise<ExecutionQueryOutput<T>>
 
-export type WriteBase = 'cache' | 'fetch'
-
-export type WriteCommit = 'confirm' | 'optimistic'
-
 export type WriteConsistency = Readonly<{
-    base: WriteBase
-    commit: WriteCommit
+    base: 'cache' | 'fetch'
+    commit: 'confirm' | 'optimistic'
 }>
-
-export type Consistency = Readonly<Partial<WriteConsistency>>
-
-export interface WritePort {
-    write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>
-}

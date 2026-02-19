@@ -111,8 +111,8 @@ export async function adaptIntentToChanges<T extends Entity>(
             output: prepared as T,
             policy: {
                 action: 'upsert',
-                upsertConflict: input.options?.conflict,
-                upsertApply: input.options?.apply
+                conflict: input.options?.conflict ?? 'cas',
+                apply: input.options?.apply ?? 'merge'
             }
         }
     }

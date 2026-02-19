@@ -5,23 +5,14 @@ import type { Runtime, StoreHandle, WriteEntry, WriteItemMeta, WriteOptions } fr
 import type { WritePlan, WritePlanEntry, WritePlanPolicy } from '../types'
 
 function buildUpsertWriteOptions(policy?: WritePlanPolicy): WriteOptions | undefined {
-    if (!policy) return undefined
+    if (!policy || policy.action !== 'upsert') return undefined
 
-    const writeOptions: WriteOptions = {}
-    const upsert: NonNullable<WriteOptions['upsert']> = {}
-    if (policy.upsertConflict === 'cas' || policy.upsertConflict === 'lww') {
-        upsert.conflict = policy.upsertConflict
+    return {
+        upsert: {
+            conflict: policy.conflict,
+            apply: policy.apply
+        }
     }
-    if (policy.upsertApply === 'merge' || policy.upsertApply === 'replace') {
-        upsert.apply = policy.upsertApply
-    }
-    if (Object.keys(upsert).length) {
-        writeOptions.upsert = upsert
-    }
-
-    return Object.keys(writeOptions).length
-        ? writeOptions
-        : undefined
 }
 
 function createWriteItemMeta(now: () => number): WriteItemMeta {
@@ -136,7 +127,8 @@ export async function buildPlanFromChanges<T extends Entity>({
         const updateBaseVersion = action === 'update'
             ? requireBaseVersion(id, requireChangeBefore({ change, action }))
             : undefined
-        const upsertExpectedVersion = action === 'upsert' && (policy?.upsertConflict ?? 'cas') === 'cas'
+        const upsertConflict = policy?.action === 'upsert' ? policy.conflict : 'cas'
+        const upsertExpectedVersion = action === 'upsert' && upsertConflict === 'cas'
             ? resolvePositiveVersion(current ?? before)
             : undefined
 

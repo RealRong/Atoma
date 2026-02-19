@@ -142,7 +142,7 @@ export class SyncWrites {
 }
 
 function filterWriteEntriesByResults(args: {
-    status: WriteOutput<any>['status']
+    status: WriteOutput['status']
     writeEntries: ReadonlyArray<WriteEntry>
     results?: ReadonlyArray<WriteItemResult>
 }): WriteEntry[] {

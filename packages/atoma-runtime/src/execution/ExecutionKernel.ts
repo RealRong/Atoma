@@ -241,7 +241,7 @@ export class ExecutionKernel implements ExecutionKernelType {
         })
     }
 
-    write = async <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions): Promise<WriteOutput<T>> => {
+    write = async <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions): Promise<WriteOutput> => {
         return await this.executePhase({
             phase: 'write',
             request,

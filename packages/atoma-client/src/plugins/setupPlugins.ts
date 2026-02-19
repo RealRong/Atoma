@@ -7,18 +7,6 @@ import type {
 } from 'atoma-types/client/plugins'
 import type { ServiceToken } from 'atoma-types/client/services'
 
-type ClientPluginLike = {
-    id?: unknown
-    provides?: unknown
-    requires?: unknown
-    setup?: unknown
-}
-
-type PreparedPlugins = {
-    extensions: Array<Record<string, unknown>>
-    disposers: Array<() => void>
-}
-
 export type PluginsSetup = Readonly<{
     mount: <E extends Record<string, Entity>, S extends AtomaSchema<E>>(client: AtomaClient<E, S>) => void
     dispose: () => void
@@ -51,7 +39,7 @@ export function setupPlugins({
         }
     }
 
-    let prepared: PreparedPlugins
+    let prepared: ReturnType<typeof preparePlugins>
     try {
         prepared = preparePlugins({
             plugins: parsePlugins(rawPlugins),
@@ -64,8 +52,9 @@ export function setupPlugins({
 
     return {
         mount: (client) => {
+            const target = client as unknown as Record<string, unknown>
             prepared.extensions.forEach((extension) => {
-                Object.assign(client as unknown as Record<string, unknown>, extension)
+                Object.assign(target, extension)
             })
         },
         dispose: () => {
@@ -81,31 +70,19 @@ function preparePlugins({
 }: {
     plugins: ReadonlyArray<ClientPlugin>
     context: PluginContext
-}): PreparedPlugins {
+}): {
+    extensions: Array<Record<string, unknown>>
+    disposers: Array<() => void>
+} {
     const extensions: Array<Record<string, unknown>> = []
     const disposers: Array<() => void> = []
-    const orderedPlugins = sortPluginsByDependencies(plugins, context)
-    const assertResolved = ({
-        plugin,
-        tokens,
-        kind
-    }: {
-        plugin: ClientPlugin
-        tokens: ReadonlyArray<ServiceToken<unknown>>
-        kind: 'requires' | 'provides'
-    }): void => {
-        tokens.forEach((token) => {
-            if (context.services.resolve(token) !== undefined) return
-            throw new Error(`[Atoma] plugin ${kind} missing: ${plugin.id} -> ${describeToken(token)}`)
-        })
-    }
+    const orderedPlugins = orderPlugins(plugins, context)
 
     try {
         orderedPlugins.forEach((plugin) => {
-            assertResolved({
-                plugin,
-                tokens: plugin.requires ?? [],
-                kind: 'requires'
+            ;(plugin.requires ?? []).forEach((token) => {
+                if (context.services.resolve(token) !== undefined) return
+                throw new Error(`[Atoma] plugin requires missing: ${plugin.id} -> ${describeToken(token)}`)
             })
             if (typeof plugin.setup === 'function') {
                 const result = normalizePluginInitResult(plugin.id, plugin.setup(context))
@@ -118,10 +95,9 @@ function preparePlugins({
                     disposers.push(dispose)
                 }
             }
-            assertResolved({
-                plugin,
-                tokens: plugin.provides ?? [],
-                kind: 'provides'
+            ;(plugin.provides ?? []).forEach((token) => {
+                if (context.services.resolve(token) !== undefined) return
+                throw new Error(`[Atoma] plugin provides missing: ${plugin.id} -> ${describeToken(token)}`)
             })
         })
     } catch (error) {
@@ -135,18 +111,28 @@ function preparePlugins({
     }
 }
 
-function sortPluginsByDependencies(plugins: ReadonlyArray<ClientPlugin>, context: PluginContext): ClientPlugin[] {
-    ensureDependencyCoverage(plugins, context)
+function orderPlugins(plugins: ReadonlyArray<ClientPlugin>, context: PluginContext): ClientPlugin[] {
+    const provided = new Set<ServiceToken<unknown>>()
+    plugins.forEach((plugin) => {
+        ; (plugin.provides ?? []).forEach((token) => {
+            provided.add(token)
+        })
+    })
 
     const available = new Set<ServiceToken<unknown>>()
     plugins.forEach((plugin) => {
-        ;(plugin.provides ?? []).forEach((token) => {
-            if (context.services.resolve(token) === undefined) return
-            available.add(token)
+        ; (plugin.provides ?? []).forEach((token) => {
+            if (context.services.resolve(token) !== undefined) {
+                available.add(token)
+            }
         })
-        ;(plugin.requires ?? []).forEach((token) => {
-            if (context.services.resolve(token) === undefined) return
-            available.add(token)
+        ; (plugin.requires ?? []).forEach((token) => {
+            if (context.services.resolve(token) !== undefined) {
+                available.add(token)
+                return
+            }
+            if (provided.has(token)) return
+            throw new Error(`[Atoma] plugin requires unresolved token: ${plugin.id} -> ${describeToken(token)}`)
         })
     })
 
@@ -158,9 +144,7 @@ function sortPluginsByDependencies(plugins: ReadonlyArray<ClientPlugin>, context
 
         for (let index = 0; index < pending.length; index += 1) {
             const plugin = pending[index]
-            const ready = (plugin.requires ?? []).every((token) => {
-                return available.has(token) || context.services.resolve(token) !== undefined
-            })
+            const ready = (plugin.requires ?? []).every((token) => available.has(token))
             if (!ready) continue
 
             ordered.push(plugin)
@@ -168,7 +152,7 @@ function sortPluginsByDependencies(plugins: ReadonlyArray<ClientPlugin>, context
             index -= 1
             progressed = true
 
-            ;(plugin.provides ?? []).forEach((token) => {
+            ; (plugin.provides ?? []).forEach((token) => {
                 available.add(token)
             })
         }
@@ -177,7 +161,7 @@ function sortPluginsByDependencies(plugins: ReadonlyArray<ClientPlugin>, context
 
         const blocked = pending.map((plugin) => {
             const missingTokens = (plugin.requires ?? []).filter((token) => {
-                return !available.has(token) && context.services.resolve(token) === undefined
+                return !available.has(token)
             })
             return `${plugin.id}(${missingTokens.length ? missingTokens.map(describeToken).join(', ') : 'unknown'})`
         })
@@ -185,22 +169,6 @@ function sortPluginsByDependencies(plugins: ReadonlyArray<ClientPlugin>, context
     }
 
     return ordered
-}
-
-function ensureDependencyCoverage(plugins: ReadonlyArray<ClientPlugin>, context: PluginContext): void {
-    const providedTokens = new Set<ServiceToken<unknown>>()
-    plugins.forEach((plugin) => {
-        ;(plugin.provides ?? []).forEach((token) => {
-            providedTokens.add(token)
-        })
-    })
-
-    plugins.forEach((plugin) => {
-        ;(plugin.requires ?? []).forEach((token) => {
-            if (context.services.resolve(token) !== undefined || providedTokens.has(token)) return
-            throw new Error(`[Atoma] plugin requires unresolved token: ${plugin.id} -> ${describeToken(token)}`)
-        })
-    })
 }
 
 function parsePlugins(rawPlugins: ReadonlyArray<unknown>): ClientPlugin[] {
@@ -250,7 +218,7 @@ function normalizePluginInitResult(pluginId: string, value: unknown): PluginInit
 function isClientPlugin(value: unknown): value is ClientPlugin {
     if (!isPlainObject(value)) return false
 
-    const candidate = value as ClientPluginLike
+    const candidate = value
     if (typeof candidate.id !== 'string' || !candidate.id.trim()) return false
     if (candidate.provides !== undefined && !isTokenArray(candidate.provides)) return false
     if (candidate.requires !== undefined && !isTokenArray(candidate.requires)) return false

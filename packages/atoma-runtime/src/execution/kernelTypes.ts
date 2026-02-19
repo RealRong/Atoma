@@ -1,10 +1,10 @@
 import type { ExecutionRoute } from 'atoma-types/core'
 import type {
-    Consistency,
     ExecutionResolution,
     ExecutionSpec,
     ExecutorId,
-    RouteSpec
+    RouteSpec,
+    WriteConsistency
 } from 'atoma-types/runtime'
 
 export type KernelPhase = 'query' | 'write'
@@ -26,5 +26,5 @@ export type KernelSnapshot = Readonly<{
 export type KernelResolvedExecution = Readonly<{
     resolution: ExecutionResolution
     spec: ExecutionSpec
-    consistency: Consistency
+    consistency: Partial<WriteConsistency>
 }>

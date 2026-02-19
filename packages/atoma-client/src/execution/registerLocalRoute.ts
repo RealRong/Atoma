@@ -27,7 +27,7 @@ export function registerLocalRoute(runtime: Runtime): () => void {
                         ...(pageInfo !== undefined ? { pageInfo } : {})
                     }
                 },
-                write: async <T extends Entity>({ entries }: WriteRequest<T>): Promise<WriteOutput<T>> => {
+                write: async <T extends Entity>({ entries }: WriteRequest<T>): Promise<WriteOutput> => {
                     const results = entries.map((entry): WriteItemResult => {
                         const rawId = entry.item?.id
                         const rawBaseVersion = (entry.item as { baseVersion?: unknown })?.baseVersion

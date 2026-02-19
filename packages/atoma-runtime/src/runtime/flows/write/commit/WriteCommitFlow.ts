@@ -288,7 +288,7 @@ function applyWriteback<T extends Entity>(
     return applied.changes
 }
 
-function ensureWriteResultStatus(writeResult: WriteOutput<any>) {
+function ensureWriteResultStatus(writeResult: WriteOutput) {
     if (writeResult.status === 'rejected') {
         if (writeResult.results?.length) return
         throw new Error('[Atoma] execution.write rejected without item results')
