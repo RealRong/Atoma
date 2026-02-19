@@ -43,7 +43,7 @@ export type WriteItemUpdate = {
 
 export type WriteItemUpsert = {
     id: EntityId
-    baseVersion?: Version
+    expectedVersion?: Version
     value: unknown
     meta?: WriteItemMeta
 }
@@ -63,9 +63,9 @@ export type WriteItem =
 export type WriteOptions = {
     returning?: boolean
     select?: Record<string, boolean>
-    merge?: boolean
     upsert?: {
-        mode?: 'strict' | 'loose'
+        conflict?: 'cas' | 'lww'
+        apply?: 'merge' | 'replace'
     }
 }
 

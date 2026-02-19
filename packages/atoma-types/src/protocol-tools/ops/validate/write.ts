@@ -100,16 +100,48 @@ function assertDeleteItem(raw: Record<string, unknown>, ctx: WriteEntryCtx) {
 
 function assertUpsertItem(raw: Record<string, unknown>, ctx: WriteEntryCtx) {
     const id = assertIdString((raw as any).id, ctx)
-    const baseVersion = (raw as any).baseVersion
-    if (baseVersion !== undefined && baseVersion !== null) {
-        assertPositiveVersion(baseVersion, {
+    if ((raw as any).baseVersion !== undefined) {
+        throw invalid('INVALID_WRITE', 'item.baseVersion is not supported', detailsForWrite(ctx, 'item.baseVersion'))
+    }
+    const expectedVersion = (raw as any).expectedVersion
+    if (expectedVersion !== undefined && expectedVersion !== null) {
+        assertPositiveVersion(expectedVersion, {
             code: 'INVALID_WRITE',
-            message: 'Invalid item.baseVersion',
-            details: detailsForWrite(ctx, 'item.baseVersion')
+            message: 'Invalid item.expectedVersion',
+            details: detailsForWrite(ctx, 'item.expectedVersion')
         })
     }
     const val = assertWriteItemValue((raw as any).value, ctx)
     assertValueIdMatchesId({ id, value: val, ...ctx })
+}
+
+function assertWriteOptions(raw: Record<string, unknown>, ctx: WriteEntryCtx): WriteOptions {
+    if ((raw as any).merge !== undefined) {
+        throw invalid('INVALID_WRITE', 'options.merge is not supported', detailsForWrite(ctx, 'options.merge'))
+    }
+
+    const upsert = (raw as any).upsert
+    if (upsert !== undefined && upsert !== null) {
+        if (!isObject(upsert)) {
+            throw invalid('INVALID_WRITE', 'Invalid options.upsert', detailsForWrite(ctx, 'options.upsert'))
+        }
+
+        const conflict = (upsert as any).conflict
+        if (conflict !== undefined && conflict !== 'cas' && conflict !== 'lww') {
+            throw invalid('INVALID_WRITE', 'Invalid options.upsert.conflict', detailsForWrite(ctx, 'options.upsert.conflict'))
+        }
+
+        if ((upsert as any).mode !== undefined) {
+            throw invalid('INVALID_WRITE', 'options.upsert.mode is not supported', detailsForWrite(ctx, 'options.upsert.mode'))
+        }
+
+        const apply = (upsert as any).apply
+        if (apply !== undefined && apply !== 'merge' && apply !== 'replace') {
+            throw invalid('INVALID_WRITE', 'Invalid options.upsert.apply', detailsForWrite(ctx, 'options.upsert.apply'))
+        }
+    }
+
+    return raw as WriteOptions
 }
 
 function assertWriteAction(value: unknown, ctx: { opId: string; resource: ResourceToken; entryId: string }): WriteAction {
@@ -180,12 +212,13 @@ function assertWriteEntry(value: unknown, ctx: { opId: string; resource: Resourc
     if (optionsRaw !== undefined && !isObject(optionsRaw)) {
         throw invalid('INVALID_WRITE', 'Invalid write entry options', detailsForWrite(entryCtx, 'options'))
     }
+    const options = optionsRaw ? assertWriteOptions(optionsRaw, entryCtx) : undefined
 
     return {
         entryId,
         action,
         item: item as unknown as WriteItem,
-        ...(optionsRaw ? { options: optionsRaw as WriteOptions } : {})
+        ...(options ? { options } : {})
     } as WriteEntry
 }
 

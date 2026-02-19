@@ -1,7 +1,7 @@
 import type { Entity, PartialWithId, StoreChange } from 'atoma-types/core'
 import type { Runtime } from 'atoma-types/runtime'
 import type { IntentInput, IntentInputByAction, WritePlanPolicy } from '../types'
-import { prepareCreateInput, prepareUpdateInput, resolveWriteBase } from '../utils/prepareWriteInput'
+import { prepareCreateInput, prepareUpdateInput, prepareUpsertInput, resolveWriteBase } from '../utils/prepareWriteInput'
 
 export type IntentToChangesResult<T extends Entity> = Readonly<{
     changes: ReadonlyArray<StoreChange<T>>
@@ -27,18 +27,19 @@ async function resolveUpsertPreparedValue<T extends Entity>(
 ): Promise<{ base?: PartialWithId<T>; prepared: PartialWithId<T> }> {
     const id = input.item.id
     const base = input.handle.state.getSnapshot().get(id) as PartialWithId<T> | undefined
+
     if (!base) {
         return {
-            prepared: await prepareCreateInput(
+            prepared: await prepareUpsertInput(
                 runtime,
                 input.handle,
-                input.item as Partial<T>,
+                input.item,
                 input.context
             )
         }
     }
 
-    if (input.options?.merge !== false) {
+    if ((input.options?.apply ?? 'merge') === 'merge') {
         return {
             base,
             prepared: await prepareUpdateInput(
@@ -51,22 +52,14 @@ async function resolveUpsertPreparedValue<T extends Entity>(
         }
     }
 
-    const now = runtime.now()
-    const candidate = ({
-        ...(input.item as Record<string, unknown>),
-        id,
-        createdAt: (base as Record<string, unknown>).createdAt ?? now,
-        updatedAt: now,
-        version: (input.item as Record<string, unknown>).version ?? (base as Record<string, unknown>).version
-    } as unknown) as PartialWithId<T>
-    const processed = await runtime.transform.inbound(input.handle, candidate as T, input.context)
-    if (!processed) {
-        throw new Error('[Atoma] upsert: transform returned empty')
-    }
-
     return {
         base,
-        prepared: processed as PartialWithId<T>
+        prepared: await prepareUpsertInput(
+            runtime,
+            input.handle,
+            input.item,
+            input.context
+        )
     }
 }
 
@@ -118,8 +111,8 @@ export async function adaptIntentToChanges<T extends Entity>(
             output: prepared as T,
             policy: {
                 action: 'upsert',
-                merge: input.options?.merge,
-                upsertMode: input.options?.mode
+                upsertConflict: input.options?.conflict,
+                upsertApply: input.options?.apply
             }
         }
     }

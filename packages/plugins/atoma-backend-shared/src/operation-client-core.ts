@@ -190,8 +190,8 @@ export class StorageOperationClient implements OperationClient {
 
             const returning = options?.returning !== false
             const select = options?.select
-            const merge = options?.merge !== false
-            const upsertMode: 'strict' | 'loose' = options?.upsert?.mode === 'loose' ? 'loose' : 'strict'
+            const upsertConflict: 'cas' | 'lww' = options?.upsert?.conflict === 'lww' ? 'lww' : 'cas'
+            const upsertApply: 'merge' | 'replace' = options?.upsert?.apply === 'replace' ? 'replace' : 'merge'
 
             try {
                 if (action === 'create') {
@@ -274,7 +274,7 @@ export class StorageOperationClient implements OperationClient {
                     }
 
                     const nextVersion = baseVersion + 1
-                    const next = merge && isPlainObject(current)
+                    const next = isPlainObject(current)
                         ? { ...(current as any), ...(candidate as any) }
                         : { ...(candidate as any) }
 
@@ -308,23 +308,9 @@ export class StorageOperationClient implements OperationClient {
                     }
 
                     const current = await this.adapter.get(resource, id)
-                    const baseVersion = raw?.baseVersion
+                    const expectedVersion = raw?.expectedVersion
 
                     if (!current) {
-                        if (upsertMode === 'strict' && !(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
-                            results[index] = {
-                                entryId,
-                                ok: false,
-                                error: standardError({
-                                    code: 'CONFLICT',
-                                    message: 'Strict upsert requires baseVersion for existing entity',
-                                    kind: 'conflict',
-                                    details: { resource, id: id, hint: 'rebase' }
-                                })
-                            }
-                            continue
-                        }
-
                         const next = { ...(candidate as any), id, version: 1 }
                         await this.adapter.put(resource, id, this.toStoredValue(next))
                         results[index] = {
@@ -338,14 +324,14 @@ export class StorageOperationClient implements OperationClient {
                     }
 
                     const currentVersion = (current as any)?.version
-                    if (upsertMode === 'strict') {
-                        if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion))) {
+                    if (upsertConflict === 'cas') {
+                        if (!(typeof expectedVersion === 'number' && Number.isFinite(expectedVersion))) {
                             results[index] = {
                                 entryId,
                                 ok: false,
                                 error: standardError({
                                     code: 'CONFLICT',
-                                    message: 'Strict upsert requires baseVersion for existing entity',
+                                    message: 'CAS upsert requires expectedVersion for existing entity',
                                     kind: 'conflict',
                                     details: { resource, id: id, currentVersion, hint: 'rebase' }
                                 }),
@@ -357,7 +343,7 @@ export class StorageOperationClient implements OperationClient {
                             results[index] = { entryId, ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
                             continue
                         }
-                        if (currentVersion !== baseVersion) {
+                        if (currentVersion !== expectedVersion) {
                             results[index] = {
                                 entryId,
                                 ok: false,
@@ -368,13 +354,13 @@ export class StorageOperationClient implements OperationClient {
                         }
                     }
 
-                    const nextVersion = (typeof baseVersion === 'number' && Number.isFinite(baseVersion))
-                        ? baseVersion + 1
+                    const nextVersion = (typeof expectedVersion === 'number' && Number.isFinite(expectedVersion))
+                        ? expectedVersion + 1
                         : (typeof currentVersion === 'number' && Number.isFinite(currentVersion) ? currentVersion + 1 : 1)
 
-                    const next = merge && isPlainObject(current) && isPlainObject(candidate)
+                    const next = upsertApply === 'merge' && isPlainObject(current) && isPlainObject(candidate)
                         ? { ...(current as any), ...(candidate as any) }
-                        : candidate
+                        : { ...(candidate as any), ...(isPlainObject(current) ? { createdAt: (current as any).createdAt } : {}) }
 
                     if (isPlainObject(next)) {
                         next.id = id

@@ -4,11 +4,12 @@ import type { ActionContext } from './action'
 import type { StoreDataProcessor } from './processor'
 import type { Query, QueryOneResult, QueryResult } from './query'
 
-export type UpsertMode = 'strict' | 'loose'
+export type UpsertConflict = 'cas' | 'lww'
+export type UpsertApply = 'merge' | 'replace'
 
 export type UpsertWriteOptions = {
-    mode?: UpsertMode
-    merge?: boolean
+    conflict?: UpsertConflict
+    apply?: UpsertApply
 }
 
 export type WriteManyItemOk<T> = {

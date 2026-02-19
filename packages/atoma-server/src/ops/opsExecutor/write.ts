@@ -33,24 +33,6 @@ function hasOwn(obj: any, key: string): boolean {
     return Boolean(obj) && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, key)
 }
 
-function isPlainObject(value: any): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function ensureSelect(select: Record<string, boolean> | undefined, required: string[]): Record<string, boolean> | undefined {
-    if (!select) return undefined
-    const out: Record<string, boolean> = { ...select }
-    required.forEach(key => { out[key] = true })
-    return out
-}
-
-function requiredSelectFields(action: string): string[] {
-    if (action === 'create') return ['id', 'version']
-    if (action === 'update') return ['version']
-    if (action === 'upsert') return ['version']
-    return []
-}
-
 function validateCreateIdMatchesValue(raw: any): { ok: true } | { ok: false; reason: string } {
     const id = raw?.id
     const value = raw?.value
@@ -261,7 +243,7 @@ export async function executeWriteOps<Ctx>(args: {
                                     kind: 'upsert',
                                     ...base,
                                     id: raw?.id,
-                                    baseVersion: raw?.baseVersion,
+                                    expectedVersion: raw?.expectedVersion,
                                     data: raw?.value,
                                     ...(timestamp !== undefined ? { timestamp } : {}),
                                     ...(writeOptions !== undefined ? { options: writeOptions as any } : {})
@@ -289,6 +271,7 @@ export async function executeWriteOps<Ctx>(args: {
                         index,
                         id: raw?.id,
                         baseVersion: raw?.baseVersion,
+                        expectedVersion: raw?.expectedVersion,
                         idempotencyKey,
                         error: serializeErrorForLog(err)
                     })
@@ -306,318 +289,13 @@ export async function executeWriteOps<Ctx>(args: {
                 return itemResults
             }
 
-            const executeBulkInContext = async (ctx: { orm: IOrmAdapter; tx?: unknown }) => {
-                const itemResults: any[] = new Array(items.length)
-
-                const bulkFn = (() => {
-                    if (action === 'create') return (ctx.orm as any).bulkCreate
-                    if (action === 'update') return (ctx.orm as any).bulkUpdate
-                    if (action === 'upsert') return (ctx.orm as any).bulkUpsert
-                    return (ctx.orm as any).bulkDelete
-                })()
-
-                if (typeof bulkFn !== 'function') {
-                    return executePerItemInContext(ctx)
-                }
-
-                const options = (writeOptions && isPlainObject(writeOptions))
-                    ? (writeOptions as any)
-                    : {}
-                const upsertMode: 'strict' | 'loose' = (options as any)?.upsert?.mode === 'loose' ? 'loose' : 'strict'
-                const upsertMerge: boolean = options.merge !== false
-                const returningRequested = action === 'upsert' ? options.returning !== false : true
-                const requestedSelect = isPlainObject(options.select) ? (options.select as Record<string, boolean>) : undefined
-                const internalSelect = ensureSelect(requestedSelect, requiredSelectFields(action))
-
-                const pending: Array<{ index: number; raw: any; idempotencyKey?: string; timestamp?: number }> = []
-
-                for (let i = 0; i < items.length; i++) {
-                    const raw = items[i] as any
-                    const { idempotencyKey, timestamp } = extractWriteItemMeta(raw)
-
-                    if (args.syncEnabled && idempotencyKey) {
-                        const replayHit = await readIdempotency(idempotencyKey, ctx.tx)
-                        if (replayHit) {
-                            if (replayHit.kind === 'ok') {
-                                const res: any = { ok: true, status: 200, data: replayHit.data, replay: replayHit }
-                                itemResults[i] = toOkItemResult(entryIdAt(i), res)
-                            } else {
-                                const res: any = { ok: false, status: errorStatus(replayHit.error), error: replayHit.error, replay: replayHit }
-                                itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
-                            }
-                            continue
-                        }
-                    }
-
-                    if (action === 'update') {
-                        const baseVersion = raw?.baseVersion
-                        if (raw?.id === undefined) {
-                            const standard = invalidWrite('Missing id for update')
-                            const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
-                            if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
-                            const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
-                            continue
-                        }
-                        if (typeof baseVersion !== 'number' || !Number.isFinite(baseVersion) || baseVersion <= 0) {
-                            const standard = invalidWrite('Missing baseVersion for update')
-                            const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
-                            if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
-                            const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
-                            continue
-                        }
-                    }
-
-                    if (action === 'upsert') {
-                        if (raw?.id === undefined) {
-                            const standard = invalidWrite('Missing id for upsert')
-                            const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
-                            if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
-                            const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
-                            continue
-                        }
-                    }
-
-                    if (action === 'create') {
-                        const match = validateCreateIdMatchesValue(raw)
-                        if (!match.ok) {
-                            const standard = invalidWrite(match.reason)
-                            const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
-                            if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
-                            const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
-                            continue
-                        }
-                    }
-
-                    if (action === 'delete') {
-                        const baseVersion = raw?.baseVersion
-                        if (raw?.id === undefined) {
-                            const standard = invalidWrite('Missing id for delete')
-                            const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
-                            if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
-                            const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
-                            continue
-                        }
-                        if (typeof baseVersion !== 'number' || !Number.isFinite(baseVersion)) {
-                            const standard = invalidWrite('Missing baseVersion for delete')
-                            const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
-                            if (args.syncEnabled && idempotencyKey) await writeIdempotency(idempotencyKey, replay, errorStatus(standard), ctx.tx)
-                            const res: any = { ok: false, status: errorStatus(standard), error: standard, replay }
-                            itemResults[i] = toFailItemResult(entryIdAt(i), res, opTrace)
-                            continue
-                        }
-                    }
-
-                    pending.push({ index: i, raw, idempotencyKey, timestamp })
-                }
-
-                if (!pending.length) return itemResults
-
-                if (pending.length <= 1) {
-                    const only = pending[0]
-                    itemResults[only.index] = await executeSingleInContext(ctx, only.index)
-                    return itemResults
-                }
-
-                const bulkItems = (() => {
-                    if (action === 'create') {
-                        return pending.map(p => {
-                            const value = p.raw?.value
-                            const data = (value && typeof value === 'object' && !Array.isArray(value))
-                                ? { ...(value as any) }
-                                : {}
-                            if (p.raw?.id !== undefined && p.raw?.id !== null) {
-                                ;(data as any).id = p.raw?.id
-                            }
-                            const v = (data as any).version
-                            if (!(typeof v === 'number' && Number.isFinite(v) && v >= 1)) (data as any).version = 1
-                            return data
-                        })
-                    }
-                    if (action === 'update') {
-                        return pending.map(p => {
-                            const value = p.raw?.value
-                            const data = (value && typeof value === 'object' && !Array.isArray(value))
-                                ? { ...(value as any) }
-                                : {}
-                            return { id: p.raw?.id, data, baseVersion: p.raw?.baseVersion }
-                        })
-                    }
-                    if (action === 'upsert') {
-                        return pending.map(p => {
-                            const value = p.raw?.value
-                            const data = (value && typeof value === 'object' && !Array.isArray(value))
-                                ? { ...(value as any) }
-                                : {}
-                            return {
-                                id: p.raw?.id,
-                                data,
-                                baseVersion: p.raw?.baseVersion,
-                                ...(p.timestamp !== undefined ? { timestamp: p.timestamp } : {}),
-                                mode: upsertMode,
-                                merge: upsertMerge
-                            }
-                        })
-                    }
-                    return pending.map(p => ({ id: p.raw?.id, baseVersion: p.raw?.baseVersion }))
-                })()
-
-                const bulkOptions = (() => {
-                    if (action === 'delete') return { returning: false }
-                    if (action === 'upsert') return { ...options, returning: true, ...(internalSelect ? { select: internalSelect } : {}) }
-                    return { returning: true, ...(internalSelect ? { select: internalSelect } : {}) }
-                })()
-
-                const bulkRes = await bulkFn.call(ctx.orm, resource, bulkItems, bulkOptions)
-                const resultsByIndex = Array.isArray((bulkRes as any)?.resultsByIndex) ? (bulkRes as any).resultsByIndex : []
-
-                for (let j = 0; j < pending.length; j++) {
-                    const p = pending[j]
-                    const r = resultsByIndex[j]
-
-                    try {
-                        if (!r) {
-                            throw createError('INTERNAL', 'Missing bulk result', { kind: 'adapter' })
-                        }
-
-                        if (r.ok) {
-                            const row = r.data
-                            const expected = normalizeId(p.raw?.id)
-                            const actual = normalizeId((row as any)?.id)
-
-                            const id = action === 'create'
-                                ? (expected ? expected : actual)
-                                : normalizeId(p.raw?.id)
-
-                            if (action === 'create' && !id) {
-                                throw createError('INTERNAL', 'Create returned missing id', { kind: 'internal', resource })
-                            }
-
-                            if (action === 'create' && expected && actual && actual !== expected) {
-                                throw createError('INTERNAL', `Create returned mismatched id (expected=${expected}, actual=${actual})`, { kind: 'internal', resource })
-                            }
-
-                            const baseVersion = p.raw?.baseVersion
-                            const rowVersion = typeof (row as any)?.version === 'number' ? (row as any).version : undefined
-                            const serverVersion = (() => {
-                                if (action === 'delete') {
-                                    return (typeof baseVersion === 'number' && Number.isFinite(baseVersion)) ? baseVersion + 1 : 1
-                                }
-                                if (typeof rowVersion === 'number' && Number.isFinite(rowVersion) && rowVersion >= 1) return rowVersion
-                                if (typeof baseVersion === 'number' && Number.isFinite(baseVersion)) return baseVersion + 1
-                                if (action === 'upsert' && upsertMode === 'loose') {
-                                    throw createError('INTERNAL', 'Upsert returned missing version', { kind: 'internal', resource })
-                                }
-                                return 1
-                            })()
-
-                            let change: any | undefined
-                            if (args.syncEnabled) {
-                                change = await sync!.appendChange({
-                                    resource,
-                                    id,
-                                    kind: action === 'delete' ? 'delete' : 'upsert',
-                                    serverVersion,
-                                    changedAt: Date.now()
-                                }, ctx.tx)
-                            }
-
-                            const replay: any = {
-                                kind: 'ok',
-                                resource,
-                                id,
-                                changeKind: action === 'delete' ? 'delete' : 'upsert',
-                                serverVersion,
-                                ...(change ? { cursor: change.cursor } : {}),
-                                ...((action !== 'delete' && returningRequested)
-                                    ? {
-                                        data: (action === 'create' && row && typeof row === 'object' && !Array.isArray(row))
-                                            ? { ...(row as any), id }
-                                            : row
-                                    }
-                                    : {})
-                            }
-
-                            const res: any = {
-                                ok: true,
-                                status: 200,
-                                replay,
-                                ...((action !== 'delete' && returningRequested)
-                                    ? {
-                                        data: (action === 'create' && row && typeof row === 'object' && !Array.isArray(row))
-                                            ? { ...(row as any), id }
-                                            : row
-                                    }
-                                    : {})
-                            }
-
-                            if (args.syncEnabled && p.idempotencyKey) {
-                                await writeIdempotency(p.idempotencyKey, replay, 200, ctx.tx)
-                            }
-
-                            itemResults[p.index] = toOkItemResult(entryIdAt(p.index), res)
-                            continue
-                        }
-
-                        const standard = toStandardError(r.error, 'WRITE_FAILED')
-                        const status = errorStatus(standard)
-                        const replay = { kind: 'error', error: standard, ...extractConflictMeta(standard) }
-
-                        if (args.syncEnabled && p.idempotencyKey) {
-                            await writeIdempotency(p.idempotencyKey, replay, status, ctx.tx)
-                        }
-
-                        const logMeta = {
-                            opId: opTrace.opId,
-                            ...(opTrace.traceId ? { traceId: opTrace.traceId } : {}),
-                            ...(opTrace.requestId ? { requestId: opTrace.requestId } : {}),
-                            resource,
-                            action,
-                            index: p.index,
-                            id: p.raw?.id,
-                            baseVersion: p.raw?.baseVersion,
-                            idempotencyKey: p.idempotencyKey,
-                            rawError: serializeErrorForLog(r.error),
-                            error: standard
-                        }
-                        if (standard.kind === 'validation' || standard.code === 'CONFLICT') {
-                            args.pluginRuntime.logger?.warn?.('write item failed', logMeta)
-                        } else {
-                            args.pluginRuntime.logger?.error?.('write item failed', logMeta)
-                        }
-                        const res: any = { ok: false, status, error: standard, replay }
-                        itemResults[p.index] = toFailItemResult(entryIdAt(p.index), res, opTrace)
-                    } catch (err) {
-                        args.pluginRuntime.logger?.error?.('write item threw', {
-                            opId: opTrace.opId,
-                            ...(opTrace.traceId ? { traceId: opTrace.traceId } : {}),
-                            ...(opTrace.requestId ? { requestId: opTrace.requestId } : {}),
-                            resource,
-                            action,
-                            index: p.index,
-                            id: p.raw?.id,
-                            baseVersion: p.raw?.baseVersion,
-                            idempotencyKey: p.idempotencyKey,
-                            error: serializeErrorForLog(err)
-                        })
-                        itemResults[p.index] = toUnhandledItemError(entryIdAt(p.index), err, opTrace)
-                    }
-                }
-
-                return itemResults
-            }
-
             const itemResults = await (async () => {
                 if (!args.syncEnabled) {
-                    return executeBulkInContext({ orm: args.adapter, tx: undefined })
+                    return executePerItemInContext({ orm: args.adapter, tx: undefined })
                 }
 
                 try {
-                    return await args.adapter.transaction(async (tx) => executeBulkInContext({ orm: tx.orm, tx: tx.tx }))
+                    return await args.adapter.transaction(async (tx) => executePerItemInContext({ orm: tx.orm, tx: tx.tx }))
                 } catch {
                     const fallback: any[] = new Array(items.length)
                     for (let i = 0; i < items.length; i++) {

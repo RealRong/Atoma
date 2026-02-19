@@ -8,11 +8,15 @@ function buildUpsertWriteOptions(policy?: WritePlanPolicy): WriteOptions | undef
     if (!policy) return undefined
 
     const writeOptions: WriteOptions = {}
-    if (typeof policy.merge === 'boolean') {
-        writeOptions.merge = policy.merge
+    const upsert: NonNullable<WriteOptions['upsert']> = {}
+    if (policy.upsertConflict === 'cas' || policy.upsertConflict === 'lww') {
+        upsert.conflict = policy.upsertConflict
     }
-    if (policy.upsertMode === 'strict' || policy.upsertMode === 'loose') {
-        writeOptions.upsert = { mode: policy.upsertMode }
+    if (policy.upsertApply === 'merge' || policy.upsertApply === 'replace') {
+        upsert.apply = policy.upsertApply
+    }
+    if (Object.keys(upsert).length) {
+        writeOptions.upsert = upsert
     }
 
     return Object.keys(writeOptions).length
@@ -132,8 +136,8 @@ export async function buildPlanFromChanges<T extends Entity>({
         const updateBaseVersion = action === 'update'
             ? requireBaseVersion(id, requireChangeBefore({ change, action }))
             : undefined
-        const upsertBaseVersion = action === 'upsert'
-            ? resolvePositiveVersion(current ?? before ?? after)
+        const upsertExpectedVersion = action === 'upsert' && (policy?.upsertConflict ?? 'cas') === 'cas'
+            ? resolvePositiveVersion(current ?? before)
             : undefined
 
         const entry: WriteEntry = action === 'create'
@@ -162,7 +166,7 @@ export async function buildPlanFromChanges<T extends Entity>({
                     action: 'upsert',
                     item: {
                         id,
-                        ...(typeof upsertBaseVersion === 'number' ? { baseVersion: upsertBaseVersion } : {}),
+                        ...(typeof upsertExpectedVersion === 'number' ? { expectedVersion: upsertExpectedVersion } : {}),
                         value: outbound,
                         meta
                     },

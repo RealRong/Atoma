@@ -355,15 +355,15 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     async upsert(
         resource: string,
-        item: { id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean },
+        item: { id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' },
         options: WriteOptions = {}
     ): Promise<QueryResultOne> {
         try {
             const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
             if (item?.id === undefined) throw new Error('upsert requires id')
 
-            const mode: 'strict' | 'loose' = item.mode === 'loose' ? 'loose' : 'strict'
-            const merge: boolean = item.merge !== undefined ? item.merge : (options.merge !== false)
+            const conflict: 'cas' | 'lww' = item.conflict === 'lww' ? 'lww' : 'cas'
+            const apply: 'merge' | 'replace' = item.apply === 'replace' ? 'replace' : 'merge'
 
             const candidate = (item?.data && typeof item.data === 'object' && !Array.isArray(item.data))
                 ? { ...(item.data as any), [this.idField]: item.id }
@@ -409,13 +409,13 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 return saved
             }
 
-            if (mode === 'strict') {
-                const baseVersion = item.baseVersion
-                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion))) {
+            if (conflict === 'cas') {
+                const expectedVersion = item.expectedVersion
+                if (!(typeof expectedVersion === 'number' && Number.isFinite(expectedVersion))) {
                     const current = await readCurrentPlain()
                     if (current) {
                         const currentVersion = (current as any)?.version
-                        throwError('CONFLICT', 'Strict upsert requires baseVersion for existing entity', {
+                        throwError('CONFLICT', 'CAS upsert requires expectedVersion for existing entity', {
                             kind: 'conflict',
                             resource,
                             id: String(item.id),
@@ -440,7 +440,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 if (typeof currentVersion !== 'number') {
                     throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
                 }
-                if (currentVersion !== baseVersion) {
+                if (currentVersion !== expectedVersion) {
                     throwError('CONFLICT', 'Version conflict', {
                         kind: 'conflict',
                         resource,
@@ -449,8 +449,8 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                     })
                 }
 
-                const nextVersion = baseVersion + 1
-                const next = merge
+                const nextVersion = expectedVersion + 1
+                const next = apply === 'merge'
                     ? { ...(current as any), ...(candidate as any), [this.idField]: item.id, version: nextVersion }
                     : { ...(candidate as any), [this.idField]: item.id, version: nextVersion, createdAt: (current as any)?.createdAt }
 
@@ -458,7 +458,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 return { data: row, transactionApplied: Boolean(this.manager) }
             }
 
-            // loose
+            // lww
             for (let attempt = 0; attempt < 3; attempt++) {
                 const current = await readCurrentPlain()
                 if (!current) {
@@ -478,7 +478,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                 }
 
                 const nextVersion = currentVersion + 1
-                const next = merge
+                const next = apply === 'merge'
                     ? { ...(current as any), ...(candidate as any), [this.idField]: item.id, version: nextVersion }
                     : { ...(candidate as any), [this.idField]: item.id, version: nextVersion, createdAt: (current as any)?.createdAt }
 
@@ -494,7 +494,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
                     throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
                 }
                 const nextVersion = currentVersion + 1
-                const next = merge
+                const next = apply === 'merge'
                     ? { ...(current as any), ...(candidate as any), [this.idField]: item.id, version: nextVersion }
                     : { ...(candidate as any), [this.idField]: item.id, version: nextVersion, createdAt: (current as any)?.createdAt }
                 const row = await saveReturning(next)
@@ -511,7 +511,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     async bulkUpsert(
         resource: string,
-        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean }>,
+        items: Array<{ id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' }>,
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
         const returning = options.returning !== false

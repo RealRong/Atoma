@@ -52,7 +52,7 @@ export interface IOrmAdapter {
     ): Promise<QueryResultOne>
     upsert?(
         resource: string,
-        item: { id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean },
+        item: { id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' },
         options?: WriteOptions
     ): Promise<QueryResultOne>
     delete?(resource: string, whereOrId: any, options?: WriteOptions): Promise<QueryResultOne>
@@ -60,7 +60,7 @@ export interface IOrmAdapter {
     bulkUpdate?(resource: string, items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number }>, options?: WriteOptions): Promise<QueryResultMany>
     bulkUpsert?(
         resource: string,
-        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean }>,
+        items: Array<{ id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' }>,
         options?: WriteOptions
     ): Promise<QueryResultMany>
     bulkDelete?(resource: string, items: Array<{ id: any; baseVersion?: number }>, options?: WriteOptions): Promise<QueryResultMany>

@@ -56,7 +56,8 @@ export type {
 } from './relations'
 
 export type {
-    UpsertMode,
+    UpsertConflict,
+    UpsertApply,
     UpsertWriteOptions,
     WriteManyItemOk,
     WriteManyItemErr,

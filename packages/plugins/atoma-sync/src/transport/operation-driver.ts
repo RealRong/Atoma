@@ -34,7 +34,6 @@ function toProtocolWriteOptions(options: WriteOptions | undefined): ProtocolWrit
     return {
         ...(typeof options.returning === 'boolean' ? { returning: options.returning } : {}),
         ...(options.select && typeof options.select === 'object' ? { select: options.select } : {}),
-        ...(typeof options.merge === 'boolean' ? { merge: options.merge } : {}),
         ...(options.upsert && typeof options.upsert === 'object' ? { upsert: { ...options.upsert } } : {})
     }
 }
@@ -75,7 +74,7 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
             action: 'upsert',
             item: {
                 id: entry.item.id,
-                ...(typeof entry.item.baseVersion === 'number' ? { baseVersion: entry.item.baseVersion } : {}),
+                ...(typeof entry.item.expectedVersion === 'number' ? { expectedVersion: entry.item.expectedVersion } : {}),
                 value: entry.item.value,
                 ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
             },

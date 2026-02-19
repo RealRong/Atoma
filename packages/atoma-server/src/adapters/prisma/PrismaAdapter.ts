@@ -274,10 +274,11 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
 
     async upsert(
         resource: string,
-        item: { id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean },
+        item: { id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' },
         options: WriteOptions = {}
     ): Promise<QueryResultOne> {
-        const mode: 'strict' | 'loose' = item.mode === 'loose' ? 'loose' : 'strict'
+        const conflict: 'cas' | 'lww' = item.conflict === 'lww' ? 'lww' : 'cas'
+        const apply: 'merge' | 'replace' = item.apply === 'replace' ? 'replace' : 'merge'
         const id = item?.id
         if (id === undefined) throw new Error('upsert requires id')
 
@@ -291,7 +292,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             return data
         }
 
-        if (mode === 'loose') {
+        if (conflict === 'lww' && apply === 'merge') {
             const delegate = this.requireDelegate(resource, 'upsert')
             const createData = ensureCreateVersion(candidate)
             const updateData = this.toUpdateData(candidate, this.idField)
@@ -300,7 +301,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                 create: createData,
                 update: {
                     ...updateData,
-                    // loose: LWW，但仍保持 version 单调递增
+                    // lww + merge: 保持 version 单调递增
                     version: { increment: 1 }
                 },
                 select: this.buildSelect(options.select)
@@ -308,12 +309,20 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
         }
 
-        const baseVersion = item.baseVersion
-        if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion))) {
-            const current = await this.findOneByKey(this.client, resource, this.idField, id)
-            if (current) {
-                const currentVersion = (current as any)?.version
-                throwError('CONFLICT', 'Strict upsert requires baseVersion for existing entity', {
+        const current = await this.findOneByKey(this.client, resource, this.idField, id)
+        if (!current) {
+            return this.create(resource, ensureCreateVersion(candidate), options)
+        }
+
+        const currentVersion = (current as any)?.version
+        if (typeof currentVersion !== 'number') {
+            throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+        }
+
+        const expectedVersion = item.expectedVersion
+        if (conflict === 'cas') {
+            if (!(typeof expectedVersion === 'number' && Number.isFinite(expectedVersion))) {
+                throwError('CONFLICT', 'CAS upsert requires expectedVersion for existing entity', {
                     kind: 'conflict',
                     resource,
                     id: String(id),
@@ -322,27 +331,35 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                     hint: 'rebase'
                 })
             }
-            return this.create(resource, ensureCreateVersion(candidate), options)
+            if (currentVersion !== expectedVersion) {
+                throwError('CONFLICT', 'Version conflict', {
+                    kind: 'conflict',
+                    resource,
+                    currentVersion,
+                    currentValue: current
+                })
+            }
         }
 
-        try {
-            return await this.update(resource, {
-                id,
-                data: candidate,
-                baseVersion,
-                timestamp: item.timestamp
-            }, options)
-        } catch (err) {
-            if (isAtomaError(err) && err.code === 'NOT_FOUND') {
-                return this.create(resource, ensureCreateVersion(candidate), options)
-            }
-            throw err
-        }
+        const nextVersion = conflict === 'cas'
+            ? (expectedVersion as number) + 1
+            : currentVersion + 1
+        const next = apply === 'merge'
+            ? { ...(current as any), ...(candidate as any), [this.idField]: id, version: nextVersion }
+            : { ...(candidate as any), [this.idField]: id, version: nextVersion, createdAt: (current as any)?.createdAt }
+        const delegate = this.requireDelegate(resource, 'update')
+        const row = await delegate.update!({
+            where: { [this.idField]: id },
+            data: this.toUpdateData(next, this.idField),
+            select: this.buildSelect(options.select)
+        })
+
+        return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
     }
 
     async bulkUpsert(
         resource: string,
-        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number; mode?: 'strict' | 'loose'; merge?: boolean }>,
+        items: Array<{ id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' }>,
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
         const returning = options.returning !== false

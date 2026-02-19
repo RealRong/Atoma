@@ -25,6 +25,20 @@ export async function prepareUpdateInput<T extends Entity>(
     return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareUpdateInput')
 }
 
+export async function prepareUpsertInput<T extends Entity>(
+    runtime: Runtime,
+    handle: StoreHandle<T>,
+    item: PartialWithId<T>,
+    context?: ActionContext
+): Promise<PartialWithId<T>> {
+    const candidate = {
+        ...(item as Record<string, unknown>),
+        id: item.id
+    } as PartialWithId<T>
+    const processed = await runtime.transform.inbound(handle, candidate as T, context)
+    return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareUpsertInput')
+}
+
 export async function resolveWriteBase<T extends Entity>(
     runtime: Runtime,
     handle: StoreHandle<T>,

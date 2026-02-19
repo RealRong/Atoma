@@ -58,6 +58,7 @@ type ExecuteArgs = {
         id?: unknown
         data?: unknown
         baseVersion?: number
+        expectedVersion?: number
         timestamp?: number
         options?: WriteOptions
     }
@@ -119,11 +120,11 @@ function ensureSelect(select: Record<string, boolean> | undefined, required: str
     return out
 }
 
-function requiredSelectFields(kind: WriteKind, args: { returningRequested: boolean }): string[] {
+function requiredSelectFields(kind: WriteKind): string[] {
     if (kind === 'create') return ['id', 'version']
     if (kind === 'update') return ['version']
     if (kind === 'upsert') {
-        // 即使 returning=false，我们也需要 version 来正确返回 WriteItemResult.version（尤其 loose upsert）
+        // 即使 returning=false，我们也需要 version 来正确返回 WriteItemResult.version
         return ['version']
     }
     return []
@@ -140,7 +141,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
     const select = options.select
     const internalSelect = ensureSelect(
         isPlainObject(select) ? select : undefined,
-        requiredSelectFields(write.kind, { returningRequested })
+        requiredSelectFields(write.kind)
     )
 
     if (args.syncEnabled) {
@@ -270,8 +271,8 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                 throwError('INVALID_WRITE', 'Missing id for upsert', { kind: 'validation', resource: write.resource })
             }
 
-            const mode: 'strict' | 'loose' = (options as any)?.upsert?.mode === 'loose' ? 'loose' : 'strict'
-            const merge: boolean = options.merge !== false
+            const conflict: 'cas' | 'lww' = (options as any)?.upsert?.conflict === 'lww' ? 'lww' : 'cas'
+            const apply: 'merge' | 'replace' = (options as any)?.upsert?.apply === 'replace' ? 'replace' : 'merge'
             const id = normalizeId(write.id)
 
             const data = (write.data && typeof write.data === 'object' && !Array.isArray(write.data))
@@ -284,10 +285,10 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                 {
                     id,
                     data,
-                    baseVersion: write.baseVersion,
+                    expectedVersion: write.expectedVersion,
                     timestamp: write.timestamp,
-                    mode,
-                    merge
+                    conflict,
+                    apply
                 } as any,
                 { ...options, returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any
             )
@@ -295,12 +296,10 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
 
             const row = res?.data
             const rowVersion = typeof (row as any)?.version === 'number' ? (row as any).version : undefined
-            const serverVersion = (() => {
-                if (typeof rowVersion === 'number' && Number.isFinite(rowVersion) && rowVersion >= 1) return rowVersion
-                if (typeof write.baseVersion === 'number' && Number.isFinite(write.baseVersion)) return write.baseVersion + 1
-                if (mode === 'strict') return 1
+            if (!(typeof rowVersion === 'number' && Number.isFinite(rowVersion) && rowVersion >= 1)) {
                 throwError('INTERNAL', 'Upsert returned missing version', { kind: 'internal', resource: write.resource })
-            })()
+            }
+            const serverVersion = rowVersion
 
             let change: AtomaChange | undefined
             if (args.syncEnabled) {
@@ -431,6 +430,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                 idempotencyKey,
                 id: write.id,
                 baseVersion: write.baseVersion,
+                expectedVersion: write.expectedVersion,
                 timestamp: write.timestamp
             },
             error: serializeErrorForLog(err),
