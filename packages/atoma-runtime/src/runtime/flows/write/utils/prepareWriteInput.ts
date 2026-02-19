@@ -35,13 +35,12 @@ export async function resolveWriteBase<T extends Entity>(
     const cached = handle.state.getSnapshot().get(id) as T | undefined
     if (cached) return cached as PartialWithId<T>
 
-    const consistency = runtime.execution.resolveConsistency(options?.route ?? handle.config.defaultRoute)
+    const consistency = runtime.execution.resolveConsistency(handle, options)
     const canFetchBase = consistency.base === 'fetch'
     if (!canFetchBase) {
         throw new Error(`[Atoma] write: 缓存缺失且当前写入模式禁止补读，请先 fetch 再写入（id=${String(id)}）`)
     }
 
-    const route = options?.route ?? handle.config.defaultRoute
     const { data } = await runtime.execution.query(
         {
             handle,
@@ -50,10 +49,7 @@ export async function resolveWriteBase<T extends Entity>(
                 page: { mode: 'offset', limit: 1, offset: 0, includeTotal: false }
             }
         },
-        {
-            ...(route !== undefined ? { route } : {}),
-            ...(options?.signal ? { signal: options.signal } : {})
-        }
+        options
     )
     const first = data[0]
     const fetched = first !== undefined ? (first as T) : undefined

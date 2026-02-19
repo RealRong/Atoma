@@ -57,7 +57,6 @@ export type {
 
 export type {
     UpsertMode,
-    GetAllMergePolicy,
     UpsertWriteOptions,
     WriteManyItemOk,
     WriteManyItemErr,
@@ -65,9 +64,6 @@ export type {
     StoreUpdater,
     StoreOperationOptions,
     StoreReadOptions,
-    StoreGetOptions,
-    StoreGetManyOptions,
-    StoreListOptions,
     IndexType,
     IndexDefinition,
     StoreConfig,

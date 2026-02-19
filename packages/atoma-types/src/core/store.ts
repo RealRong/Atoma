@@ -1,11 +1,10 @@
 import type { EntityId } from '../shared'
-import type { Entity, PartialWithId } from './entity'
+import type { PartialWithId } from './entity'
 import type { ActionContext } from './action'
 import type { StoreDataProcessor } from './processor'
 import type { Query, QueryOneResult, QueryResult } from './query'
 
 export type UpsertMode = 'strict' | 'loose'
-export type GetAllMergePolicy = 'replace' | 'upsert-only' | 'preserve-missing'
 
 export type UpsertWriteOptions = {
     mode?: UpsertMode
@@ -47,17 +46,6 @@ export type StoreReadOptions = Readonly<{
     signal?: AbortSignal
 }>
 
-export type StoreGetOptions = StoreReadOptions
-
-export type StoreGetManyOptions = Readonly<StoreReadOptions & {
-    cache?: boolean
-}>
-
-export type StoreListOptions<T> = Readonly<StoreReadOptions & {
-    filter?: (item: T) => boolean
-    cacheFilter?: (item: T) => boolean
-}>
-
 export type IndexType = 'number' | 'date' | 'string' | 'substring' | 'text'
 
 export interface IndexDefinition<T> {
@@ -76,9 +64,6 @@ export interface StoreConfig<T> {
     dataProcessor?: StoreDataProcessor<T>
     indexes?: Array<IndexDefinition<T>>
     storeName?: StoreToken
-    read?: Readonly<{
-        getAllMergePolicy?: GetAllMergePolicy
-    }>
     write?: Readonly<{
         route?: ExecutionRoute
     }>
@@ -104,9 +89,9 @@ export interface Store<T, Relations = {}> {
     deleteMany(ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<boolean>>
     upsert(item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T>
     upsertMany(items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>>
-    get(id: EntityId, options?: StoreGetOptions): Promise<T | undefined>
-    getMany(ids: EntityId[], options?: StoreGetManyOptions): Promise<T[]>
-    list(options?: StoreListOptions<T>): Promise<T[]>
+    get(id: EntityId, options?: StoreReadOptions): Promise<T | undefined>
+    getMany(ids: EntityId[], options?: StoreReadOptions): Promise<T[]>
+    list(options?: StoreReadOptions): Promise<T[]>
     query(query: Query<T>, options?: StoreReadOptions): Promise<QueryResult<T>>
     queryOne(query: Query<T>, options?: StoreReadOptions): Promise<QueryOneResult<T>>
 }

@@ -75,7 +75,6 @@ export class StoreFactory {
             storeName: name,
             config: {
                 defaultRoute: storeSchema.write?.route,
-                getAllMergePolicy: storeSchema.read?.getAllMergePolicy,
                 idGenerator,
                 dataProcessor
             }
@@ -159,13 +158,8 @@ export class StoreFactory {
             }
             if (!processed.length) return
 
-            handle.state.mutate((draft) => {
-                processed.forEach((item) => {
-                    const existing = draft.get(item.id)
-                    const preserved = this.runtime.engine.mutation.reuse(existing, item)
-                    if (draft.has(item.id) && existing === preserved) return
-                    draft.set(item.id, preserved)
-                })
+            handle.state.applyWriteback({
+                upserts: processed
             })
         }
 

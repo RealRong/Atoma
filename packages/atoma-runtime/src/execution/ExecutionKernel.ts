@@ -8,6 +8,7 @@ import type {
     QueryRequest,
     ExecutionQueryOutput,
     RouteId,
+    StoreHandle,
     WriteConsistency,
     WriteRequest,
     WriteOutput
@@ -53,6 +54,22 @@ const KERNEL_PHASE_META: Readonly<Record<KernelPhase, KernelPhaseMeta>> = {
         failed: 'write.failed',
         fallbackCode: 'E_EXECUTION_WRITE_FAILED',
         fallbackMessage: '[Atoma] execution.write failed'
+    }
+}
+
+function normalizeExecutionOptions(args: {
+    options?: ExecutionOptions
+    defaultRoute?: RouteId
+}): ExecutionOptions | undefined {
+    const route = args.options?.route ?? args.defaultRoute
+    const signal = args.options?.signal
+    if (route === undefined && signal === undefined) {
+        return undefined
+    }
+
+    return {
+        ...(route !== undefined ? { route } : {}),
+        ...(signal !== undefined ? { signal } : {})
     }
 }
 
@@ -103,11 +120,18 @@ export class ExecutionKernel implements ExecutionKernelType {
         }
     }
 
-    resolveConsistency = (route?: RouteId): WriteConsistency => {
+    resolveConsistency = <T extends Entity>(
+        handle: StoreHandle<T>,
+        options?: ExecutionOptions
+    ): WriteConsistency => {
+        const normalizedOptions = normalizeExecutionOptions({
+            options,
+            defaultRoute: handle.config.defaultRoute
+        })
         const resolved = resolveExecution({
             snapshot: this.snapshot,
             phase: 'write',
-            route,
+            route: normalizedOptions?.route,
             required: false,
             createError: this.createError
         })
@@ -131,20 +155,26 @@ export class ExecutionKernel implements ExecutionKernelType {
         phase,
         request,
         options,
+        defaultRoute,
         resolveExecutor
     }: {
         phase: KernelPhase
         request: Request
         options?: ExecutionOptions
+        defaultRoute?: RouteId
         resolveExecutor: (resolved: KernelResolvedExecution) => (
             request: Request,
             options?: ExecutionOptions
         ) => Promise<Output>
     }): Promise<Output> => {
+        const normalizedOptions = normalizeExecutionOptions({
+            options,
+            defaultRoute
+        })
         const resolved = resolveExecution({
             snapshot: this.snapshot,
             phase,
-            route: options?.route,
+            route: normalizedOptions?.route,
             required: true,
             createError: this.createError
         })
@@ -154,7 +184,7 @@ export class ExecutionKernel implements ExecutionKernelType {
             executor: resolved.executor,
             resolution: resolved.resolution,
             request,
-            options
+            options: normalizedOptions
         }
 
         this.events.emit({
@@ -163,7 +193,7 @@ export class ExecutionKernel implements ExecutionKernelType {
         } as ExecutionEvent)
 
         try {
-            const output = await resolveExecutor(resolved)(request, options)
+            const output = await resolveExecutor(resolved)(request, normalizedOptions)
             this.events.emit({
                 type: meta.succeeded,
                 ...eventBase,
@@ -196,6 +226,7 @@ export class ExecutionKernel implements ExecutionKernelType {
             phase: 'query',
             request,
             options,
+            defaultRoute: request.handle.config.defaultRoute,
             resolveExecutor: (resolved) => resolveQueryExecutor({
                 executor: resolved.executor,
                 spec: resolved.spec,
@@ -209,6 +240,7 @@ export class ExecutionKernel implements ExecutionKernelType {
             phase: 'write',
             request,
             options,
+            defaultRoute: request.handle.config.defaultRoute,
             resolveExecutor: (resolved) => resolveWriteExecutor({
                 executor: resolved.executor,
                 spec: resolved.spec,

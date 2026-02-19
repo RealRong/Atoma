@@ -1,9 +1,9 @@
-import type { Entity, Query, QueryResult, RelationMap, StoreGetManyOptions, StoreToken } from '../../core'
+import type { Entity, Query, QueryResult, RelationMap, StoreReadOptions, StoreToken } from '../../core'
 import type { EntityId } from '../../shared'
 import type { RelationInclude, RelationPrefetchOptions, StoreMap } from './shared'
 
 export type RelationStore = Readonly<{
-    getMany: (ids: EntityId[], options?: StoreGetManyOptions) => Promise<unknown[]>
+    getMany: (ids: EntityId[], options?: StoreReadOptions) => Promise<unknown[]>
     query: (query: Query<unknown>) => Promise<QueryResult<unknown>>
 }>
 

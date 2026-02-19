@@ -1,4 +1,4 @@
-import type { Entity, GetAllMergePolicy, StoreConfig, StoreToken, ExecutionRoute } from '../core'
+import type { Entity, StoreConfig, StoreToken, ExecutionRoute } from '../core'
 import type { StoreState } from './storeState'
 
 export type StoreHandle<T extends Entity = Entity> = {
@@ -7,7 +7,6 @@ export type StoreHandle<T extends Entity = Entity> = {
     relations?: () => unknown | undefined
     config: Readonly<{
         defaultRoute?: ExecutionRoute
-        getAllMergePolicy?: GetAllMergePolicy
         idGenerator: StoreConfig<T>['idGenerator']
         dataProcessor: StoreConfig<T>['dataProcessor']
     }>

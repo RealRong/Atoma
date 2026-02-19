@@ -8,6 +8,7 @@ import type {
     Consistency,
     WriteConsistency
 } from './persistence'
+import type { StoreHandle } from './handle'
 
 export type ExecutorId = string
 
@@ -127,7 +128,7 @@ export type ExecutionSpec = Readonly<{
 
 export type ExecutionKernel = Readonly<{
     apply: (bundle: ExecutionBundle) => () => void
-    resolveConsistency: (route?: RouteId) => WriteConsistency
+    resolveConsistency: <T extends Entity>(handle: StoreHandle<T>, options?: ExecutionOptions) => WriteConsistency
     subscribe: (listener: (event: ExecutionEvent) => void) => () => void
     query: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<ExecutionQueryOutput<T>>
     write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput<T>>

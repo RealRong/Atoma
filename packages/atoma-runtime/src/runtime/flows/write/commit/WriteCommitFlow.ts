@@ -4,6 +4,7 @@ import type {
     StoreWritebackArgs,
 } from 'atoma-types/core'
 import type {
+    ExecutionOptions,
     WriteEntry,
     WriteItemResult,
     WriteOutput,
@@ -23,8 +24,7 @@ type CommitSession<T extends Entity> = Readonly<{
     runtime: WriteCommitRequest<T>['runtime']
     handle: WriteCommitRequest<T>['handle']
     context: WriteCommitRequest<T>['context']
-    route?: WriteCommitRequest<T>['route']
-    signal?: WriteCommitRequest<T>['signal']
+    executionOptions?: ExecutionOptions
 }>
 
 function createEmptyOptimisticState<T extends Entity>(before: ReadonlyMap<EntityId, T>): OptimisticState<T> {
@@ -123,13 +123,6 @@ function mergeChanges<T extends Entity>(...groups: ReadonlyArray<ReadonlyArray<S
 function rollbackOptimisticState<T extends Entity>(handle: StoreHandle<T>, optimisticState: OptimisticState<T>) {
     if (!optimisticState.changes.length) return
     handle.state.applyChanges(invertChanges(optimisticState.changes))
-}
-
-function toExecutionOptions<T extends Entity>(session: CommitSession<T>) {
-    return {
-        ...(session.route !== undefined ? { route: session.route } : {}),
-        ...(session.signal ? { signal: session.signal } : {})
-    }
 }
 
 async function resolveWriteResult<T extends Entity>(args: {
@@ -276,7 +269,7 @@ async function runWriteTransaction<T extends Entity>(args: {
             context: session.context,
             entries: plan.map((entry) => entry.entry)
         },
-        toExecutionOptions(session)
+        session.executionOptions
     )
     ensureWriteResultStatus(writeResult)
 
@@ -296,19 +289,25 @@ async function runWriteTransaction<T extends Entity>(args: {
 }
 
 function resolveSession<T extends Entity>(request: WriteCommitRequest<T>): CommitSession<T> {
+    const executionOptions = request.route === undefined && request.signal === undefined
+        ? undefined
+        : {
+            ...(request.route !== undefined ? { route: request.route } : {}),
+            ...(request.signal !== undefined ? { signal: request.signal } : {})
+        }
+
     return {
         runtime: request.runtime,
         handle: request.handle,
         context: request.context,
-        route: request.route,
-        signal: request.signal
+        executionOptions
     }
 }
 
 export class WriteCommitFlow {
     execute = async <T extends Entity>(request: WriteCommitRequest<T>): Promise<WriteCommitResult<T>> => {
         const session = resolveSession(request)
-        const consistency = session.runtime.execution.resolveConsistency(session.route)
+        const consistency = session.runtime.execution.resolveConsistency(session.handle, session.executionOptions)
         const optimisticState = applyOptimisticState({
             handle: session.handle,
             plan: request.plan,

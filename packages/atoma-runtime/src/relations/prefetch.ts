@@ -62,7 +62,7 @@ async function prefetchPlanEntry(
 
     if (shouldUseIdLookup && typeof store.getMany === 'function') {
         if (signal.aborted) return
-        await store.getMany(entry.uniqueKeys, { cache: true })
+        await store.getMany(entry.uniqueKeys)
         return
     }
 
