@@ -13,10 +13,18 @@ export class Stores implements StoreCatalog {
     private readonly created: Store<Entity>[] = []
     private readonly listeners = new Set<StoreListener>()
     private readonly storeFactory: StoreFactory
+    private readonly runtime: Runtime
+    private readonly deps: {
+        schema: Schema
+        dataProcessor?: StoreDataProcessor<Entity>
+        defaults?: {
+            idGenerator?: () => EntityId
+        }
+    }
 
     constructor(
-        private readonly runtime: Runtime,
-        private readonly args: {
+        runtime: Runtime,
+        deps: {
             schema: Schema
             dataProcessor?: StoreDataProcessor<Entity>
             defaults?: {
@@ -24,11 +32,13 @@ export class Stores implements StoreCatalog {
             }
         }
     ) {
+        this.runtime = runtime
+        this.deps = deps
         this.storeFactory = new StoreFactory({
             runtime: this.runtime,
-            schema: this.args.schema,
-            defaults: this.args.defaults,
-            dataProcessor: this.args.dataProcessor
+            schema: this.deps.schema,
+            defaults: this.deps.defaults,
+            dataProcessor: this.deps.dataProcessor
         })
     }
 

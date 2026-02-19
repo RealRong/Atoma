@@ -23,12 +23,15 @@ export class Probe implements Debug {
     private readonly stores: Runtime['stores']
     private readonly now: () => number
 
-    constructor(args: {
+    constructor({
+        stores,
+        now
+    }: {
         stores: Runtime['stores']
         now: () => number
     }) {
-        this.stores = args.stores
-        this.now = args.now
+        this.stores = stores
+        this.now = now
     }
 
     readonly snapshotStore: Debug['snapshotStore'] = (storeName: StoreToken) => {

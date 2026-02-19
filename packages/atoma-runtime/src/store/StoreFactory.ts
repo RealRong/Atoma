@@ -35,7 +35,12 @@ export class StoreFactory {
     }
     private readonly dataProcessor?: StoreDataProcessor<Entity>
 
-    constructor(args: {
+    constructor({
+        runtime,
+        schema,
+        defaults,
+        dataProcessor
+    }: {
         runtime: Runtime
         schema: Schema
         defaults?: {
@@ -43,10 +48,10 @@ export class StoreFactory {
         }
         dataProcessor?: StoreDataProcessor<Entity>
     }) {
-        this.runtime = args.runtime
-        this.schema = args.schema
-        this.defaults = args.defaults
-        this.dataProcessor = args.dataProcessor
+        this.runtime = runtime
+        this.schema = schema
+        this.defaults = defaults
+        this.dataProcessor = dataProcessor
     }
 
     build = <T extends Entity = Entity>(storeName: string): StoreFactoryResult<T> => {

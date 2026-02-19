@@ -1,7 +1,7 @@
 import { createCodedError, isCodedError } from 'atoma-shared'
 import type { ExecutionError, ExecutionErrorCode } from 'atoma-types/runtime'
 
-export type CreateExecutionError = (args: {
+export type CreateExecutionError = (input: {
     code: ExecutionErrorCode
     message: string
     retryable?: boolean

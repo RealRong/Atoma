@@ -95,14 +95,24 @@ export class TransformPipeline {
         this.runtime = runtime
     }
 
-    async process<T>(mode: DataProcessorMode, data: T, args: {
-        storeName: string
-        runtime: Runtime
-        context?: ActionContext
-        adapter?: unknown
-        dataProcessor?: StoreDataProcessor<T>
-    }): Promise<T | undefined> {
-        const pipeline = args.dataProcessor
+    async process<T>(
+        mode: DataProcessorMode,
+        data: T,
+        {
+            storeName,
+            runtime,
+            context,
+            adapter,
+            dataProcessor
+        }: {
+            storeName: string
+            runtime: Runtime
+            context?: ActionContext
+            adapter?: unknown
+            dataProcessor?: StoreDataProcessor<T>
+        }
+    ): Promise<T | undefined> {
+        const pipeline = dataProcessor
         if (!pipeline) return data
 
         let current: T | undefined = data
@@ -112,10 +122,10 @@ export class TransformPipeline {
             if (!handler) continue
 
             const stageContext: DataProcessorContext<T> = {
-                storeName: args.storeName,
-                runtime: args.runtime,
-                context: args.context,
-                adapter: args.adapter,
+                storeName,
+                runtime,
+                context,
+                adapter,
                 mode,
                 stage
             }

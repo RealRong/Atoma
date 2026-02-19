@@ -1,4 +1,4 @@
-import type { Entity } from 'atoma-types/core'
+import type { Entity, ExecutionRoute } from 'atoma-types/core'
 import type {
     ExecutionBundle,
     ExecutionErrorCode,
@@ -7,7 +7,6 @@ import type {
     ExecutionOptions,
     QueryRequest,
     ExecutionQueryOutput,
-    RouteId,
     StoreHandle,
     WriteConsistency,
     WriteRequest,
@@ -23,14 +22,9 @@ import {
 import type {
     KernelLayer,
     KernelPhase,
-    KernelResolvedExecution,
     KernelSnapshot
 } from './kernelTypes'
-import {
-    resolveExecution,
-    resolveQueryExecutor,
-    resolveWriteExecutor
-} from './resolver'
+import { resolveExecution } from './resolver'
 
 type KernelPhaseMeta = Readonly<{
     dispatched: ExecutionEvent['type']
@@ -57,12 +51,15 @@ const KERNEL_PHASE_META: Readonly<Record<KernelPhase, KernelPhaseMeta>> = {
     }
 }
 
-function normalizeExecutionOptions(args: {
+function normalizeExecutionOptions({
+    options,
+    defaultRoute
+}: {
     options?: ExecutionOptions
-    defaultRoute?: RouteId
+    defaultRoute?: ExecutionRoute
 }): ExecutionOptions | undefined {
-    const route = args.options?.route ?? args.defaultRoute
-    const signal = args.options?.signal
+    const route = options?.route ?? defaultRoute
+    const signal = options?.signal
     if (route === undefined && signal === undefined) {
         return undefined
     }
@@ -132,15 +129,13 @@ export class ExecutionKernel implements ExecutionKernelType {
             snapshot: this.snapshot,
             phase: 'write',
             route: normalizedOptions?.route,
-            required: false,
             createError: this.createError
         })
         if (!resolved) return ExecutionKernel.DEFAULT_CONSISTENCY
 
         return {
             ...ExecutionKernel.DEFAULT_CONSISTENCY,
-            ...(resolved.routeSpec.consistency ?? {}),
-            ...(resolved.spec.consistency ?? {})
+            ...resolved.consistency
         }
     }
 
@@ -155,17 +150,12 @@ export class ExecutionKernel implements ExecutionKernelType {
         phase,
         request,
         options,
-        defaultRoute,
-        resolveExecutor
+        defaultRoute
     }: {
         phase: KernelPhase
         request: Request
         options?: ExecutionOptions
-        defaultRoute?: RouteId
-        resolveExecutor: (resolved: KernelResolvedExecution) => (
-            request: Request,
-            options?: ExecutionOptions
-        ) => Promise<Output>
+        defaultRoute?: ExecutionRoute
     }): Promise<Output> => {
         const normalizedOptions = normalizeExecutionOptions({
             options,
@@ -175,13 +165,19 @@ export class ExecutionKernel implements ExecutionKernelType {
             snapshot: this.snapshot,
             phase,
             route: normalizedOptions?.route,
-            required: true,
             createError: this.createError
         })
+        if (!resolved) {
+            throw this.createError({
+                code: 'E_ROUTE_NOT_FOUND',
+                message: '[Atoma] execution: 未配置默认 route',
+                retryable: false
+            })
+        }
         const meta = KERNEL_PHASE_META[phase]
         const eventBase = {
-            route: resolved.route,
-            executor: resolved.executor,
+            route: resolved.resolution.route,
+            executor: resolved.resolution.executor,
             resolution: resolved.resolution,
             request,
             options: normalizedOptions
@@ -193,7 +189,22 @@ export class ExecutionKernel implements ExecutionKernelType {
         } as ExecutionEvent)
 
         try {
-            const output = await resolveExecutor(resolved)(request, normalizedOptions)
+            const executor = phase === 'query'
+                ? resolved.spec.query as ((request: Request, options?: ExecutionOptions) => Promise<Output>) | undefined
+                : resolved.spec.write as ((request: Request, options?: ExecutionOptions) => Promise<Output>) | undefined
+            if (!executor) {
+                throw this.createError({
+                    code: phase === 'query'
+                        ? 'E_EXECUTOR_QUERY_UNIMPLEMENTED'
+                        : 'E_EXECUTOR_WRITE_UNIMPLEMENTED',
+                    message: phase === 'query'
+                        ? `[Atoma] execution.query: executor 未实现 query: ${resolved.resolution.executor}`
+                        : `[Atoma] execution.write: executor 未实现 write: ${resolved.resolution.executor}`,
+                    retryable: false,
+                    details: { executor: resolved.resolution.executor }
+                })
+            }
+            const output = await executor(request, normalizedOptions)
             this.events.emit({
                 type: meta.succeeded,
                 ...eventBase,
@@ -207,8 +218,8 @@ export class ExecutionKernel implements ExecutionKernelType {
                 fallbackMessage: meta.fallbackMessage,
                 retryable: false,
                 details: {
-                    route: resolved.route,
-                    executor: resolved.executor
+                    route: resolved.resolution.route,
+                    executor: resolved.resolution.executor
                 },
                 createError: this.createError
             })
@@ -226,12 +237,7 @@ export class ExecutionKernel implements ExecutionKernelType {
             phase: 'query',
             request,
             options,
-            defaultRoute: request.handle.config.defaultRoute,
-            resolveExecutor: (resolved) => resolveQueryExecutor({
-                executor: resolved.executor,
-                spec: resolved.spec,
-                createError: this.createError
-            })
+            defaultRoute: request.handle.config.defaultRoute
         })
     }
 
@@ -240,12 +246,7 @@ export class ExecutionKernel implements ExecutionKernelType {
             phase: 'write',
             request,
             options,
-            defaultRoute: request.handle.config.defaultRoute,
-            resolveExecutor: (resolved) => resolveWriteExecutor({
-                executor: resolved.executor,
-                spec: resolved.spec,
-                createError: this.createError
-            })
+            defaultRoute: request.handle.config.defaultRoute
         })
     }
 }

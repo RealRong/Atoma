@@ -11,6 +11,24 @@ type VersionedEntity = Entity & {
     version?: unknown
 }
 
+function toStoreChange<T extends Entity>(args: {
+    id: EntityId
+    before?: T
+    after?: T
+}): StoreChange<T> {
+    if (args.before !== undefined && args.after !== undefined) {
+        return { id: args.id, before: args.before, after: args.after }
+    }
+    if (args.after !== undefined) {
+        return { id: args.id, after: args.after }
+    }
+    if (args.before !== undefined) {
+        return { id: args.id, before: args.before }
+    }
+
+    throw new Error(`[Atoma] writeback: change missing before/after (id=${String(args.id)})`)
+}
+
 export function writeback<T extends Entity>(
     before: Map<EntityId, T>,
     args: StoreWritebackArgs<T>
@@ -89,11 +107,11 @@ export function writeback<T extends Entity>(
     changedIds.forEach((id) => {
         const change = changesById.get(id)
         if (!change) return
-        changes.push({
+        changes.push(toStoreChange({
             id,
-            ...(change.before !== undefined ? { before: change.before } : {}),
-            ...(change.after !== undefined ? { after: change.after } : {})
-        })
+            before: change.before,
+            after: change.after
+        }))
     })
 
     return {

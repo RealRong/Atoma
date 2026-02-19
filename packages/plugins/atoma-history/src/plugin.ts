@@ -49,7 +49,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
 
             const apply = async (args: {
                 storeName: string
-                changes: StoreChange<Entity>[]
+                changes: ReadonlyArray<StoreChange<Entity>>
                 direction: ChangeDirection
                 context: ActionContext
             }) => {
@@ -90,7 +90,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                         if (!args.changes?.length) return
                         manager.record({
                             storeName: String(args.handle.storeName),
-                            changes: args.changes as StoreChange<Entity>[],
+                            changes: args.changes,
                             context: args.context
                         })
                         emitChanged()

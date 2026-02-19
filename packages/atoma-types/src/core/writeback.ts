@@ -7,11 +7,28 @@ export type StoreWritebackArgs<T extends Entity> = Readonly<{
     versionUpdates?: Array<{ id: EntityId; version: number }>
 }>
 
-export type StoreChange<T extends Entity> = Readonly<{
+export type StoreCreateChange<T extends Entity> = Readonly<{
     id: EntityId
-    before?: T
-    after?: T
+    after: T
+    before?: never
 }>
+
+export type StoreUpdateChange<T extends Entity> = Readonly<{
+    id: EntityId
+    before: T
+    after: T
+}>
+
+export type StoreDeleteChange<T extends Entity> = Readonly<{
+    id: EntityId
+    before: T
+    after?: never
+}>
+
+export type StoreChange<T extends Entity> =
+    | StoreCreateChange<T>
+    | StoreUpdateChange<T>
+    | StoreDeleteChange<T>
 
 export type ChangeDirection = 'forward' | 'backward'
 

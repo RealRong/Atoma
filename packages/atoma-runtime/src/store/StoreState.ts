@@ -8,14 +8,18 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
     private readonly engine: Engine
     readonly indexes: IndexesLike<T> | null
 
-    constructor(args: {
+    constructor({
+        initial,
+        indexes,
+        engine
+    }: {
         initial?: StoreSnapshot<T>
         indexes?: IndexesLike<T> | null
         engine: Engine
     }) {
-        this.snapshot = args.initial ?? new Map<EntityId, T>()
-        this.indexes = args.indexes ?? null
-        this.engine = args.engine
+        this.snapshot = initial ?? new Map<EntityId, T>()
+        this.indexes = indexes ?? null
+        this.engine = engine
     }
 
     getSnapshot = () => this.snapshot
@@ -40,11 +44,22 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
     private buildChanges = (before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: ReadonlySet<EntityId>): StoreChange<T>[] => {
         const changes: StoreChange<T>[] = []
         changedIds.forEach((id) => {
-            changes.push({
-                id,
-                ...(before.has(id) ? { before: before.get(id) as T } : {}),
-                ...(after.has(id) ? { after: after.get(id) as T } : {})
-            })
+            const previous = before.get(id)
+            const next = after.get(id)
+            if (previous !== undefined && next !== undefined) {
+                changes.push({ id, before: previous, after: next })
+                return
+            }
+            if (next !== undefined) {
+                changes.push({ id, after: next })
+                return
+            }
+            if (previous !== undefined) {
+                changes.push({ id, before: previous })
+                return
+            }
+
+            throw new Error(`[Atoma] store state change missing before/after (id=${String(id)})`)
         })
         return changes
     }
@@ -129,9 +144,9 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         return this.commit(before, next)
     }
 
-    applyWriteback = (args: StoreWritebackArgs<T>): StoreDelta<T> | null => {
+    applyWriteback = (writeback: StoreWritebackArgs<T>): StoreDelta<T> | null => {
         const before = this.snapshot as Map<EntityId, T>
-        const result = this.engine.mutation.writeback(before, args)
+        const result = this.engine.mutation.writeback(before, writeback)
         if (!result) return null
 
         this.applyDelta(result)

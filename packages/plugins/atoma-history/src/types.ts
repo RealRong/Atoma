@@ -9,7 +9,7 @@ export interface PatchMetadata {
 }
 
 export interface HistoryChange {
-    changes: StoreChange<Entity>[]
+    changes: ReadonlyArray<StoreChange<Entity>>
     storeName: string
     databaseName?: string
     timestamp: number
@@ -17,7 +17,7 @@ export interface HistoryChange {
 
 export type ChangeRecord = Readonly<{
     storeName: string
-    changes: StoreChange<Entity>[]
+    changes: ReadonlyArray<StoreChange<Entity>>
     context: ActionContext
 }>
 

@@ -143,17 +143,13 @@ export class WriteFlow implements Write {
         source: WriteEventSource
     }): Promise<T | void> => {
         const adapted = input.kind === 'intent'
-            ? await adaptIntentToChanges({
-                runtime: this.runtime,
-                input
-            })
+            ? await adaptIntentToChanges(this.runtime, input)
             : { changes: input.changes }
 
         const plan = await buildPlanFromChanges({
             runtime: this.runtime,
             handle: session.handle,
             context: session.context,
-            options: input.options,
             changes: adapted.changes,
             policy: adapted.policy,
             createEntryId: session.createEntryId
@@ -384,10 +380,7 @@ export class WriteFlow implements Write {
             input: {
                 kind: 'change-replay',
                 options,
-                changes: adaptReplayChanges({
-                    changes,
-                    direction
-                })
+                changes: adaptReplayChanges(changes, direction)
             },
             source: 'applyChanges'
         })

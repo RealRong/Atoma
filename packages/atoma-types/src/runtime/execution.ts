@@ -12,8 +12,6 @@ import type { StoreHandle } from './handle'
 
 export type ExecutorId = string
 
-export type RouteId = ExecutionRoute
-
 export type RouteSpec = Readonly<{
     query: ExecutorId
     write: ExecutorId
@@ -23,19 +21,13 @@ export type RouteSpec = Readonly<{
 export type ExecutionBundle = Readonly<{
     id: string
     executors?: Readonly<Record<ExecutorId, ExecutionSpec>>
-    routes?: Readonly<Record<RouteId, RouteSpec>>
-    defaultRoute?: RouteId
+    routes?: Readonly<Record<ExecutionRoute, RouteSpec>>
+    defaultRoute?: ExecutionRoute
 }>
 
-export type ExecutionResolutionSource =
-    | 'explicit-route'
-    | 'default-route'
-
 export type ExecutionResolution = Readonly<{
-    source: ExecutionResolutionSource
-    route: RouteId
+    route: ExecutionRoute
     executor: ExecutorId
-    trace: ReadonlyArray<ExecutorId>
 }>
 
 export type ExecutionErrorCode =
@@ -63,7 +55,7 @@ export type ExecutionError = Error & Readonly<{
 export type ExecutionWriteEvent = Readonly<
     | {
         type: 'write.dispatched'
-        route: RouteId
+        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: WriteRequest<any>
@@ -71,7 +63,7 @@ export type ExecutionWriteEvent = Readonly<
     }
     | {
         type: 'write.succeeded'
-        route: RouteId
+        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: WriteRequest<any>
@@ -80,7 +72,7 @@ export type ExecutionWriteEvent = Readonly<
     }
     | {
         type: 'write.failed'
-        route: RouteId
+        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: WriteRequest<any>
@@ -92,7 +84,7 @@ export type ExecutionWriteEvent = Readonly<
 export type ExecutionQueryEvent = Readonly<
     | {
         type: 'query.dispatched'
-        route: RouteId
+        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: QueryRequest<any>
@@ -100,7 +92,7 @@ export type ExecutionQueryEvent = Readonly<
     }
     | {
         type: 'query.succeeded'
-        route: RouteId
+        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: QueryRequest<any>
@@ -109,7 +101,7 @@ export type ExecutionQueryEvent = Readonly<
     }
     | {
         type: 'query.failed'
-        route: RouteId
+        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: QueryRequest<any>

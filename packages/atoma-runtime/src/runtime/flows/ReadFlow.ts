@@ -67,22 +67,24 @@ export class ReadFlow implements Read {
         return output
     }
 
-    private applyStoreWriteback = <T extends Entity>(args: {
+    private applyStoreWriteback = <T extends Entity>({
+        handle,
+        upserts = [],
+        deletes = []
+    }: {
         handle: StoreHandle<T>
         upserts?: T[]
         deletes?: EntityId[]
     }): ReadonlyMap<EntityId, T> => {
-        const upserts = args.upserts ?? []
-        const deletes = args.deletes ?? []
         if (!upserts.length && !deletes.length) {
-            return args.handle.state.getSnapshot() as ReadonlyMap<EntityId, T>
+            return handle.state.getSnapshot() as ReadonlyMap<EntityId, T>
         }
 
-        args.handle.state.applyWriteback({
+        handle.state.applyWriteback({
             ...(upserts.length ? { upserts } : {}),
             ...(deletes.length ? { deletes } : {})
         })
-        return args.handle.state.getSnapshot() as ReadonlyMap<EntityId, T>
+        return handle.state.getSnapshot() as ReadonlyMap<EntityId, T>
     }
 
     query = async <T extends Entity>(

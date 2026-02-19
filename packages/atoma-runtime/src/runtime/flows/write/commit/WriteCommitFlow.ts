@@ -36,13 +36,17 @@ function createEmptyOptimisticState<T extends Entity>(before: ReadonlyMap<Entity
     }
 }
 
-function applyOptimisticState<T extends Entity>(args: {
+function applyOptimisticState<T extends Entity>({
+    handle,
+    plan,
+    consistency,
+    reuse
+}: {
     handle: StoreHandle<T>
     plan: WritePlan<T>
     consistency: WriteConsistency
     reuse: (existing: T | undefined, incoming: T) => T
 }): OptimisticState<T> {
-    const { handle, plan, consistency, reuse } = args
     const before = handle.state.getSnapshot() as Map<EntityId, T>
     if (consistency.commit !== 'optimistic' || !plan.length) {
         return createEmptyOptimisticState(before)
@@ -81,16 +85,56 @@ function applyOptimisticState<T extends Entity>(args: {
 }
 
 function invertChanges<T extends Entity>(changes: ReadonlyArray<StoreChange<T>>): StoreChange<T>[] {
-    return changes.map((change) => ({
-        id: change.id,
-        ...(change.after !== undefined ? { before: change.after } : {}),
-        ...(change.before !== undefined ? { after: change.before } : {})
-    }))
+    return changes.map((change) => {
+        if (change.before !== undefined && change.after !== undefined) {
+            return {
+                id: change.id,
+                before: change.after,
+                after: change.before
+            }
+        }
+        if (change.after !== undefined) {
+            return {
+                id: change.id,
+                before: change.after
+            }
+        }
+        if (change.before !== undefined) {
+            return {
+                id: change.id,
+                after: change.before
+            }
+        }
+
+        throw new Error(`[Atoma] invertChanges: missing before/after (id=${String(change.id)})`)
+    })
+}
+
+function toStoreChange<T extends Entity>({
+    id,
+    before,
+    after
+}: {
+    id: EntityId
+    before?: T
+    after?: T
+}): StoreChange<T> {
+    if (before !== undefined && after !== undefined) {
+        return { id, before, after }
+    }
+    if (after !== undefined) {
+        return { id, after }
+    }
+    if (before !== undefined) {
+        return { id, before }
+    }
+
+    throw new Error(`[Atoma] mergeChanges: missing before/after (id=${String(id)})`)
 }
 
 function mergeChanges<T extends Entity>(...groups: ReadonlyArray<ReadonlyArray<StoreChange<T>>>): StoreChange<T>[] {
     const order: EntityId[] = []
-    const merged = new Map<EntityId, { before: T | undefined; after: T | undefined }>()
+    const merged = new Map<EntityId, { before?: T; after?: T }>()
 
     groups.forEach((group) => {
         group.forEach((change) => {
@@ -111,12 +155,14 @@ function mergeChanges<T extends Entity>(...groups: ReadonlyArray<ReadonlyArray<S
 
     return order.map((id) => {
         const change = merged.get(id)
-        if (!change) return { id } as StoreChange<T>
-        return {
-            id,
-            ...(change.before !== undefined ? { before: change.before } : {}),
-            ...(change.after !== undefined ? { after: change.after } : {})
+        if (!change) {
+            throw new Error(`[Atoma] mergeChanges: missing change for id=${String(id)}`)
         }
+        return toStoreChange({
+            id,
+            before: change.before,
+            after: change.after
+        })
     })
 }
 
@@ -125,13 +171,17 @@ function rollbackOptimisticState<T extends Entity>(handle: StoreHandle<T>, optim
     handle.state.applyChanges(invertChanges(optimisticState.changes))
 }
 
-async function resolveWriteResult<T extends Entity>(args: {
+async function resolveWriteResult<T extends Entity>({
+    session,
+    plan,
+    results,
+    primaryPlan
+}: {
     session: CommitSession<T>
     plan: WritePlan<T>
     results: ReadonlyArray<WriteItemResult>
     primaryPlan?: WritePlanEntry<T>
 }): Promise<{ writeback?: StoreWritebackArgs<T>; output?: T }> {
-    const { session, plan, results, primaryPlan } = args
     if (!plan.length || !results.length) return {}
 
     const resultByEntryId = new Map<string, WriteItemResult>()
@@ -250,12 +300,15 @@ function ensureWriteResultStatus(writeResult: WriteOutput<any>) {
     }
 }
 
-async function runWriteTransaction<T extends Entity>(args: {
+async function runWriteTransaction<T extends Entity>({
+    session,
+    plan,
+    primaryPlan
+}: {
     session: CommitSession<T>
     plan: WritePlan<T>
     primaryPlan?: WritePlanEntry<T>
 }): Promise<{ output?: T; changes: ReadonlyArray<StoreChange<T>> }> {
-    const { session, plan, primaryPlan } = args
     if (!plan.length) {
         return {
             output: fallbackPrimaryOutput(primaryPlan),

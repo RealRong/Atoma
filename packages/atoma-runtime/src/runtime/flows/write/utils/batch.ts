@@ -13,13 +13,16 @@ function resolveConcurrency(options?: StoreOperationOptions): number {
     return concurrency
 }
 
-export async function runBatch<Input, Output>(args: {
+export async function runBatch<Input, Output>({
+    items,
+    options,
+    runner
+}: {
     items: Input[]
     options?: StoreOperationOptions
     runner: (item: Input) => Promise<Output>
 }): Promise<WriteManyResult<Output>> {
-    const { items, runner } = args
-    const concurrency = resolveConcurrency(args.options)
+    const concurrency = resolveConcurrency(options)
     const results: WriteManyResult<Output> = new Array(items.length)
     if (!items.length) return results
 

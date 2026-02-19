@@ -3,13 +3,13 @@ import type { ActionRecord, ChangeRecord, UndoStack } from './types'
 
 export type HistoryRecordArgs = Readonly<{
     storeName: string
-    changes: StoreChange<Entity>[]
+    changes: ReadonlyArray<StoreChange<Entity>>
     context: ActionContext
 }>
 
 export type HistoryApplyArgs = Readonly<{
     storeName: string
-    changes: StoreChange<Entity>[]
+    changes: ReadonlyArray<StoreChange<Entity>>
     direction: ChangeDirection
     context: ActionContext
 }>

@@ -64,12 +64,12 @@ export class StoreEventRegistry implements StoreEventRegistryType {
     }
 
     readonly emit: StoreEventEmit = {
-        readStart: <T extends Entity>(args: StoreEventPayloadMap<T>['readStart']) => this.emitEvent('readStart', args),
-        readFinish: <T extends Entity>(args: StoreEventPayloadMap<T>['readFinish']) => this.emitEvent('readFinish', args),
-        writeStart: <T extends Entity>(args: StoreEventPayloadMap<T>['writeStart']) => this.emitEvent('writeStart', args),
-        writeCommitted: <T extends Entity>(args: StoreEventPayloadMap<T>['writeCommitted']) => this.emitEvent('writeCommitted', args),
-        writeFailed: <T extends Entity>(args: StoreEventPayloadMap<T>['writeFailed']) => this.emitEvent('writeFailed', args),
-        storeCreated: <T extends Entity>(args: StoreEventPayloadMap<T>['storeCreated']) => this.emitEvent('storeCreated', args)
+        readStart: <T extends Entity>(payload: StoreEventPayloadMap<T>['readStart']) => this.emitEvent('readStart', payload),
+        readFinish: <T extends Entity>(payload: StoreEventPayloadMap<T>['readFinish']) => this.emitEvent('readFinish', payload),
+        writeStart: <T extends Entity>(payload: StoreEventPayloadMap<T>['writeStart']) => this.emitEvent('writeStart', payload),
+        writeCommitted: <T extends Entity>(payload: StoreEventPayloadMap<T>['writeCommitted']) => this.emitEvent('writeCommitted', payload),
+        writeFailed: <T extends Entity>(payload: StoreEventPayloadMap<T>['writeFailed']) => this.emitEvent('writeFailed', payload),
+        storeCreated: <T extends Entity>(payload: StoreEventPayloadMap<T>['storeCreated']) => this.emitEvent('storeCreated', payload)
     }
 
     private toHandlerInputMap = (events: StoreEvents): HandlerInputMap => {
@@ -98,11 +98,11 @@ export class StoreEventRegistry implements StoreEventRegistryType {
         })
     }
 
-    private emitEvent = <K extends StoreEventName>(eventName: K, args: unknown) => {
-        const set = this.handlers[eventName] as Set<(args: unknown) => void>
+    private emitEvent = <K extends StoreEventName>(eventName: K, payload: unknown) => {
+        const set = this.handlers[eventName] as Set<(payload: unknown) => void>
         for (const handler of set) {
             try {
-                handler(args)
+                handler(payload)
             } catch {
                 // ignore
             }

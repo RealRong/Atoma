@@ -88,6 +88,9 @@ export type {
 } from './indexes'
 
 export type {
+    StoreCreateChange,
+    StoreUpdateChange,
+    StoreDeleteChange,
     StoreChange,
     ChangeDirection,
     StoreWritebackArgs,

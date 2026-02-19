@@ -1,9 +1,8 @@
 import { createIdempotencyKey, ensureWriteItemMeta, requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
-import type { Entity, ActionContext, StoreChange, StoreOperationOptions } from 'atoma-types/core'
+import type { Entity, ActionContext, StoreChange } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, StoreHandle, WriteEntry, WriteItemMeta, WriteOptions } from 'atoma-types/runtime'
 import type { WritePlan, WritePlanEntry, WritePlanPolicy } from '../types'
-import { resolveWriteBase } from '../utils/prepareWriteInput'
 
 function buildUpsertWriteOptions(policy?: WritePlanPolicy): WriteOptions | undefined {
     if (!policy) return undefined
@@ -31,58 +30,80 @@ function createWriteItemMeta(now: () => number): WriteItemMeta {
     })
 }
 
-function createPlanEntry<T extends Entity>(args: {
+function createPlanEntry<T extends Entity>({
+    id,
+    entry,
+    value
+}: {
     id: EntityId
     entry: WriteEntry
     value?: T
 }): WritePlanEntry<T> {
     return {
-        entry: args.entry,
+        entry,
         optimistic: {
-            id: args.id,
-            ...(args.value !== undefined ? { next: args.value } : {})
+            id,
+            ...(value !== undefined ? { next: value } : {})
         }
     }
+}
+
+function requireChangeBefore<T extends Entity>({
+    change,
+    action
+}: {
+    change: StoreChange<T>
+    action: WriteEntry['action']
+}): T {
+    const before = change.before
+    if (before !== undefined) return before
+
+    throw new Error(
+        `[Atoma] buildPlanFromChanges: ${action} action requires base value (id=${String(change.id)})`
+    )
 }
 
 type WritePlanFromChangesInput<T extends Entity> = {
     runtime: Runtime
     handle: StoreHandle<T>
     context: ActionContext
-    options?: StoreOperationOptions
     changes: ReadonlyArray<StoreChange<T>>
     policy?: WritePlanPolicy
     createEntryId: () => string
 }
 
-export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFromChangesInput<T>): Promise<WritePlan<T>> {
-    if (!args.changes.length) return []
+export async function buildPlanFromChanges<T extends Entity>({
+    runtime,
+    handle,
+    context,
+    changes,
+    policy,
+    createEntryId
+}: WritePlanFromChangesInput<T>): Promise<WritePlan<T>> {
+    if (!changes.length) return []
 
     const plan: WritePlanEntry<T>[] = []
-    const virtual = new Map(args.handle.state.getSnapshot() as Map<EntityId, T>)
-    const upsertWriteOptions = buildUpsertWriteOptions(args.policy)
+    const virtual = new Map(handle.state.getSnapshot() as Map<EntityId, T>)
+    const upsertWriteOptions = buildUpsertWriteOptions(policy)
 
-    for (const change of args.changes) {
+    for (const change of changes) {
         const id = change.id
-        const target = change.after
-        const action = args.policy?.action ?? (target === undefined ? 'delete' : 'upsert')
-        const meta = createWriteItemMeta(args.runtime.now)
-        const current = virtual.get(id) as T | undefined
+        const before = change.before
+        const after = change.after
+        const action = policy?.action ?? (after === undefined ? 'delete' : 'upsert')
+        const meta = createWriteItemMeta(runtime.now)
+        const current = virtual.get(id)
 
         if (action === 'delete') {
-            if (target !== undefined) {
+            if (after !== undefined) {
                 throw new Error(`[Atoma] buildPlanFromChanges: delete action requires empty target (id=${String(id)})`)
             }
-
-            const base = current
-                ? current
-                : await resolveWriteBase(args.runtime, args.handle, id, args.options, args.context)
-            const baseVersion = requireBaseVersion(id, base)
+            const baseVersion = requireBaseVersion(id, requireChangeBefore({ change, action }))
 
             plan.push(createPlanEntry({
                 id,
                 entry: {
-                    entryId: args.createEntryId(),
+                    entryId: createEntryId(),
                     action: 'delete',
                     item: {
                         id,
@@ -95,27 +116,24 @@ export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFrom
             continue
         }
 
-        if (!target) {
+        if (after === undefined) {
             throw new Error(`[Atoma] buildPlanFromChanges: ${action} action requires target value (id=${String(id)})`)
         }
-        if (target.id !== id) {
-            throw new Error(`[Atoma] buildPlanFromChanges: target id mismatch (change.id=${String(id)} target.id=${String(target.id)})`)
+        if (after.id !== id) {
+            throw new Error(`[Atoma] buildPlanFromChanges: target id mismatch (change.id=${String(id)} target.id=${String(after.id)})`)
         }
 
-        const outbound = await args.runtime.transform.outbound(args.handle, target, args.context)
+        const outbound = await runtime.transform.outbound(handle, after, context)
         if (outbound === undefined) {
             throw new Error('[Atoma] transform returned empty for outbound write')
         }
 
-        const entryId = args.createEntryId()
+        const entryId = createEntryId()
         const updateBaseVersion = action === 'update'
-            ? requireBaseVersion(
-                id,
-                current ? current : await resolveWriteBase(args.runtime, args.handle, id, args.options, args.context)
-            )
+            ? requireBaseVersion(id, requireChangeBefore({ change, action }))
             : undefined
         const upsertBaseVersion = action === 'upsert'
-            ? resolvePositiveVersion(current ?? target)
+            ? resolvePositiveVersion(current ?? before ?? after)
             : undefined
 
         const entry: WriteEntry = action === 'create'
@@ -151,8 +169,8 @@ export async function buildPlanFromChanges<T extends Entity>(args: WritePlanFrom
                     ...(upsertWriteOptions ? { options: upsertWriteOptions } : {})
                 }
 
-        plan.push(createPlanEntry({ id, entry, value: target }))
-        virtual.set(id, target)
+        plan.push(createPlanEntry({ id, entry, value: after }))
+        virtual.set(id, after)
     }
 
     return plan

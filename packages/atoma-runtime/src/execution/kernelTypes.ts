@@ -1,8 +1,9 @@
+import type { ExecutionRoute } from 'atoma-types/core'
 import type {
+    Consistency,
     ExecutionResolution,
     ExecutionSpec,
     ExecutorId,
-    RouteId,
     RouteSpec
 } from 'atoma-types/runtime'
 
@@ -12,20 +13,18 @@ export type KernelLayer = Readonly<{
     token: symbol
     id: string
     executors: ReadonlyMap<ExecutorId, ExecutionSpec>
-    routes: ReadonlyMap<RouteId, RouteSpec>
-    defaultRoute?: RouteId
+    routes: ReadonlyMap<ExecutionRoute, RouteSpec>
+    defaultRoute?: ExecutionRoute
 }>
 
 export type KernelSnapshot = Readonly<{
     executors: ReadonlyMap<ExecutorId, ExecutionSpec>
-    routes: ReadonlyMap<RouteId, RouteSpec>
-    defaultRoute?: RouteId
+    routes: ReadonlyMap<ExecutionRoute, RouteSpec>
+    defaultRoute?: ExecutionRoute
 }>
 
 export type KernelResolvedExecution = Readonly<{
-    route: RouteId
-    executor: ExecutorId
-    routeSpec: RouteSpec
     resolution: ExecutionResolution
     spec: ExecutionSpec
+    consistency: Consistency
 }>

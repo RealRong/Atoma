@@ -1,8 +1,8 @@
+import type { ExecutionRoute } from 'atoma-types/core'
 import type {
     ExecutionBundle,
     ExecutionSpec,
     ExecutorId,
-    RouteId,
     RouteSpec
 } from 'atoma-types/runtime'
 import type { CreateExecutionError } from './errors'
@@ -44,7 +44,7 @@ export function normalizeBundle({
         executors.set(executorId, spec)
     })
 
-    const routes = new Map<RouteId, RouteSpec>()
+    const routes = new Map<ExecutionRoute, RouteSpec>()
     Object.entries(bundle.routes ?? {}).forEach(([rawRouteId, spec]) => {
         const routeId = normalize(rawRouteId)
         if (!routeId) {
@@ -91,8 +91,8 @@ export function buildSnapshot({
     createError: CreateExecutionError
 }): KernelSnapshot {
     const executors = new Map<ExecutorId, ExecutionSpec>()
-    const routes = new Map<RouteId, RouteSpec>()
-    let defaultRoute: RouteId | undefined
+    const routes = new Map<ExecutionRoute, RouteSpec>()
+    let defaultRoute: ExecutionRoute | undefined
 
     layers.forEach((layer) => {
         layer.executors.forEach((spec, executorId) => {
@@ -146,7 +146,7 @@ export function buildSnapshot({
             code: 'E_ROUTE_NOT_FOUND',
             message: `[Atoma] execution.apply: defaultRoute 未注册: ${defaultRoute}`,
             retryable: false,
-            details: { route: defaultRoute, source: 'default-route' }
+            details: { route: defaultRoute }
         })
     }
 
