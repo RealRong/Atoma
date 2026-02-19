@@ -79,7 +79,7 @@ export interface Store<T, Relations = {}> {
     readonly [RELATIONS_BRAND]?: Relations
 
     create(item: Partial<T>, options?: StoreOperationOptions): Promise<T>
-    createMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<T[]>
+    createMany(items: Array<Partial<T>>, options?: StoreOperationOptions): Promise<WriteManyResult<T>>
     update(id: EntityId, updater: StoreUpdater<T>, options?: StoreOperationOptions): Promise<T>
     updateMany(
         items: Array<{ id: EntityId; updater: StoreUpdater<T> }>,

@@ -13,7 +13,11 @@ import type { StoreHandle } from './handle'
 
 export type Write = Readonly<{
     create: <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions) => Promise<T>
-    createMany: <T extends Entity>(handle: StoreHandle<T>, items: Array<Partial<T>>, options?: StoreOperationOptions) => Promise<T[]>
+    createMany: <T extends Entity>(
+        handle: StoreHandle<T>,
+        items: Array<Partial<T>>,
+        options?: StoreOperationOptions
+    ) => Promise<WriteManyResult<T>>
     update: <T extends Entity>(
         handle: StoreHandle<T>,
         id: EntityId,

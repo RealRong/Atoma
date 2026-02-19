@@ -58,21 +58,3 @@ export async function runBatch<Input, Output>(args: {
     await Promise.all(new Array(workerCount).fill(null).map(() => worker()))
     return results
 }
-
-export async function runBatchOrThrow<Input, Output>(args: {
-    items: Input[]
-    options?: StoreOperationOptions
-    runner: (item: Input) => Promise<Output>
-}): Promise<Output[]> {
-    const results = await runBatch(args)
-    const values: Output[] = []
-
-    for (const result of results) {
-        if (!result.ok) {
-            throw result.error
-        }
-        values.push(result.value)
-    }
-
-    return values
-}

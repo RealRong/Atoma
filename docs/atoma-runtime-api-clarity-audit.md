@@ -7,6 +7,7 @@
 - `getMany` 已改为“全量读取语义”：每次都按传入 ids 执行读路径，不再做“缓存命中即跳过请求”短路。实现见 `packages/atoma-runtime/src/runtime/flows/ReadFlow.ts:224`。
 - `Store.getMany` 公共选项已收敛到 `StoreReadOptions`，移除了 `hydrate` 这类缓存策略开关。定义见 `packages/atoma-types/src/core/store.ts:97`。
 - `listMergePolicy`/`read.*MergePolicy` 已从公共 schema 与 runtime handle 收敛移除，避免“默认策略 + 可选策略”双语义。见 `packages/atoma-types/src/core/store.ts:66`、`packages/atoma-types/src/runtime/handle.ts:8`、`packages/atoma-runtime/src/store/StoreFactory.ts:76`。
+- `createMany` 已与其它 `*Many` 统一为 `WriteManyResult<T>`（all-settled 语义）：不再单独走“首错抛出”模型。见 `packages/atoma-types/src/core/store.ts`、`packages/atoma-types/src/runtime/write.ts`、`packages/atoma-runtime/src/runtime/flows/WriteFlow.ts`。
 
 ## 审查范围
 
@@ -19,17 +20,11 @@
 
 ## 仍可继续简化的 API 噪音/歧义点
 
-### P0：`*Many` 返回语义不统一（同名不同失败模型）
+### P0（已完成）：`*Many` 返回语义统一
 
-现状：
-- `createMany` 走 `runBatchOrThrow`，返回 `Promise<T[]>`（失败直接抛错），见 `packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:297`。
-- `updateMany/upsertMany/deleteMany` 走 `runBatch`，返回 `WriteManyResult`（逐项成功/失败），见 `packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:324`、`packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:355`、`packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:383`。
-
-问题：
-- 同为 `*Many`，调用方无法仅从命名判断“全量抛错”还是“逐项结果”。
-
-建议（推荐）：
-- 把 `createMany` 也统一为 `WriteManyResult<T>`（与其它 `*Many` 一致），把“全失败即抛错”放到上层 helper。
+落地结果：
+- `createMany/updateMany/upsertMany/deleteMany` 统一返回 `WriteManyResult`，同名同失败模型（逐项结果）。
+- “任一失败即抛错”若有需要，应由上层 helper 明确封装，不放在底层 `Store.*Many` 公共契约里。
 
 ### P0：`delete` 返回 `boolean` 语义信息为零
 
@@ -93,7 +88,7 @@
 
 ## 建议落地顺序
 
-1. 先做 `createMany` 语义统一 + `delete` 返回值收敛（P0）。
+1. 已完成 `createMany` 语义统一；下一步做 `delete` 返回值收敛（P0）。
 2. 再做 `resolveHandle` 命名收敛（P1）。
 3. 最后处理事件终态与 `nextOpId` 暴露面（P1/P2，属 API 清洁与观测增强）。
 
