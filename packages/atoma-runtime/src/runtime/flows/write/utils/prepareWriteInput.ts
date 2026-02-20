@@ -46,7 +46,7 @@ export async function resolveWriteBase<T extends Entity>(
     options?: StoreOperationOptions,
     context?: ActionContext
 ): Promise<PartialWithId<T>> {
-    const cached = handle.state.getSnapshot().get(id) as T | undefined
+    const cached = handle.state.snapshot().get(id) as T | undefined
     if (cached) return cached as PartialWithId<T>
 
     const consistency = runtime.execution.resolveConsistency(handle, options)

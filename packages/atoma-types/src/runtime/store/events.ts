@@ -1,5 +1,5 @@
-import type { Entity, ActionContext, Query, QueryResult, StoreToken, ExecutionRoute, StoreChange } from '../core'
-import type { WriteEntry } from './persistence'
+import type { Entity, ActionContext, Query, QueryResult, StoreToken, ExecutionRoute, StoreChange } from '../../core'
+import type { WriteEntry } from '../persistence'
 import type { StoreHandle } from './handle'
 
 export type WriteEventSource =
@@ -53,7 +53,6 @@ export type ReadFinishArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>[
 export type WriteStartArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['writeStart']
 export type WriteCommittedArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['writeCommitted']
 export type WriteFailedArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['writeFailed']
-export type StoreCreatedArgs<T extends Entity = Entity> = StoreEventPayloadMap<T>['storeCreated']
 
 export type StoreEventName = keyof StoreEventPayloadMap<Entity>
 

@@ -15,14 +15,14 @@ export type {
 export type { Read } from './read'
 export type { Transform, TransformPipeline } from './transform'
 export type { Write } from './write'
-export type { StoreCatalog } from './storeCatalog'
-export type { StoreHandle } from './handle'
+export type { StoreCatalog } from './store/catalog'
+export type { StoreHandle } from './store/handle'
 export type {
     StoreDebugSnapshot,
     IndexDebugSnapshot,
     Debug
 } from './debug'
-export type { StoreListener, StoreSnapshot, StoreState } from './storeState'
+export type { StoreListener, StoreSnapshot, StoreState } from './store/state'
 export type { Schema, StoreSchema } from './schema'
 export type {
     StoreEvents,
@@ -36,9 +36,8 @@ export type {
     WriteStartArgs,
     WriteCommittedArgs,
     WriteFailedArgs,
-    StoreCreatedArgs,
     WriteEventSource
-} from './storeEvents'
+} from './store/events'
 
 export type {
     WriteExecutor,

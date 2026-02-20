@@ -20,26 +20,18 @@ function estimateSampleSize(sample: unknown[]): number {
 }
 
 export class Probe implements Debug {
-    private readonly stores: Runtime['stores']
-    private readonly now: () => number
+    private readonly runtime: Runtime
 
-    constructor({
-        stores,
-        now
-    }: {
-        stores: Runtime['stores']
-        now: () => number
-    }) {
-        this.stores = stores
-        this.now = now
+    constructor(runtime: Runtime) {
+        this.runtime = runtime
     }
 
     readonly snapshotStore: Debug['snapshotStore'] = (storeName: StoreToken) => {
         const name = String(storeName)
 
         try {
-            const handle = this.stores.ensureHandle(name, `runtime.debug.snapshotStore:${name}`)
-            const map = handle.state.getSnapshot() as Map<unknown, unknown>
+            const handle = this.runtime.stores.ensureHandle(name, `runtime.debug.snapshotStore:${name}`)
+            const map = handle.state.snapshot() as Map<unknown, unknown>
             const sample = Array.from(map.values()).slice(0, 5)
 
             return {
@@ -47,7 +39,7 @@ export class Probe implements Debug {
                 count: map.size,
                 approxSize: estimateSampleSize(sample),
                 sample,
-                timestamp: this.now()
+                timestamp: this.runtime.now()
             }
         } catch {
             return undefined
@@ -58,7 +50,7 @@ export class Probe implements Debug {
         const name = String(storeName)
 
         try {
-            const handle = this.stores.ensureHandle(name, `runtime.debug.snapshotIndexes:${name}`)
+            const handle = this.runtime.stores.ensureHandle(name, `runtime.debug.snapshotIndexes:${name}`)
             const indexes = handle.state.indexes as IndexDebugLike<T> | null
 
             if (!indexes || typeof indexes.debugIndexSnapshots !== 'function') {
@@ -74,7 +66,7 @@ export class Probe implements Debug {
                 name,
                 indexes: snapshots,
                 ...(lastQuery ? { lastQuery } : {}),
-                timestamp: this.now()
+                timestamp: this.runtime.now()
             }
         } catch {
             return undefined

@@ -2,7 +2,7 @@ import type { Entity, IndexQueryLike, PageInfo, Query } from '../../core'
 import type { EntityId } from '../../shared'
 
 export type QueryState<T extends Entity> = Readonly<{
-    getSnapshot: () => ReadonlyMap<EntityId, T>
+    snapshot: () => ReadonlyMap<EntityId, T>
     indexes: IndexQueryLike<T> | null
 }>
 

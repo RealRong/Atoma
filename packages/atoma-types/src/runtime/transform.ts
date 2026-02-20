@@ -5,7 +5,7 @@ import type {
     ActionContext,
     StoreDataProcessor,
 } from '../core'
-import type { StoreHandle } from './handle'
+import type { StoreHandle } from './store/handle'
 
 export type TransformPipeline = Readonly<{
     process: <T>(

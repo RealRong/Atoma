@@ -7,7 +7,7 @@ import type {
     WriteOutput,
     WriteConsistency
 } from './persistence'
-import type { StoreHandle } from './handle'
+import type { StoreHandle } from './store/handle'
 
 export type ExecutorId = string
 

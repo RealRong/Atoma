@@ -22,7 +22,8 @@ export type WritePlanEntry<T extends Entity> = Readonly<{
     entry: WriteEntry
     optimistic: Readonly<{
         id?: EntityId
-        next?: T
+        before?: T
+        after?: T
     }>
 }>
 
@@ -66,8 +67,6 @@ type IntentCommandMap<T extends Entity> = {
 }
 
 export type IntentCommand<T extends Entity> = IntentCommandMap<T>[IntentAction]
-export type IntentCommandByAction<T extends Entity, A extends IntentAction> = IntentCommandMap<T>[A]
-export type EntityIntentCommand<T extends Entity> = Exclude<IntentCommand<T>, { action: 'delete' }>
 
 type IntentInputMap<T extends Entity> = {
     [A in IntentAction]: Readonly<{

@@ -57,23 +57,16 @@ export class Runtime implements RuntimeType {
     constructor(config: Options) {
         this.id = String(config.id)
         this.now = config.now ?? (() => Date.now())
-
         this.engine = config.engine ?? new Engine()
         this.transform = new TransformPipeline(this)
         this.execution = config.execution ?? new ExecutionKernel()
         this.events = config.events ?? new StoreEventRegistry()
-
         this.stores = new Stores(this, {
             schema: config.schema,
             dataProcessor: config.dataProcessor,
             defaults: config.defaults
         })
-
-        this.debug = new Probe({
-            stores: this.stores,
-            now: this.now
-        })
-
+        this.debug = new Probe(this)
         this.read = new ReadFlow(this)
         this.write = new WriteFlow(this)
     }

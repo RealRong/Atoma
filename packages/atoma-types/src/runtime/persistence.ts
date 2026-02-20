@@ -1,6 +1,6 @@
 import type { Entity, ExecutionRoute, ActionContext, PageInfo, Query } from '../core'
 import type { EntityId, Version } from '../shared'
-import type { StoreHandle } from './handle'
+import type { StoreHandle } from './store/handle'
 
 export type WriteStatus = 'confirmed' | 'partial' | 'rejected' | 'enqueued'
 

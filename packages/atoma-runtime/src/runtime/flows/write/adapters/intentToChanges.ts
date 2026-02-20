@@ -26,20 +26,9 @@ async function resolveUpsertPreparedValue<T extends Entity>(
     input: IntentInputByAction<T, 'upsert'>
 ): Promise<{ base?: PartialWithId<T>; prepared: PartialWithId<T> }> {
     const id = input.item.id
-    const base = input.handle.state.getSnapshot().get(id) as PartialWithId<T> | undefined
+    const base = input.handle.state.snapshot().get(id) as PartialWithId<T> | undefined
 
-    if (!base) {
-        return {
-            prepared: await prepareUpsertInput(
-                runtime,
-                input.handle,
-                input.item,
-                input.context
-            )
-        }
-    }
-
-    if ((input.options?.apply ?? 'merge') === 'merge') {
+    if (base && (input.options?.apply ?? 'merge') === 'merge') {
         return {
             base,
             prepared: await prepareUpdateInput(

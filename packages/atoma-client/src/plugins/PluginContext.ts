@@ -77,7 +77,7 @@ export class PluginContext implements PluginContextType {
                     const processed = await Promise.all(
                         data.upserts.map((item) => runtime.transform.writeback(handle, item, context))
                     ) as Array<T | undefined>
-                    return handle.state.applyWriteback({
+                    return handle.state.writeback({
                         upserts: processed.filter((item): item is T => item !== undefined),
                         deletes: data.deletes,
                         ...(data.versionUpdates ? { versionUpdates: data.versionUpdates } : {})

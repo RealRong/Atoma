@@ -1,5 +1,5 @@
-import type { Entity, StoreConfig, StoreToken, ExecutionRoute } from '../core'
-import type { StoreState } from './storeState'
+import type { Entity, StoreConfig, StoreToken, ExecutionRoute } from '../../core'
+import type { StoreState } from './state'
 
 export type StoreHandle<T extends Entity = Entity> = {
     state: StoreState<T>

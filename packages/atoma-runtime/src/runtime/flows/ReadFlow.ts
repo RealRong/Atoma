@@ -77,14 +77,14 @@ export class ReadFlow implements Read {
         deletes?: EntityId[]
     }): ReadonlyMap<EntityId, T> => {
         if (!upserts.length && !deletes.length) {
-            return handle.state.getSnapshot() as ReadonlyMap<EntityId, T>
+            return handle.state.snapshot() as ReadonlyMap<EntityId, T>
         }
 
-        handle.state.applyWriteback({
+        handle.state.writeback({
             ...(upserts.length ? { upserts } : {}),
             ...(deletes.length ? { deletes } : {})
         })
-        return handle.state.getSnapshot() as ReadonlyMap<EntityId, T>
+        return handle.state.snapshot() as ReadonlyMap<EntityId, T>
     }
 
     query = async <T extends Entity>(
@@ -134,11 +134,11 @@ export class ReadFlow implements Read {
 
     list = async <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions): Promise<T[]> => {
         const result = await this.trackRead({
-            handle,
-            query: {},
-            run: async () => {
-                const existingMap = handle.state.getSnapshot() as Map<EntityId, T>
-                const output = await this.executeQuery(handle, {}, options)
+                handle,
+                query: {},
+                run: async () => {
+                    const existingMap = handle.state.snapshot() as Map<EntityId, T>
+                    const output = await this.executeQuery(handle, {}, options)
 
                 if (output.source === 'local') {
                     return this.toQueryResult(this.getOutputData(output) as T[], output.pageInfo)

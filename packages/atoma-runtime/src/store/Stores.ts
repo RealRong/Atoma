@@ -1,17 +1,15 @@
 import type { Entity, Store, StoreDataProcessor, StoreToken } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Schema, StoreHandle, StoreCatalog } from 'atoma-types/runtime'
-import { StoreFactory, type StoreEngine, type StoreFacade } from './StoreFactory'
+import { StoreFactory, type StoreFacade } from './StoreFactory'
 
-type StoreListener = (store: Store<Entity>) => void
-
-const toStoreName = (name: unknown) => String(name)
+type StoreEntry = Readonly<{
+    handle: StoreHandle<Entity>
+    facade: StoreFacade<Entity>
+}>
 
 export class Stores implements StoreCatalog {
-    private readonly engineByName = new Map<string, StoreEngine>()
-    private readonly facadeByName = new Map<string, StoreFacade>()
-    private readonly created: Store<Entity>[] = []
-    private readonly listeners = new Set<StoreListener>()
+    private readonly stores = new Map<string, StoreEntry>()
     private readonly storeFactory: StoreFactory
     private readonly runtime: Runtime
     private readonly deps: {
@@ -42,26 +40,14 @@ export class Stores implements StoreCatalog {
         })
     }
 
-    private notifyCreated = (store: StoreFacade<Entity>) => {
-        this.created.push(store)
-        for (const listener of this.listeners) {
-            try {
-                listener(store)
-            } catch {
-                // ignore
-            }
-        }
-    }
-
-    private ensureEngine = (storeName: string): StoreEngine => {
-        const name = toStoreName(storeName)
-        const existing = this.engineByName.get(name)
+    private ensureEntry = (name: StoreToken): StoreEntry => {
+        const existing = this.stores.get(name)
         if (existing) return existing
 
         const built = this.storeFactory.build(name)
-        const engine: StoreEngine = {
+        const entry: StoreEntry = {
             handle: built.handle,
-            api: built.api
+            facade: built.facade
         }
 
         this.runtime.events.emit.storeCreated({
@@ -69,56 +55,31 @@ export class Stores implements StoreCatalog {
             storeName: name
         })
 
-        this.engineByName.set(name, engine)
-        this.facadeByName.set(name, built.facade)
-        this.notifyCreated(built.facade)
+        this.stores.set(name, entry)
 
-        return engine
-    }
-
-    resolve = (name: StoreToken): Store<Entity> | undefined => {
-        const key = toStoreName(name)
-        return this.facadeByName.get(key)
+        return entry
     }
 
     ensure = (name: StoreToken): Store<Entity> => {
-        const key = toStoreName(name)
-        this.ensureEngine(key)
-
-        const facade = this.facadeByName.get(key)
-        if (facade) return facade
-
-        throw new Error(`[Atoma] ensure: 未找到 store facade（storeName=${key}）`)
+        return this.ensureEntry(name).facade
     }
 
-    list = () => this.facadeByName.values()
-
-    onCreated = (listener: StoreListener, options?: { replay?: boolean }) => {
-        if (options?.replay) {
-            for (const store of this.created) {
-                try {
-                    listener(store)
-                } catch {
-                    // ignore
-                }
-            }
-        }
-
-        this.listeners.add(listener)
-        return () => {
-            this.listeners.delete(listener)
+    private *iterateFacades(): Iterable<Store<Entity>> {
+        for (const { facade } of this.stores.values()) {
+            yield facade
         }
     }
+
+    list = () => this.iterateFacades()
 
     ensureHandle = (name: StoreToken, tag?: string): StoreHandle<Entity> => {
-        const key = toStoreName(name)
-        const existing = this.engineByName.get(key)
+        const existing = this.stores.get(name)
         if (existing) return existing.handle
 
-        this.ensureEngine(key)
-        const created = this.engineByName.get(key)
+        this.ensureEntry(name)
+        const created = this.stores.get(name)
         if (created) return created.handle
 
-        throw new Error(`[Atoma] ${tag || 'ensureHandle'}: 未找到 store handle（storeName=${key}）`)
+        throw new Error(`[Atoma] ${tag || 'ensureHandle'}: 未找到 store handle（storeName=${String(name)}）`)
     }
 }

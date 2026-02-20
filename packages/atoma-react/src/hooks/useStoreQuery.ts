@@ -43,7 +43,7 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
         }
 
         const queryState = {
-            getSnapshot: () => map,
+            snapshot: () => map,
             indexes
         }
 

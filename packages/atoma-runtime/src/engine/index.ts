@@ -21,7 +21,7 @@ export class Engine implements EngineType {
             query: Query<T>
         }) => {
             return runQuery({
-                snapshot: state.getSnapshot(),
+                snapshot: state.snapshot(),
                 query,
                 indexes: state.indexes
             })

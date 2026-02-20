@@ -1,28 +1,5 @@
 import type { ChangeDirection, Entity, StoreChange } from 'atoma-types/core'
-
-function invertChange<T extends Entity>(change: StoreChange<T>): StoreChange<T> {
-    if (change.before !== undefined && change.after !== undefined) {
-        return {
-            id: change.id,
-            before: change.after,
-            after: change.before
-        }
-    }
-    if (change.after !== undefined) {
-        return {
-            id: change.id,
-            before: change.after
-        }
-    }
-    if (change.before !== undefined) {
-        return {
-            id: change.id,
-            after: change.before
-        }
-    }
-
-    throw new Error(`[Atoma] replay change missing before/after (id=${String(change.id)})`)
-}
+import { invertChanges } from 'atoma-core/store'
 
 export function adaptReplayChanges<T extends Entity>(
     changes: ReadonlyArray<StoreChange<T>>,
@@ -32,7 +9,5 @@ export function adaptReplayChanges<T extends Entity>(
         return [...changes]
     }
 
-    return [...changes]
-        .reverse()
-        .map(invertChange)
+    return invertChanges([...changes].reverse())
 }

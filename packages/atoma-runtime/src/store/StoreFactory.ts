@@ -12,19 +12,17 @@ import type { Runtime } from 'atoma-types/runtime'
 import type { Schema, StoreSchema, StoreHandle } from 'atoma-types/runtime'
 import { SimpleStoreState } from './StoreState'
 
-export type StoreEngineApi<T extends Entity = Entity, Relations = {}> = Store<T, Relations>
-
-export type StoreEngine<T extends Entity = Entity, Relations = {}> = Readonly<{
+export type StoreEngine<T extends Entity = Entity> = Readonly<{
     handle: StoreHandle<T>
-    api: StoreEngineApi<T, Relations>
+    api: Store<T>
 }>
 
-export type StoreFacade<T extends Entity = Entity, Relations = {}> = Store<T, Relations> & { name: string }
+export type StoreFacade<T extends Entity = Entity> = Store<T> & { name: string }
 
-export type StoreFactoryResult<T extends Entity = Entity, Relations = {}> = Readonly<{
+type BuildResult<T extends Entity = Entity> = Readonly<{
     handle: StoreHandle<T>
-    api: StoreEngineApi<T, Relations>
-    facade: StoreFacade<T, Relations>
+    api: Store<T>
+    facade: StoreFacade<T>
 }>
 
 export class StoreFactory {
@@ -54,25 +52,22 @@ export class StoreFactory {
         this.dataProcessor = dataProcessor
     }
 
-    build = <T extends Entity = Entity>(storeName: string): StoreFactoryResult<T> => {
+    build = <T extends Entity = Entity>(storeName: string): BuildResult<T> => {
+        const runtime = this.runtime
         const name = String(storeName)
         const storeSchema = (this.schema?.[name] ?? {}) as StoreSchema<T>
 
         const idGenerator = storeSchema.idGenerator
             ?? this.defaults?.idGenerator
-            ?? (() => createId({ kind: 'entity', sortable: true, now: this.runtime.now }))
+            ?? (() => createId({ kind: 'entity', sortable: true, now: runtime.now }))
         const dataProcessor = this.mergeDataProcessor(this.dataProcessor as StoreDataProcessor<T> | undefined, storeSchema.dataProcessor)
 
-        const relationsFactory = storeSchema.relations
-            ? () => compileRelationsMap(storeSchema.relations, name)
-            : undefined
-
-        const indexes = this.runtime.engine.index.create<T>(storeSchema.indexes ?? null)
+        const indexes = runtime.engine.index.create<T>(storeSchema.indexes ?? null)
 
         const state = new SimpleStoreState<T>({
             initial: new Map<EntityId, T>(),
             indexes,
-            engine: this.runtime.engine
+            engine: runtime.engine
         })
 
         const handle: StoreHandle<T> = {
@@ -85,48 +80,38 @@ export class StoreFactory {
             }
         }
 
-        if (typeof relationsFactory === 'function') {
+        if (storeSchema.relations) {
             let cachedRelations: unknown
             handle.relations = () => {
                 if (cachedRelations === undefined) {
-                    cachedRelations = relationsFactory()
+                    cachedRelations = compileRelationsMap(storeSchema.relations, name)
                 }
                 return cachedRelations
             }
         }
 
-        const create: StoreEngineApi<T>['create'] = (item, options) => this.runtime.write.create(handle, item, options)
-        const createMany: StoreEngineApi<T>['createMany'] = (items, options) => this.runtime.write.createMany(handle, items, options)
-        const update: StoreEngineApi<T>['update'] = (id, updater, options) => this.runtime.write.update(handle, id, updater, options)
-        const updateMany: StoreEngineApi<T>['updateMany'] = (items, options) => this.runtime.write.updateMany(handle, items, options)
-        const deleteOne: StoreEngineApi<T>['delete'] = (id, options) => this.runtime.write.delete(handle, id, options)
-        const deleteMany: StoreEngineApi<T>['deleteMany'] = (ids, options) => this.runtime.write.deleteMany(handle, ids, options)
-        const upsertOne: StoreEngineApi<T>['upsert'] = (item, options) => this.runtime.write.upsert(handle, item, options)
-        const upsertMany: StoreEngineApi<T>['upsertMany'] = (items, options) => this.runtime.write.upsertMany(handle, items, options)
+        const { read, write } = runtime
 
-        const list: StoreEngineApi<T>['list'] = (options) => this.runtime.read.list(handle, options)
-        const getMany: StoreEngineApi<T>['getMany'] = (ids, options) => this.runtime.read.getMany(handle, ids, options)
-        const get: StoreEngineApi<T>['get'] = (id, options) => this.runtime.read.get(handle, id, options)
-        const query: StoreEngineApi<T>['query'] = (input, options) => this.runtime.read.query(handle, input, options)
-        const queryOne: StoreEngineApi<T>['queryOne'] = (input, options) => this.runtime.read.queryOne(handle, input, options)
-
-        const api: StoreEngineApi<T> = {
-            create,
-            createMany,
-            update,
-            updateMany,
-            delete: deleteOne,
-            deleteMany,
-            upsert: upsertOne,
-            upsertMany,
-            get,
-            getMany,
-            list,
-            query,
-            queryOne
+        const api: Store<T> = {
+            create: (item, options) => write.create(handle, item, options),
+            createMany: (items, options) => write.createMany(handle, items, options),
+            update: (id, updater, options) => write.update(handle, id, updater, options),
+            updateMany: (items, options) => write.updateMany(handle, items, options),
+            delete: (id, options) => write.delete(handle, id, options),
+            deleteMany: (ids, options) => write.deleteMany(handle, ids, options),
+            upsert: (item, options) => write.upsert(handle, item, options),
+            upsertMany: (items, options) => write.upsertMany(handle, items, options),
+            get: (id, options) => read.get(handle, id, options),
+            getMany: (ids, options) => read.getMany(handle, ids, options),
+            list: (options) => read.list(handle, options),
+            query: (input, options) => read.query(handle, input, options),
+            queryOne: (input, options) => read.queryOne(handle, input, options)
         }
 
-        const facade = this.createFacade(name, api)
+        const facade: StoreFacade<T> = {
+            name,
+            ...api
+        }
         const bindings = this.createBindings(name, handle)
 
         Object.defineProperty(facade, STORE_BINDINGS, {
@@ -138,16 +123,9 @@ export class StoreFactory {
         return { handle, api, facade }
     }
 
-    private createFacade = <T extends Entity, Relations = {}>(storeName: string, api: StoreEngineApi<T, Relations>): StoreFacade<T, Relations> => {
-        return {
-            name: storeName,
-            ...api
-        }
-    }
-
     private createBindings = <T extends Entity>(storeName: string, handle: StoreHandle<T>): StoreBindings<T> => {
         const source = {
-            getSnapshot: () => handle.state.getSnapshot() as ReadonlyMap<EntityId, T>,
+            getSnapshot: () => handle.state.snapshot() as ReadonlyMap<EntityId, T>,
             subscribe: (listener: () => void) => handle.state.subscribe(listener)
         }
 
@@ -163,7 +141,7 @@ export class StoreFactory {
             }
             if (!processed.length) return
 
-            handle.state.applyWriteback({
+            handle.state.writeback({
                 upserts: processed
             })
         }

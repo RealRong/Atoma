@@ -6,7 +6,7 @@ import type {
     StoreReadOptions
 } from '../core'
 import type { EntityId } from '../shared'
-import type { StoreHandle } from './handle'
+import type { StoreHandle } from './store/handle'
 
 export type Read = Readonly<{
     query: <T extends Entity>(handle: StoreHandle<T>, query: Query<T>, options?: StoreReadOptions) => Promise<QueryResult<T>>

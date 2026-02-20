@@ -6,27 +6,10 @@ import type {
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import { reuse } from './mutation'
+import { mergeChanges, toChange } from './changes'
 
 type VersionedEntity = Entity & {
     version?: unknown
-}
-
-function toStoreChange<T extends Entity>(args: {
-    id: EntityId
-    before?: T
-    after?: T
-}): StoreChange<T> {
-    if (args.before !== undefined && args.after !== undefined) {
-        return { id: args.id, before: args.before, after: args.after }
-    }
-    if (args.after !== undefined) {
-        return { id: args.id, after: args.after }
-    }
-    if (args.before !== undefined) {
-        return { id: args.id, before: args.before }
-    }
-
-    throw new Error(`[Atoma] writeback: change missing before/after (id=${String(args.id)})`)
 }
 
 export function writeback<T extends Entity>(
@@ -37,10 +20,9 @@ export function writeback<T extends Entity>(
 
     if (!upserts.length && !deletes.length && !versionUpdates.length) return null
 
-    const changedIds = new Set<EntityId>()
     let after = before
     let writable = false
-    const changesById = new Map<EntityId, { before?: T; after?: T }>()
+    const rawChanges: StoreChange<T>[] = []
 
     const ensureWritable = (): Map<EntityId, T> => {
         if (!writable) {
@@ -51,20 +33,16 @@ export function writeback<T extends Entity>(
     }
 
     const commitChange = (id: EntityId, current: T | undefined, next: T | undefined) => {
-        const change = changesById.get(id)
-        if (change) {
-            change.after = next
-        } else {
-            changesById.set(id, { before: current, after: next })
-        }
-
         if (next === undefined) {
             ensureWritable().delete(id)
         } else {
             ensureWritable().set(id, next)
         }
-
-        changedIds.add(id)
+        rawChanges.push(toChange({
+            id,
+            before: current,
+            after: next
+        }))
     }
 
     deletes.forEach((id) => {
@@ -101,17 +79,11 @@ export function writeback<T extends Entity>(
         commitChange(id, current, next)
     })
 
-    if (!changedIds.size) return null
-
-    const changes: StoreChange<T>[] = []
-    changedIds.forEach((id) => {
-        const change = changesById.get(id)
-        if (!change) return
-        changes.push(toStoreChange({
-            id,
-            before: change.before,
-            after: change.after
-        }))
+    const changes = mergeChanges(rawChanges)
+    if (!changes.length) return null
+    const changedIds = new Set<EntityId>()
+    changes.forEach(change => {
+        changedIds.add(change.id)
     })
 
     return {

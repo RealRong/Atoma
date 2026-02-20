@@ -1,9 +1,10 @@
 import type { Entity, IndexesLike, StoreChange, StoreDelta, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Engine, StoreSnapshot, StoreState } from 'atoma-types/runtime'
+import { mergeChanges, toChange } from 'atoma-core/store'
 
 export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T> {
-    private snapshot: StoreSnapshot<T>
+    private current: StoreSnapshot<T>
     private listeners = new Set<() => void>()
     private readonly engine: Engine
     readonly indexes: IndexesLike<T> | null
@@ -17,12 +18,12 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         indexes?: IndexesLike<T> | null
         engine: Engine
     }) {
-        this.snapshot = initial ?? new Map<EntityId, T>()
+        this.current = initial ?? new Map<EntityId, T>()
         this.indexes = indexes ?? null
         this.engine = engine
     }
 
-    getSnapshot = () => this.snapshot
+    snapshot = () => this.current
 
     private notifyListeners = () => {
         this.listeners.forEach(listener => {
@@ -41,111 +42,81 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         }
     }
 
-    private buildChanges = (before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: ReadonlySet<EntityId>): StoreChange<T>[] => {
-        const changes: StoreChange<T>[] = []
-        changedIds.forEach((id) => {
-            const previous = before.get(id)
-            const next = after.get(id)
-            if (previous !== undefined && next !== undefined) {
-                changes.push({ id, before: previous, after: next })
-                return
-            }
-            if (next !== undefined) {
-                changes.push({ id, after: next })
-                return
-            }
-            if (previous !== undefined) {
-                changes.push({ id, before: previous })
-                return
-            }
-
-            throw new Error(`[Atoma] store state change missing before/after (id=${String(id)})`)
-        })
-        return changes
-    }
-
-    private collectChangedIds = (before: Map<EntityId, T>, after: Map<EntityId, T>): Set<EntityId> => {
-        const changedIds = new Set<EntityId>()
-
-        before.forEach((beforeValue, id) => {
-            if (!after.has(id)) {
-                changedIds.add(id)
-                return
-            }
-            const afterValue = after.get(id) as T
-            if (beforeValue !== afterValue) {
-                changedIds.add(id)
-            }
-        })
-
-        after.forEach((afterValue, id) => {
-            if (!before.has(id)) {
-                changedIds.add(id)
-                return
-            }
-            const beforeValue = before.get(id) as T
-            if (beforeValue !== afterValue) {
-                changedIds.add(id)
-            }
-        })
-
-        return changedIds
-    }
-
     private applyDelta = (delta: StoreDelta<T>) => {
         if (delta.before === delta.after || !delta.changedIds.size) return
 
         this.indexes?.applyChangedIds(delta.before, delta.after, delta.changedIds)
-        this.snapshot = delta.after
+        this.current = delta.after
         this.notifyListeners()
     }
 
-    private commit = (before: Map<EntityId, T>, after: Map<EntityId, T>): StoreDelta<T> | null => {
-        if (before === after) return null
-        const changedIds = this.collectChangedIds(before, after)
+    private commitDelta = (
+        before: Map<EntityId, T>,
+        after: Map<EntityId, T>,
+        changes: StoreChange<T>[]
+    ): StoreDelta<T> | null => {
+        if (before === after || !changes.length) return null
+        const changedIds = new Set<EntityId>()
+        changes.forEach((change) => {
+            changedIds.add(change.id)
+        })
         if (!changedIds.size) return null
 
         const delta: StoreDelta<T> = {
             before,
             after,
             changedIds,
-            changes: this.buildChanges(before, after, changedIds)
+            changes
         }
         this.applyDelta(delta)
         return delta
     }
 
-    mutate = (recipe: (draft: Map<EntityId, T>) => void): StoreDelta<T> | null => {
-        const before = this.snapshot as Map<EntityId, T>
-        const draft = new Map(before)
-        recipe(draft)
-        return this.commit(before, draft)
-    }
-
-    applyChanges = (changes: ReadonlyArray<StoreChange<T>>): StoreDelta<T> | null => {
+    apply = (changes: ReadonlyArray<StoreChange<T>>): StoreDelta<T> | null => {
         if (!changes.length) return null
 
-        const before = this.snapshot as Map<EntityId, T>
-        const next = new Map(before)
-        changes.forEach((change) => {
+        const before = this.current as Map<EntityId, T>
+        const after = new Map(before)
+        const normalized: StoreChange<T>[] = []
+
+        mergeChanges(changes).forEach((change) => {
             const id = change.id
+            const previous = before.get(id)
             const target = change.after
             if (target === undefined) {
-                if (!next.has(id)) return
-                next.delete(id)
+                if (!after.has(id) || previous === undefined) return
+                after.delete(id)
+                normalized.push(toChange({
+                    id,
+                    before: previous
+                }))
                 return
             }
-            const existing = next.get(id)
+            const existing = after.get(id)
             const preserved = this.engine.mutation.reuse(existing, target)
-            if (next.has(id) && existing === preserved) return
-            next.set(id, preserved)
+            if (after.has(id) && existing === preserved) return
+            after.set(id, preserved)
+
+            if (previous === undefined) {
+                normalized.push(toChange({
+                    id,
+                    after: preserved
+                }))
+                return
+            }
+            if (previous === preserved) return
+            normalized.push(toChange({
+                id,
+                before: previous,
+                after: preserved
+            }))
         })
 
-        return this.commit(before, next)
+        return this.commitDelta(before, after, normalized)
     }
 
-    applyWriteback = (writeback: StoreWritebackArgs<T>): StoreDelta<T> | null => {
-        const before = this.snapshot as Map<EntityId, T>
+    writeback = (writeback: StoreWritebackArgs<T>): StoreDelta<T> | null => {
+        const before = this.current as Map<EntityId, T>
         const result = this.engine.mutation.writeback(before, writeback)
         if (!result) return null
 

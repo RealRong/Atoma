@@ -1,3 +1,4 @@
+import { toErrorWithFallback } from 'atoma-shared'
 import type {
     DataProcessorContext,
     DataProcessorMode,
@@ -22,7 +23,12 @@ const STAGE_ORDER: DataProcessorStage[] = [
 
 const hasValidatorShape = (value: unknown): boolean => {
     if (!value || typeof value !== 'object') return false
-    const v: any = value as any
+    const v = value as {
+        safeParse?: unknown
+        parse?: unknown
+        validateSync?: unknown
+        validate?: unknown
+    }
     return typeof v.safeParse === 'function'
         || typeof v.parse === 'function'
         || typeof v.validateSync === 'function'
@@ -30,33 +36,39 @@ const hasValidatorShape = (value: unknown): boolean => {
 }
 
 async function applySchemaValidator<T>(item: T, schema: SchemaValidator<T>): Promise<T> {
+    const validator = schema as {
+        safeParse?: (input: T) => { success: boolean; data: T; error?: unknown }
+        parse?: (input: T) => T
+        validateSync?: (input: T) => T
+        validate?: (input: T) => Promise<T> | T
+    }
+
     try {
-        if ((schema as any).safeParse) {
-            const result = (schema as any).safeParse(item)
+        if (validator.safeParse) {
+            const result = validator.safeParse(item)
             if (!result.success) {
-                const error = (result.error || 'Schema validation failed') as any
-                throw error instanceof Error ? error : new Error(String(error))
+                throw toErrorWithFallback(result.error, 'Schema validation failed')
             }
             return result.data as T
         }
 
-        if ((schema as any).parse) {
-            return (schema as any).parse(item)
+        if (validator.parse) {
+            return validator.parse(item)
         }
 
-        if ((schema as any).validateSync) {
-            return (schema as any).validateSync(item)
+        if (validator.validateSync) {
+            return validator.validateSync(item)
         }
 
-        if ((schema as any).validate) {
-            return await (schema as any).validate(item)
+        if (validator.validate) {
+            return await validator.validate(item)
         }
 
         if (typeof schema === 'function') {
-            return await (schema as any)(item)
+            return await schema(item)
         }
     } catch (error) {
-        throw error instanceof Error ? error : new Error(String(error))
+        throw toErrorWithFallback(error, 'Schema validation failed')
     }
 
     return item
@@ -67,25 +79,13 @@ async function runValidateStage<T>(
     validator: DataProcessorValidate<T>,
     context: DataProcessorContext<T>
 ): Promise<T | undefined> {
-    if (hasValidatorShape(validator)) {
-        return await applySchemaValidator(value, validator as SchemaValidator<T>)
-    }
     if (typeof validator === 'function') {
         return await (validator as DataProcessorStageFn<T>)(value, context)
     }
-    throw new Error('[Atoma] dataProcessor.validate must be a function or schema validator')
-}
-
-async function runStage<T>(
-    stage: DataProcessorStage,
-    handler: DataProcessorStageFn<T>,
-    value: T,
-    context: DataProcessorContext<T>
-): Promise<T | undefined> {
-    if (typeof handler !== 'function') {
-        throw new Error(`[Atoma] dataProcessor.${stage} must be a function`)
+    if (hasValidatorShape(validator)) {
+        return await applySchemaValidator(value, validator as SchemaValidator<T>)
     }
-    return await handler(value, context)
+    throw new Error('[Atoma] dataProcessor.validate must be a function or schema validator')
 }
 
 export class TransformPipeline {
@@ -93,6 +93,20 @@ export class TransformPipeline {
 
     constructor(runtime: Runtime) {
         this.runtime = runtime
+    }
+
+    private run<T extends Entity>(
+        mode: DataProcessorMode,
+        handle: StoreHandle<T>,
+        data: T,
+        context?: ActionContext
+    ): Promise<T | undefined> {
+        return this.process(mode, data, {
+            storeName: handle.storeName,
+            runtime: this.runtime,
+            context,
+            dataProcessor: handle.config.dataProcessor
+        })
     }
 
     async process<T>(
@@ -130,9 +144,15 @@ export class TransformPipeline {
                 stage
             }
 
-            current = stage === 'validate'
-                ? await runValidateStage(current, handler as DataProcessorValidate<T>, stageContext)
-                : await runStage(stage, handler as DataProcessorStageFn<T>, current, stageContext)
+            if (stage === 'validate') {
+                current = await runValidateStage(current, handler as DataProcessorValidate<T>, stageContext)
+                continue
+            }
+            if (typeof handler !== 'function') {
+                throw new Error(`[Atoma] dataProcessor.${stage} must be a function`)
+            }
+
+            current = await (handler as DataProcessorStageFn<T>)(current, stageContext)
         }
 
         return current
@@ -143,13 +163,7 @@ export class TransformPipeline {
         data: T,
         context?: ActionContext
     ): Promise<T | undefined> {
-        const runtime = this.runtime
-        return this.process('inbound', data, {
-            storeName: handle.storeName,
-            runtime,
-            context,
-            dataProcessor: handle.config.dataProcessor
-        })
+        return this.run('inbound', handle, data, context)
     }
 
     async writeback<T extends Entity>(
@@ -157,13 +171,7 @@ export class TransformPipeline {
         data: T,
         context?: ActionContext
     ): Promise<T | undefined> {
-        const runtime = this.runtime
-        return this.process('writeback', data, {
-            storeName: handle.storeName,
-            runtime,
-            context,
-            dataProcessor: handle.config.dataProcessor
-        })
+        return this.run('writeback', handle, data, context)
     }
 
     async outbound<T extends Entity>(
@@ -171,12 +179,6 @@ export class TransformPipeline {
         data: T,
         context?: ActionContext
     ): Promise<T | undefined> {
-        const runtime = this.runtime
-        return this.process('outbound', data, {
-            storeName: handle.storeName,
-            runtime,
-            context,
-            dataProcessor: handle.config.dataProcessor
-        })
+        return this.run('outbound', handle, data, context)
     }
 }
