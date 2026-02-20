@@ -288,7 +288,10 @@ export function createOperationSyncDriver(args: {
 
                 let data: WriteResultData
                 try {
-                    data = assertWriteResultData((result as any).data) as WriteResultData
+                    data = assertWriteResultData((result as any).data, {
+                        expectedLength: group.entries.length,
+                        expectedEntryIds: group.entries.map((value) => String(value.entry.entry.entryId))
+                    }) as WriteResultData
                 } catch (error) {
                     for (const e of group.entries) {
                         outcomes[e.index] = { kind: 'retry', error }
@@ -297,20 +300,15 @@ export function createOperationSyncDriver(args: {
                 }
 
                 const itemResults = Array.isArray((data as any)?.results) ? (data as any).results : []
-                const itemResultByEntryId = new Map<string, ProtocolWriteItemResult>()
-                for (const itemResult of itemResults as ProtocolWriteItemResult[]) {
-                    itemResultByEntryId.set(itemResult.entryId, itemResult)
-                }
-
-                for (const mapped of group.entries) {
+                for (let itemIndex = 0; itemIndex < group.entries.length; itemIndex++) {
+                    const mapped = group.entries[itemIndex]
                     const entryId = (mapped.entry.entry as any)?.entryId
-                    const key = typeof entryId === 'string' ? entryId : ''
-                    const itemResult = key ? itemResultByEntryId.get(key) : undefined
+                    const itemResult = itemResults[itemIndex]
                     if (!itemResult) {
                         outcomes[mapped.index] = {
                             kind: 'reject',
                             result: {
-                                entryId: key || 'missing',
+                                entryId: (typeof entryId === 'string' && entryId) ? entryId : 'missing',
                                 ok: false,
                                 error: toWriteError(
                                     { code: 'WRITE_FAILED', message: 'Missing write item result', kind: 'internal' },

@@ -85,8 +85,14 @@ export type WriteRequest<T extends Entity> = Readonly<{
 }>
 
 export type WriteOutput = Readonly<{
-    status: WriteStatus
-    results?: ReadonlyArray<WriteItemResult>
+    status: 'enqueued'
+}> | Readonly<{
+    status: Exclude<WriteStatus, 'enqueued'>
+    /**
+     * Results are aligned with request.entries by index.
+     * results[i] corresponds to request.entries[i].
+     */
+    results: ReadonlyArray<WriteItemResult>
 }>
 
 export type WriteExecutor = <T extends Entity>(

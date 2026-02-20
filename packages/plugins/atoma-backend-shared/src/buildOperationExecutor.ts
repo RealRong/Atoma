@@ -25,7 +25,10 @@ type OperationRuntime = Readonly<{
 }>
 
 type WriteGroup = {
-    entries: WriteEntry[]
+    entries: Array<{
+        index: number
+        entry: WriteEntry
+    }>
 }
 
 function createOperationError(args: {
@@ -83,20 +86,20 @@ function groupWriteEntries(entries: ReadonlyArray<WriteEntry>): WriteGroup[] {
     const groupsByKey = new Map<string, WriteGroup>()
     const groups: WriteGroup[] = []
 
-    for (const entry of entries) {
+    entries.forEach((entry, index) => {
         const key = `${entry.action}::${writeOptionsKey(entry.options)}`
         const existing = groupsByKey.get(key)
         if (existing) {
-            existing.entries.push(entry)
-            continue
+            existing.entries.push({ index, entry })
+            return
         }
 
         const group: WriteGroup = {
-            entries: [entry]
+            entries: [{ index, entry }]
         }
         groupsByKey.set(key, group)
         groups.push(group)
-    }
+    })
 
     return groups
 }
@@ -173,7 +176,10 @@ async function executeOperationWrite<T extends Entity>(args: {
     const { runtime, operationClient, request, options } = args
     try {
         if (!request.entries.length) {
-            return { status: 'confirmed' }
+            return {
+                status: 'confirmed',
+                results: []
+            }
         }
 
         const groups = groupWriteEntries(request.entries)
@@ -182,7 +188,7 @@ async function executeOperationWrite<T extends Entity>(args: {
                 opId: createOpId('w', { now: runtime.now }),
                 write: {
                     resource: request.handle.storeName,
-                    entries: group.entries
+                    entries: group.entries.map((value) => value.entry)
                 }
             })),
             meta: {
@@ -194,7 +200,7 @@ async function executeOperationWrite<T extends Entity>(args: {
             ...(options?.signal ? { signal: options.signal } : {})
         })
 
-        const results: WriteItemResult[] = []
+        const orderedResults: WriteItemResult[] = new Array(request.entries.length)
         for (let index = 0; index < groups.length; index++) {
             const group = groups[index]
             const result = envelope.results[index]
@@ -207,23 +213,40 @@ async function executeOperationWrite<T extends Entity>(args: {
             }
 
             if (!result.ok) {
-                for (const entry of group.entries) {
-                    results.push({
-                        entryId: entry.entryId,
+                for (const value of group.entries) {
+                    orderedResults[value.index] = {
+                        entryId: value.entry.entryId,
                         ok: false,
                         error: result.error
-                    })
+                    }
                 }
                 continue
             }
 
-            const parsed = assertWriteResultData(result.data)
-            results.push(...parsed.results)
+            const parsed = assertWriteResultData(result.data, {
+                expectedLength: group.entries.length,
+                expectedEntryIds: group.entries.map((value) => value.entry.entryId)
+            })
+            for (let itemIndex = 0; itemIndex < group.entries.length; itemIndex++) {
+                const value = group.entries[itemIndex]
+                orderedResults[value.index] = parsed.results[itemIndex]
+            }
         }
 
+        for (let index = 0; index < orderedResults.length; index++) {
+            if (orderedResults[index]) continue
+            throw createOperationError({
+                code: 'E_OPERATION_RESULT_MISSING',
+                message: '[Atoma] operation.write: missing write item result',
+                retryable: true,
+                details: { index }
+            })
+        }
+
+        const results = orderedResults as WriteItemResult[]
         return {
             status: resolveWriteStatus(results),
-            ...(results.length ? { results } : {})
+            results
         }
     } catch (error) {
         throw normalizeOperationError({

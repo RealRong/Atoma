@@ -152,5 +152,9 @@ export type WriteItemResult =
 
 export type WriteResultData = {
     transactionApplied?: boolean
+    /**
+     * Results are aligned with write.entries by index.
+     * results[i] corresponds to write.entries[i].
+     */
     results: WriteItemResult[]
 }

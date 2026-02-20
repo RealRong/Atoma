@@ -146,19 +146,24 @@ function filterWriteEntriesByResults(args: {
     writeEntries: ReadonlyArray<WriteEntry>
     results?: ReadonlyArray<WriteItemResult>
 }): WriteEntry[] {
+    if (args.status === 'enqueued') return []
     if (!args.results || !args.results.length) {
-        if (args.status === 'rejected' || args.status === 'partial' || args.status === 'enqueued') {
+        if (args.status === 'rejected' || args.status === 'partial') {
             return []
         }
         return [...args.writeEntries]
     }
 
-    const okEntryIds = new Set(
-        args.results
-            .filter(result => result.ok)
-            .map(result => result.entryId)
-    )
+    if (args.results.length !== args.writeEntries.length) {
+        return args.status === 'confirmed' ? [...args.writeEntries] : []
+    }
 
-    if (!okEntryIds.size) return []
-    return args.writeEntries.filter(entry => okEntryIds.has(entry.entryId))
+    const accepted: WriteEntry[] = []
+    for (let index = 0; index < args.writeEntries.length; index++) {
+        const result = args.results[index]
+        if (!result?.ok) continue
+        accepted.push(args.writeEntries[index])
+    }
+
+    return accepted
 }

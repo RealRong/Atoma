@@ -101,14 +101,37 @@ function assertWriteItemResult(value: unknown): WriteItemResult {
     return value as unknown as WriteItemResult
 }
 
-export function assertWriteResultData(value: unknown): WriteResultData {
+export function assertWriteResultData(
+    value: unknown,
+    options?: Readonly<{
+        expectedLength?: number
+        expectedEntryIds?: ReadonlyArray<string>
+    }>
+): WriteResultData {
     const detailsFor = makeValidationDetails('writeResult')
     if (!isObject(value)) throw invalid('INVALID_RESPONSE', 'Invalid write result data', detailsFor())
     const results = (value as any).results
     if (!Array.isArray(results)) {
         throw invalid('INVALID_RESPONSE', 'Invalid write result data (missing results)', detailsFor('results'))
     }
-    results.forEach(r => { void assertWriteItemResult(r) })
+    results.forEach((r, index) => {
+        const item = assertWriteItemResult(r)
+        const expectedEntryId = options?.expectedEntryIds?.[index]
+        if (expectedEntryId !== undefined && item.entryId !== expectedEntryId) {
+            throw invalid(
+                'INVALID_RESPONSE',
+                'Invalid write result data (entryId mismatch)',
+                detailsFor(`results[${index}].entryId`, { expectedEntryId, actualEntryId: item.entryId })
+            )
+        }
+    })
+    if (typeof options?.expectedLength === 'number' && results.length !== options.expectedLength) {
+        throw invalid(
+            'INVALID_RESPONSE',
+            'Invalid write result data (results length mismatch)',
+            detailsFor('results', { expectedLength: options.expectedLength, actualLength: results.length })
+        )
+    }
     const transactionApplied = (value as any).transactionApplied
     if (transactionApplied !== undefined && typeof transactionApplied !== 'boolean') {
         throw invalid('INVALID_RESPONSE', 'Invalid write result data (invalid transactionApplied)', detailsFor('transactionApplied'))

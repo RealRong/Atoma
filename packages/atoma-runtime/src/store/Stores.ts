@@ -59,9 +59,8 @@ export class Stores implements StoreCatalog {
         const built = this.storeFactory.build(name)
         const handle = built.handle as StoreHandle<Entity>
         const api = built.api as Store<Entity>
-        const storeName = name as StoreToken
         const session: StoreSession<Entity> = {
-            name: storeName,
+            name,
             query: (query: Query<Entity>) => {
                 return this.runtime.engine.query.evaluate({
                     state: handle.state,

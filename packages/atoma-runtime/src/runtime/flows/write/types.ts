@@ -26,23 +26,10 @@ export type WriteScope<T extends Entity> = Readonly<{
     createEntryId: () => string
 }>
 
-export type PlannedChange<T extends Entity> = Readonly<{
-    id: EntityId
-    before?: T
-    after?: T
-    outbound?: T
+export type WritePlan<T extends Entity> = Readonly<{
+    entries: ReadonlyArray<WriteEntry>
+    optimisticChanges: ReadonlyArray<StoreChange<T>>
 }>
-
-export type WritePlanEntry<T extends Entity> = Readonly<{
-    entry: WriteEntry
-    optimistic: Readonly<{
-        id?: EntityId
-        before?: T
-        after?: T
-    }>
-}>
-
-export type WritePlan<T extends Entity> = ReadonlyArray<WritePlanEntry<T>>
 
 export type WriteCommitRequest<T extends Entity> = Readonly<{
     runtime: Runtime
@@ -89,22 +76,3 @@ type IntentInputMap<T extends Entity> = {
 
 export type IntentInput<T extends Entity> = IntentInputMap<T>[IntentAction]
 export type IntentInputByAction<T extends Entity, A extends IntentAction> = IntentInputMap<T>[A]
-
-export type ReplayInput<T extends Entity> = Readonly<{
-    kind: 'change-replay'
-    source: 'apply' | 'revert'
-    options?: StoreOperationOptions
-    changes: ReadonlyArray<StoreChange<T>>
-}>
-
-export type WriteInput<T extends Entity> = IntentInput<T> | ReplayInput<T>
-
-export type WritePlanPolicy =
-    | Readonly<{
-        action: 'upsert'
-        conflict: 'cas' | 'lww'
-        apply: 'merge' | 'replace'
-    }>
-    | Readonly<{
-        action: Exclude<WriteEntry['action'], 'upsert'>
-    }>

@@ -8,16 +8,14 @@ import type {
     WriteManyResult
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, Write, WriteEventSource, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, Write, WriteEntry, WriteEventSource, StoreHandle } from 'atoma-types/runtime'
 import { createId } from 'atoma-shared'
 import { commitWrite } from './write/commit/commitWrite'
-import { adaptIntentToChanges } from './write/adapters/intentToChanges'
+import { compileIntentToPlan } from './write/adapters/intentToPlan'
 import { adaptReplayChanges } from './write/adapters/replayToChanges'
-import { buildPlan } from './write/planner/buildPlan'
 import type {
+    IntentInput,
     IntentCommand,
-    PlannedChange,
-    WriteInput,
     WritePlan,
     WriteScope,
 } from './write/types'
@@ -65,7 +63,7 @@ export class WriteFlow implements Write {
         const { handle, context, route } = session
         const storeName = handle.storeName
         const events = this.runtime.events
-        const writeEntries = plan.map(planEntry => planEntry.entry)
+        const writeEntries = plan.entries
 
         events.emit.writeStart({
             storeName,
@@ -105,75 +103,71 @@ export class WriteFlow implements Write {
         }
     }
 
-    private preparePlannedChanges = async <T extends Entity>({
-        scope,
-        changes
-    }: {
-        scope: WriteScope<T>
-        changes: ReadonlyArray<StoreChange<T>>
-    }): Promise<ReadonlyArray<PlannedChange<T>>> => {
-        const planned: PlannedChange<T>[] = []
-        for (const change of changes) {
-            if (change.after === undefined) {
-                planned.push(change)
-                continue
-            }
-
-            const outbound = await this.runtime.transform.outbound(scope.handle, change.after, scope.context)
-            if (outbound === undefined) {
-                throw new Error('[Atoma] transform returned empty for outbound write')
-            }
-
-            planned.push({
-                id: change.id,
-                before: change.before,
-                after: change.after,
-                outbound
-            })
-        }
-        return planned
-    }
-
     private runInput = async <T extends Entity>({
         session,
         input
     }: {
         session: WriteScope<T>
-        input: WriteInput<T>
+        input: IntentInput<T>
     }): Promise<T | void> => {
-        const adapted = input.kind === 'intent'
-            ? await adaptIntentToChanges(this.runtime, input)
-            : {
-                changes: adaptReplayChanges(
-                    input.changes,
-                    input.source === 'apply' ? 'forward' : 'backward'
-                )
-            }
-        const source: WriteEventSource = input.kind === 'intent'
-            ? input.action
-            : input.source
-
-        const plannedChanges = await this.preparePlannedChanges({
-            scope: session,
-            changes: adapted.changes
-        })
-        const plan = buildPlan({
-            now: this.runtime.now,
-            snapshot: session.handle.state.snapshot(),
-            changes: plannedChanges,
-            policy: adapted.policy,
-            createEntryId: session.createEntryId
-        })
-        if (!plan.length) {
-            return adapted.output
+        const compiled = await compileIntentToPlan(this.runtime, input)
+        if (!compiled.plan.entries.length) {
+            return compiled.output
         }
 
         return await this.commitWrite({
             session,
-            plan,
-            source,
-            output: adapted.output
+            plan: compiled.plan,
+            source: input.action,
+            output: compiled.output
         })
+    }
+
+    private replay = async <T extends Entity>({
+        session,
+        source,
+        changes
+    }: {
+        session: WriteScope<T>
+        source: 'apply' | 'revert'
+        changes: ReadonlyArray<StoreChange<T>>
+    }): Promise<void> => {
+        const { handle, context, route } = session
+        const storeName = handle.storeName
+        const writeEntries: WriteEntry[] = []
+
+        this.runtime.events.emit.writeStart({
+            storeName,
+            context,
+            source,
+            route,
+            writeEntries
+        })
+
+        try {
+            const replayChanges = adaptReplayChanges(
+                changes,
+                source === 'apply' ? 'forward' : 'backward'
+            )
+            const delta = handle.state.apply(replayChanges)
+
+            this.runtime.events.emit.writeCommitted({
+                storeName,
+                context,
+                route,
+                writeEntries,
+                changes: delta?.changes ?? []
+            })
+        } catch (error) {
+            this.runtime.events.emit.writeFailed({
+                storeName,
+                context,
+                route,
+                writeEntries,
+                error
+            })
+            throw error
+        }
     }
 
     private runIntent = async <T extends Entity>(
@@ -260,14 +254,10 @@ export class WriteFlow implements Write {
         options?: StoreOperationOptions
     ): Promise<void> => {
         const session = createWriteSession(this.runtime, handle, options)
-        await this.runInput({
+        await this.replay({
             session,
-            input: {
-                kind: 'change-replay',
-                options,
-                source: 'apply',
-                changes
-            }
+            source: 'apply',
+            changes
         })
     }
 
@@ -277,14 +267,10 @@ export class WriteFlow implements Write {
         options?: StoreOperationOptions
     ): Promise<void> => {
         const session = createWriteSession(this.runtime, handle, options)
-        await this.runInput({
+        await this.replay({
             session,
-            input: {
-                kind: 'change-replay',
-                options,
-                source: 'revert',
-                changes
-            }
+            source: 'revert',
+            changes
         })
     }
 }

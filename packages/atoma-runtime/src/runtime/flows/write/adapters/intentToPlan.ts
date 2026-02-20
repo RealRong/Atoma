@@ -1,12 +1,13 @@
 import type { Entity, PartialWithId, StoreChange } from 'atoma-types/core'
-import type { Runtime } from 'atoma-types/runtime'
-import type { IntentInput, IntentInputByAction, WritePlanPolicy } from '../types'
+import type { Runtime, WriteEntry } from 'atoma-types/runtime'
+import { createIdempotencyKey, ensureWriteItemMeta, requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
+import { toChange } from 'atoma-core/store'
+import type { IntentInput, IntentInputByAction, WritePlan } from '../types'
 import { prepareCreateInput, prepareUpdateInput, prepareUpsertInput, resolveWriteBase } from '../utils/prepareWriteInput'
 
-export type IntentToChangesResult<T extends Entity> = Readonly<{
-    changes: ReadonlyArray<StoreChange<T>>
+export type IntentToPlanResult<T extends Entity> = Readonly<{
+    plan: WritePlan<T>
     output?: T
-    policy?: WritePlanPolicy
 }>
 
 function requireEntityObject<T extends Entity>(value: unknown, id: string): T {
@@ -53,18 +54,85 @@ async function resolveUpsertPreparedValue<T extends Entity>(
     }
 }
 
-export async function adaptIntentToChanges<T extends Entity>(
+async function requireOutbound<T extends Entity>({
+    runtime,
+    input,
+    value
+}: {
+    runtime: Runtime
+    input: IntentInput<T>
+    value: T
+}): Promise<T> {
+    const outbound = await runtime.transform.outbound(
+        input.scope.handle,
+        value,
+        input.scope.context
+    )
+    if (outbound === undefined) {
+        throw new Error('[Atoma] transform returned empty for outbound write')
+    }
+    return outbound
+}
+
+function createMeta(now: () => number) {
+    return ensureWriteItemMeta({
+        meta: {
+            idempotencyKey: createIdempotencyKey({ now }),
+            clientTimeMs: now()
+        },
+        now
+    })
+}
+
+function toOptimisticChange<T extends Entity>({
+    id,
+    before,
+    after
+}: {
+    id: string
+    before?: T
+    after?: T
+}): StoreChange<T> {
+    return toChange({ id, before, after })
+}
+
+export async function compileIntentToPlan<T extends Entity>(
     runtime: Runtime,
     input: IntentInput<T>
-): Promise<IntentToChangesResult<T>> {
+): Promise<IntentToPlanResult<T>> {
     const { handle, context } = input.scope
+    const snapshot = handle.state.snapshot()
+    const entries: WriteEntry[] = []
+    const optimisticChanges: StoreChange<T>[] = []
+    const createEntryId = input.scope.createEntryId
+    const now = runtime.now
+
     if (input.action === 'create') {
-        const prepared = await prepareCreateInput(runtime, handle, input.item, context)
-        return {
-            changes: [{ id: prepared.id, after: prepared as T }],
-            output: prepared as T,
-            policy: { action: 'create' }
-        }
+        const prepared = await prepareCreateInput(runtime, handle, input.item, context) as T
+        const outbound = await requireOutbound({
+            runtime,
+            input,
+            value: prepared
+        })
+        const id = prepared.id
+        const current = snapshot.get(id)
+
+        entries.push({
+            entryId: createEntryId(),
+            action: 'create',
+            item: {
+                id,
+                value: outbound,
+                meta: createMeta(now)
+            }
+        })
+        optimisticChanges.push(toOptimisticChange({
+            id,
+            before: current,
+            after: prepared
+        }))
+
+        return { plan: { entries, optimisticChanges }, output: prepared }
     }
 
     if (input.action === 'update') {
@@ -82,30 +150,73 @@ export async function adaptIntentToChanges<T extends Entity>(
             base,
             next as PartialWithId<T>,
             context
-        )
+        ) as T
+        const outbound = await requireOutbound({
+            runtime,
+            input,
+            value: prepared
+        })
+        const id = input.id
+        const current = snapshot.get(id)
 
-        return {
-            changes: [{ id: input.id, before: base as T, after: prepared as T }],
-            output: prepared as T,
-            policy: { action: 'update' }
-        }
+        entries.push({
+            entryId: createEntryId(),
+            action: 'update',
+            item: {
+                id,
+                baseVersion: requireBaseVersion(id, base),
+                value: outbound,
+                meta: createMeta(now)
+            }
+        })
+        optimisticChanges.push(toOptimisticChange({
+            id,
+            before: current,
+            after: prepared
+        }))
+
+        return { plan: { entries, optimisticChanges }, output: prepared }
     }
 
     if (input.action === 'upsert') {
         const { base, prepared } = await resolveUpsertPreparedValue(runtime, input)
-        const change = base
-            ? { id: prepared.id, before: base as T, after: prepared as T }
-            : { id: prepared.id, after: prepared as T }
+        const normalized = prepared as T
+        const outbound = await requireOutbound({
+            runtime,
+            input,
+            value: normalized
+        })
+        const id = prepared.id
+        const current = snapshot.get(id)
+        const conflict = input.options?.conflict ?? 'cas'
+        const apply = input.options?.apply ?? 'merge'
+        const expectedVersion = conflict === 'cas'
+            ? resolvePositiveVersion(current ?? (base as T | undefined))
+            : undefined
 
-        return {
-            changes: [change],
-            output: prepared as T,
-            policy: {
-                action: 'upsert',
-                conflict: input.options?.conflict ?? 'cas',
-                apply: input.options?.apply ?? 'merge'
+        entries.push({
+            entryId: createEntryId(),
+            action: 'upsert',
+            item: {
+                id,
+                ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
+                value: outbound,
+                meta: createMeta(now)
+            },
+            options: {
+                upsert: {
+                    conflict,
+                    apply
+                }
             }
-        }
+        })
+        optimisticChanges.push(toOptimisticChange({
+            id,
+            before: current,
+            after: normalized
+        }))
+
+        return { plan: { entries, optimisticChanges }, output: normalized }
     }
 
     const base = await resolveWriteBase(
@@ -115,21 +226,57 @@ export async function adaptIntentToChanges<T extends Entity>(
         input.options,
         context
     )
-    return input.options?.force
-        ? {
-            changes: [{ id: input.id, before: base as T }],
-            policy: { action: 'delete' }
+    const id = input.id
+    const current = snapshot.get(id)
+    if (input.options?.force) {
+        const previous = current ?? (base as T)
+        return {
+            plan: {
+                entries: [{
+                    entryId: createEntryId(),
+                    action: 'delete',
+                    item: {
+                        id,
+                        baseVersion: requireBaseVersion(id, previous),
+                        meta: createMeta(now)
+                    }
+                }],
+                optimisticChanges: [toOptimisticChange({
+                    id,
+                    before: previous
+                })]
+            }
         }
-        : {
-            changes: [{
-                id: input.id,
-                before: base as T,
-                after: {
-                    ...base,
-                    deleted: true,
-                    deletedAt: runtime.now()
-                } as unknown as T
+    }
+
+    const after = {
+        ...base,
+        deleted: true,
+        deletedAt: runtime.now()
+    } as unknown as T
+    const outbound = await requireOutbound({
+        runtime,
+        input,
+        value: after
+    })
+
+    return {
+        plan: {
+            entries: [{
+                entryId: createEntryId(),
+                action: 'update',
+                item: {
+                    id,
+                    baseVersion: requireBaseVersion(id, base),
+                    value: outbound,
+                    meta: createMeta(now)
+                }
             }],
-            policy: { action: 'update' }
+            optimisticChanges: [toOptimisticChange({
+                id,
+                before: current,
+                after
+            })]
         }
+    }
 }

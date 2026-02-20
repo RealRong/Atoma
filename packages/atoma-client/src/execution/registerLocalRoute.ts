@@ -46,7 +46,7 @@ export function registerLocalRoute(runtime: Runtime): () => void {
                     })
                     return {
                         status: 'confirmed',
-                        ...(results.length ? { results } : {})
+                        results
                     }
                 }
             }
