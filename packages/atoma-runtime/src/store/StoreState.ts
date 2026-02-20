@@ -42,18 +42,10 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         }
     }
 
-    private applyDelta = (delta: StoreDelta<T>) => {
-        if (delta.before === delta.after || !delta.changedIds.size) return
-
-        this.indexes?.applyChangedIds(delta.before, delta.after, delta.changedIds)
-        this.current = delta.after
-        this.notifyListeners()
-    }
-
-    private commitDelta = (
+    private commit = (
         before: Map<EntityId, T>,
         after: Map<EntityId, T>,
-        changes: StoreChange<T>[]
+        changes: ReadonlyArray<StoreChange<T>>
     ): StoreDelta<T> | null => {
         if (before === after || !changes.length) return null
         const changedIds = new Set<EntityId>()
@@ -68,7 +60,9 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
             changedIds,
             changes
         }
-        this.applyDelta(delta)
+        this.indexes?.applyChangedIds(before, after, changedIds)
+        this.current = after
+        this.notifyListeners()
         return delta
     }
 
@@ -84,7 +78,7 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
             const previous = before.get(id)
             const target = change.after
             if (target === undefined) {
-                if (!after.has(id) || previous === undefined) return
+                if (previous === undefined) return
                 after.delete(id)
                 normalized.push(toChange({
                     id,
@@ -92,11 +86,10 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
                 }))
                 return
             }
-            const existing = after.get(id)
-            const preserved = this.engine.mutation.reuse(existing, target)
-            if (after.has(id) && existing === preserved) return
-            after.set(id, preserved)
+            const preserved = this.engine.mutation.reuse(previous, target)
+            if (previous === preserved) return
 
+            after.set(id, preserved)
             if (previous === undefined) {
                 normalized.push(toChange({
                     id,
@@ -104,7 +97,6 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
                 }))
                 return
             }
-            if (previous === preserved) return
             normalized.push(toChange({
                 id,
                 before: previous,
@@ -112,7 +104,7 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
             }))
         })
 
-        return this.commitDelta(before, after, normalized)
+        return this.commit(before, after, normalized)
     }
 
     writeback = (writeback: StoreWritebackArgs<T>): StoreDelta<T> | null => {
@@ -120,7 +112,10 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         const result = this.engine.mutation.writeback(before, writeback)
         if (!result) return null
 
-        this.applyDelta(result)
-        return result
+        return this.commit(
+            result.before as Map<EntityId, T>,
+            result.after as Map<EntityId, T>,
+            result.changes
+        )
     }
 }

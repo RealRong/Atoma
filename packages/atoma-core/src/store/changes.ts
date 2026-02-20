@@ -1,11 +1,6 @@
 import type { Entity, StoreChange } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 
-export type ChangeSet<T extends Entity> = Readonly<{
-    changedIds: ReadonlySet<EntityId>
-    changes: ReadonlyArray<StoreChange<T>>
-}>
-
 export function toChange<T extends Entity>({
     id,
     before,
@@ -72,7 +67,10 @@ export function mergeChanges<T extends Entity>(...groups: ReadonlyArray<Readonly
 export function diffMaps<T extends Entity>(
     before: ReadonlyMap<EntityId, T>,
     after: ReadonlyMap<EntityId, T>
-): ChangeSet<T> {
+): Readonly<{
+    changedIds: ReadonlySet<EntityId>
+    changes: ReadonlyArray<StoreChange<T>>
+}> {
     const changes: StoreChange<T>[] = []
     const changedIds = new Set<EntityId>()
 
