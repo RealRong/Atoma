@@ -6,7 +6,7 @@
 
 1. 方案一已完成（`adapt + buildPlan` 合并为 `compileIntentToPlan`）。
 2. 方案二已完成（`commitWrite` 直接消费 `optimisticChanges`）。
-3. 方案三已完成（写结果按 index 对齐，`entryId` 仅用于诊断校验）。
+3. 方案三已完成（写结果按 index 对齐，不再使用 `entryId`）。
 4. 方案四已完成（`apply/revert` 改为本地回放，不再走 `execution.write`）。
 
 ## 0. 结论先行
@@ -22,7 +22,7 @@
 
 1. `StoreFactory` 暴露的 `Store` API 将调用转发到 `runtime.write.*`。  
    入口见：`packages/atoma-runtime/src/store/StoreFactory.ts:89`
-2. `WriteFlow` 创建 `WriteScope`（`handle/context/route/signal/createEntryId`）。  
+2. `WriteFlow` 创建 `WriteScope`（`handle/context/route/signal`）。  
    见：`packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:26`
 3. `runIntent -> runInput(kind='intent')`。  
    见：`packages/atoma-runtime/src/runtime/flows/WriteFlow.ts:197`
@@ -61,7 +61,7 @@
 
 1. 模型重复翻译：`PlannedChange -> WritePlanEntry.optimistic -> StoreChange`（已移除）。
 2. Replay 与 Intent 共用远端提交链路（已拆分，本地 replay 不再走 execution）。
-3. `commitWrite.resolveResult` 依赖 `entryId` 映射（已改为按 index 消费）。
+3. `commitWrite.resolveResult` 依赖 `entryId` 映射（已改为按 index 消费并移除 `entryId`）。
 4. 执行器层无顺序契约（已补齐 results 与 entries 顺序对齐约束）。
 
 ---
@@ -99,7 +99,7 @@ compileIntentToPlan(runtime, input) -> {
 2. `WritePlanEntry/optimistic` 结构已移除。
 3. `commitWrite` 只关心 `entries + optimisticChanges`。
 
-## 3.3 方案三：结果按 index 对齐，移除 `entryId -> result` map
+## 3.3 方案三：结果按 index 对齐，移除 `entryId -> result` map（并删除 `entryId`）
 
 结论：已完成。
 
@@ -107,7 +107,7 @@ compileIntentToPlan(runtime, input) -> {
 
 1. 当返回 `results` 时，`results.length === request.entries.length`。
 2. `results[i]` 对应 `request.entries[i]`。
-3. `entryId` 保留为观测/调试字段，但不再作为主匹配键。
+3. `entryId` 已从写入契约中删除。
 
 已落地要点：
 
@@ -145,7 +145,7 @@ compileIntentToPlan(runtime, input) -> {
 1. 保留 `apply/revert` 对外命名，不改成 `replay`。  
    原因：API 语义直观，调用方（history）无需认知方向枚举。
 2. 内部实现也保持 `apply/revert` 词汇，方向只在局部变量中表达（例如 `direction`）。
-3. 若执行方案三，`entryId` 降级为诊断字段，不再承担核心匹配语义。
+3. 方案三落地后，`entryId` 已彻底移除。
 
 ---
 

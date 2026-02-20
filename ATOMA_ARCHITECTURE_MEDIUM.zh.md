@@ -241,15 +241,15 @@ Atoma 的做法是：把它抽象成 route + executor。
 
 ## 阶段 1：Intent 归一化
 
-`create/update/upsert/delete` 先统一转换为 `StoreChange[]`，并执行 inbound 处理。
+`create/update/upsert/delete` 统一在 `compileIntentToPlan` 中完成 prepare + outbound 处理。
 
-这一步把“API 形状”统一成“状态变化语义”。
+这一步把“API 形状”统一成“可提交计划”。
 
 ## 阶段 2：Plan 构建
 
-`buildPlanFromChanges` 基于 changes 生成 `WritePlan`：
+`compileIntentToPlan` 生成 `WritePlan`：
 
-- 每条写操作都生成稳定 `entryId`
+- 生成 `entries + optimisticChanges`
 - 补全 meta（幂等键、客户端时间）
 - 根据 action 补 baseVersion / upsert 选项
 - outbound 后得到最终可持久化 entry

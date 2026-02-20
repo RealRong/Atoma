@@ -14,6 +14,9 @@ const STORE_EVENT_NAMES: StoreEventName[] = [
     'writeStart',
     'writeCommitted',
     'writeFailed',
+    'changeStart',
+    'changeCommitted',
+    'changeFailed',
     'storeCreated'
 ]
 
@@ -32,6 +35,9 @@ function createHandlerSets(): HandlerSetMap {
         writeStart: new Set(),
         writeCommitted: new Set(),
         writeFailed: new Set(),
+        changeStart: new Set(),
+        changeCommitted: new Set(),
+        changeFailed: new Set(),
         storeCreated: new Set()
     }
 }
@@ -69,6 +75,9 @@ export class StoreEventRegistry implements StoreEventRegistryType {
         writeStart: <T extends Entity>(payload: StoreEventPayloadMap<T>['writeStart']) => this.emitEvent('writeStart', payload),
         writeCommitted: <T extends Entity>(payload: StoreEventPayloadMap<T>['writeCommitted']) => this.emitEvent('writeCommitted', payload),
         writeFailed: <T extends Entity>(payload: StoreEventPayloadMap<T>['writeFailed']) => this.emitEvent('writeFailed', payload),
+        changeStart: <T extends Entity>(payload: StoreEventPayloadMap<T>['changeStart']) => this.emitEvent('changeStart', payload),
+        changeCommitted: <T extends Entity>(payload: StoreEventPayloadMap<T>['changeCommitted']) => this.emitEvent('changeCommitted', payload),
+        changeFailed: <T extends Entity>(payload: StoreEventPayloadMap<T>['changeFailed']) => this.emitEvent('changeFailed', payload),
         storeCreated: <T extends Entity>(payload: StoreEventPayloadMap<T>['storeCreated']) => this.emitEvent('storeCreated', payload)
     }
 
@@ -79,6 +88,9 @@ export class StoreEventRegistry implements StoreEventRegistryType {
             writeStart: events.write?.onStart,
             writeCommitted: events.write?.onCommitted,
             writeFailed: events.write?.onFailed,
+            changeStart: events.change?.onStart,
+            changeCommitted: events.change?.onCommitted,
+            changeFailed: events.change?.onFailed,
             storeCreated: events.store?.onCreated
         }
     }

@@ -4,7 +4,7 @@ import { assertFiniteNumber, assertNonEmptyString, assertPositiveVersion, invali
 type WriteEntryCtx = {
     opId: string
     resource: ResourceToken
-    entryId: string
+    index: number
     action: WriteAction
 }
 
@@ -12,7 +12,7 @@ function detailsForWrite(ctx: WriteEntryCtx, field?: string) {
     return makeValidationDetails('write', {
         opId: ctx.opId,
         resource: ctx.resource,
-        entryId: ctx.entryId,
+        index: ctx.index,
         action: ctx.action
     })(field)
 }
@@ -144,7 +144,7 @@ function assertWriteOptions(raw: Record<string, unknown>, ctx: WriteEntryCtx): W
     return raw as WriteOptions
 }
 
-function assertWriteAction(value: unknown, ctx: { opId: string; resource: ResourceToken; entryId: string }): WriteAction {
+function assertWriteAction(value: unknown, ctx: { opId: string; resource: ResourceToken; index: number }): WriteAction {
     const action = typeof value === 'string' ? value : undefined
     if (action !== 'create' && action !== 'update' && action !== 'delete' && action !== 'upsert') {
         throw invalid('INVALID_REQUEST', 'Invalid write entry action', {
@@ -152,30 +152,25 @@ function assertWriteAction(value: unknown, ctx: { opId: string; resource: Resour
             part: 'write',
             opId: ctx.opId,
             resource: ctx.resource,
-            entryId: ctx.entryId,
+            index: ctx.index,
             field: 'action'
         })
     }
     return action
 }
 
-function assertWriteEntry(value: unknown, ctx: { opId: string; resource: ResourceToken }): WriteEntry {
+function assertWriteEntry(value: unknown, ctx: { opId: string; resource: ResourceToken; index: number }): WriteEntry {
     if (!isObject(value)) {
         throw invalid('INVALID_WRITE', 'Invalid write entry', {
             kind: 'validation',
             part: 'write',
             opId: ctx.opId,
-            resource: ctx.resource
+            resource: ctx.resource,
+            index: ctx.index
         })
     }
 
-    const entryId = assertNonEmptyString((value as any).entryId, {
-        code: 'INVALID_WRITE',
-        message: 'Missing write entryId',
-        details: makeValidationDetails('write', { opId: ctx.opId, resource: ctx.resource })('entryId')
-    })
-
-    const action = assertWriteAction((value as any).action, { ...ctx, entryId })
+    const action = assertWriteAction((value as any).action, ctx)
     const item = (value as any).item
     if (!isObject(item)) {
         throw invalid('INVALID_WRITE', 'Missing write entry item', {
@@ -183,13 +178,13 @@ function assertWriteEntry(value: unknown, ctx: { opId: string; resource: Resourc
             part: 'write',
             opId: ctx.opId,
             resource: ctx.resource,
-            entryId,
+            index: ctx.index,
             action,
             field: 'item'
         })
     }
 
-    const entryCtx: WriteEntryCtx = { ...ctx, entryId, action }
+    const entryCtx: WriteEntryCtx = { ...ctx, action }
 
     assertWriteItemMeta((item as any).meta, entryCtx)
 
@@ -215,7 +210,6 @@ function assertWriteEntry(value: unknown, ctx: { opId: string; resource: Resourc
     const options = optionsRaw ? assertWriteOptions(optionsRaw, entryCtx) : undefined
 
     return {
-        entryId,
         action,
         item: item as unknown as WriteItem,
         ...(options ? { options } : {})
@@ -235,7 +229,7 @@ export function assertWriteEntries(value: unknown, ctx: { opId: string; resource
     const out: WriteEntry[] = []
     for (let index = 0; index < value.length; index++) {
         try {
-            out.push(assertWriteEntry(value[index], ctx))
+            out.push(assertWriteEntry(value[index], { ...ctx, index }))
         } catch (error) {
             if (isObject(error) && typeof (error as any).code === 'string') {
                 throw error

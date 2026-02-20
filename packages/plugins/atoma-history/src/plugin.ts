@@ -90,16 +90,37 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                 emitChanged()
             }
 
+            const recordChanges = (args: {
+                storeName: string
+                changes?: ReadonlyArray<StoreChange<Entity>>
+                context: ActionContext
+            }) => {
+                if (!args.changes?.length) return
+                manager.record({
+                    storeName: args.storeName,
+                    changes: args.changes,
+                    context: args.context
+                })
+                emitChanged()
+            }
+
             const stopEvents = ctx.events.register({
                 write: {
                     onCommitted: (args) => {
-                        if (!args.changes?.length) return
-                        manager.record({
+                        recordChanges({
                             storeName: String(args.storeName),
                             changes: args.changes,
                             context: args.context
                         })
-                        emitChanged()
+                    }
+                },
+                change: {
+                    onCommitted: (args) => {
+                        recordChanges({
+                            storeName: String(args.storeName),
+                            changes: args.changes,
+                            context: args.context
+                        })
                     }
                 }
             })

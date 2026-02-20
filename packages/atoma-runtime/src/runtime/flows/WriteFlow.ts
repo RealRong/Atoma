@@ -1,18 +1,15 @@
 import type {
     Entity,
     PartialWithId,
-    StoreChange,
     StoreOperationOptions,
     StoreUpdater,
     UpsertWriteOptions,
     WriteManyResult
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, Write, WriteEntry, WriteEventSource, StoreHandle } from 'atoma-types/runtime'
-import { createId } from 'atoma-shared'
+import type { Runtime, Write, WriteEventSource, StoreHandle } from 'atoma-types/runtime'
 import { commitWrite } from './write/commit/commitWrite'
 import { compileIntentToPlan } from './write/adapters/intentToPlan'
-import { adaptReplayChanges } from './write/adapters/replayToChanges'
 import type {
     IntentInput,
     IntentCommand,
@@ -26,19 +23,11 @@ function createWriteSession<T extends Entity>(
     handle: StoreHandle<T>,
     options?: StoreOperationOptions
 ): WriteScope<T> {
-    const createEntryId = () => createId({
-        kind: 'action',
-        sortable: true,
-        prefix: 'w',
-        now: runtime.now
-    })
-
     return {
         handle,
         context: runtime.engine.action.createContext(options?.context),
         route: options?.route ?? handle.config.defaultRoute,
-        signal: options?.signal,
-        createEntryId
+        signal: options?.signal
     }
 }
 
@@ -123,53 +112,6 @@ export class WriteFlow implements Write {
         })
     }
 
-    private replay = async <T extends Entity>({
-        session,
-        source,
-        changes
-    }: {
-        session: WriteScope<T>
-        source: 'apply' | 'revert'
-        changes: ReadonlyArray<StoreChange<T>>
-    }): Promise<void> => {
-        const { handle, context, route } = session
-        const storeName = handle.storeName
-        const writeEntries: WriteEntry[] = []
-
-        this.runtime.events.emit.writeStart({
-            storeName,
-            context,
-            source,
-            route,
-            writeEntries
-        })
-
-        try {
-            const replayChanges = adaptReplayChanges(
-                changes,
-                source === 'apply' ? 'forward' : 'backward'
-            )
-            const delta = handle.state.apply(replayChanges)
-
-            this.runtime.events.emit.writeCommitted({
-                storeName,
-                context,
-                route,
-                writeEntries,
-                changes: delta?.changes ?? []
-            })
-        } catch (error) {
-            this.runtime.events.emit.writeFailed({
-                storeName,
-                context,
-                route,
-                writeEntries,
-                error
-            })
-            throw error
-        }
-    }
-
     private runIntent = async <T extends Entity>(
         session: WriteScope<T>,
         intent: IntentCommand<T>
@@ -245,32 +187,6 @@ export class WriteFlow implements Write {
             items: ids,
             options,
             runner: (id) => this.runIntent(session, { action: 'delete', options, id }).then(() => undefined)
-        })
-    }
-
-    apply = async <T extends Entity>(
-        handle: StoreHandle<T>,
-        changes: ReadonlyArray<StoreChange<T>>,
-        options?: StoreOperationOptions
-    ): Promise<void> => {
-        const session = createWriteSession(this.runtime, handle, options)
-        await this.replay({
-            session,
-            source: 'apply',
-            changes
-        })
-    }
-
-    revert = async <T extends Entity>(
-        handle: StoreHandle<T>,
-        changes: ReadonlyArray<StoreChange<T>>,
-        options?: StoreOperationOptions
-    ): Promise<void> => {
-        const session = createWriteSession(this.runtime, handle, options)
-        await this.replay({
-            session,
-            source: 'revert',
-            changes
         })
     }
 }

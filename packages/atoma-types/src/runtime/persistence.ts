@@ -48,7 +48,6 @@ export type WriteOptions = {
 
 export type WriteEntry = {
     [A in keyof WriteItemByAction]: {
-        entryId: string
         action: A
         item: WriteItemByAction[A]
         options?: WriteOptions
@@ -65,9 +64,8 @@ export type WriteError = {
 }
 
 export type WriteItemResult =
-    | { entryId: string; ok: true; id: EntityId; version: Version; data?: unknown }
+    | { ok: true; id: EntityId; version: Version; data?: unknown }
     | {
-        entryId: string
         ok: false
         error: WriteError
         current?: { value?: unknown; version?: Version }

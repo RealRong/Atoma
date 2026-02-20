@@ -69,7 +69,6 @@ export type WriteOptions = {
 }
 
 export type WriteEntryBase = {
-    entryId: string
     options?: WriteOptions
 }
 
@@ -147,8 +146,8 @@ export type QueryResultData = {
 }
 
 export type WriteItemResult =
-    | { entryId: string; ok: true; id: EntityId; version: Version; data?: unknown }
-    | { entryId: string; ok: false; error: StandardError; current?: { value?: unknown; version?: Version } }
+    | { ok: true; id: EntityId; version: Version; data?: unknown }
+    | { ok: false; error: StandardError; current?: { value?: unknown; version?: Version } }
 
 export type WriteResultData = {
     transactionApplied?: boolean

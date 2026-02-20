@@ -225,6 +225,12 @@ export function registerBuiltinSources({
                 storeRuntime.markChanged()
                 indexRuntime.markChanged()
             }
+        },
+        change: {
+            onCommitted: () => {
+                storeRuntime.markChanged()
+                indexRuntime.markChanged()
+            }
         }
     })
 

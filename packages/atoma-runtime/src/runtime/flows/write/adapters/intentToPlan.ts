@@ -104,7 +104,6 @@ export async function compileIntentToPlan<T extends Entity>(
     const snapshot = handle.state.snapshot()
     const entries: WriteEntry[] = []
     const optimisticChanges: StoreChange<T>[] = []
-    const createEntryId = input.scope.createEntryId
     const now = runtime.now
 
     if (input.action === 'create') {
@@ -118,7 +117,6 @@ export async function compileIntentToPlan<T extends Entity>(
         const current = snapshot.get(id)
 
         entries.push({
-            entryId: createEntryId(),
             action: 'create',
             item: {
                 id,
@@ -160,7 +158,6 @@ export async function compileIntentToPlan<T extends Entity>(
         const current = snapshot.get(id)
 
         entries.push({
-            entryId: createEntryId(),
             action: 'update',
             item: {
                 id,
@@ -195,7 +192,6 @@ export async function compileIntentToPlan<T extends Entity>(
             : undefined
 
         entries.push({
-            entryId: createEntryId(),
             action: 'upsert',
             item: {
                 id,
@@ -233,7 +229,6 @@ export async function compileIntentToPlan<T extends Entity>(
         return {
             plan: {
                 entries: [{
-                    entryId: createEntryId(),
                     action: 'delete',
                     item: {
                         id,
@@ -263,7 +258,6 @@ export async function compileIntentToPlan<T extends Entity>(
     return {
         plan: {
             entries: [{
-                entryId: createEntryId(),
                 action: 'update',
                 item: {
                     id,

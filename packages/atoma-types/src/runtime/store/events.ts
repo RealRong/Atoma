@@ -6,6 +6,8 @@ export type WriteEventSource =
     | 'update'
     | 'upsert'
     | 'delete'
+
+export type ChangeEventSource =
     | 'apply'
     | 'revert'
 
@@ -42,6 +44,28 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
         writeEntries: ReadonlyArray<WriteEntry>
         error: unknown
     }>
+    changeStart: Readonly<{
+        storeName: StoreToken
+        context: ActionContext
+        source: ChangeEventSource
+        route?: ExecutionRoute
+        changes: ReadonlyArray<StoreChange<T>>
+    }>
+    changeCommitted: Readonly<{
+        storeName: StoreToken
+        context: ActionContext
+        source: ChangeEventSource
+        route?: ExecutionRoute
+        changes: ReadonlyArray<StoreChange<T>>
+    }>
+    changeFailed: Readonly<{
+        storeName: StoreToken
+        context: ActionContext
+        source: ChangeEventSource
+        route?: ExecutionRoute
+        changes: ReadonlyArray<StoreChange<T>>
+        error: unknown
+    }>
     storeCreated: Readonly<{
         storeName: StoreToken
     }>
@@ -66,6 +90,11 @@ export type StoreEvents = Readonly<{
         onStart?: StoreEventHandlers['writeStart']
         onCommitted?: StoreEventHandlers['writeCommitted']
         onFailed?: StoreEventHandlers['writeFailed']
+    }>
+    change?: Readonly<{
+        onStart?: StoreEventHandlers['changeStart']
+        onCommitted?: StoreEventHandlers['changeCommitted']
+        onFailed?: StoreEventHandlers['changeFailed']
     }>
     store?: Readonly<{
         onCreated?: StoreEventHandlers['storeCreated']

@@ -23,7 +23,6 @@ export type WriteScope<T extends Entity> = Readonly<{
     context: ActionContext
     route?: ExecutionRoute
     signal?: AbortSignal
-    createEntryId: () => string
 }>
 
 export type WritePlan<T extends Entity> = Readonly<{

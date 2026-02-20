@@ -264,6 +264,42 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                         })
                         releaseWriteContext(context.id)
                     }
+                },
+                change: {
+                    onStart: <T extends Entity>(args: StoreEventPayloadMap<T>['changeStart']) => {
+                        const { storeName, context, source } = args
+                        const entry = getWriteContext(String(storeName), context.id)
+                        entry.ctx.emit(`${prefix}:change:start`, {
+                            storeName: entry.storeName,
+                            id: context.id,
+                            origin: context.origin,
+                            scope: context.scope,
+                            source,
+                            changeCount: Array.isArray(args.changes) ? args.changes.length : 0
+                        })
+                    },
+                    onCommitted: <T extends Entity>(args: StoreEventPayloadMap<T>['changeCommitted']) => {
+                        const { storeName, context, source } = args
+                        const entry = getWriteContext(String(storeName), context.id)
+                        entry.ctx.emit(`${prefix}:change:finish`, {
+                            storeName: entry.storeName,
+                            id: context.id,
+                            source,
+                            changeCount: Array.isArray(args.changes) ? args.changes.length : 0
+                        })
+                        releaseWriteContext(context.id)
+                    },
+                    onFailed: <T extends Entity>(args: StoreEventPayloadMap<T>['changeFailed']) => {
+                        const { storeName, context, source, error } = args
+                        const entry = getWriteContext(String(storeName), context.id)
+                        entry.ctx.emit(`${prefix}:change:failed`, {
+                            storeName: entry.storeName,
+                            id: context.id,
+                            source,
+                            message: error instanceof Error ? error.message : String(error)
+                        })
+                        releaseWriteContext(context.id)
+                    }
                 }
             })
 

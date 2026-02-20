@@ -67,13 +67,8 @@ function extractWriteItemMeta(raw: any): { idempotencyKey?: string; timestamp?: 
     return { idempotencyKey, timestamp }
 }
 
-function toEntryId(raw: unknown, index: number): string {
-    return (typeof raw === 'string' && raw) ? raw : String(index)
-}
-
-function toOkItemResult(entryId: string, res: any) {
+function toOkItemResult(res: any) {
     return {
-        entryId,
         ok: true,
         id: res.replay.id,
         version: res.replay.serverVersion,
@@ -81,11 +76,10 @@ function toOkItemResult(entryId: string, res: any) {
     }
 }
 
-function toFailItemResult(entryId: string, res: any, trace: TraceMeta) {
+function toFailItemResult(res: any, trace: TraceMeta) {
     const currentValue = res.replay.currentValue
     const currentVersion = res.replay.currentVersion
     return {
-        entryId,
         ok: false,
         error: withErrorTrace(res.error, trace),
         ...(currentValue !== undefined || currentVersion !== undefined
@@ -94,9 +88,8 @@ function toFailItemResult(entryId: string, res: any, trace: TraceMeta) {
     }
 }
 
-function toUnhandledItemError(entryId: string, err: unknown, trace: TraceMeta) {
+function toUnhandledItemError(err: unknown, trace: TraceMeta) {
     return {
-        entryId,
         ok: false,
         error: withErrorTrace(toStandardError(err, 'WRITE_FAILED'), trace)
     }
@@ -130,13 +123,11 @@ export async function executeWriteOps<Ctx>(args: {
             throw new Error('Mixed write actions in one op are not supported')
         }
         const items = entries.map(entry => entry.item)
-        const entryIds = entries.map((entry, index) => toEntryId((entry as any)?.entryId, index))
         const firstOptions = entries.length ? ((entries[0] as any)?.options) : undefined
         if (entries.some(entry => JSON.stringify((entry as any)?.options ?? null) !== JSON.stringify(firstOptions ?? null))) {
             throw new Error('Mixed write options in one op are not supported')
         }
         const writeOptions = firstOptions
-        const entryIdAt = (index: number): string => entryIds[index] ?? String(index)
 
         const pluginResult = await args.runOpPlugins({
             opId: op.opId,
@@ -206,7 +197,7 @@ export async function executeWriteOps<Ctx>(args: {
                                 idempotencyKey,
                                 error: standard
                             })
-                            return toFailItemResult(entryIdAt(index), res, opTrace)
+                            return toFailItemResult(res, opTrace)
                         }
                     }
 
@@ -259,8 +250,8 @@ export async function executeWriteOps<Ctx>(args: {
                         })()
                     })
 
-                    if (res.ok) return toOkItemResult(entryIdAt(index), res)
-                    return toFailItemResult(entryIdAt(index), res, opTrace)
+                    if (res.ok) return toOkItemResult(res)
+                    return toFailItemResult(res, opTrace)
                 } catch (err) {
                     args.pluginRuntime.logger?.error?.('write item threw', {
                         opId: opTrace.opId,
@@ -275,7 +266,7 @@ export async function executeWriteOps<Ctx>(args: {
                         idempotencyKey,
                         error: serializeErrorForLog(err)
                     })
-                    return toUnhandledItemError(entryIdAt(index), err, opTrace)
+                    return toUnhandledItemError(err, opTrace)
                 }
             }
 
@@ -302,7 +293,7 @@ export async function executeWriteOps<Ctx>(args: {
                         try {
                             fallback[i] = await args.adapter.transaction(async (tx) => executeSingleInContext({ orm: tx.orm, tx: tx.tx }, i))
                         } catch (err) {
-                            fallback[i] = toUnhandledItemError(entryIdAt(i), err, opTrace)
+                            fallback[i] = toUnhandledItemError(err, opTrace)
                         }
                     }
                     return fallback

@@ -1,7 +1,7 @@
 /**
- * Runtime: Unified entrypoint for read/write flows.
+ * Runtime: Unified entrypoint for read/write/change flows.
  * - Owns all subsystems (execution, transform, stores).
- * - Exposes runtime.read/runtime.write as the only flow entrypoints.
+ * - Exposes runtime.read/runtime.write/runtime.changes flow entrypoints.
  */
 import type { Entity, StoreDataProcessor } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
@@ -15,6 +15,7 @@ import type {
     Schema,
     Transform,
     Write,
+    Changes,
     StoreCatalog
 } from 'atoma-types/runtime'
 import { TransformPipeline } from './transform/TransformPipeline'
@@ -23,6 +24,7 @@ import { StoreEventRegistry } from './registry/StoreEventRegistry'
 import { ExecutionKernel } from '../execution/ExecutionKernel'
 import { ReadFlow } from './flows/ReadFlow'
 import { WriteFlow } from './flows/WriteFlow'
+import { ChangeFlow } from './flows/ChangeFlow'
 import { Engine } from '../engine'
 import { Probe } from './debug/Probe'
 
@@ -50,6 +52,7 @@ export class Runtime implements RuntimeType {
     readonly stores: StoreCatalog
     readonly read: Read
     readonly write: Write
+    readonly changes: Changes
     readonly events: StoreEventRegistryType
     readonly engine: EngineType
     readonly debug: Debug
@@ -69,5 +72,6 @@ export class Runtime implements RuntimeType {
         this.debug = new Probe(this)
         this.read = new ReadFlow(this)
         this.write = new WriteFlow(this)
+        this.changes = new ChangeFlow(this)
     }
 }

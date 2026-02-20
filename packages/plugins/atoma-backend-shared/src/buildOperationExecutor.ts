@@ -215,7 +215,6 @@ async function executeOperationWrite<T extends Entity>(args: {
             if (!result.ok) {
                 for (const value of group.entries) {
                     orderedResults[value.index] = {
-                        entryId: value.entry.entryId,
                         ok: false,
                         error: result.error
                     }
@@ -224,8 +223,7 @@ async function executeOperationWrite<T extends Entity>(args: {
             }
 
             const parsed = assertWriteResultData(result.data, {
-                expectedLength: group.entries.length,
-                expectedEntryIds: group.entries.map((value) => value.entry.entryId)
+                expectedLength: group.entries.length
             })
             for (let itemIndex = 0; itemIndex < group.entries.length; itemIndex++) {
                 const value = group.entries[itemIndex]

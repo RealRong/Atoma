@@ -71,13 +71,11 @@ function rollbackOptimistic<T extends Entity>(request: WriteCommitRequest<T>, op
 async function resolveResult<T extends Entity>({
     request,
     entries,
-    results,
-    primaryEntryId
+    results
 }: {
     request: WriteCommitRequest<T>
     entries: ReadonlyArray<WriteEntry>
     results: ReadonlyArray<WriteItemResult>
-    primaryEntryId?: string
 }): Promise<{ writeback?: StoreWritebackArgs<T>; output?: T }> {
     if (!entries.length) return {}
     if (results.length !== entries.length) {
@@ -87,17 +85,13 @@ async function resolveResult<T extends Entity>({
     const upserts: T[] = []
     const versionUpdates: Array<{ id: EntityId; version: number }> = []
     let output: T | undefined
+    const hasSingleEntry = entries.length === 1
 
     for (let index = 0; index < entries.length; index++) {
         const entry = entries[index]
         const itemResult = results[index]
         if (!itemResult) {
             throw new Error(`[Atoma] missing write item result at index=${index}`)
-        }
-        if (itemResult.entryId !== entry.entryId) {
-            throw new Error(
-                `[Atoma] write item result entryId mismatch at index=${index} expected=${entry.entryId} actual=${String(itemResult.entryId)}`
-            )
         }
 
         if (!itemResult.ok) throw toWriteItemError(entry.action, itemResult)
@@ -115,7 +109,7 @@ async function resolveResult<T extends Entity>({
         if (!normalized) continue
 
         upserts.push(normalized)
-        if (!output && primaryEntryId && entry.entryId === primaryEntryId) {
+        if (!output && hasSingleEntry && index === 0) {
             output = normalized
         }
     }
@@ -166,7 +160,6 @@ export async function commitWrite<T extends Entity>(request: WriteCommitRequest<
         plan,
         consistency
     })
-    const primaryEntryId = writeEntries.length === 1 ? writeEntries[0]?.entryId : undefined
 
     try {
         let transactionOutput: T | undefined
@@ -184,8 +177,7 @@ export async function commitWrite<T extends Entity>(request: WriteCommitRequest<
                 : await resolveResult({
                     request,
                     entries: writeEntries,
-                    results: writeResult.results,
-                    primaryEntryId
+                    results: writeResult.results
                 })
 
             transactionOutput = resolved.output

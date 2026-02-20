@@ -61,26 +61,20 @@ function assertWriteItemResult(value: unknown): WriteItemResult {
     const detailsFor = makeValidationDetails('writeResult')
     if (!isObject(value)) throw invalid('INVALID_RESPONSE', 'Invalid write item result', detailsFor())
 
-    const entryId = requireString(value, 'entryId', {
-        code: 'INVALID_RESPONSE',
-        message: 'Invalid write item result (missing entryId)',
-        details: detailsFor('entryId')
-    })
-
     const ok = (value as any).ok
     if (ok !== true && ok !== false) {
-        throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing ok)', detailsFor('ok', { entryId }))
+        throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing ok)', detailsFor('ok'))
     }
 
     if (ok === true) {
         const id = (value as any).id
         if (typeof id !== 'string' || !id) {
-            throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing id)', detailsFor('id', { entryId }))
+            throw invalid('INVALID_RESPONSE', 'Invalid write item result (missing id)', detailsFor('id'))
         }
         assertPositiveVersion((value as any).version, {
             code: 'INVALID_RESPONSE',
             message: 'Invalid write item result (missing version)',
-            details: detailsFor('version', { entryId })
+            details: detailsFor('version')
         })
         return value as unknown as WriteItemResult
     }
@@ -88,13 +82,13 @@ function assertWriteItemResult(value: unknown): WriteItemResult {
     assertStandardError((value as any).error, { part: 'writeResult', field: 'error' })
     const current = (value as any).current
     if (current !== undefined) {
-        if (!isObject(current)) throw invalid('INVALID_RESPONSE', 'Invalid write item result (invalid current)', detailsFor('current', { entryId }))
+        if (!isObject(current)) throw invalid('INVALID_RESPONSE', 'Invalid write item result (invalid current)', detailsFor('current'))
         const currentVersion = (current as any).version
         if (currentVersion !== undefined && currentVersion !== null) {
             assertPositiveVersion(currentVersion, {
                 code: 'INVALID_RESPONSE',
                 message: 'Invalid write item result (invalid current.version)',
-                details: detailsFor('current.version', { entryId })
+                details: detailsFor('current.version')
             })
         }
     }
@@ -105,7 +99,6 @@ export function assertWriteResultData(
     value: unknown,
     options?: Readonly<{
         expectedLength?: number
-        expectedEntryIds?: ReadonlyArray<string>
     }>
 ): WriteResultData {
     const detailsFor = makeValidationDetails('writeResult')
@@ -114,16 +107,8 @@ export function assertWriteResultData(
     if (!Array.isArray(results)) {
         throw invalid('INVALID_RESPONSE', 'Invalid write result data (missing results)', detailsFor('results'))
     }
-    results.forEach((r, index) => {
-        const item = assertWriteItemResult(r)
-        const expectedEntryId = options?.expectedEntryIds?.[index]
-        if (expectedEntryId !== undefined && item.entryId !== expectedEntryId) {
-            throw invalid(
-                'INVALID_RESPONSE',
-                'Invalid write result data (entryId mismatch)',
-                detailsFor(`results[${index}].entryId`, { expectedEntryId, actualEntryId: item.entryId })
-            )
-        }
+    results.forEach((r) => {
+        assertWriteItemResult(r)
     })
     if (typeof options?.expectedLength === 'number' && results.length !== options.expectedLength) {
         throw invalid(

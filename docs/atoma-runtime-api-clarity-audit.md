@@ -67,7 +67,7 @@
 
 落地结果：
 - `Runtime` 公共类型删除 `nextOpId` 字段，避免暴露 `q/w` 前缀细节。
-- 写入 `entryId` 生成收敛到 `WriteFlow` 内部，使用统一 ID 工具生成。
+- 写链路不再生成 `entryId`；结果严格按 entries 的 index 对齐。
 
 ## 建议落地顺序
 

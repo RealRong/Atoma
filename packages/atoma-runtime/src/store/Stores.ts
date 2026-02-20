@@ -71,13 +71,13 @@ export class Stores implements StoreCatalog {
                 changes: ReadonlyArray<StoreChange<Entity>>,
                 options?: StoreOperationOptions
             ) => {
-                await this.runtime.write.apply(handle, changes, options)
+                await this.runtime.changes.apply(handle, changes, options)
             },
             revert: async (
                 changes: ReadonlyArray<StoreChange<Entity>>,
                 options?: StoreOperationOptions
             ) => {
-                await this.runtime.write.revert(handle, changes, options)
+                await this.runtime.changes.revert(handle, changes, options)
             },
             writeback: async (
                 writeback: StoreWritebackArgs<Entity>,

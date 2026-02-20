@@ -43,7 +43,6 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
 
     if (entry.action === 'create') {
         return {
-            entryId: entry.entryId,
             action: 'create',
             item: {
                 ...(entry.item.id ? { id: entry.item.id } : {}),
@@ -56,7 +55,6 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
 
     if (entry.action === 'update') {
         return {
-            entryId: entry.entryId,
             action: 'update',
             item: {
                 id: entry.item.id,
@@ -70,7 +68,6 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
 
     if (entry.action === 'upsert') {
         return {
-            entryId: entry.entryId,
             action: 'upsert',
             item: {
                 id: entry.item.id,
@@ -83,7 +80,6 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
     }
 
     return {
-        entryId: entry.entryId,
         action: 'delete',
         item: {
             id: entry.item.id,
@@ -118,7 +114,6 @@ function toWriteError(error: unknown, fallbackMessage = 'Write failed'): WriteEr
 function toWriteItemResult(itemResult: ProtocolWriteItemResult): WriteItemResult {
     if (itemResult.ok) {
         return {
-            entryId: itemResult.entryId,
             ok: true,
             id: itemResult.id,
             version: itemResult.version,
@@ -127,7 +122,6 @@ function toWriteItemResult(itemResult: ProtocolWriteItemResult): WriteItemResult
     }
 
     return {
-        entryId: itemResult.entryId,
         ok: false,
         error: toWriteError(itemResult.error),
         ...(itemResult.current
@@ -193,7 +187,6 @@ export function createOperationSyncDriver(args: {
                     outcomes[i] = {
                         kind: 'reject',
                         result: {
-                            entryId: typeof entry?.entryId === 'string' && entry.entryId ? entry.entryId : `invalid-${i}`,
                             ok: false,
                             error: { code: 'WRITE_FAILED', message: 'Invalid outbox entry', kind: 'internal' as const }
                         }
@@ -251,11 +244,9 @@ export function createOperationSyncDriver(args: {
 
                 if (!result) {
                     for (const e of group.entries) {
-                        const entryId = (e.entry.entry as any)?.entryId
                         outcomes[e.index] = {
                             kind: 'reject',
                             result: {
-                                entryId: typeof entryId === 'string' && entryId ? entryId : 'missing',
                                 ok: false,
                                 error: toWriteError(
                                     { code: 'WRITE_FAILED', message: 'Missing write result', kind: 'internal' },
@@ -271,13 +262,11 @@ export function createOperationSyncDriver(args: {
                     const payload = (result as any).error ?? result
                     const retryable = isRetryableOperationError(payload)
                     for (const e of group.entries) {
-                        const entryId = (e.entry.entry as any)?.entryId
                         outcomes[e.index] = retryable
                             ? { kind: 'retry', error: payload }
                             : {
                                 kind: 'reject',
                                 result: {
-                                    entryId: typeof entryId === 'string' && entryId ? entryId : 'failed',
                                     ok: false,
                                     error: toWriteError(payload)
                                 } as any
@@ -289,8 +278,7 @@ export function createOperationSyncDriver(args: {
                 let data: WriteResultData
                 try {
                     data = assertWriteResultData((result as any).data, {
-                        expectedLength: group.entries.length,
-                        expectedEntryIds: group.entries.map((value) => String(value.entry.entry.entryId))
+                        expectedLength: group.entries.length
                     }) as WriteResultData
                 } catch (error) {
                     for (const e of group.entries) {
@@ -302,13 +290,11 @@ export function createOperationSyncDriver(args: {
                 const itemResults = Array.isArray((data as any)?.results) ? (data as any).results : []
                 for (let itemIndex = 0; itemIndex < group.entries.length; itemIndex++) {
                     const mapped = group.entries[itemIndex]
-                    const entryId = (mapped.entry.entry as any)?.entryId
                     const itemResult = itemResults[itemIndex]
                     if (!itemResult) {
                         outcomes[mapped.index] = {
                             kind: 'reject',
                             result: {
-                                entryId: (typeof entryId === 'string' && entryId) ? entryId : 'missing',
                                 ok: false,
                                 error: toWriteError(
                                     { code: 'WRITE_FAILED', message: 'Missing write item result', kind: 'internal' },
@@ -331,7 +317,6 @@ export function createOperationSyncDriver(args: {
                     outcomes[i] = {
                         kind: 'reject',
                         result: {
-                            entryId: `missing-${i}`,
                             ok: false,
                             error: toWriteError(
                                 { code: 'WRITE_FAILED', message: 'Missing write outcome', kind: 'internal' },
