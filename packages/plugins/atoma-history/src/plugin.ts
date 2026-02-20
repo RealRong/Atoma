@@ -1,6 +1,6 @@
 import type { AtomaHistory } from 'atoma-types/client'
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import type { ChangeDirection, Entity, ActionContext, StoreChange } from 'atoma-types/core'
+import type { Entity, ActionContext, StoreChange } from 'atoma-types/core'
 import type { CommandResult, Source, StreamEvent } from 'atoma-types/devtools'
 import { HUB_TOKEN } from 'atoma-types/devtools'
 import { HistoryManager } from './history-manager'
@@ -50,13 +50,20 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
             const apply = async (args: {
                 storeName: string
                 changes: ReadonlyArray<StoreChange<Entity>>
-                direction: ChangeDirection
+                mode: 'apply' | 'revert'
                 context: ActionContext
             }) => {
-                await ctx.runtime.stores.applyChanges(
+                if (args.mode === 'revert') {
+                    await ctx.runtime.stores.revert(
+                        args.storeName,
+                        args.changes,
+                        { context: args.context }
+                    )
+                    return
+                }
+                await ctx.runtime.stores.apply(
                     args.storeName,
                     args.changes,
-                    args.direction,
                     { context: args.context }
                 )
             }

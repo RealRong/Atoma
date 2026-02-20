@@ -1,5 +1,4 @@
 import type {
-    ChangeDirection,
     Entity,
     Query,
     QueryResult,
@@ -51,26 +50,36 @@ export class PluginContext implements PluginContextType {
                         query
                     }) as QueryResult<T>
                 },
-                applyChanges: async <T extends Entity>(
+                apply: async <T extends Entity>(
                     storeName: StoreToken,
                     changes: ReadonlyArray<StoreChange<T>>,
-                    direction: ChangeDirection,
                     options?: StoreActionOptions
                 ) => {
-                    const handle = runtime.stores.ensureHandle(storeName, 'plugin.runtime.stores.applyChanges')
-                    await runtime.write.applyChanges(
+                    const handle = runtime.stores.ensureHandle(storeName, 'plugin.runtime.stores.apply')
+                    await runtime.write.apply(
                         handle,
                         changes,
-                        direction,
                         options
                     )
                 },
-                applyWriteback: async <T extends Entity>(
+                revert: async <T extends Entity>(
+                    storeName: StoreToken,
+                    changes: ReadonlyArray<StoreChange<T>>,
+                    options?: StoreActionOptions
+                ) => {
+                    const handle = runtime.stores.ensureHandle(storeName, 'plugin.runtime.stores.revert')
+                    await runtime.write.revert(
+                        handle,
+                        changes,
+                        options
+                    )
+                },
+                writeback: async <T extends Entity>(
                     storeName: StoreToken,
                     data: WritebackData<T>,
                     options?: StoreActionOptions
                 ) => {
-                    const handle = runtime.stores.ensureHandle(storeName, 'plugin.runtime.stores.applyWriteback')
+                    const handle = runtime.stores.ensureHandle(storeName, 'plugin.runtime.stores.writeback')
                     const context = options?.context
                         ? runtime.engine.action.createContext(options.context)
                         : undefined

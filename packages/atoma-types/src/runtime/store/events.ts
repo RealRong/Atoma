@@ -7,7 +7,8 @@ export type WriteEventSource =
     | 'update'
     | 'upsert'
     | 'delete'
-    | 'applyChanges'
+    | 'apply'
+    | 'revert'
 
 export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
     readStart: Readonly<{

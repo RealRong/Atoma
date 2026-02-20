@@ -1,5 +1,4 @@
 import type {
-    ChangeDirection,
     Entity,
     ActionContext,
     PartialWithId,
@@ -125,10 +124,15 @@ export class WriteFlow implements Write {
     }): Promise<T | void> => {
         const adapted = input.kind === 'intent'
             ? await adaptIntentToChanges(this.runtime, input)
-            : { changes: input.changes }
+            : {
+                changes: adaptReplayChanges(
+                    input.changes,
+                    input.source === 'apply' ? 'forward' : 'backward'
+                )
+            }
         const source: WriteEventSource = input.kind === 'intent'
             ? input.action
-            : 'applyChanges'
+            : input.source
 
         const plan = await buildPlan({
             runtime: this.runtime,
@@ -229,10 +233,9 @@ export class WriteFlow implements Write {
         })
     }
 
-    applyChanges = async <T extends Entity>(
+    apply = async <T extends Entity>(
         handle: StoreHandle<T>,
         changes: ReadonlyArray<StoreChange<T>>,
-        direction: ChangeDirection,
         options?: StoreOperationOptions
     ): Promise<void> => {
         const session = createWriteSession(this.runtime, handle, options)
@@ -241,7 +244,25 @@ export class WriteFlow implements Write {
             input: {
                 kind: 'change-replay',
                 options,
-                changes: adaptReplayChanges(changes, direction)
+                source: 'apply',
+                changes
+            }
+        })
+    }
+
+    revert = async <T extends Entity>(
+        handle: StoreHandle<T>,
+        changes: ReadonlyArray<StoreChange<T>>,
+        options?: StoreOperationOptions
+    ): Promise<void> => {
+        const session = createWriteSession(this.runtime, handle, options)
+        await this.runInput({
+            session,
+            input: {
+                kind: 'change-replay',
+                options,
+                source: 'revert',
+                changes
             }
         })
     }

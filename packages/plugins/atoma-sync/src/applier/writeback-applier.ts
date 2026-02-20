@@ -42,7 +42,7 @@ export class WritebackApplier implements SyncApplier {
                 ).data.filter((i: any): i is any => i !== undefined)
                 : []
 
-            await this.deps.runtime.stores.applyWriteback(resource as any, {
+            await this.deps.runtime.stores.writeback(resource as any, {
                 upserts: upsertsRaw,
                 deletes: uniqueDeleteKeys
             } as any)
@@ -64,7 +64,7 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(serverData)
         }
 
-        await this.deps.runtime.stores.applyWriteback(ack.resource as any, {
+        await this.deps.runtime.stores.writeback(ack.resource as any, {
             upserts,
             deletes,
             versionUpdates
@@ -93,7 +93,7 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(current.value)
         }
 
-        await this.deps.runtime.stores.applyWriteback(reject.resource as any, {
+        await this.deps.runtime.stores.writeback(reject.resource as any, {
             upserts,
             deletes
         } as any)

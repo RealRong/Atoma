@@ -1,5 +1,4 @@
 import type {
-    ChangeDirection,
     Entity,
     PartialWithId,
     StoreChange,
@@ -45,10 +44,14 @@ export type Write = Readonly<{
         ids: EntityId[],
         options?: StoreOperationOptions
     ) => Promise<WriteManyResult<void>>
-    applyChanges: <T extends Entity>(
+    apply: <T extends Entity>(
         handle: StoreHandle<T>,
         changes: ReadonlyArray<StoreChange<T>>,
-        direction: ChangeDirection,
+        options?: StoreOperationOptions
+    ) => Promise<void>
+    revert: <T extends Entity>(
+        handle: StoreHandle<T>,
+        changes: ReadonlyArray<StoreChange<T>>,
         options?: StoreOperationOptions
     ) => Promise<void>
 }>

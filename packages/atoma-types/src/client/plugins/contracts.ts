@@ -1,5 +1,4 @@
 import type {
-    ChangeDirection,
     ActionContext,
     Entity,
     Query,
@@ -41,13 +40,17 @@ export type PluginRuntime = Readonly<{
         list: () => StoreToken[]
         ensure: <T extends Entity>(storeName: StoreToken) => Store<T>
         query: <T extends Entity>(storeName: StoreToken, query: Query<T>) => QueryResult<T>
-        applyChanges: <T extends Entity>(
+        apply: <T extends Entity>(
             storeName: StoreToken,
             changes: ReadonlyArray<StoreChange<T>>,
-            direction: ChangeDirection,
             options?: StoreActionOptions
         ) => Promise<void>
-        applyWriteback: <T extends Entity>(
+        revert: <T extends Entity>(
+            storeName: StoreToken,
+            changes: ReadonlyArray<StoreChange<T>>,
+            options?: StoreActionOptions
+        ) => Promise<void>
+        writeback: <T extends Entity>(
             storeName: StoreToken,
             data: WritebackData<T>,
             options?: StoreActionOptions

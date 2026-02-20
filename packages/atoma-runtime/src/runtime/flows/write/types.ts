@@ -81,6 +81,7 @@ export type IntentInputByAction<T extends Entity, A extends IntentAction> = Inte
 
 export type ReplayInput<T extends Entity> = Readonly<{
     kind: 'change-replay'
+    source: 'apply' | 'revert'
     options?: StoreOperationOptions
     changes: ReadonlyArray<StoreChange<T>>
 }>

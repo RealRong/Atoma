@@ -1,4 +1,4 @@
-import type { ChangeDirection, Entity, ActionContext, StoreChange } from 'atoma-types/core'
+import type { Entity, ActionContext, StoreChange } from 'atoma-types/core'
 import type { ActionRecord, ChangeRecord, UndoStack } from './types'
 
 export type HistoryRecordArgs = Readonly<{
@@ -10,7 +10,7 @@ export type HistoryRecordArgs = Readonly<{
 export type HistoryApplyArgs = Readonly<{
     storeName: string
     changes: ReadonlyArray<StoreChange<Entity>>
-    direction: ChangeDirection
+    mode: 'apply' | 'revert'
     context: ActionContext
 }>
 
@@ -71,7 +71,7 @@ export class HistoryManager {
                 await args.apply({
                     storeName: change.storeName,
                     changes: change.changes,
-                    direction: 'backward',
+                    mode: 'revert',
                     context
                 })
             }
@@ -99,7 +99,7 @@ export class HistoryManager {
                 await args.apply({
                     storeName: change.storeName,
                     changes: change.changes,
-                    direction: 'forward',
+                    mode: 'apply',
                     context
                 })
             }
