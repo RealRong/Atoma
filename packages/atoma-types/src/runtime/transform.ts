@@ -11,7 +11,7 @@ export type TransformPipeline = Readonly<{
     process: <T>(
         mode: DataProcessorMode,
         data: T,
-        context: DataProcessorBaseContext<T> & { dataProcessor?: StoreDataProcessor<T> }
+        context: DataProcessorBaseContext & { dataProcessor?: StoreDataProcessor<T> }
     ) => Promise<T | undefined>
     inbound: <T extends Entity>(handle: StoreHandle<T>, data: T, context?: ActionContext) => Promise<T | undefined>
     writeback: <T extends Entity>(handle: StoreHandle<T>, data: T, context?: ActionContext) => Promise<T | undefined>

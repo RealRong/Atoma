@@ -60,6 +60,3 @@ export type DebugEmitMeta = Partial<Pick<TraceContext, 'requestId' | 'opId'>> & 
     parentSpanId?: string
 }
 
-export type EmitFn = (type: string, payload?: unknown, meta?: DebugEmitMeta) => void
-
-

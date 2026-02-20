@@ -2,7 +2,6 @@ import type { PageInfo, Query } from './query'
 import type { Cursor, EntityId, ResourceToken, Version } from './scalars'
 import type { Meta } from './meta'
 import type { StandardError } from './error'
-import type { ChangeBatch } from './changes'
 
 export type RemoteOpKind = 'query' | 'write' | 'changes.pull'
 
@@ -151,11 +150,7 @@ export type WriteItemResult =
     | { entryId: string; ok: true; id: EntityId; version: Version; data?: unknown }
     | { entryId: string; ok: false; error: StandardError; current?: { value?: unknown; version?: Version } }
 
-export type WriteEntryResult = WriteItemResult
-
 export type WriteResultData = {
     transactionApplied?: boolean
     results: WriteItemResult[]
 }
-
-export type ChangesPullResultData = ChangeBatch

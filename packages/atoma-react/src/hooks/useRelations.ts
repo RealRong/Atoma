@@ -11,7 +11,7 @@ import type {
     StoreToken,
     WithRelations
 } from 'atoma-types/core'
-import type { Engine, RelationInclude, StoreMap } from 'atoma-types/runtime'
+import type { RelationEngine, RelationInclude, StoreMap } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/protocol'
 import { STORE_BINDINGS, getStoreBindings } from 'atoma-types/internal'
 import { useShallowStableArray } from './useShallowStableArray'
@@ -76,7 +76,7 @@ export function useRelations<T extends Entity>(
     resolveStore?: (name: StoreToken) => RelationStore | undefined
 ): UseRelationsResult<T> {
     const resolveStoreRef = useRef(resolveStore)
-    const engineRef = useRef<Engine | undefined>(undefined)
+    const relationRef = useRef<RelationEngine | undefined>(undefined)
     const storeStatesCacheRef = useRef<{ live?: StoreStatesCacheEntry; snapshot?: StoreStatesCacheEntry }>({})
     const relationTokensCacheRef = useRef<{ live?: RelationTokensCacheEntry; snapshot?: RelationTokensCacheEntry }>({})
 
@@ -155,8 +155,8 @@ export function useRelations<T extends Entity>(
 
     const relationMap = relations
 
-    const resolveEngine = useCallback((includeArg: RelationInclude): Engine | undefined => {
-        if (engineRef.current) return engineRef.current
+    const resolveRelation = useCallback((includeArg: RelationInclude): RelationEngine | undefined => {
+        if (relationRef.current) return relationRef.current
         if (!includeArg || !relationMap || !resolveStoreRef.current) return undefined
 
         const tokens = collectRelationStoreTokens(includeArg, relationMap)
@@ -164,8 +164,8 @@ export function useRelations<T extends Entity>(
             const store = resolveStoreStable(token)
             if (!store) continue
             const bindings = getStoreBindings(store, 'useRelations')
-            engineRef.current = bindings.engine
-            return bindings.engine
+            relationRef.current = bindings.relation
+            return bindings.relation
         }
 
         return undefined
@@ -234,14 +234,7 @@ export function useRelations<T extends Entity>(
             if (!store) return
 
             const bindings = getStoreBindings(store, 'useRelations')
-            if (!engineRef.current) {
-                engineRef.current = bindings.engine
-            }
-
-            states.set(token, {
-                map: bindings.source.getSnapshot(),
-                indexes: bindings.indexes
-            })
+            states.set(token, bindings.state())
         })
 
         storeStatesCacheRef.current[mode] = { includeKey, liveTick, states }
@@ -251,10 +244,10 @@ export function useRelations<T extends Entity>(
     const project = (source: T[]): T[] => {
         if (!effectiveInclude || !relations || !resolveStoreRef.current || source.length === 0) return source
 
-        const engine = resolveEngine(liveInclude)
-        if (!engine) return source
+        const relation = resolveRelation(liveInclude)
+        if (!relation) return source
 
-        const projectedLive = engine.relation.project(
+        const projectedLive = relation.project(
             source,
             liveInclude,
             relationMap,
@@ -278,10 +271,10 @@ export function useRelations<T extends Entity>(
         clearSnapshot()
         if (!snapshotInclude || !snapshotNames.length || !relations || !resolveStoreRef.current || source.length === 0) return
 
-        const engine = resolveEngine(snapshotInclude)
-        if (!engine) return
+        const relation = resolveRelation(snapshotInclude)
+        if (!relation) return
 
-        const projected = engine.relation.project(
+        const projected = relation.project(
             source,
             snapshotInclude,
             relationMap,
@@ -323,9 +316,9 @@ export function useRelations<T extends Entity>(
             return stableItems
         }
 
-        const engine = resolveEngine(effectiveInclude)
-        if (!engine) {
-            const err = new Error('[Atoma] useRelations: store 缺少 Engine 绑定，无法执行关系预取/投影')
+        const relation = resolveRelation(effectiveInclude)
+        if (!relation) {
+            const err = new Error('[Atoma] useRelations: store 缺少 Relation 绑定，无法执行关系预取/投影')
             setState({ data: stableItems, loading: false, error: err })
             prevIdsRef.current = currentIds
             return stableItems
@@ -370,7 +363,7 @@ export function useRelations<T extends Entity>(
                 }
 
                 const includeArg = { [name]: value } as RelationInclude
-                tasks.push(engine.relation.prefetch(
+                tasks.push(relation.prefetch(
                     itemsForRelation,
                     includeArg,
                     relationMap,
@@ -412,13 +405,12 @@ export function useRelations<T extends Entity>(
 
         void run()
         return () => { cancelled = true }
-    }, [stableItems, includeKey, relations, resolveStoreStable, resolveEngine])
+    }, [stableItems, includeKey, relations, resolveStoreStable, resolveRelation])
 
     useEffect(() => {
         if (!liveInclude || !relations || !resolveStoreRef.current) return
 
-        const engine = resolveEngine(liveInclude)
-        if (!engine) return
+        if (!resolveRelation(liveInclude)) return
         const tokens = collectRelationTokens(liveInclude, 'live')
 
         if (!tokens.length) return
@@ -436,11 +428,11 @@ export function useRelations<T extends Entity>(
         return () => {
             unsubscribers.forEach(unsubscribe => unsubscribe())
         }
-    }, [includeKey, liveInclude, relations, resolveEngine, resolveStoreStable])
+    }, [includeKey, liveInclude, relations, resolveRelation, resolveStoreStable])
 
     useEffect(() => {
         patchState({ data: project(stableItems) })
-    }, [stableItems, includeKey, relations, resolveStoreStable, resolveEngine, liveTick])
+    }, [stableItems, includeKey, relations, resolveStoreStable, resolveRelation, liveTick])
 
     const refetch = () => prefetchAndProject({ force: true })
 

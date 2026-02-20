@@ -27,8 +27,6 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
 ): StoreQueryResult<T> {
     const map = useStoreSnapshot(store, 'useStoreQuery')
     const bindings = getStoreBindings(store, 'useStoreQuery')
-    const indexes = bindings.indexes
-    const engine = bindings.engine
 
     const query = stripResult(options)
     const queryKey = useMemo(() => stableStringify(query), [query])
@@ -41,23 +39,14 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
                 data: source
             }
         }
-
-        const queryState = {
-            snapshot: () => map,
-            indexes
-        }
-
-        const result = engine.query.evaluate({
-            state: queryState,
-            query
-        })
+        const result = bindings.query(query)
 
         const data = result.data as T[]
         return {
             ids: data.map(item => item.id) as Array<T['id']>,
             data
         }
-    }, [engine, indexes, map, queryKey])
+    }, [bindings, map, queryKey])
 }
 
 export function useStoreQuery<T extends Entity, Relations = {}>(

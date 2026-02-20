@@ -28,9 +28,7 @@ export type {
     RemoteOpsResponseData,
     QueryResultData,
     WriteItemResult,
-    WriteEntryResult,
-    WriteResultData,
-    ChangesPullResultData
+    WriteResultData
 } from './operation'
 
 export type { NotifyMessage } from './notify'

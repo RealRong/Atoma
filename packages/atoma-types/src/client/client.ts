@@ -1,9 +1,6 @@
 import type { Entity, Store } from '../core'
-import type { Runtime } from '../runtime'
 import type { InferRelationsFromSchema } from './relations'
 import type { AtomaSchema } from './schema'
-
-export type ClientRuntime = Runtime
 
 export interface PluginCapableClient {
     dispose: () => void

@@ -8,7 +8,6 @@ import type {
     WriteEntry,
     WriteItemResult,
     WriteOutput,
-    StoreHandle,
     WriteConsistency
 } from 'atoma-types/runtime'
 import type { EntityId } from 'atoma-types/shared'
@@ -50,14 +49,15 @@ function toOptimisticChanges<T extends Entity>(plan: WritePlan<T>): StoreChange<
 }
 
 function applyOptimistic<T extends Entity>({
-    handle,
+    request,
     plan,
     consistency
 }: {
-    handle: StoreHandle<T>
+    request: WriteCommitRequest<T>
     plan: WritePlan<T>
     consistency: WriteConsistency
 }): OptimisticState<T> {
+    const handle = request.scope.handle
     const before = handle.state.snapshot() as Map<EntityId, T>
     if (consistency.commit !== 'optimistic' || !plan.length) {
         return createEmptyOptimisticState(before)
@@ -81,9 +81,9 @@ function applyOptimistic<T extends Entity>({
     }
 }
 
-function rollbackOptimistic<T extends Entity>(handle: StoreHandle<T>, optimisticState: OptimisticState<T>) {
+function rollbackOptimistic<T extends Entity>(request: WriteCommitRequest<T>, optimisticState: OptimisticState<T>) {
     if (!optimisticState.changes.length) return
-    handle.state.apply(invertChanges(optimisticState.changes))
+    request.scope.handle.state.apply(invertChanges(optimisticState.changes))
 }
 
 async function resolveResult<T extends Entity>({
@@ -136,7 +136,7 @@ async function resolveResult<T extends Entity>({
 
         if (!shouldApplyReturnedData(entry) || !itemResult.data || typeof itemResult.data !== 'object') continue
 
-        const normalized = await request.runtime.transform.writeback(request.handle, itemResult.data as T)
+        const normalized = await request.runtime.transform.writeback(request.scope.handle, itemResult.data as T)
         if (!normalized) continue
 
         upserts.push(normalized)
@@ -180,13 +180,14 @@ function ensureWriteResultStatus(writeResult: WriteOutput) {
 }
 
 export async function commitWrite<T extends Entity>(request: WriteCommitRequest<T>): Promise<WriteCommitResult<T>> {
-    const { runtime, handle, context, plan } = request
-    const executionOptions: ExecutionOptions | undefined = (request.route ?? request.signal)
-        ? { route: request.route, signal: request.signal }
+    const { runtime, scope, plan } = request
+    const { handle, context, route, signal } = scope
+    const executionOptions: ExecutionOptions | undefined = (route ?? signal)
+        ? { route, signal }
         : undefined
     const consistency = runtime.execution.resolveConsistency(handle, executionOptions)
     const optimisticState = applyOptimistic({
-        handle,
+        request,
         plan,
         consistency
     })
@@ -222,7 +223,7 @@ export async function commitWrite<T extends Entity>(request: WriteCommitRequest<
             ...(transactionOutput !== undefined ? { output: transactionOutput } : {})
         }
     } catch (error) {
-        rollbackOptimistic(handle, optimisticState)
+        rollbackOptimistic(request, optimisticState)
         throw error
     }
 }

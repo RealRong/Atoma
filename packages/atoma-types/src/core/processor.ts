@@ -23,14 +23,14 @@ export type DataProcessorMode = 'inbound' | 'writeback' | 'outbound'
 
 export type DataProcessorStage = 'deserialize' | 'normalize' | 'transform' | 'validate' | 'sanitize' | 'serialize'
 
-export type DataProcessorBaseContext<T> = Readonly<{
+export type DataProcessorBaseContext = Readonly<{
     storeName: StoreToken
     runtime: unknown
     context?: ActionContext
     adapter?: unknown
 }>
 
-export type DataProcessorContext<T> = DataProcessorBaseContext<T> & Readonly<{
+export type DataProcessorContext<T> = DataProcessorBaseContext & Readonly<{
     mode: DataProcessorMode
     stage: DataProcessorStage
 }>

@@ -26,13 +26,14 @@ export class ReadFlow implements Read {
         run: () => Promise<QueryResult<T>>
     }): Promise<QueryResult<T>> => {
         const startedAt = this.runtime.now()
+        const storeName = handle.storeName
         this.runtime.events.emit.readStart({
-            handle,
+            storeName,
             query
         })
         const result = await run()
         this.runtime.events.emit.readFinish({
-            handle,
+            storeName,
             query,
             result,
             durationMs: this.runtime.now() - startedAt

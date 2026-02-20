@@ -34,15 +34,14 @@ export class WritebackApplier implements SyncApplier {
             const uniqueDeleteKeys = Array.from(new Set(deleteKeys))
 
             const upsertsRaw = uniqueUpsertKeys.length
-                ? this.deps.runtime.stores.query<any>(
-                    resource as any,
+                ? this.deps.runtime.stores.use<any>(resource as any).query(
                     {
                         filter: { op: 'in', field: 'id', values: uniqueUpsertKeys }
                     }
                 ).data.filter((i: any): i is any => i !== undefined)
                 : []
 
-            await this.deps.runtime.stores.writeback(resource as any, {
+            await this.deps.runtime.stores.use(resource as any).writeback({
                 upserts: upsertsRaw,
                 deletes: uniqueDeleteKeys
             } as any)
@@ -64,7 +63,7 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(serverData)
         }
 
-        await this.deps.runtime.stores.writeback(ack.resource as any, {
+        await this.deps.runtime.stores.use(ack.resource as any).writeback({
             upserts,
             deletes,
             versionUpdates
@@ -93,7 +92,7 @@ export class WritebackApplier implements SyncApplier {
             upserts.push(current.value)
         }
 
-        await this.deps.runtime.stores.writeback(reject.resource as any, {
+        await this.deps.runtime.stores.use(reject.resource as any).writeback({
             upserts,
             deletes
         } as any)

@@ -36,7 +36,7 @@ export function useOne<T extends Entity, Relations = {}, const Include extends R
         base ? [base] : [],
         options.include,
         relations as Relations,
-        (name) => bindings.ensureStore(name)
+        (name) => bindings.useStore(name)
     )
     return rel.data[0] as unknown as Result
 }

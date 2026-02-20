@@ -13,7 +13,6 @@ export type {
     SyncPushOutcome,
     SyncApplier,
     NotifyMessage,
-    SyncSubscribe,
     SyncTransport,
     SyncSubscribeTransport,
 } from './transport'

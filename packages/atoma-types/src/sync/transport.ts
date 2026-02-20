@@ -43,13 +43,6 @@ export interface SyncApplier {
     }) => Promise<void> | void
 }
 
-export type SyncSubscribe = (args: {
-    resources?: ResourceToken[]
-    onMessage: (msg: NotifyMessage) => void
-    onError: (error: unknown) => void
-    signal?: AbortSignal
-}) => { close: () => void }
-
 export interface SyncTransport {
     pullChanges: (args: {
         cursor: Cursor
@@ -67,7 +60,12 @@ export interface SyncTransport {
 }
 
 export interface SyncSubscribeTransport {
-    subscribe: SyncSubscribe
+    subscribe: (args: {
+        resources?: ResourceToken[]
+        onMessage: (msg: NotifyMessage) => void
+        onError: (error: unknown) => void
+        signal?: AbortSignal
+    }) => { close: () => void }
 }
 
 export type { NotifyMessage }

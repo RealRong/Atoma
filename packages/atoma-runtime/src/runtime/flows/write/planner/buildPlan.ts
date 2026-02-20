@@ -1,14 +1,14 @@
 import { createIdempotencyKey, ensureWriteItemMeta, requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
-import type { Entity, ActionContext, StoreChange } from 'atoma-types/core'
+import type { Entity } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, StoreHandle, WriteEntry, WriteItemMeta } from 'atoma-types/runtime'
-import type { WritePlan, WritePlanEntry, WritePlanPolicy } from '../types'
+import type { WriteEntry } from 'atoma-types/runtime'
+import type { PlannedChange, WritePlan, WritePlanEntry, WritePlanPolicy } from '../types'
 
 function requireChangeBefore<T extends Entity>({
     change,
     action
 }: {
-    change: StoreChange<T>
+    change: PlannedChange<T>
     action: WriteEntry['action']
 }): T {
     const before = change.before
@@ -20,38 +20,37 @@ function requireChangeBefore<T extends Entity>({
 }
 
 type BuildPlanInput<T extends Entity> = {
-    runtime: Runtime
-    handle: StoreHandle<T>
-    context: ActionContext
-    changes: ReadonlyArray<StoreChange<T>>
+    now: () => number
+    snapshot: ReadonlyMap<EntityId, T>
+    changes: ReadonlyArray<PlannedChange<T>>
     policy?: WritePlanPolicy
     createEntryId: () => string
 }
 
-export async function buildPlan<T extends Entity>({
-    runtime,
-    handle,
-    context,
+export function buildPlan<T extends Entity>({
+    now,
+    snapshot,
     changes,
     policy,
     createEntryId
-}: BuildPlanInput<T>): Promise<WritePlan<T>> {
+}: BuildPlanInput<T>): WritePlan<T> {
     if (!changes.length) return []
 
     const plan: WritePlanEntry<T>[] = []
-    const virtual = new Map(handle.state.snapshot() as Map<EntityId, T>)
+    const virtual = new Map<EntityId, T>(snapshot as Map<EntityId, T>)
 
     for (const change of changes) {
         const id = change.id
         const before = change.before
         const after = change.after
+        const outbound = change.outbound
         const action = policy?.action ?? (after === undefined ? 'delete' : 'upsert')
         const meta = ensureWriteItemMeta({
             meta: {
-                idempotencyKey: createIdempotencyKey({ now: runtime.now }),
-                clientTimeMs: runtime.now()
+                idempotencyKey: createIdempotencyKey({ now }),
+                clientTimeMs: now()
             },
-            now: runtime.now
+            now
         })
 
         const current = virtual.get(id)
@@ -89,9 +88,8 @@ export async function buildPlan<T extends Entity>({
             throw new Error(`[Atoma] buildPlan: target id mismatch (change.id=${String(id)} target.id=${String(after.id)})`)
         }
 
-        const outbound = await runtime.transform.outbound(handle, after, context)
         if (outbound === undefined) {
-            throw new Error('[Atoma] transform returned empty for outbound write')
+            throw new Error(`[Atoma] buildPlan: ${action} action requires outbound value (id=${String(id)})`)
         }
 
         const entryId = createEntryId()

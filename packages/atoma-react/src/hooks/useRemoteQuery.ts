@@ -70,11 +70,11 @@ export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
     const enabled = args.enabled !== false
     const bindings = getStoreBindings(args.store, 'useRemoteQuery')
     const storeName = bindings.name
-    const runtime = bindings.cacheKey
+    const runtime = bindings.scope
 
     const key = useMemo(() => {
         const optionsKey = stableStringify(stripRuntimeOptions(args.options))
-        return `${storeName}:hydrate:${optionsKey}`
+        return `${storeName}:remoteQuery:${optionsKey}`
     }, [storeName, args.options])
 
     const entry = useMemo(() => getOrCreateEntry<T>(runtime as unknown as object | null, key), [runtime, key])

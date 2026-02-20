@@ -1,6 +1,6 @@
-import type { Entity, Store, IndexQueryLike, StoreToken } from '../core'
+import type { Entity, Query, QueryResult, Store, StoreToken } from '../core'
 import type { EntityId } from '../shared'
-import type { Engine } from '../runtime'
+import type { Engine, StoreMap } from '../runtime'
 
 export const STORE_BINDINGS = Symbol.for('atoma.store.bindings')
 
@@ -11,13 +11,13 @@ export type StoreSource<T extends Entity> = Readonly<{
 
 export type StoreBindings<T extends Entity = Entity> = Readonly<{
     name: string
-    cacheKey: object
+    scope: object
     source: StoreSource<T>
-    engine: Engine
-    indexes: IndexQueryLike<T> | null
+    state: () => StoreMap<T>
+    query: (query: Query<T>) => QueryResult<T>
+    relation: Engine['relation']
     relations?: () => unknown | undefined
-    ensureStore: (name: StoreToken) => Store<Entity, {}>
-    hydrate?: (items: T[]) => Promise<void>
+    useStore: (name: StoreToken) => Store<Entity, {}>
 }>
 
 export function getStoreBindings<T extends Entity, Relations = unknown>(

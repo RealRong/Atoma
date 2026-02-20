@@ -25,18 +25,19 @@ async function resolveUpsertPreparedValue<T extends Entity>(
     runtime: Runtime,
     input: IntentInputByAction<T, 'upsert'>
 ): Promise<{ base?: PartialWithId<T>; prepared: PartialWithId<T> }> {
+    const { handle, context } = input.scope
     const id = input.item.id
-    const base = input.handle.state.snapshot().get(id) as PartialWithId<T> | undefined
+    const base = handle.state.snapshot().get(id) as PartialWithId<T> | undefined
 
     if (base && (input.options?.apply ?? 'merge') === 'merge') {
         return {
             base,
             prepared: await prepareUpdateInput(
                 runtime,
-                input.handle,
+                handle,
                 base,
                 input.item,
-                input.context
+                context
             )
         }
     }
@@ -45,9 +46,9 @@ async function resolveUpsertPreparedValue<T extends Entity>(
         base,
         prepared: await prepareUpsertInput(
             runtime,
-            input.handle,
+            handle,
             input.item,
-            input.context
+            context
         )
     }
 }
@@ -56,8 +57,9 @@ export async function adaptIntentToChanges<T extends Entity>(
     runtime: Runtime,
     input: IntentInput<T>
 ): Promise<IntentToChangesResult<T>> {
+    const { handle, context } = input.scope
     if (input.action === 'create') {
-        const prepared = await prepareCreateInput(runtime, input.handle, input.item, input.context)
+        const prepared = await prepareCreateInput(runtime, handle, input.item, context)
         return {
             changes: [{ id: prepared.id, after: prepared as T }],
             output: prepared as T,
@@ -68,18 +70,18 @@ export async function adaptIntentToChanges<T extends Entity>(
     if (input.action === 'update') {
         const base = await resolveWriteBase(
             runtime,
-            input.handle,
+            handle,
             input.id,
             input.options,
-            input.context
+            context
         )
         const next = requireEntityObject(input.updater(base as Readonly<T>), input.id)
         const prepared = await prepareUpdateInput(
             runtime,
-            input.handle,
+            handle,
             base,
             next as PartialWithId<T>,
-            input.context
+            context
         )
 
         return {
@@ -108,10 +110,10 @@ export async function adaptIntentToChanges<T extends Entity>(
 
     const base = await resolveWriteBase(
         runtime,
-        input.handle,
+        handle,
         input.id,
         input.options,
-        input.context
+        context
     )
     return input.options?.force
         ? {

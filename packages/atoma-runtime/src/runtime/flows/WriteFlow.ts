@@ -1,12 +1,10 @@
 import type {
     Entity,
-    ActionContext,
     PartialWithId,
     StoreChange,
     StoreOperationOptions,
     StoreUpdater,
     UpsertWriteOptions,
-    ExecutionRoute,
     WriteManyResult
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
@@ -18,24 +16,18 @@ import { adaptReplayChanges } from './write/adapters/replayToChanges'
 import { buildPlan } from './write/planner/buildPlan'
 import type {
     IntentCommand,
+    PlannedChange,
     WriteInput,
-    WritePlan
+    WritePlan,
+    WriteScope,
 } from './write/types'
 import { runBatch } from './write/utils/batch'
-
-type WriteSession<T extends Entity> = Readonly<{
-    handle: StoreHandle<T>
-    context: ActionContext
-    route?: ExecutionRoute
-    signal?: AbortSignal
-    createEntryId: () => string
-}>
 
 function createWriteSession<T extends Entity>(
     runtime: Runtime,
     handle: StoreHandle<T>,
     options?: StoreOperationOptions
-): WriteSession<T> {
+): WriteScope<T> {
     const createEntryId = () => createId({
         kind: 'action',
         sortable: true,
@@ -65,17 +57,18 @@ export class WriteFlow implements Write {
         source,
         output
     }: {
-        session: WriteSession<T>
+        session: WriteScope<T>
         plan: WritePlan<T>
         source: WriteEventSource
         output?: T
     }): Promise<T | void> => {
-        const { handle, context, route, signal } = session
+        const { handle, context, route } = session
+        const storeName = handle.storeName
         const events = this.runtime.events
         const writeEntries = plan.map(planEntry => planEntry.entry)
 
         events.emit.writeStart({
-            handle,
+            storeName,
             context,
             source,
             route,
@@ -85,16 +78,13 @@ export class WriteFlow implements Write {
         try {
             const commitResult = await commitWrite<T>({
                 runtime: this.runtime,
-                handle,
-                context,
-                route,
-                signal,
+                scope: session,
                 plan,
             })
 
             const finalValue = commitResult.output ?? output
             events.emit.writeCommitted({
-                handle,
+                storeName,
                 context,
                 route,
                 writeEntries,
@@ -105,7 +95,7 @@ export class WriteFlow implements Write {
             return finalValue
         } catch (error) {
             events.emit.writeFailed({
-                handle,
+                storeName,
                 context,
                 route,
                 writeEntries,
@@ -115,11 +105,40 @@ export class WriteFlow implements Write {
         }
     }
 
+    private preparePlannedChanges = async <T extends Entity>({
+        scope,
+        changes
+    }: {
+        scope: WriteScope<T>
+        changes: ReadonlyArray<StoreChange<T>>
+    }): Promise<ReadonlyArray<PlannedChange<T>>> => {
+        const planned: PlannedChange<T>[] = []
+        for (const change of changes) {
+            if (change.after === undefined) {
+                planned.push(change)
+                continue
+            }
+
+            const outbound = await this.runtime.transform.outbound(scope.handle, change.after, scope.context)
+            if (outbound === undefined) {
+                throw new Error('[Atoma] transform returned empty for outbound write')
+            }
+
+            planned.push({
+                id: change.id,
+                before: change.before,
+                after: change.after,
+                outbound
+            })
+        }
+        return planned
+    }
+
     private runInput = async <T extends Entity>({
         session,
         input
     }: {
-        session: WriteSession<T>
+        session: WriteScope<T>
         input: WriteInput<T>
     }): Promise<T | void> => {
         const adapted = input.kind === 'intent'
@@ -134,11 +153,14 @@ export class WriteFlow implements Write {
             ? input.action
             : input.source
 
-        const plan = await buildPlan({
-            runtime: this.runtime,
-            handle: session.handle,
-            context: session.context,
-            changes: adapted.changes,
+        const plannedChanges = await this.preparePlannedChanges({
+            scope: session,
+            changes: adapted.changes
+        })
+        const plan = buildPlan({
+            now: this.runtime.now,
+            snapshot: session.handle.state.snapshot(),
+            changes: plannedChanges,
             policy: adapted.policy,
             createEntryId: session.createEntryId
         })
@@ -155,15 +177,14 @@ export class WriteFlow implements Write {
     }
 
     private runIntent = async <T extends Entity>(
-        session: WriteSession<T>,
+        session: WriteScope<T>,
         intent: IntentCommand<T>
     ): Promise<T | void> => {
         return await this.runInput({
             session,
             input: {
                 kind: 'intent',
-                handle: session.handle,
-                context: session.context,
+                scope: session,
                 ...intent
             }
         })

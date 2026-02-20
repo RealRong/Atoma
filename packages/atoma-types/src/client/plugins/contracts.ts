@@ -1,21 +1,13 @@
 import type {
     ActionContext,
     Entity,
-    Query,
-    QueryResult,
-    StoreChange,
-    Store,
-    StoreToken,
-    StoreDelta
+    StoreToken
 } from '../../core'
-import type { EntityId } from '../../shared'
-import type { Runtime, StoreEvents } from '../../runtime'
+import type { Runtime, StoreEvents, StoreSession } from '../../runtime'
 import type { ServiceRegistry, ServiceToken } from '../services'
 
-export type EventRegister = (events: StoreEvents) => () => void
-
 export type PluginEvents = Readonly<{
-    register: EventRegister
+    register: (events: StoreEvents) => () => void
 }>
 
 export type PluginServices = Readonly<{
@@ -23,38 +15,12 @@ export type PluginServices = Readonly<{
     resolve: ServiceRegistry['resolve']
 }>
 
-export type StoreActionOptions = Readonly<{
-    context?: Partial<ActionContext>
-}>
-
-export type WritebackData<T extends Entity> = Readonly<{
-    upserts: T[]
-    deletes: EntityId[]
-    versionUpdates?: Array<{ id: EntityId; version: number }>
-}>
-
 export type PluginRuntime = Readonly<{
     id: Runtime['id']
     now: Runtime['now']
     stores: Readonly<{
         list: () => StoreToken[]
-        ensure: <T extends Entity>(storeName: StoreToken) => Store<T>
-        query: <T extends Entity>(storeName: StoreToken, query: Query<T>) => QueryResult<T>
-        apply: <T extends Entity>(
-            storeName: StoreToken,
-            changes: ReadonlyArray<StoreChange<T>>,
-            options?: StoreActionOptions
-        ) => Promise<void>
-        revert: <T extends Entity>(
-            storeName: StoreToken,
-            changes: ReadonlyArray<StoreChange<T>>,
-            options?: StoreActionOptions
-        ) => Promise<void>
-        writeback: <T extends Entity>(
-            storeName: StoreToken,
-            data: WritebackData<T>,
-            options?: StoreActionOptions
-        ) => Promise<StoreDelta<T> | null>
+        use: <T extends Entity = Entity>(storeName: StoreToken) => StoreSession<T>
     }>
     action: Readonly<{
         createContext: (context?: Partial<ActionContext>) => ActionContext

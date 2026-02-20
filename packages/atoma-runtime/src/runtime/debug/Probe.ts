@@ -30,13 +30,12 @@ export class Probe implements Debug {
         const name = String(storeName)
 
         try {
-            const handle = this.runtime.stores.ensureHandle(name, `runtime.debug.snapshotStore:${name}`)
-            const map = handle.state.snapshot() as Map<unknown, unknown>
-            const sample = Array.from(map.values()).slice(0, 5)
+            const inspected = this.runtime.stores.inspect(name).snapshot
+            const sample = Array.from(inspected.values()).slice(0, 5)
 
             return {
                 name,
-                count: map.size,
+                count: inspected.size,
                 approxSize: estimateSampleSize(sample),
                 sample,
                 timestamp: this.runtime.now()
@@ -50,9 +49,7 @@ export class Probe implements Debug {
         const name = String(storeName)
 
         try {
-            const handle = this.runtime.stores.ensureHandle(name, `runtime.debug.snapshotIndexes:${name}`)
-            const indexes = handle.state.indexes as IndexDebugLike<T> | null
-
+            const indexes = this.runtime.stores.inspect<T>(name).indexes as IndexDebugLike<T> | null
             if (!indexes || typeof indexes.debugIndexSnapshots !== 'function') {
                 return undefined
             }

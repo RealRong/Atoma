@@ -1,11 +1,23 @@
-import type { Entity, Store, StoreDataProcessor, StoreToken } from 'atoma-types/core'
+import type {
+    Entity,
+    Query,
+    QueryResult,
+    Store,
+    StoreChange,
+    StoreDataProcessor,
+    StoreDelta,
+    StoreOperationOptions,
+    StoreToken,
+    StoreWritebackArgs,
+} from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, Schema, StoreHandle, StoreCatalog } from 'atoma-types/runtime'
-import { StoreFactory, type StoreFacade } from './StoreFactory'
+import type { Runtime, Schema, StoreHandle, StoreCatalog, StoreSession } from 'atoma-types/runtime'
+import { StoreFactory } from './StoreFactory'
 
 type StoreEntry = Readonly<{
     handle: StoreHandle<Entity>
-    facade: StoreFacade<Entity>
+    api: Store<Entity>
+    session: StoreSession<Entity>
 }>
 
 export class Stores implements StoreCatalog {
@@ -45,13 +57,60 @@ export class Stores implements StoreCatalog {
         if (existing) return existing
 
         const built = this.storeFactory.build(name)
+        const handle = built.handle as StoreHandle<Entity>
+        const api = built.api as Store<Entity>
+        const storeName = name as StoreToken
+        const session: StoreSession<Entity> = {
+            name: storeName,
+            query: (query: Query<Entity>) => {
+                return this.runtime.engine.query.evaluate({
+                    state: handle.state,
+                    query
+                }) as QueryResult<Entity>
+            },
+            apply: async (
+                changes: ReadonlyArray<StoreChange<Entity>>,
+                options?: StoreOperationOptions
+            ) => {
+                await this.runtime.write.apply(handle, changes, options)
+            },
+            revert: async (
+                changes: ReadonlyArray<StoreChange<Entity>>,
+                options?: StoreOperationOptions
+            ) => {
+                await this.runtime.write.revert(handle, changes, options)
+            },
+            writeback: async (
+                writeback: StoreWritebackArgs<Entity>,
+                options?: StoreOperationOptions
+            ) => {
+                const context = options?.context
+                    ? this.runtime.engine.action.createContext(options.context)
+                    : undefined
+                const upserts = Array.isArray(writeback.upserts) ? writeback.upserts : []
+                const processed = upserts.length
+                    ? await Promise.all(
+                        upserts.map(item => this.runtime.transform.writeback(handle, item, context))
+                    )
+                    : []
+                const deletes = Array.isArray(writeback.deletes) ? writeback.deletes : []
+                const versionUpdates = Array.isArray(writeback.versionUpdates) ? writeback.versionUpdates : []
+
+                return handle.state.writeback({
+                    ...(processed.length ? { upserts: processed.filter((item): item is Entity => item !== undefined) } : {}),
+                    ...(deletes.length ? { deletes } : {}),
+                    ...(versionUpdates.length ? { versionUpdates } : {})
+                }) as StoreDelta<Entity> | null
+            }
+        }
+
         const entry: StoreEntry = {
-            handle: built.handle,
-            facade: built.facade
+            handle,
+            api,
+            session
         }
 
         this.runtime.events.emit.storeCreated({
-            handle: built.handle,
             storeName: name
         })
 
@@ -60,26 +119,27 @@ export class Stores implements StoreCatalog {
         return entry
     }
 
-    ensure = (name: StoreToken): Store<Entity> => {
-        return this.ensureEntry(name).facade
+    ensure = <T extends Entity = Entity>(name: StoreToken): Store<T> => {
+        return this.ensureEntry(name).api as unknown as Store<T>
     }
 
-    private *iterateFacades(): Iterable<Store<Entity>> {
-        for (const { facade } of this.stores.values()) {
-            yield facade
+    use = <T extends Entity = Entity>(name: StoreToken): StoreSession<T> => {
+        return this.ensureEntry(name).session as unknown as StoreSession<T>
+    }
+
+    inspect = <T extends Entity = Entity>(name: StoreToken): Readonly<{
+        snapshot: ReadonlyMap<EntityId, T>
+        indexes: StoreHandle<T>['state']['indexes']
+    }> => {
+        const entry = this.ensureEntry(name)
+        const handle = entry.handle as unknown as StoreHandle<T>
+        return {
+            snapshot: handle.state.snapshot() as ReadonlyMap<EntityId, T>,
+            indexes: handle.state.indexes
         }
     }
 
-    list = () => this.iterateFacades()
-
-    ensureHandle = (name: StoreToken, tag?: string): StoreHandle<Entity> => {
-        const existing = this.stores.get(name)
-        if (existing) return existing.handle
-
-        this.ensureEntry(name)
-        const created = this.stores.get(name)
-        if (created) return created.handle
-
-        throw new Error(`[Atoma] ${tag || 'ensureHandle'}: 未找到 store handle（storeName=${String(name)}）`)
+    list = (): StoreToken[] => {
+        return Array.from(this.stores.keys()) as StoreToken[]
     }
 }

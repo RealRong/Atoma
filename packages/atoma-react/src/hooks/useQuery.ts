@@ -145,7 +145,7 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
         data as unknown as T[],
         effectiveInclude,
         relations,
-        (name) => bindings.ensureStore(name)
+        (name) => bindings.useStore(name)
     )
 
     return {

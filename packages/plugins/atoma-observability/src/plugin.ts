@@ -1,13 +1,7 @@
 import type { ClientPlugin } from 'atoma-types/client/plugins'
 import type { Entity } from 'atoma-types/core'
 import type { DebugEvent, ObservabilityContext } from 'atoma-types/observability'
-import type {
-    ReadFinishArgs,
-    ReadStartArgs,
-    WriteCommittedArgs,
-    WriteFailedArgs,
-    WriteStartArgs,
-} from 'atoma-types/runtime'
+import type { StoreEventPayloadMap } from 'atoma-types/runtime'
 import type { SnapshotQuery, Source, StreamEvent } from 'atoma-types/devtools'
 import { HUB_TOKEN } from 'atoma-types/devtools'
 import { StoreObservability } from './store-observability'
@@ -210,36 +204,38 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
 
             const stopEvents = _ctx.events.register({
                 read: {
-                    onStart: <T extends Entity>(args: ReadStartArgs<T>) => {
-                        const { handle, query } = args
-                        const ctxInstance = storeObs.createContext(String(handle.storeName))
+                    onStart: <T extends Entity>(args: StoreEventPayloadMap<T>['readStart']) => {
+                        const { storeName, query } = args
+                        const resolvedStoreName = String(storeName)
+                        const ctxInstance = storeObs.createContext(resolvedStoreName)
                         if (query && typeof query === 'object') {
                             readContextByQuery.set(query as object, ctxInstance)
                         }
                         ctxInstance.emit(`${prefix}:read:start`, {
-                            storeName: String(handle.storeName),
+                            storeName: resolvedStoreName,
                             query
                         })
                     },
-                    onFinish: <T extends Entity>(args: ReadFinishArgs<T>) => {
-                        const { handle, query, result, durationMs } = args
+                    onFinish: <T extends Entity>(args: StoreEventPayloadMap<T>['readFinish']) => {
+                        const { storeName, query, result, durationMs } = args
+                        const resolvedStoreName = String(storeName)
                         const ctxInstance = (query && typeof query === 'object')
-                            ? (readContextByQuery.get(query as object) ?? storeObs.createContext(String(handle.storeName)))
-                            : storeObs.createContext(String(handle.storeName))
+                            ? (readContextByQuery.get(query as object) ?? storeObs.createContext(resolvedStoreName))
+                            : storeObs.createContext(resolvedStoreName)
                         if (query && typeof query === 'object') {
                             readContextByQuery.delete(query as object)
                         }
                         ctxInstance.emit(`${prefix}:read:finish`, {
-                            storeName: String(handle.storeName),
+                            storeName: resolvedStoreName,
                             size: Array.isArray(result?.data) ? result.data.length : 0,
                             durationMs
                         })
                     }
                 },
                 write: {
-                    onStart: <T extends Entity>(args: WriteStartArgs<T>) => {
-                        const { handle, context } = args
-                        const entry = getWriteContext(String(handle.storeName), context.id)
+                    onStart: <T extends Entity>(args: StoreEventPayloadMap<T>['writeStart']) => {
+                        const { storeName, context } = args
+                        const entry = getWriteContext(String(storeName), context.id)
                         entry.ctx.emit(`${prefix}:write:start`, {
                             storeName: entry.storeName,
                             id: context.id,
@@ -248,9 +244,9 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                             entryCount: Array.isArray(args.writeEntries) ? args.writeEntries.length : 0
                         })
                     },
-                    onCommitted: <T extends Entity>(args: WriteCommittedArgs<T>) => {
-                        const { handle, context } = args
-                        const entry = getWriteContext(String(handle.storeName), context.id)
+                    onCommitted: <T extends Entity>(args: StoreEventPayloadMap<T>['writeCommitted']) => {
+                        const { storeName, context } = args
+                        const entry = getWriteContext(String(storeName), context.id)
                         entry.ctx.emit(`${prefix}:write:finish`, {
                             storeName: entry.storeName,
                             id: context.id,
@@ -258,9 +254,9 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                         })
                         releaseWriteContext(context.id)
                     },
-                    onFailed: <T extends Entity>(args: WriteFailedArgs<T>) => {
-                        const { handle, context, error } = args
-                        const entry = getWriteContext(String(handle.storeName), context.id)
+                    onFailed: <T extends Entity>(args: StoreEventPayloadMap<T>['writeFailed']) => {
+                        const { storeName, context, error } = args
+                        const entry = getWriteContext(String(storeName), context.id)
                         entry.ctx.emit(`${prefix}:write:failed`, {
                             storeName: entry.storeName,
                             id: context.id,

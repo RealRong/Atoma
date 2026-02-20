@@ -63,7 +63,7 @@ export function useMany<T extends Entity, Relations = {}, const Include extends 
         baseList,
         effectiveInclude,
         relations,
-        (name) => bindings.ensureStore(name)
+        (name) => bindings.useStore(name)
     )
     const withRelations = relationsResult.data
 

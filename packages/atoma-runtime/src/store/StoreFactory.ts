@@ -1,6 +1,8 @@
 import { createId } from 'atoma-shared'
 import type {
     Entity,
+    Query,
+    QueryResult,
     Store,
     StoreDataProcessor,
     StoreToken
@@ -12,17 +14,9 @@ import type { Runtime } from 'atoma-types/runtime'
 import type { Schema, StoreSchema, StoreHandle } from 'atoma-types/runtime'
 import { SimpleStoreState } from './StoreState'
 
-export type StoreEngine<T extends Entity = Entity> = Readonly<{
-    handle: StoreHandle<T>
-    api: Store<T>
-}>
-
-export type StoreFacade<T extends Entity = Entity> = Store<T> & { name: string }
-
 type BuildResult<T extends Entity = Entity> = Readonly<{
     handle: StoreHandle<T>
     api: Store<T>
-    facade: StoreFacade<T>
 }>
 
 export class StoreFactory {
@@ -108,19 +102,15 @@ export class StoreFactory {
             queryOne: (input, options) => read.queryOne(handle, input, options)
         }
 
-        const facade: StoreFacade<T> = {
-            name,
-            ...api
-        }
         const bindings = this.createBindings(name, handle)
 
-        Object.defineProperty(facade, STORE_BINDINGS, {
+        Object.defineProperty(api, STORE_BINDINGS, {
             value: bindings,
             enumerable: false,
             configurable: false
         })
 
-        return { handle, api, facade }
+        return { handle, api }
     }
 
     private createBindings = <T extends Entity>(storeName: string, handle: StoreHandle<T>): StoreBindings<T> => {
@@ -128,33 +118,28 @@ export class StoreFactory {
             getSnapshot: () => handle.state.snapshot() as ReadonlyMap<EntityId, T>,
             subscribe: (listener: () => void) => handle.state.subscribe(listener)
         }
-
-        const hydrate = async (items: T[]) => {
-            if (!items.length) return
-
-            const processed: T[] = []
-            for (const item of items) {
-                const normalized = await this.runtime.transform.writeback(handle, item)
-                if (normalized !== undefined) {
-                    processed.push(normalized)
-                }
+        const state = () => {
+            return {
+                map: handle.state.snapshot() as ReadonlyMap<EntityId, T>,
+                indexes: handle.state.indexes
             }
-            if (!processed.length) return
-
-            handle.state.writeback({
-                upserts: processed
-            })
+        }
+        const query = (queryInput: Query<T>) => {
+            return this.runtime.engine.query.evaluate({
+                state: handle.state,
+                query: queryInput
+            }) as QueryResult<T>
         }
 
         return {
             name: storeName,
-            cacheKey: this.runtime as unknown as object,
+            scope: this.runtime as unknown as object,
             source,
-            engine: this.runtime.engine,
-            indexes: handle.state.indexes,
+            state,
+            query,
+            relation: this.runtime.engine.relation,
             relations: () => handle.relations?.(),
-            ensureStore: (name: StoreToken) => this.runtime.stores.ensure(String(name)),
-            hydrate
+            useStore: (name: StoreToken) => this.runtime.stores.ensure(String(name)),
         }
     }
 

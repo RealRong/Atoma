@@ -18,6 +18,21 @@ export type OptimisticState<T extends Entity> = Readonly<{
     changes: ReadonlyArray<StoreChange<T>>
 }>
 
+export type WriteScope<T extends Entity> = Readonly<{
+    handle: StoreHandle<T>
+    context: ActionContext
+    route?: ExecutionRoute
+    signal?: AbortSignal
+    createEntryId: () => string
+}>
+
+export type PlannedChange<T extends Entity> = Readonly<{
+    id: EntityId
+    before?: T
+    after?: T
+    outbound?: T
+}>
+
 export type WritePlanEntry<T extends Entity> = Readonly<{
     entry: WriteEntry
     optimistic: Readonly<{
@@ -31,10 +46,7 @@ export type WritePlan<T extends Entity> = ReadonlyArray<WritePlanEntry<T>>
 
 export type WriteCommitRequest<T extends Entity> = Readonly<{
     runtime: Runtime
-    handle: StoreHandle<T>
-    context: ActionContext
-    route?: ExecutionRoute
-    signal?: AbortSignal
+    scope: WriteScope<T>
     plan: WritePlan<T>
 }>
 
@@ -71,8 +83,7 @@ export type IntentCommand<T extends Entity> = IntentCommandMap<T>[IntentAction]
 type IntentInputMap<T extends Entity> = {
     [A in IntentAction]: Readonly<{
         kind: 'intent'
-        handle: StoreHandle<T>
-        context: ActionContext
+        scope: WriteScope<T>
     } & IntentCommandMap<T>[A]>
 }
 

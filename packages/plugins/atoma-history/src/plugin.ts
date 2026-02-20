@@ -53,16 +53,15 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                 mode: 'apply' | 'revert'
                 context: ActionContext
             }) => {
+                const store = ctx.runtime.stores.use(args.storeName)
                 if (args.mode === 'revert') {
-                    await ctx.runtime.stores.revert(
-                        args.storeName,
+                    await store.revert(
                         args.changes,
                         { context: args.context }
                     )
                     return
                 }
-                await ctx.runtime.stores.apply(
-                    args.storeName,
+                await store.apply(
                     args.changes,
                     { context: args.context }
                 )
@@ -96,7 +95,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                     onCommitted: (args) => {
                         if (!args.changes?.length) return
                         manager.record({
-                            storeName: String(args.handle.storeName),
+                            storeName: String(args.storeName),
                             changes: args.changes,
                             context: args.context
                         })
