@@ -134,7 +134,7 @@ export class Stores implements StoreCatalog {
         indexes: StoreHandle<T>['state']['indexes']
     }> => {
         const entry = this.ensureEntry(name)
-        const handle = entry.handle as unknown as StoreHandle<T>
+        const handle = entry.handle
         return {
             snapshot: handle.state.snapshot() as ReadonlyMap<EntityId, T>,
             indexes: handle.state.indexes

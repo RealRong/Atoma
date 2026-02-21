@@ -29,9 +29,8 @@ export class PluginContext implements PluginContextType {
                 createContext: runtime.engine.action.createContext
             },
             execution: {
-                apply: runtime.execution.apply,
-                hasExecutor: runtime.execution.hasExecutor,
-                subscribe: runtime.execution.subscribe
+                register: runtime.execution.register,
+                hasExecutor: runtime.execution.hasExecutor
             },
             snapshot: {
                 store: runtime.debug.snapshotStore,

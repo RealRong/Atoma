@@ -1,159 +1,110 @@
 import type { Entity } from 'atoma-types/core'
 import type {
-    ExecutionBundle,
-    ExecutionErrorCode,
-    ExecutionEvent,
     ExecutionKernel as ExecutionKernelType,
     ExecutionOptions,
+    ExecutionRegistration,
     QueryRequest,
     ExecutionQueryOutput,
-    StoreHandle,
     WriteConsistency,
     WriteRequest,
     WriteOutput
 } from 'atoma-types/runtime'
-import { buildSnapshot, normalizeBundle } from './bundle'
-import { ExecutionEvents } from './ExecutionEvents'
 import {
     createExecutionError,
     normalizeExecutionError,
     type CreateExecutionError
 } from './errors'
-import type {
-    KernelLayer,
-    KernelPhase,
-    KernelSnapshot
-} from './kernelTypes'
-import { resolveExecution } from './resolver'
 
-type KernelPhaseMeta = Readonly<{
-    dispatched: ExecutionEvent['type']
-    succeeded: ExecutionEvent['type']
-    failed: ExecutionEvent['type']
-    fallbackCode: ExecutionErrorCode
-    fallbackMessage: string
+type KernelPhase = 'query' | 'write'
+
+type RegisteredExecutor = Readonly<{
+    token: symbol
+    id: string
+    registration: ExecutionRegistration
 }>
 
-const KERNEL_PHASE_META: Readonly<Record<KernelPhase, KernelPhaseMeta>> = {
-    query: {
-        dispatched: 'query.dispatched',
-        succeeded: 'query.succeeded',
-        failed: 'query.failed',
-        fallbackCode: 'E_EXECUTION_QUERY_FAILED',
-        fallbackMessage: '[Atoma] execution.query failed'
-    },
-    write: {
-        dispatched: 'write.dispatched',
-        succeeded: 'write.succeeded',
-        failed: 'write.failed',
-        fallbackCode: 'E_EXECUTION_WRITE_FAILED',
-        fallbackMessage: '[Atoma] execution.write failed'
-    }
-}
-
-function normalizeExecutionOptions({
-    options
-}: {
-    options?: ExecutionOptions
-}): ExecutionOptions | undefined {
-    const signal = options?.signal
-    if (signal === undefined) {
-        return undefined
-    }
-
-    return { signal }
-}
-
 export class ExecutionKernel implements ExecutionKernelType {
-    private layers: KernelLayer[] = []
-    private snapshot: KernelSnapshot = {}
-    private readonly events = new ExecutionEvents()
+    private readonly slots: Partial<Record<KernelPhase, RegisteredExecutor>> = {}
     private readonly createError: CreateExecutionError = createExecutionError
+    private anonymousIdCounter = 0
 
     private static readonly DEFAULT_CONSISTENCY: WriteConsistency = {
         base: 'fetch',
         commit: 'optimistic'
     }
 
-    apply = (bundle: ExecutionBundle): (() => void) => {
-        const normalized = normalizeBundle({
-            bundle,
-            createError: this.createError
-        })
-        const layer: KernelLayer = {
+    private createAnonymousId = (phases: ReadonlyArray<KernelPhase>): string => {
+        this.anonymousIdCounter += 1
+        return `anonymous-${phases.join('-') || 'executor'}-${this.anonymousIdCounter}`
+    }
+
+    register = (registration: ExecutionRegistration): (() => void) => {
+        const phases: KernelPhase[] = [
+            typeof registration.query === 'function' ? 'query' : undefined,
+            typeof registration.write === 'function' ? 'write' : undefined
+        ].filter((phase): phase is KernelPhase => phase !== undefined)
+        const id = String(registration.id ?? '').trim()
+        if (!phases.length) {
+            throw this.createError({
+                code: 'E_EXECUTION_REGISTER_INVALID',
+                message: `[Atoma] execution.register: 至少实现 query/write 之一: ${id || '[anonymous]'}`,
+                retryable: false
+            })
+        }
+        const normalized: ExecutionRegistration & { id: string } = {
+            ...registration,
+            id: id || this.createAnonymousId(phases)
+        }
+        const nextEntry: RegisteredExecutor = {
             token: Symbol(normalized.id),
-            ...normalized
+            id: normalized.id,
+            registration: normalized
         }
 
-        const nextLayers = [...this.layers, layer]
-        this.layers = nextLayers
-        this.snapshot = buildSnapshot({
-            layers: nextLayers,
-            createError: this.createError
+        phases.forEach((phase) => {
+            const current = this.slots[phase]
+            if (!current) return
+            throw this.createError({
+                code: 'E_EXECUTION_CONFLICT',
+                message: `[Atoma] execution.register: ${phase} executor 冲突: ${current.id} <-> ${nextEntry.id}`,
+                retryable: false,
+                details: {
+                    phase,
+                    existing: current.id,
+                    incoming: nextEntry.id
+                }
+            })
+        })
+
+        phases.forEach((phase) => {
+            this.slots[phase] = nextEntry
         })
 
         return () => {
-            const index = this.layers.findIndex((item) => item.token === layer.token)
-            if (index < 0) return
-
-            const rollbackLayers = [
-                ...this.layers.slice(0, index),
-                ...this.layers.slice(index + 1)
-            ]
-            this.layers = rollbackLayers
-            this.snapshot = buildSnapshot({
-                layers: rollbackLayers,
-                createError: this.createError
+            phases.forEach((phase) => {
+                if (this.slots[phase]?.token === nextEntry.token) {
+                    delete this.slots[phase]
+                }
             })
         }
     }
 
-    resolveConsistency = <T extends Entity>(
-        _handle: StoreHandle<T>,
-        options?: ExecutionOptions
-    ): WriteConsistency => {
-        normalizeExecutionOptions({ options })
-        const resolved = resolveExecution({
-            snapshot: this.snapshot,
-            phase: 'write',
-            createError: this.createError
-        })
-        if (!resolved) return ExecutionKernel.DEFAULT_CONSISTENCY
-
-        return {
-            ...ExecutionKernel.DEFAULT_CONSISTENCY,
-            ...resolved.spec.consistency
-        }
+    getConsistency = (): WriteConsistency => {
+        const consistency = this.slots.write?.registration.consistency
+        return consistency
+            ? {
+                ...ExecutionKernel.DEFAULT_CONSISTENCY,
+                ...consistency
+            }
+            : ExecutionKernel.DEFAULT_CONSISTENCY
     }
 
     hasExecutor = (phase: KernelPhase): boolean => {
-        return this.snapshot[phase] !== undefined
+        return this.slots[phase] !== undefined
     }
 
-    subscribe = (listener: (event: ExecutionEvent) => void): (() => void) => {
-        return this.events.subscribe(listener)
-    }
-
-    private executePhase = async <
-        Request,
-        Output
-    >({
-        phase,
-        request,
-        options
-    }: {
-        phase: KernelPhase
-        request: Request
-        options?: ExecutionOptions
-    }): Promise<Output> => {
-        const normalizedOptions = normalizeExecutionOptions({
-            options
-        })
-        const resolved = resolveExecution({
-            snapshot: this.snapshot,
-            phase,
-            createError: this.createError
-        })
+    private resolveExecutor(phase: KernelPhase): RegisteredExecutor {
+        const resolved = this.slots[phase]
         if (!resolved) {
             throw this.createError({
                 code: 'E_EXECUTOR_MISSING',
@@ -162,64 +113,62 @@ export class ExecutionKernel implements ExecutionKernelType {
                 details: { phase }
             })
         }
-        const meta = KERNEL_PHASE_META[phase]
-        const eventBase = {
-            executor: resolved.resolution.executor,
-            resolution: resolved.resolution,
-            request,
-            options: normalizedOptions
-        }
+        return resolved
+    }
 
-        this.events.emit({
-            type: meta.dispatched,
-            ...eventBase
-        } as ExecutionEvent)
+    private executePhase = async <Request, Output>({
+        phase,
+        request,
+        options
+    }: {
+        phase: KernelPhase
+        request: Request
+        options?: ExecutionOptions
+    }): Promise<Output> => {
+        const resolved = this.resolveExecutor(phase)
 
         try {
             const executor = phase === 'query'
-                ? resolved.spec.query as ((request: Request, options?: ExecutionOptions) => Promise<Output>) | undefined
-                : resolved.spec.write as ((request: Request, options?: ExecutionOptions) => Promise<Output>) | undefined
+                ? resolved.registration.query as ((request: Request, options?: ExecutionOptions) => Promise<Output>) | undefined
+                : resolved.registration.write as ((request: Request, options?: ExecutionOptions) => Promise<Output>) | undefined
             if (!executor) {
                 throw this.createError({
                     code: phase === 'query'
                         ? 'E_EXECUTOR_QUERY_UNIMPLEMENTED'
                         : 'E_EXECUTOR_WRITE_UNIMPLEMENTED',
                     message: phase === 'query'
-                        ? `[Atoma] execution.query: executor 未实现 query: ${resolved.resolution.executor}`
-                        : `[Atoma] execution.write: executor 未实现 write: ${resolved.resolution.executor}`,
+                        ? `[Atoma] execution.query: executor 未实现 query: ${resolved.id}`
+                        : `[Atoma] execution.write: executor 未实现 write: ${resolved.id}`,
                     retryable: false,
-                    details: { executor: resolved.resolution.executor }
+                    details: { executor: resolved.id, phase }
                 })
             }
-            const output = await executor(request, normalizedOptions)
-            this.events.emit({
-                type: meta.succeeded,
-                ...eventBase,
-                output
-            } as ExecutionEvent)
-            return output
+
+            return await executor(request, options)
         } catch (error) {
             const normalizedError = normalizeExecutionError({
                 error,
-                fallbackCode: meta.fallbackCode,
-                fallbackMessage: meta.fallbackMessage,
+                fallbackCode: phase === 'query'
+                    ? 'E_EXECUTION_QUERY_FAILED'
+                    : 'E_EXECUTION_WRITE_FAILED',
+                fallbackMessage: phase === 'query'
+                    ? '[Atoma] execution.query failed'
+                    : '[Atoma] execution.write failed',
                 retryable: false,
                 details: {
-                    executor: resolved.resolution.executor,
+                    executor: resolved.id,
                     phase
                 },
                 createError: this.createError
             })
-            this.events.emit({
-                type: meta.failed,
-                ...eventBase,
-                error: normalizedError
-            } as ExecutionEvent)
             throw normalizedError
         }
     }
 
-    query = async <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions): Promise<ExecutionQueryOutput<T>> => {
+    query = async <T extends Entity>(
+        request: QueryRequest<T>,
+        options?: ExecutionOptions
+    ): Promise<ExecutionQueryOutput<T>> => {
         return await this.executePhase({
             phase: 'query',
             request,
@@ -227,7 +176,10 @@ export class ExecutionKernel implements ExecutionKernelType {
         })
     }
 
-    write = async <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions): Promise<WriteOutput> => {
+    write = async <T extends Entity>(
+        request: WriteRequest<T>,
+        options?: ExecutionOptions
+    ): Promise<WriteOutput> => {
         return await this.executePhase({
             phase: 'write',
             request,

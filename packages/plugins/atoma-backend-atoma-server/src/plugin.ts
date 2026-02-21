@@ -49,9 +49,9 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
             let unregisterExecution: (() => void) | undefined
 
             try {
-                unregisterExecution = ctx.runtime.execution.apply({
+                unregisterExecution = ctx.runtime.execution.register({
                     id: `backend.atoma-server:${normalizedOptions.baseURL}`,
-                    executor: buildOperationExecutor({
+                    ...buildOperationExecutor({
                         runtime: {
                             now: ctx.runtime.now
                         },

@@ -33,9 +33,9 @@ export function indexedDbBackendPlugin(options: IndexedDbBackendPluginOptions): 
             let unregisterExecution: (() => void) | undefined
 
             try {
-                unregisterExecution = ctx.runtime.execution.apply({
+                unregisterExecution = ctx.runtime.execution.register({
                     id: INDEXEDDB_EXECUTOR_ID,
-                    executor: buildOperationExecutor({
+                    ...buildOperationExecutor({
                         runtime: {
                             now: ctx.runtime.now
                         },

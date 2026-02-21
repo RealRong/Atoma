@@ -9,7 +9,7 @@ import type {
     UpsertWriteOptions
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, WriteEntry, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, WriteEntry, WriteOutput, StoreHandle } from 'atoma-types/runtime'
 
 export type WriteScope<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
@@ -32,11 +32,13 @@ export type WriteCommitRequest<T extends Entity> = Readonly<{
 }>
 
 export type WriteCommitResult<T extends Entity> = Readonly<{
+    status: WriteOutput['status']
     changes: ReadonlyArray<StoreChange<T>>
     results: WriteManyResult<T | void>
 }>
 
 export type IntentAction = 'create' | 'update' | 'upsert' | 'delete'
+export type NonDeleteIntentAction = Exclude<IntentAction, 'delete'>
 
 type IntentPayload<T extends Entity> = {
     create: Readonly<{ item: Partial<T> }>
@@ -60,6 +62,7 @@ type IntentCommandMap<T extends Entity> = {
 }
 
 export type IntentCommand<T extends Entity> = IntentCommandMap<T>[IntentAction]
+export type IntentCommandByAction<T extends Entity, A extends IntentAction> = IntentCommandMap<T>[A]
 
 type IntentInputMap<T extends Entity> = {
     [A in IntentAction]: Readonly<{

@@ -26,9 +26,8 @@ export type PluginRuntime = Readonly<{
         createContext: (context?: Partial<ActionContext>) => ActionContext
     }>
     execution: Readonly<{
-        apply: Runtime['execution']['apply']
+        register: Runtime['execution']['register']
         hasExecutor: Runtime['execution']['hasExecutor']
-        subscribe: Runtime['execution']['subscribe']
     }>
     snapshot: Readonly<{
         store: Runtime['debug']['snapshotStore']

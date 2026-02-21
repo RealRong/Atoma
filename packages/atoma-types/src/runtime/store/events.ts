@@ -1,5 +1,5 @@
-import type { Entity, ActionContext, Query, QueryResult, StoreToken, StoreChange } from '../../core'
-import type { WriteEntry } from '../persistence'
+import type { Entity, ActionContext, Query, QueryResult, StoreToken, StoreChange, WriteManyResult } from '../../core'
+import type { WriteEntry, WriteStatus } from '../persistence'
 
 export type WriteEventSource =
     | 'create'
@@ -32,6 +32,8 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
         storeName: StoreToken
         context: ActionContext
         writeEntries: ReadonlyArray<WriteEntry>
+        status?: WriteStatus
+        results?: WriteManyResult<unknown>
         result?: unknown
         changes?: ReadonlyArray<StoreChange<T>>
     }>

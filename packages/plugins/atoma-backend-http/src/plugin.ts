@@ -49,9 +49,9 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
             let unregisterExecution: (() => void) | undefined
 
             try {
-                unregisterExecution = ctx.runtime.execution.apply({
+                unregisterExecution = ctx.runtime.execution.register({
                     id: `backend.http:${opts.baseURL}`,
-                    executor: buildOperationExecutor({
+                    ...buildOperationExecutor({
                         runtime: {
                             now: ctx.runtime.now
                         },

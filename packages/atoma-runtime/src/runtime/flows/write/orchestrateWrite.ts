@@ -17,6 +17,7 @@ import type {
 
 export type OrchestrateWriteResult<T extends Entity> = Readonly<{
     prepared: PreparedWrites<T>
+    status: 'confirmed' | 'partial' | 'rejected' | 'enqueued'
     results: WriteManyResult<T | void>
 }>
 
@@ -34,6 +35,7 @@ export async function orchestrateWrite<T extends Entity>({
     if (!intents.length) {
         return {
             prepared: [],
+            status: 'confirmed',
             results: []
         }
     }
@@ -75,11 +77,14 @@ export async function orchestrateWrite<T extends Entity>({
             storeName: handle.storeName,
             context,
             writeEntries,
+            status: commitResult.status,
+            results: commitResult.results,
             ...(singleResult?.ok ? { result: singleResult.value } : {}),
             changes: commitResult.changes
         })
         return {
             prepared,
+            status: commitResult.status,
             results: commitResult.results
         }
     } catch (error) {

@@ -158,7 +158,6 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
     }
 
     const syncWrites = new SyncWrites({
-        runtime,
         events: ctx.events,
         outbox: stores.outbox,
         resources: opts.resources,

@@ -1,5 +1,6 @@
-import type { PluginEvents, PluginRuntime } from 'atoma-types/client/plugins'
-import type { WriteEntry, WriteItemResult, WriteOutput } from 'atoma-types/runtime'
+import type { PluginEvents } from 'atoma-types/client/plugins'
+import type { WriteEntry, WriteStatus } from 'atoma-types/runtime'
+import type { WriteManyResult } from 'atoma-types/core'
 import type { OutboxStore, OutboxWrite, SyncEvent, SyncPhase } from 'atoma-types/sync'
 import { toError } from '#sync/internal'
 
@@ -49,7 +50,6 @@ export class SyncWrites {
     private readonly resourcesAllowSet?: ReadonlySet<string>
 
     constructor(private readonly deps: {
-        runtime: PluginRuntime
         events: PluginEvents
         outbox: OutboxStore
         resources?: ReadonlyArray<string>
@@ -79,7 +79,7 @@ export class SyncWrites {
     }
 
     private register() {
-        const { runtime, outbox } = this.deps
+        const { outbox } = this.deps
 
         this.unregister.push(this.deps.events.register({
             write: {
@@ -87,14 +87,19 @@ export class SyncWrites {
                     storeName: string
                     context: { origin: string }
                     writeEntries: ReadonlyArray<WriteEntry>
+                    status?: WriteStatus
+                    results?: WriteManyResult<unknown>
                 }) => {
-                    if (runtime.execution.hasExecutor('write')) return
                     if (event.context.origin === 'sync') return
 
                     const resource = String(event.storeName)
                     if (this.resourcesAllowSet && !this.resourcesAllowSet.has(resource)) return
 
-                    const writeEntries = [...event.writeEntries]
+                    const writeEntries = filterCommittedWriteEntries({
+                        status: event.status,
+                        writeEntries: event.writeEntries,
+                        results: event.results
+                    })
                     if (!writeEntries.length) return
 
                     let writes: OutboxWrite[]
@@ -122,45 +127,6 @@ export class SyncWrites {
                 }
             }
         }))
-
-        this.unregister.push(runtime.execution.subscribe((event) => {
-            if (event.type !== 'write.succeeded') return
-            if (event.output.status === 'enqueued') return
-
-            const writeEntries = filterWriteEntriesByResults({
-                status: event.output.status,
-                writeEntries: event.request.entries,
-                results: event.output.results
-            })
-            if (!writeEntries.length) return
-
-            const resource = String(event.request.handle.storeName)
-            if (this.resourcesAllowSet && !this.resourcesAllowSet.has(resource)) return
-
-            let writes: OutboxWrite[]
-            try {
-                writes = mapWriteEntriesToOutboxWrites({
-                    storeName: resource,
-                    writeEntries
-                })
-            } catch (error) {
-                this.reportEnqueueFailure({
-                    resource,
-                    count: writeEntries.length,
-                    error
-                })
-                return
-            }
-            if (!writes.length) return
-
-            void outbox.enqueueWrites({ writes }).catch((error) => {
-                this.reportEnqueueFailure({
-                    resource,
-                    count: writes.length,
-                    error
-                })
-            })
-        }))
     }
 
     private reportEnqueueFailure(args: {
@@ -179,11 +145,12 @@ export class SyncWrites {
     }
 }
 
-function filterWriteEntriesByResults(args: {
-    status: WriteOutput['status']
+function filterCommittedWriteEntries(args: {
+    status?: WriteStatus
     writeEntries: ReadonlyArray<WriteEntry>
-    results?: ReadonlyArray<WriteItemResult>
+    results?: WriteManyResult<unknown>
 }): WriteEntry[] {
+    if (!args.writeEntries.length) return []
     if (args.status === 'enqueued') return []
     if (!args.results || !args.results.length) {
         if (args.status === 'rejected' || args.status === 'partial') {
