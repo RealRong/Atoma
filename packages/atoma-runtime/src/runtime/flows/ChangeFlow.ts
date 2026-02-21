@@ -4,9 +4,9 @@ import type {
     StoreChange,
     StoreOperationOptions
 } from 'atoma-types/core'
-import type { Runtime, Changes, ChangeEventSource, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, ChangeEventSource, StoreHandle } from 'atoma-types/runtime'
 
-export class ChangeFlow implements Changes {
+export class ChangeFlow {
     private readonly runtime: Runtime
 
     constructor(runtime: Runtime) {

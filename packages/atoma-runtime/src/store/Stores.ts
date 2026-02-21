@@ -13,6 +13,7 @@ import type {
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Schema, StoreHandle, StoreCatalog, StoreSession } from 'atoma-types/runtime'
 import { StoreFactory } from './StoreFactory'
+import { ChangeFlow } from '../runtime/flows/ChangeFlow'
 
 type StoreEntry = Readonly<{
     handle: StoreHandle<Entity>
@@ -23,6 +24,7 @@ type StoreEntry = Readonly<{
 export class Stores implements StoreCatalog {
     private readonly stores = new Map<string, StoreEntry>()
     private readonly storeFactory: StoreFactory
+    private readonly changeFlow: ChangeFlow
     private readonly runtime: Runtime
     private readonly deps: {
         schema: Schema
@@ -44,6 +46,7 @@ export class Stores implements StoreCatalog {
     ) {
         this.runtime = runtime
         this.deps = deps
+        this.changeFlow = new ChangeFlow(this.runtime)
         this.storeFactory = new StoreFactory({
             runtime: this.runtime,
             schema: this.deps.schema,
@@ -71,13 +74,13 @@ export class Stores implements StoreCatalog {
                 changes: ReadonlyArray<StoreChange<Entity>>,
                 options?: StoreOperationOptions
             ) => {
-                await this.runtime.changes.apply(handle, changes, options)
+                await this.changeFlow.apply(handle, changes, options)
             },
             revert: async (
                 changes: ReadonlyArray<StoreChange<Entity>>,
                 options?: StoreOperationOptions
             ) => {
-                await this.runtime.changes.revert(handle, changes, options)
+                await this.changeFlow.revert(handle, changes, options)
             },
             writeback: async (
                 writeback: StoreWritebackArgs<Entity>,

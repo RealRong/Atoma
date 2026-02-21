@@ -2,13 +2,8 @@ import type { Entity, PartialWithId, StoreChange } from 'atoma-types/core'
 import type { Runtime, WriteEntry } from 'atoma-types/runtime'
 import { createIdempotencyKey, ensureWriteItemMeta, requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
 import { toChange } from 'atoma-core/store'
-import type { IntentInput, IntentInputByAction, WritePlan } from '../types'
+import type { IntentInput, IntentInputByAction, PreparedWrite } from '../types'
 import { prepareCreateInput, prepareUpdateInput, prepareUpsertInput, resolveWriteBase } from '../utils/prepareWriteInput'
-
-export type IntentToPlanResult<T extends Entity> = Readonly<{
-    plan: WritePlan<T>
-    output?: T
-}>
 
 function requireEntityObject<T extends Entity>(value: unknown, id: string): T {
     if (!value || typeof value !== 'object') {
@@ -24,11 +19,11 @@ function requireEntityObject<T extends Entity>(value: unknown, id: string): T {
 
 async function resolveUpsertPreparedValue<T extends Entity>(
     runtime: Runtime,
-    input: IntentInputByAction<T, 'upsert'>
+    input: IntentInputByAction<T, 'upsert'>,
+    current?: PartialWithId<T>
 ): Promise<{ base?: PartialWithId<T>; prepared: PartialWithId<T> }> {
     const { handle, context } = input.scope
-    const id = input.item.id
-    const base = handle.state.snapshot().get(id) as PartialWithId<T> | undefined
+    const base = current
 
     if (base && (input.options?.apply ?? 'merge') === 'merge') {
         return {
@@ -96,181 +91,209 @@ function toOptimisticChange<T extends Entity>({
     return toChange({ id, before, after })
 }
 
-export async function compileIntentToPlan<T extends Entity>(
+function toPreparedWrite<T extends Entity>({
+    entry,
+    optimistic,
+    output
+}: {
+    entry: WriteEntry
+    optimistic: StoreChange<T>
+    output?: T
+}): PreparedWrite<T> {
+    return output === undefined
+        ? {
+            entry,
+            optimisticChange: optimistic
+        }
+        : {
+            entry,
+            optimisticChange: optimistic,
+            output
+        }
+}
+
+export async function compileIntentToWrite<T extends Entity>(
     runtime: Runtime,
     input: IntentInput<T>
-): Promise<IntentToPlanResult<T>> {
+): Promise<PreparedWrite<T>> {
     const { handle, context } = input.scope
     const snapshot = handle.state.snapshot()
-    const entries: WriteEntry[] = []
-    const optimisticChanges: StoreChange<T>[] = []
     const now = runtime.now
 
-    if (input.action === 'create') {
-        const prepared = await prepareCreateInput(runtime, handle, input.item, context) as T
-        const outbound = await requireOutbound({
-            runtime,
-            input,
-            value: prepared
-        })
-        const id = prepared.id
-        const current = snapshot.get(id)
+    switch (input.action) {
+        case 'create': {
+            const prepared = await prepareCreateInput(runtime, handle, input.item, context) as T
+            const outbound = await requireOutbound({
+                runtime,
+                input,
+                value: prepared
+            })
+            const id = prepared.id
+            const current = snapshot.get(id)
+            const meta = createMeta(now)
 
-        entries.push({
-            action: 'create',
-            item: {
-                id,
-                value: outbound,
-                meta: createMeta(now)
-            }
-        })
-        optimisticChanges.push(toOptimisticChange({
-            id,
-            before: current,
-            after: prepared
-        }))
-
-        return { plan: { entries, optimisticChanges }, output: prepared }
-    }
-
-    if (input.action === 'update') {
-        const base = await resolveWriteBase(
-            runtime,
-            handle,
-            input.id,
-            input.options,
-            context
-        )
-        const next = requireEntityObject(input.updater(base as Readonly<T>), input.id)
-        const prepared = await prepareUpdateInput(
-            runtime,
-            handle,
-            base,
-            next as PartialWithId<T>,
-            context
-        ) as T
-        const outbound = await requireOutbound({
-            runtime,
-            input,
-            value: prepared
-        })
-        const id = input.id
-        const current = snapshot.get(id)
-
-        entries.push({
-            action: 'update',
-            item: {
-                id,
-                baseVersion: requireBaseVersion(id, base),
-                value: outbound,
-                meta: createMeta(now)
-            }
-        })
-        optimisticChanges.push(toOptimisticChange({
-            id,
-            before: current,
-            after: prepared
-        }))
-
-        return { plan: { entries, optimisticChanges }, output: prepared }
-    }
-
-    if (input.action === 'upsert') {
-        const { base, prepared } = await resolveUpsertPreparedValue(runtime, input)
-        const normalized = prepared as T
-        const outbound = await requireOutbound({
-            runtime,
-            input,
-            value: normalized
-        })
-        const id = prepared.id
-        const current = snapshot.get(id)
-        const conflict = input.options?.conflict ?? 'cas'
-        const apply = input.options?.apply ?? 'merge'
-        const expectedVersion = conflict === 'cas'
-            ? resolvePositiveVersion(current ?? (base as T | undefined))
-            : undefined
-
-        entries.push({
-            action: 'upsert',
-            item: {
-                id,
-                ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
-                value: outbound,
-                meta: createMeta(now)
-            },
-            options: {
-                upsert: {
-                    conflict,
-                    apply
-                }
-            }
-        })
-        optimisticChanges.push(toOptimisticChange({
-            id,
-            before: current,
-            after: normalized
-        }))
-
-        return { plan: { entries, optimisticChanges }, output: normalized }
-    }
-
-    const base = await resolveWriteBase(
-        runtime,
-        handle,
-        input.id,
-        input.options,
-        context
-    )
-    const id = input.id
-    const current = snapshot.get(id)
-    if (input.options?.force) {
-        const previous = current ?? (base as T)
-        return {
-            plan: {
-                entries: [{
-                    action: 'delete',
+            return toPreparedWrite({
+                entry: {
+                    action: 'create',
                     item: {
                         id,
-                        baseVersion: requireBaseVersion(id, previous),
-                        meta: createMeta(now)
+                        value: outbound,
+                        meta
                     }
-                }],
-                optimisticChanges: [toOptimisticChange({
+                },
+                optimistic: toOptimisticChange({
                     id,
-                    before: previous
-                })]
-            }
+                    before: current,
+                    after: prepared
+                }),
+                output: prepared
+            })
         }
-    }
+        case 'update': {
+            const base = await resolveWriteBase(
+                runtime,
+                handle,
+                input.id,
+                input.options,
+                context
+            )
+            const next = requireEntityObject(input.updater(base as Readonly<T>), input.id)
+            const prepared = await prepareUpdateInput(
+                runtime,
+                handle,
+                base,
+                next as PartialWithId<T>,
+                context
+            ) as T
+            const outbound = await requireOutbound({
+                runtime,
+                input,
+                value: prepared
+            })
+            const id = input.id
+            const current = snapshot.get(id)
+            const meta = createMeta(now)
 
-    const after = {
-        ...base,
-        deleted: true,
-        deletedAt: runtime.now()
-    } as unknown as T
-    const outbound = await requireOutbound({
-        runtime,
-        input,
-        value: after
-    })
-
-    return {
-        plan: {
-            entries: [{
-                action: 'update',
-                item: {
+            return toPreparedWrite({
+                entry: {
+                    action: 'update',
+                    item: {
+                        id,
+                        baseVersion: requireBaseVersion(id, base),
+                        value: outbound,
+                        meta
+                    }
+                },
+                optimistic: toOptimisticChange({
                     id,
-                    baseVersion: requireBaseVersion(id, base),
-                    value: outbound,
-                    meta: createMeta(now)
-                }
-            }],
-            optimisticChanges: [toOptimisticChange({
-                id,
-                before: current,
-                after
-            })]
+                    before: current,
+                    after: prepared
+                }),
+                output: prepared
+            })
+        }
+        case 'upsert': {
+            const current = snapshot.get(input.item.id)
+            const { base, prepared } = await resolveUpsertPreparedValue(
+                runtime,
+                input,
+                current as PartialWithId<T> | undefined
+            )
+            const normalized = prepared as T
+            const outbound = await requireOutbound({
+                runtime,
+                input,
+                value: normalized
+            })
+            const id = prepared.id
+            const conflict = input.options?.conflict ?? 'cas'
+            const apply = input.options?.apply ?? 'merge'
+            const expectedVersion = conflict === 'cas'
+                ? resolvePositiveVersion(current ?? (base as T | undefined))
+                : undefined
+            const meta = createMeta(now)
+
+            return toPreparedWrite({
+                entry: {
+                    action: 'upsert',
+                    item: {
+                        id,
+                        ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
+                        value: outbound,
+                        meta
+                    },
+                    options: {
+                        upsert: {
+                            conflict,
+                            apply
+                        }
+                    }
+                },
+                optimistic: toOptimisticChange({
+                    id,
+                    before: current,
+                    after: normalized
+                }),
+                output: normalized
+            })
+        }
+        case 'delete': {
+            const base = await resolveWriteBase(
+                runtime,
+                handle,
+                input.id,
+                input.options,
+                context
+            )
+            const id = input.id
+            const current = snapshot.get(id)
+            const meta = createMeta(now)
+
+            if (input.options?.force) {
+                const previous = current ?? (base as T)
+                return toPreparedWrite({
+                    entry: {
+                        action: 'delete',
+                        item: {
+                            id,
+                            baseVersion: requireBaseVersion(id, previous),
+                            meta
+                        }
+                    },
+                    optimistic: toOptimisticChange({
+                        id,
+                        before: previous
+                    })
+                })
+            }
+
+            const after = {
+                ...base,
+                deleted: true,
+                deletedAt: runtime.now()
+            } as unknown as T
+            const outbound = await requireOutbound({
+                runtime,
+                input,
+                value: after
+            })
+
+            return toPreparedWrite({
+                entry: {
+                    action: 'update',
+                    item: {
+                        id,
+                        baseVersion: requireBaseVersion(id, base),
+                        value: outbound,
+                        meta
+                    }
+                },
+                optimistic: toOptimisticChange({
+                    id,
+                    before: current,
+                    after
+                })
+            })
         }
     }
 }

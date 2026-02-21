@@ -11,13 +11,6 @@ import type {
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, WriteEntry, StoreHandle } from 'atoma-types/runtime'
 
-export type OptimisticState<T extends Entity> = Readonly<{
-    before: ReadonlyMap<EntityId, T>
-    after: ReadonlyMap<EntityId, T>
-    changedIds: ReadonlySet<EntityId>
-    changes: ReadonlyArray<StoreChange<T>>
-}>
-
 export type WriteScope<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
     context: ActionContext
@@ -25,15 +18,16 @@ export type WriteScope<T extends Entity> = Readonly<{
     signal?: AbortSignal
 }>
 
-export type WritePlan<T extends Entity> = Readonly<{
-    entries: ReadonlyArray<WriteEntry>
-    optimisticChanges: ReadonlyArray<StoreChange<T>>
+export type PreparedWrite<T extends Entity> = Readonly<{
+    entry: WriteEntry
+    optimisticChange: StoreChange<T>
+    output?: T
 }>
 
 export type WriteCommitRequest<T extends Entity> = Readonly<{
     runtime: Runtime
     scope: WriteScope<T>
-    plan: WritePlan<T>
+    prepared: PreparedWrite<T>
 }>
 
 export type WriteCommitResult<T extends Entity> = Readonly<{

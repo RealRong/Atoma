@@ -9,11 +9,11 @@ import type {
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Write, WriteEventSource, StoreHandle } from 'atoma-types/runtime'
 import { commitWrite } from './write/commit/commitWrite'
-import { compileIntentToPlan } from './write/adapters/intentToPlan'
+import { compileIntentToWrite } from './write/adapters/intentToWrite'
 import type {
     IntentInput,
     IntentCommand,
-    WritePlan,
+    PreparedWrite,
     WriteScope,
 } from './write/types'
 import { runBatch } from './write/utils/batch'
@@ -40,19 +40,19 @@ export class WriteFlow implements Write {
 
     private commitWrite = async <T extends Entity>({
         session,
-        plan,
+        prepared,
         source,
-        output
+        output: localOutput
     }: {
         session: WriteScope<T>
-        plan: WritePlan<T>
+        prepared: PreparedWrite<T>
         source: WriteEventSource
         output?: T
     }): Promise<T | void> => {
         const { handle, context, route } = session
         const storeName = handle.storeName
         const events = this.runtime.events
-        const writeEntries = plan.entries
+        const writeEntries = [prepared.entry]
 
         events.emit.writeStart({
             storeName,
@@ -66,10 +66,10 @@ export class WriteFlow implements Write {
             const commitResult = await commitWrite<T>({
                 runtime: this.runtime,
                 scope: session,
-                plan,
+                prepared,
             })
 
-            const finalValue = commitResult.output ?? output
+            const finalValue = commitResult.output ?? localOutput
             events.emit.writeCommitted({
                 storeName,
                 context,
@@ -99,16 +99,13 @@ export class WriteFlow implements Write {
         session: WriteScope<T>
         input: IntentInput<T>
     }): Promise<T | void> => {
-        const compiled = await compileIntentToPlan(this.runtime, input)
-        if (!compiled.plan.entries.length) {
-            return compiled.output
-        }
+        const prepared = await compileIntentToWrite(this.runtime, input)
 
         return await this.commitWrite({
             session,
-            plan: compiled.plan,
+            prepared,
             source: input.action,
-            output: compiled.output
+            output: prepared.output
         })
     }
 

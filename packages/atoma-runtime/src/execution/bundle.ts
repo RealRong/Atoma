@@ -12,15 +12,13 @@ function normalize(value: unknown): string {
     return String(value ?? '').trim()
 }
 
-type NormalizedBundle = Omit<KernelLayer, 'token'>
-
 export function normalizeBundle({
     bundle,
     createError
 }: {
     bundle: ExecutionBundle
     createError: CreateExecutionError
-}): NormalizedBundle {
+}) {
     const id = normalize(bundle.id)
     if (!id) {
         throw createError({

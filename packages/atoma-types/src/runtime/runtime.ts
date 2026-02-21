@@ -6,7 +6,6 @@ import type { StoreCatalog } from './store/catalog'
 import type { ExecutionKernel } from './execution'
 import type { Transform } from './transform'
 import type { Write } from './write'
-import type { Changes } from './changes'
 
 export type Runtime = Readonly<{
     id: string
@@ -16,7 +15,6 @@ export type Runtime = Readonly<{
     execution: ExecutionKernel
     read: Read
     write: Write
-    changes: Changes
     transform: Transform
     engine: Engine
     debug: Debug

@@ -15,7 +15,6 @@ export type {
 export type { Read } from './read'
 export type { Transform, TransformPipeline } from './transform'
 export type { Write } from './write'
-export type { Changes } from './changes'
 export type { StoreCatalog, StoreSession } from './store/catalog'
 export type { StoreHandle } from './store/handle'
 export type {

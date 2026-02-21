@@ -17,99 +17,62 @@ import {
 } from 'atoma-core/store'
 import type {
     WriteCommitRequest,
-    OptimisticState,
-    WritePlan,
     WriteCommitResult,
 } from '../types'
 
-function createEmptyOptimisticState<T extends Entity>(before: ReadonlyMap<EntityId, T>): OptimisticState<T> {
-    return {
-        before,
-        after: before,
-        changedIds: new Set<EntityId>(),
-        changes: []
-    }
-}
-
 function applyOptimistic<T extends Entity>({
     request,
-    plan,
     consistency
 }: {
     request: WriteCommitRequest<T>
-    plan: WritePlan<T>
     consistency: WriteConsistency
-}): OptimisticState<T> {
-    const handle = request.scope.handle
-    const before = handle.state.snapshot() as Map<EntityId, T>
-    if (consistency.commit !== 'optimistic' || !plan.entries.length) {
-        return createEmptyOptimisticState(before)
-    }
+}): ReadonlyArray<StoreChange<T>> {
+    if (consistency.commit !== 'optimistic') return []
 
-    if (!plan.optimisticChanges.length) {
-        return createEmptyOptimisticState(before)
-    }
+    const optimistic = request.scope.handle.state.apply([
+        request.prepared.optimisticChange
+    ])
 
-    const optimistic = handle.state.apply(plan.optimisticChanges)
-    if (!optimistic) {
-        return createEmptyOptimisticState(before)
-    }
-
-    return {
-        before,
-        after: optimistic.after,
-        changedIds: optimistic.changedIds,
-        changes: optimistic.changes
-    }
+    return optimistic?.changes ?? []
 }
 
-function rollbackOptimistic<T extends Entity>(request: WriteCommitRequest<T>, optimisticState: OptimisticState<T>) {
-    if (!optimisticState.changes.length) return
-    request.scope.handle.state.apply(invertChanges(optimisticState.changes))
+function rollbackOptimistic<T extends Entity>(
+    request: WriteCommitRequest<T>,
+    optimisticChanges: ReadonlyArray<StoreChange<T>>
+) {
+    if (!optimisticChanges.length) return
+    request.scope.handle.state.apply(invertChanges(optimisticChanges))
 }
 
 async function resolveResult<T extends Entity>({
     request,
-    entries,
-    results
+    entry,
+    result
 }: {
     request: WriteCommitRequest<T>
-    entries: ReadonlyArray<WriteEntry>
-    results: ReadonlyArray<WriteItemResult>
+    entry: WriteEntry
+    result: WriteItemResult
 }): Promise<{ writeback?: StoreWritebackArgs<T>; output?: T }> {
-    if (!entries.length) return {}
-    if (results.length !== entries.length) {
-        throw new Error(`[Atoma] write item result count mismatch (expected=${entries.length} actual=${results.length})`)
-    }
+    if (!result.ok) throw toWriteItemError(entry.action, result)
 
     const upserts: T[] = []
     const versionUpdates: Array<{ id: EntityId; version: number }> = []
+
+    if (typeof result.version === 'number' && Number.isFinite(result.version) && result.version > 0) {
+        const id = result.id ?? entry.item.id
+        if (id) {
+            versionUpdates.push({ id, version: result.version })
+        }
+    }
+
     let output: T | undefined
-    const hasSingleEntry = entries.length === 1
-
-    for (let index = 0; index < entries.length; index++) {
-        const entry = entries[index]
-        const itemResult = results[index]
-        if (!itemResult) {
-            throw new Error(`[Atoma] missing write item result at index=${index}`)
-        }
-
-        if (!itemResult.ok) throw toWriteItemError(entry.action, itemResult)
-
-        if (typeof itemResult.version === 'number' && Number.isFinite(itemResult.version) && itemResult.version > 0) {
-            const id = itemResult.id ?? entry.item.id
-            if (id) {
-                versionUpdates.push({ id, version: itemResult.version })
-            }
-        }
-
-        if (!shouldApplyReturnedData(entry) || !itemResult.data || typeof itemResult.data !== 'object') continue
-
-        const normalized = await request.runtime.transform.writeback(request.scope.handle, itemResult.data as T)
-        if (!normalized) continue
-
-        upserts.push(normalized)
-        if (!output && hasSingleEntry && index === 0) {
+    if (shouldApplyReturnedData(entry) && result.data && typeof result.data === 'object') {
+        const normalized = await request.runtime.transform.writeback(
+            request.scope.handle,
+            result.data as T
+        )
+        if (normalized) {
+            upserts.push(normalized)
             output = normalized
         }
     }
@@ -142,56 +105,58 @@ function toWriteItemError(
 
 function ensureWriteResultStatus(writeResult: WriteOutput) {
     if (writeResult.status === 'enqueued') return
-    if (writeResult.results.length === 0) {
-        throw new Error(`[Atoma] execution.write ${writeResult.status} without item results`)
+    if (writeResult.results.length !== 1) {
+        throw new Error(`[Atoma] execution.write result count mismatch (expected=1 actual=${writeResult.results.length})`)
     }
 }
 
 export async function commitWrite<T extends Entity>(request: WriteCommitRequest<T>): Promise<WriteCommitResult<T>> {
-    const { runtime, scope, plan } = request
+    const { runtime, scope, prepared } = request
     const { handle, context, route, signal } = scope
-    const writeEntries = plan.entries
+    const entry = prepared.entry
     const executionOptions: ExecutionOptions | undefined = (route ?? signal)
         ? { route, signal }
         : undefined
     const consistency = runtime.execution.resolveConsistency(handle, executionOptions)
-    const optimisticState = applyOptimistic({
+    const optimisticChanges = applyOptimistic({
         request,
-        plan,
         consistency
     })
 
     try {
-        let transactionOutput: T | undefined
-        let transactionChanges: ReadonlyArray<StoreChange<T>> = []
+        const writeResult = await runtime.execution.write(
+            { handle, context, entries: [entry] },
+            executionOptions
+        )
+        ensureWriteResultStatus(writeResult)
 
-        if (writeEntries.length) {
-            const writeResult = await runtime.execution.write(
-                { handle, context, entries: writeEntries },
-                executionOptions
-            )
-            ensureWriteResultStatus(writeResult)
-
-            const resolved = writeResult.status === 'enqueued'
-                ? {}
-                : await resolveResult({
-                    request,
-                    entries: writeEntries,
-                    results: writeResult.results
-                })
-
-            transactionOutput = resolved.output
-            transactionChanges = resolved.writeback
-                ? (handle.state.writeback(resolved.writeback)?.changes ?? [])
-                : []
+        if (writeResult.status === 'enqueued') {
+            return {
+                changes: optimisticChanges
+            }
         }
+
+        const itemResult = writeResult.results[0]
+        if (!itemResult) {
+            throw new Error('[Atoma] execution.write missing write item result at index=0')
+        }
+
+        const resolved = await resolveResult({
+            request,
+            entry,
+            result: itemResult
+        })
+
+        const transactionChanges = resolved.writeback
+            ? (handle.state.writeback(resolved.writeback)?.changes ?? [])
+            : []
 
         return {
-            changes: mergeChanges(optimisticState.changes, transactionChanges),
-            ...(transactionOutput !== undefined ? { output: transactionOutput } : {})
+            changes: mergeChanges(optimisticChanges, transactionChanges),
+            ...(resolved.output !== undefined ? { output: resolved.output } : {})
         }
     } catch (error) {
-        rollbackOptimistic(request, optimisticState)
+        rollbackOptimistic(request, optimisticChanges)
         throw error
     }
 }
