@@ -14,11 +14,12 @@ import type {
     ExecutionSpec,
     ExecutionQueryOutput,
     QueryRequest,
-    WriteEntry,
+    WriteEntry as RuntimeWriteEntry,
     WriteItemResult,
     WriteRequest,
     WriteOutput
 } from 'atoma-types/runtime'
+import { buildWriteEntries } from './write/buildWriteEntry'
 
 type OperationRuntime = Readonly<{
     now: () => number
@@ -27,7 +28,7 @@ type OperationRuntime = Readonly<{
 type WriteGroup = {
     entries: Array<{
         index: number
-        entry: WriteEntry
+        entry: RuntimeWriteEntry
     }>
 }
 
@@ -77,12 +78,12 @@ function resolveWriteStatus(results: ReadonlyArray<WriteItemResult>): WriteOutpu
     return 'partial'
 }
 
-function writeOptionsKey(options: WriteEntry['options']): string {
+function writeOptionsKey(options: RuntimeWriteEntry['options']): string {
     if (!options || typeof options !== 'object') return ''
     return JSON.stringify(options)
 }
 
-function groupWriteEntries(entries: ReadonlyArray<WriteEntry>): WriteGroup[] {
+function groupWriteEntries(entries: ReadonlyArray<RuntimeWriteEntry>): WriteGroup[] {
     const groupsByKey = new Map<string, WriteGroup>()
     const groups: WriteGroup[] = []
 
@@ -182,13 +183,28 @@ async function executeOperationWrite<T extends Entity>(args: {
             }
         }
 
+        const protocolEntries = buildWriteEntries({
+            handle: request.handle,
+            entries: request.entries
+        })
         const groups = groupWriteEntries(request.entries)
         const envelope = await operationClient.executeOperations({
             ops: groups.map(group => buildWriteOp({
                 opId: createOpId('w', { now: runtime.now }),
                 write: {
                     resource: request.handle.storeName,
-                    entries: group.entries.map((value) => value.entry)
+                    entries: group.entries.map((value) => {
+                        const protocolEntry = protocolEntries[value.index]
+                        if (!protocolEntry) {
+                            throw createOperationError({
+                                code: 'E_OPERATION_RESULT_MISSING',
+                                message: '[Atoma] operation.write: missing protocol write entry',
+                                retryable: false,
+                                details: { index: value.index }
+                            })
+                        }
+                        return protocolEntry
+                    })
                 }
             })),
             meta: {

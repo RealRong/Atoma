@@ -27,6 +27,7 @@ export type PluginRuntime = Readonly<{
     }>
     execution: Readonly<{
         apply: Runtime['execution']['apply']
+        hasExecutor: Runtime['execution']['hasExecutor']
         subscribe: Runtime['execution']['subscribe']
     }>
     snapshot: Readonly<{

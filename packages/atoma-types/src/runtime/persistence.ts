@@ -1,4 +1,4 @@
-import type { Entity, ExecutionRoute, ActionContext, PageInfo, Query } from '../core'
+import type { Entity, ActionContext, PageInfo, Query } from '../core'
 import type { EntityId, Version } from '../shared'
 import type { StoreHandle } from './store/handle'
 
@@ -18,7 +18,7 @@ type WriteItemByAction = {
     }
     update: {
         id: EntityId
-        baseVersion: Version
+        baseVersion?: Version
         value: unknown
         meta?: WriteItemMeta
     }
@@ -30,7 +30,7 @@ type WriteItemByAction = {
     }
     delete: {
         id: EntityId
-        baseVersion: Version
+        baseVersion?: Version
         meta?: WriteItemMeta
     }
 }
@@ -72,7 +72,6 @@ export type WriteItemResult =
     }
 
 export type ExecutionOptions = Readonly<{
-    route?: ExecutionRoute
     signal?: AbortSignal
 }>
 

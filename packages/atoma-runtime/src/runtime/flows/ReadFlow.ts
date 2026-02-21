@@ -46,6 +46,15 @@ export class ReadFlow implements Read {
         query: StoreQuery<T>,
         options?: StoreReadOptions
     ): Promise<ExecutionQueryOutput<T>> => {
+        if (!this.runtime.execution.hasExecutor('query')) {
+            const { data, pageInfo } = this.runtime.engine.query.evaluate({
+                state: handle.state,
+                query
+            })
+            return pageInfo
+                ? { source: 'local', data, pageInfo }
+                : { source: 'local', data }
+        }
         return await this.runtime.execution.query(
             {
                 handle,

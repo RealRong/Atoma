@@ -3,7 +3,7 @@ export type {
     ExecutionKernel,
     ExecutionSpec,
     ExecutorId,
-    RouteSpec,
+    ExecutionPhase,
     ExecutionBundle,
     ExecutionResolution,
     ExecutionErrorCode,

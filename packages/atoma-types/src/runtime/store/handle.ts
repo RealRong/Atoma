@@ -1,4 +1,4 @@
-import type { Entity, StoreConfig, StoreToken, ExecutionRoute } from '../../core'
+import type { Entity, StoreConfig, StoreToken } from '../../core'
 import type { StoreState } from './state'
 
 export type StoreHandle<T extends Entity = Entity> = {
@@ -6,7 +6,6 @@ export type StoreHandle<T extends Entity = Entity> = {
     storeName: StoreToken
     relations?: () => unknown | undefined
     config: Readonly<{
-        defaultRoute?: ExecutionRoute
         idGenerator: StoreConfig<T>['idGenerator']
         dataProcessor: StoreConfig<T>['dataProcessor']
     }>

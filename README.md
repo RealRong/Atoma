@@ -52,6 +52,23 @@ export function Users() {
 - `plugins: ClientPlugin[]` is the primary extension surface (io/persist/read/observe handler chains).
 - Plugins are assembled **at initialization**; `client.use` is intentionally removed.
 
+### Atoma Server plugin setup
+
+```ts
+import { createClient } from 'atoma-client'
+import { atomaServerBackendPlugin } from 'atoma-backend-atoma-server'
+
+const client = createClient({
+    schema,
+    plugins: [
+        atomaServerBackendPlugin({
+            baseURL: 'http://localhost:3000/api',
+            operationsPath: '/ops'
+        })
+    ]
+})
+```
+
 ## Remote protocol (ops + sync)
 
 - Ops endpoint: `POST /ops`

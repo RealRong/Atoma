@@ -25,14 +25,12 @@ export class ChangeFlow {
         options?: StoreOperationOptions
     }): Promise<void> => {
         const context = this.runtime.engine.action.createContext(options?.context)
-        const route = options?.route ?? handle.config.defaultRoute
         const storeName = handle.storeName
 
         this.runtime.events.emit.changeStart({
             storeName,
             context,
             source,
-            route,
             changes
         })
 
@@ -46,7 +44,6 @@ export class ChangeFlow {
                 storeName,
                 context,
                 source,
-                route,
                 changes: delta?.changes ?? []
             })
         } catch (error) {
@@ -54,7 +51,6 @@ export class ChangeFlow {
                 storeName,
                 context,
                 source,
-                route,
                 changes,
                 error
             })

@@ -1,4 +1,4 @@
-import type { Entity, ExecutionRoute } from '../core'
+import type { Entity } from '../core'
 import type {
     ExecutionOptions,
     QueryRequest,
@@ -10,31 +10,21 @@ import type {
 import type { StoreHandle } from './store/handle'
 
 export type ExecutorId = string
-
-export type RouteSpec = Readonly<{
-    query: ExecutorId
-    write: ExecutorId
-    consistency?: Partial<WriteConsistency>
-}>
+export type ExecutionPhase = 'query' | 'write'
 
 export type ExecutionBundle = Readonly<{
     id: string
-    executors?: Readonly<Record<ExecutorId, ExecutionSpec>>
-    routes?: Readonly<Record<ExecutionRoute, RouteSpec>>
-    defaultRoute?: ExecutionRoute
+    executor: ExecutionSpec
 }>
 
 export type ExecutionResolution = Readonly<{
-    route: ExecutionRoute
     executor: ExecutorId
 }>
 
 export type ExecutionErrorCode =
     | 'E_EXECUTION_BUNDLE_INVALID'
     | 'E_EXECUTION_CONFLICT'
-    | 'E_ROUTE_NOT_FOUND'
-    | 'E_ROUTE_INVALID'
-    | 'E_EXECUTOR_NOT_FOUND'
+    | 'E_EXECUTOR_MISSING'
     | 'E_EXECUTOR_QUERY_UNIMPLEMENTED'
     | 'E_EXECUTOR_WRITE_UNIMPLEMENTED'
     | 'E_EXECUTION_QUERY_FAILED'
@@ -54,7 +44,6 @@ export type ExecutionError = Error & Readonly<{
 export type ExecutionWriteEvent = Readonly<
     | {
         type: 'write.dispatched'
-        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: WriteRequest<any>
@@ -62,7 +51,6 @@ export type ExecutionWriteEvent = Readonly<
     }
     | {
         type: 'write.succeeded'
-        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: WriteRequest<any>
@@ -71,7 +59,6 @@ export type ExecutionWriteEvent = Readonly<
     }
     | {
         type: 'write.failed'
-        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: WriteRequest<any>
@@ -83,7 +70,6 @@ export type ExecutionWriteEvent = Readonly<
 export type ExecutionQueryEvent = Readonly<
     | {
         type: 'query.dispatched'
-        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: QueryRequest<any>
@@ -91,7 +77,6 @@ export type ExecutionQueryEvent = Readonly<
     }
     | {
         type: 'query.succeeded'
-        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: QueryRequest<any>
@@ -100,7 +85,6 @@ export type ExecutionQueryEvent = Readonly<
     }
     | {
         type: 'query.failed'
-        route: ExecutionRoute
         executor: ExecutorId
         resolution: ExecutionResolution
         request: QueryRequest<any>
@@ -120,6 +104,7 @@ export type ExecutionSpec = Readonly<{
 export type ExecutionKernel = Readonly<{
     apply: (bundle: ExecutionBundle) => () => void
     resolveConsistency: <T extends Entity>(handle: StoreHandle<T>, options?: ExecutionOptions) => WriteConsistency
+    hasExecutor: (phase: ExecutionPhase) => boolean
     subscribe: (listener: (event: ExecutionEvent) => void) => () => void
     query: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<ExecutionQueryOutput<T>>
     write: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput>

@@ -1,4 +1,4 @@
-import type { Entity, ExecutionRoute } from '../core'
+import type { Entity } from '../core'
 import type { AtomaSchema } from './schema'
 import type { ClientPlugin } from './plugins'
 
@@ -8,5 +8,4 @@ export type CreateClientOptions<
 > = Readonly<{
     schema?: Schema
     plugins?: ReadonlyArray<ClientPlugin>
-    defaultRoute?: ExecutionRoute
 }>

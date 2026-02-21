@@ -1,10 +1,10 @@
-import { HttpOperationClient } from './operation-client'
+import { HttpOperationClient } from 'atoma-backend-http'
 import { buildOperationExecutor } from 'atoma-backend-shared'
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
-import type { HttpBackendPluginOptions } from './types'
+import type { AtomaServerBackendPluginOptions } from './types'
 
-const HTTP_EXECUTOR_ID = 'backend.http.operation'
+const ATOMA_SERVER_EXECUTOR_ID = 'backend.atoma-server.operation'
 
 function safeDispose(dispose?: () => void): void {
     if (typeof dispose !== 'function') return
@@ -17,32 +17,32 @@ function safeDispose(dispose?: () => void): void {
 
 function normalizeBaseUrl(baseURL: string): string {
     const url = String(baseURL ?? '').trim()
-    if (!url) throw new Error('[Atoma] HttpBackendPlugin: baseURL 必填')
+    if (!url) throw new Error('[Atoma] AtomaServerBackendPlugin: baseURL 必填')
     return url
 }
 
-export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlugin {
-    const opts: HttpBackendPluginOptions = {
+export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOptions): ClientPlugin {
+    const normalizedOptions = {
         ...options,
         baseURL: normalizeBaseUrl(options.baseURL)
     }
 
     return {
-        id: `http:${opts.baseURL}`,
+        id: `atoma-server:${normalizedOptions.baseURL}`,
         provides: [OPERATION_CLIENT_TOKEN],
         setup: (ctx) => {
             const operationClient = new HttpOperationClient({
-                baseURL: opts.baseURL,
-                operationsPath: opts.operationsPath,
-                headers: opts.headers,
-                retry: opts.retry,
-                fetchFn: opts.fetchFn,
+                baseURL: normalizedOptions.baseURL,
+                operationsPath: normalizedOptions.operationsPath,
+                headers: normalizedOptions.headers,
+                retry: normalizedOptions.retry,
+                fetchFn: normalizedOptions.fetchFn,
                 interceptors: {
-                    onRequest: opts.onRequest,
-                    onResponse: opts.onResponse,
-                    responseParser: opts.responseParser
+                    onRequest: normalizedOptions.onRequest,
+                    onResponse: normalizedOptions.onResponse,
+                    responseParser: normalizedOptions.responseParser
                 },
-                batch: opts.batch
+                batch: normalizedOptions.batch
             })
 
             const unregisterService = ctx.services.register(OPERATION_CLIENT_TOKEN, operationClient)
@@ -50,7 +50,7 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
 
             try {
                 unregisterExecution = ctx.runtime.execution.apply({
-                    id: `backend.http:${opts.baseURL}`,
+                    id: `backend.atoma-server:${normalizedOptions.baseURL}`,
                     executor: buildOperationExecutor({
                         runtime: {
                             now: ctx.runtime.now

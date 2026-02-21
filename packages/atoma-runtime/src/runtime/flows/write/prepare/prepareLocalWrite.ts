@@ -1,6 +1,6 @@
 import type { Entity, PartialWithId } from 'atoma-types/core'
 import type { Runtime } from 'atoma-types/runtime'
-import { createIdempotencyKey, ensureWriteItemMeta, requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
+import { createIdempotencyKey, ensureWriteItemMeta, resolvePositiveVersion } from 'atoma-shared'
 import { toChange } from 'atoma-core/store'
 import type { IntentInput, IntentInputByAction, PreparedWrite, PreparedWrites } from '../types'
 import { prepareCreateInput, prepareUpdateInput, prepareUpsertInput, resolveWriteBase } from '../utils/prepareWriteInput'
@@ -21,32 +21,25 @@ async function resolveUpsertPreparedValue<T extends Entity>(
     runtime: Runtime,
     input: IntentInputByAction<T, 'upsert'>,
     current?: PartialWithId<T>
-): Promise<{ base?: PartialWithId<T>; prepared: PartialWithId<T> }> {
+): Promise<PartialWithId<T>> {
     const { handle, context } = input.scope
-    const base = current
 
-    if (base && (input.options?.apply ?? 'merge') === 'merge') {
-        return {
-            base,
-            prepared: await prepareUpdateInput(
-                runtime,
-                handle,
-                base,
-                input.item,
-                context
-            )
-        }
-    }
-
-    return {
-        base,
-        prepared: await prepareUpsertInput(
+    if (current && (input.options?.apply ?? 'merge') === 'merge') {
+        return await prepareUpdateInput(
             runtime,
             handle,
+            current,
             input.item,
             context
         )
     }
+
+    return await prepareUpsertInput(
+        runtime,
+        handle,
+        input.item,
+        context
+    )
 }
 
 async function requireOutbound<T extends Entity>({
@@ -79,7 +72,19 @@ function createMeta(now: () => number) {
     })
 }
 
-async function prepareWrite<T extends Entity>(
+function ensureUniqueIds<T extends Entity>(prepared: PreparedWrites<T>) {
+    const seen = new Set<string>()
+    prepared.forEach((item, index) => {
+        const id = String(item.entry.item.id ?? '').trim()
+        if (!id) return
+        if (seen.has(id)) {
+            throw new Error(`[Atoma] writeMany: duplicate item id in batch (id=${id}, index=${index})`)
+        }
+        seen.add(id)
+    })
+}
+
+async function prepareLocalWrite<T extends Entity>(
     runtime: Runtime,
     input: IntentInput<T>
 ): Promise<PreparedWrite<T>> {
@@ -139,6 +144,7 @@ async function prepareWrite<T extends Entity>(
             })
             const id = input.id
             const current = snapshot.get(id)
+            const baseVersion = resolvePositiveVersion(base as T | undefined)
             const meta = createMeta(now)
 
             return {
@@ -146,7 +152,7 @@ async function prepareWrite<T extends Entity>(
                     action: 'update',
                     item: {
                         id,
-                        baseVersion: requireBaseVersion(id, base),
+                        ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
                         value: outbound,
                         meta
                     }
@@ -161,7 +167,7 @@ async function prepareWrite<T extends Entity>(
         }
         case 'upsert': {
             const current = snapshot.get(input.item.id)
-            const { base, prepared } = await resolveUpsertPreparedValue(
+            const prepared = await resolveUpsertPreparedValue(
                 runtime,
                 input,
                 current as PartialWithId<T> | undefined
@@ -175,9 +181,6 @@ async function prepareWrite<T extends Entity>(
             const id = prepared.id
             const conflict = input.options?.conflict ?? 'cas'
             const apply = input.options?.apply ?? 'merge'
-            const expectedVersion = conflict === 'cas'
-                ? resolvePositiveVersion(current ?? (base as T | undefined))
-                : undefined
             const meta = createMeta(now)
 
             return {
@@ -185,7 +188,6 @@ async function prepareWrite<T extends Entity>(
                     action: 'upsert',
                     item: {
                         id,
-                        ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
                         value: outbound,
                         meta
                     },
@@ -218,12 +220,13 @@ async function prepareWrite<T extends Entity>(
 
             if (input.options?.force) {
                 const previous = current ?? (base as T)
+                const baseVersion = resolvePositiveVersion(previous)
                 return {
                     entry: {
                         action: 'delete',
                         item: {
                             id,
-                            baseVersion: requireBaseVersion(id, previous),
+                            ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
                             meta
                         }
                     },
@@ -239,6 +242,7 @@ async function prepareWrite<T extends Entity>(
                 deleted: true,
                 deletedAt: runtime.now()
             } as unknown as T
+            const baseVersion = resolvePositiveVersion(base as T | undefined)
             const outbound = await requireOutbound({
                 runtime,
                 input,
@@ -250,7 +254,7 @@ async function prepareWrite<T extends Entity>(
                     action: 'update',
                     item: {
                         id,
-                        baseVersion: requireBaseVersion(id, base),
+                        ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
                         value: outbound,
                         meta
                     }
@@ -265,9 +269,11 @@ async function prepareWrite<T extends Entity>(
     }
 }
 
-export async function prepareWrites<T extends Entity>(
+export async function prepareLocalWrites<T extends Entity>(
     runtime: Runtime,
     inputs: ReadonlyArray<IntentInput<T>>
 ): Promise<PreparedWrites<T>> {
-    return await Promise.all(inputs.map(input => prepareWrite(runtime, input)))
+    const prepared = await Promise.all(inputs.map(input => prepareLocalWrite(runtime, input)))
+    ensureUniqueIds(prepared)
+    return prepared
 }

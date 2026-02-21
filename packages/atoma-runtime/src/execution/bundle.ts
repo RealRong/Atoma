@@ -1,15 +1,51 @@
-import type { ExecutionRoute } from 'atoma-types/core'
 import type {
     ExecutionBundle,
     ExecutionSpec,
-    ExecutorId,
-    RouteSpec
 } from 'atoma-types/runtime'
 import type { CreateExecutionError } from './errors'
-import type { KernelLayer, KernelSnapshot } from './kernelTypes'
+import type {
+    KernelLayer,
+    KernelResolvedExecution,
+    KernelSnapshot
+} from './kernelTypes'
 
 function normalize(value: unknown): string {
     return String(value ?? '').trim()
+}
+
+function ensureExecutorSpec({
+    id,
+    executor,
+    createError
+}: {
+    id: string
+    executor: ExecutionSpec | undefined
+    createError: CreateExecutionError
+}): ExecutionSpec {
+    if (!executor || typeof executor !== 'object') {
+        throw createError({
+            code: 'E_EXECUTION_BUNDLE_INVALID',
+            message: `[Atoma] execution.apply: executor 配置缺失: ${id}`,
+            retryable: false
+        })
+    }
+    if (typeof executor.query !== 'function' && typeof executor.write !== 'function') {
+        throw createError({
+            code: 'E_EXECUTION_BUNDLE_INVALID',
+            message: `[Atoma] execution.apply: executor 至少实现 query/write 之一: ${id}`,
+            retryable: false
+        })
+    }
+    return executor
+}
+
+function toResolvedExecution(layer: KernelLayer): KernelResolvedExecution {
+    return {
+        resolution: {
+            executor: layer.id
+        },
+        spec: layer.executor
+    }
 }
 
 export function normalizeBundle({
@@ -18,7 +54,7 @@ export function normalizeBundle({
 }: {
     bundle: ExecutionBundle
     createError: CreateExecutionError
-}) {
+}): Omit<KernelLayer, 'token'> {
     const id = normalize(bundle.id)
     if (!id) {
         throw createError({
@@ -28,56 +64,15 @@ export function normalizeBundle({
         })
     }
 
-    const executors = new Map<ExecutorId, ExecutionSpec>()
-    Object.entries(bundle.executors ?? {}).forEach(([rawExecutorId, spec]) => {
-        const executorId = normalize(rawExecutorId)
-        if (!executorId) {
-            throw createError({
-                code: 'E_EXECUTION_BUNDLE_INVALID',
-                message: '[Atoma] execution.apply: executor id 必填',
-                retryable: false,
-                details: { layerId: id }
-            })
-        }
-        executors.set(executorId, spec)
+    const executor = ensureExecutorSpec({
+        id,
+        executor: bundle.executor,
+        createError
     })
 
-    const routes = new Map<ExecutionRoute, RouteSpec>()
-    Object.entries(bundle.routes ?? {}).forEach(([rawRouteId, spec]) => {
-        const routeId = normalize(rawRouteId)
-        if (!routeId) {
-            throw createError({
-                code: 'E_ROUTE_INVALID',
-                message: '[Atoma] execution.apply: route id 必填',
-                retryable: false,
-                details: { layerId: id }
-            })
-        }
-
-        const query = normalize(spec?.query)
-        const write = normalize(spec?.write)
-        if (!query || !write) {
-            throw createError({
-                code: 'E_ROUTE_INVALID',
-                message: `[Atoma] execution.apply: route 配置缺失 query/write: ${routeId}`,
-                retryable: false,
-                details: { layerId: id, route: routeId }
-            })
-        }
-
-        routes.set(routeId, {
-            ...spec,
-            query,
-            write
-        })
-    })
-
-    const defaultRoute = normalize(bundle.defaultRoute)
     return {
         id,
-        executors,
-        routes,
-        ...(defaultRoute ? { defaultRoute } : {})
+        executor
     }
 }
 
@@ -88,69 +83,37 @@ export function buildSnapshot({
     layers: ReadonlyArray<KernelLayer>
     createError: CreateExecutionError
 }): KernelSnapshot {
-    const executors = new Map<ExecutorId, ExecutionSpec>()
-    const routes = new Map<ExecutionRoute, RouteSpec>()
-    let defaultRoute: ExecutionRoute | undefined
+    let query: KernelResolvedExecution | undefined
+    let write: KernelResolvedExecution | undefined
 
     layers.forEach((layer) => {
-        layer.executors.forEach((spec, executorId) => {
-            if (executors.has(executorId)) {
+        if (layer.executor.query) {
+            if (query) {
                 throw createError({
                     code: 'E_EXECUTION_CONFLICT',
-                    message: `[Atoma] execution.apply: executor 冲突: ${executorId}`,
+                    message: `[Atoma] execution.apply: query executor 冲突: ${layer.id}`,
                     retryable: false,
-                    details: { executor: executorId, layerId: layer.id }
+                    details: { executor: layer.id, phase: 'query' }
                 })
             }
-            executors.set(executorId, spec)
-        })
+            query = toResolvedExecution(layer)
+        }
 
-        layer.routes.forEach((route, routeId) => {
-            if (routes.has(routeId)) {
+        if (layer.executor.write) {
+            if (write) {
                 throw createError({
                     code: 'E_EXECUTION_CONFLICT',
-                    message: `[Atoma] execution.apply: route 冲突: ${routeId}`,
+                    message: `[Atoma] execution.apply: write executor 冲突: ${layer.id}`,
                     retryable: false,
-                    details: { route: routeId, layerId: layer.id }
+                    details: { executor: layer.id, phase: 'write' }
                 })
             }
-            routes.set(routeId, route)
-        })
-
-        defaultRoute = layer.defaultRoute ?? defaultRoute
-    })
-
-    routes.forEach((route, routeId) => {
-        if (!executors.has(route.query)) {
-            throw createError({
-                code: 'E_EXECUTOR_NOT_FOUND',
-                message: `[Atoma] execution.apply: route.query 未注册 executor: ${routeId} -> ${route.query}`,
-                retryable: false,
-                details: { route: routeId, phase: 'query', executor: route.query }
-            })
-        }
-        if (!executors.has(route.write)) {
-            throw createError({
-                code: 'E_EXECUTOR_NOT_FOUND',
-                message: `[Atoma] execution.apply: route.write 未注册 executor: ${routeId} -> ${route.write}`,
-                retryable: false,
-                details: { route: routeId, phase: 'write', executor: route.write }
-            })
+            write = toResolvedExecution(layer)
         }
     })
-
-    if (defaultRoute && !routes.has(defaultRoute)) {
-        throw createError({
-            code: 'E_ROUTE_NOT_FOUND',
-            message: `[Atoma] execution.apply: defaultRoute 未注册: ${defaultRoute}`,
-            retryable: false,
-            details: { route: defaultRoute }
-        })
-    }
 
     return {
-        executors,
-        routes,
-        ...(defaultRoute ? { defaultRoute } : {})
+        ...(query ? { query } : {}),
+        ...(write ? { write } : {})
     }
 }

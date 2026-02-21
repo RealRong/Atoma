@@ -1,4 +1,3 @@
-import type { ExecutionRoute } from 'atoma-types/core'
 import type { CreateExecutionError } from './errors'
 import type {
     KernelPhase,
@@ -9,51 +8,25 @@ import type {
 type ResolveExecutionArgs = Readonly<{
     snapshot: KernelSnapshot
     phase: KernelPhase
-    route?: ExecutionRoute
     createError: CreateExecutionError
 }>
 
 export function resolveExecution({
     snapshot,
     phase,
-    route,
     createError
 }: ResolveExecutionArgs): KernelResolvedExecution | undefined {
-    const routeId = String(route ?? '').trim() || snapshot.defaultRoute
-    if (!routeId) return undefined
+    const resolved = snapshot[phase]
+    if (!resolved) return undefined
 
-    const routeSpec = snapshot.routes.get(routeId)
-    if (!routeSpec) {
+    const executor = String(resolved.resolution.executor ?? '').trim()
+    if (!executor) {
         throw createError({
-            code: 'E_ROUTE_NOT_FOUND',
-            message: `[Atoma] execution: route 未注册: ${routeId}`,
-            retryable: false,
-            details: { route: routeId }
+            code: 'E_EXECUTION_BUNDLE_INVALID',
+            message: `[Atoma] execution: executor 非法（phase=${phase}）`,
+            retryable: false
         })
     }
 
-    const executor = phase === 'query'
-        ? routeSpec.query
-        : routeSpec.write
-    const spec = snapshot.executors.get(executor)
-    if (!spec) {
-        throw createError({
-            code: 'E_EXECUTOR_NOT_FOUND',
-            message: `[Atoma] execution: executor 未注册: ${executor}`,
-            retryable: false,
-            details: { route: routeId, executor, phase }
-        })
-    }
-
-    return {
-        resolution: {
-            route: routeId,
-            executor
-        },
-        spec,
-        consistency: {
-            ...(routeSpec.consistency ?? {}),
-            ...(spec.consistency ?? {})
-        }
-    }
+    return resolved
 }

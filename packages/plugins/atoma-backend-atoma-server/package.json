@@ -1,0 +1,24 @@
+{
+    "name": "atoma-backend-atoma-server",
+    "version": "0.0.0",
+    "type": "module",
+    "description": "Atoma server backend plugin (optional)",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsup",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "atoma-backend-http": "workspace:*",
+        "atoma-backend-shared": "workspace:*",
+        "atoma-types": "workspace:*"
+    }
+}

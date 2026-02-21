@@ -1,7 +1,6 @@
 import type {
     Entity,
     ActionContext,
-    ExecutionRoute,
     StoreChange,
     WriteManyResult,
     PartialWithId,
@@ -15,7 +14,6 @@ import type { Runtime, WriteEntry, StoreHandle } from 'atoma-types/runtime'
 export type WriteScope<T extends Entity> = Readonly<{
     handle: StoreHandle<T>
     context: ActionContext
-    route?: ExecutionRoute
     signal?: AbortSignal
 }>
 

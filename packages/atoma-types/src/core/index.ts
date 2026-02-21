@@ -69,7 +69,6 @@ export type {
     IndexDefinition,
     StoreConfig,
     StoreToken,
-    ExecutionRoute,
     Store,
 } from './store'
 

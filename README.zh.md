@@ -52,6 +52,23 @@ export function Users() {
 - `plugins: ClientPlugin[]` 是主要扩展面（io/persist/read/observe 处理器链）。
 - 插件仅在初始化时装配，**不再提供 `client.use`**。
 
+### Atoma Server 插件接入
+
+```ts
+import { createClient } from 'atoma-client'
+import { atomaServerBackendPlugin } from 'atoma-backend-atoma-server'
+
+const client = createClient({
+    schema,
+    plugins: [
+        atomaServerBackendPlugin({
+            baseURL: 'http://localhost:3000/api',
+            operationsPath: '/ops'
+        })
+    ]
+})
+```
+
 ## 协议（ops + sync）
 
 - Ops：`POST /ops`

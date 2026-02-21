@@ -1,26 +1,20 @@
 import type {
     Entity,
     StoreChange,
-    StoreWritebackArgs,
-    WriteManyItemErr,
     WriteManyResult,
 } from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/shared'
 import type {
-    ExecutionOptions,
-    WriteEntry,
-    WriteItemResult,
-    WriteOutput,
     WriteConsistency
 } from 'atoma-types/runtime'
-import type { EntityId } from 'atoma-types/shared'
-import {
-    invertChanges,
-    mergeChanges
-} from 'atoma-core/store'
+import { invertChanges, mergeChanges } from 'atoma-core/store'
 import type {
+    PreparedWrites,
     WriteCommitRequest,
     WriteCommitResult,
 } from '../types'
+import { commitRemoteWrite } from './commitRemoteWrite'
+import { reconcileWriteResult } from './reconcileWriteResult'
 
 function applyOptimistic<T extends Entity>({
     request,
@@ -49,68 +43,79 @@ function rollbackOptimistic<T extends Entity>(
     request.scope.handle.state.apply(invertChanges(optimisticChanges))
 }
 
-function shouldApplyReturnedData(entry: WriteEntry): boolean {
-    if (entry.options?.returning === false) return false
-    const select = entry.options?.select
-    return !(select && Object.keys(select).length > 0)
+function resolvePositiveNumber(value: unknown): number | undefined {
+    return (typeof value === 'number' && Number.isFinite(value) && value > 0)
+        ? value
+        : undefined
 }
 
-function toWriteItemError(
-    action: WriteEntry['action'],
-    result: WriteItemResult
-): Error {
-    if (result.ok) return new Error(`[Atoma] write(${action}) failed`)
-
-    const msg = result.error.message || 'Write failed'
-    const error = new Error(`[Atoma] write(${action}) failed: ${msg}`)
-    ; (error as { error?: unknown }).error = result.error
-    return error
-}
-
-function toWriteManyError(
-    entry: WriteEntry,
-    result: Extract<WriteItemResult, { ok: false }>,
-    index: number
-): WriteManyItemErr {
-    const current = result.current
-    return {
+function buildLocalWriteResult<T extends Entity>(prepared: PreparedWrites<T>): WriteManyResult<T | void> {
+    return prepared.map((item, index) => ({
         index,
-        ok: false,
-        error: toWriteItemError(entry.action, result),
-        ...(current
-            ? {
-                current: {
-                    ...(current.value !== undefined ? { value: current.value } : {}),
-                    ...(typeof current.version === 'number' ? { version: current.version } : {})
-                }
-            }
-            : {})
-    }
-}
-
-function ensureWriteResultStatus(writeResult: WriteOutput, expectedCount: number) {
-    if (writeResult.status === 'enqueued') return
-    if (writeResult.results.length !== expectedCount) {
-        throw new Error(`[Atoma] execution.write result count mismatch (expected=${expectedCount} actual=${writeResult.results.length})`)
-    }
-}
-
-function toEnqueuedResults<T extends Entity>(request: WriteCommitRequest<T>): WriteManyResult<T | void> {
-    const prepared = request.prepared
-    if (!prepared.length) return []
-    if (prepared.length !== 1) {
-        throw new Error(`[Atoma] execution.write enqueued requires single entry (actual=${prepared.length})`)
-    }
-    const first = prepared[0]
-    if (!first) {
-        throw new Error('[Atoma] execution.write enqueued missing prepared write at index=0')
-    }
-
-    return [{
-        index: 0,
         ok: true,
-        value: first.output as T | void
-    }]
+        value: item.output as T | void
+    }))
+}
+
+function collectLocalVersionUpdates<T extends Entity>({
+    prepared,
+    snapshot
+}: {
+    prepared: PreparedWrites<T>
+    snapshot: ReadonlyMap<EntityId, T>
+}): Array<{ id: EntityId; version: number }> {
+    const versionUpdates: Array<{ id: EntityId; version: number }> = []
+
+    prepared.forEach((item) => {
+        const entry = item.entry
+        if (entry.action === 'delete') return
+
+        const id = entry.item.id
+        if (typeof id !== 'string' || !id) return
+        const current = snapshot.get(id)
+        const baseVersion = entry.action === 'create'
+            ? undefined
+            : entry.action === 'upsert'
+                ? resolvePositiveNumber(entry.item.expectedVersion)
+                : resolvePositiveNumber(entry.item.baseVersion)
+        const snapshotVersion = current && typeof current === 'object'
+            ? resolvePositiveNumber((current as { version?: unknown }).version)
+            : undefined
+        const nextVersion = (baseVersion ?? snapshotVersion ?? 0) + 1
+        versionUpdates.push({
+            id,
+            version: nextVersion
+        })
+    })
+
+    return versionUpdates
+}
+
+function commitLocalWrite<T extends Entity>({
+    request,
+    optimisticChanges
+}: {
+    request: WriteCommitRequest<T>
+    optimisticChanges: ReadonlyArray<StoreChange<T>>
+}): WriteCommitResult<T> {
+    const { scope, prepared } = request
+    const appliedChanges = optimisticChanges.length
+        ? optimisticChanges
+        : (scope.handle.state.apply(prepared.map((item) => item.optimistic))?.changes ?? [])
+    const snapshot = scope.handle.state.snapshot()
+    const versionUpdates = collectLocalVersionUpdates({
+        prepared,
+        snapshot
+    })
+    const versionChanges = versionUpdates.length
+        ? (scope.handle.state.writeback({ versionUpdates })?.changes ?? [])
+        : []
+    const results = buildLocalWriteResult(prepared)
+
+    return {
+        changes: mergeChanges(appliedChanges, versionChanges),
+        results
+    }
 }
 
 export async function commitWrites<T extends Entity>(request: WriteCommitRequest<T>): Promise<WriteCommitResult<T>> {
@@ -124,95 +129,54 @@ export async function commitWrites<T extends Entity>(request: WriteCommitRequest
         }
     }
 
-    const { handle, context, route, signal } = scope
-    const executionOptions: ExecutionOptions | undefined = (route ?? signal)
-        ? { route, signal }
-        : undefined
-    const consistency = runtime.execution.resolveConsistency(handle, executionOptions)
+    const consistency = runtime.execution.resolveConsistency(
+        scope.handle,
+        scope.signal
+            ? { signal: scope.signal }
+            : undefined
+    )
     const optimisticChanges = applyOptimistic({
         request,
         consistency
     })
 
-    try {
-        const writeResult = await runtime.execution.write(
-            { handle, context, entries },
-            executionOptions
-        )
-        ensureWriteResultStatus(writeResult, entries.length)
+    if (!runtime.execution.hasExecutor('write')) {
+        return commitLocalWrite({
+            request,
+            optimisticChanges
+        })
+    }
 
-        if (writeResult.status === 'enqueued') {
+    try {
+        const remote = await commitRemoteWrite({
+            runtime,
+            request: {
+                scope,
+                prepared,
+                entries
+            }
+        })
+        if (remote.status === 'enqueued') {
             return {
                 changes: optimisticChanges,
-                results: toEnqueuedResults(request)
+                results: remote.results
             }
         }
 
-        const results: WriteManyResult<T | void> = new Array(entries.length)
-        const upserts: T[] = []
-        const versionUpdates: Array<{ id: EntityId; version: number }> = []
-
-        for (let index = 0; index < entries.length; index++) {
-            const preparedWrite = prepared[index]
-            const entry = entries[index]
-            if (!preparedWrite || !entry) {
-                throw new Error(`[Atoma] missing prepared write at index=${index}`)
-            }
-            const itemResult = writeResult.results[index]
-            if (!itemResult) {
-                throw new Error(`[Atoma] execution.write missing write item result at index=${index}`)
-            }
-
-            if (!itemResult.ok) {
-                results[index] = toWriteManyError(entry, itemResult, index)
-                continue
-            }
-
-            if (typeof itemResult.version === 'number' && Number.isFinite(itemResult.version) && itemResult.version > 0) {
-                const id = itemResult.id ?? entry.item.id
-                if (id) {
-                    versionUpdates.push({ id, version: itemResult.version })
-                }
-            }
-
-            let output = preparedWrite.output
-            if (shouldApplyReturnedData(entry) && itemResult.data && typeof itemResult.data === 'object') {
-                const normalized = await runtime.transform.writeback(handle, itemResult.data as T)
-                if (normalized) {
-                    upserts.push(normalized)
-                    output = normalized
-                }
-            }
-
-            results[index] = {
-                index,
-                ok: true,
-                value: output as T | void
-            }
-        }
-
-        const writeback: StoreWritebackArgs<T> | undefined = (upserts.length || versionUpdates.length)
-            ? {
-                ...(upserts.length ? { upserts } : {}),
-                ...(versionUpdates.length ? { versionUpdates } : {})
-            }
-            : undefined
-        const transactionChanges = writeback
-            ? (handle.state.writeback(writeback)?.changes ?? [])
-            : []
-
-        const failed = results.some(item => item && !item.ok)
-        const mergedChanges = failed
-            ? transactionChanges
-            : mergeChanges(optimisticChanges, transactionChanges)
-
-        if (failed && optimisticChanges.length) {
+        const reconcile = reconcileWriteResult({
+            scope,
+            results: remote.results,
+            optimisticChanges,
+            upserts: remote.upserts,
+            versionUpdates: remote.versionUpdates
+        })
+        if (reconcile.rollbackOptimistic) {
             rollbackOptimistic(request, optimisticChanges)
         }
 
         return {
-            changes: mergedChanges,
-            results
+            changes: reconcile.changes,
+            results: remote.results
         }
     } catch (error) {
         rollbackOptimistic(request, optimisticChanges)

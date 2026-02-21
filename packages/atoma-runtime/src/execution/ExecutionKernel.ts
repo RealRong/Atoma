@@ -1,4 +1,4 @@
-import type { Entity, ExecutionRoute } from 'atoma-types/core'
+import type { Entity } from 'atoma-types/core'
 import type {
     ExecutionBundle,
     ExecutionErrorCode,
@@ -52,30 +52,21 @@ const KERNEL_PHASE_META: Readonly<Record<KernelPhase, KernelPhaseMeta>> = {
 }
 
 function normalizeExecutionOptions({
-    options,
-    defaultRoute
+    options
 }: {
     options?: ExecutionOptions
-    defaultRoute?: ExecutionRoute
 }): ExecutionOptions | undefined {
-    const route = options?.route ?? defaultRoute
     const signal = options?.signal
-    if (route === undefined && signal === undefined) {
+    if (signal === undefined) {
         return undefined
     }
 
-    return {
-        ...(route !== undefined ? { route } : {}),
-        ...(signal !== undefined ? { signal } : {})
-    }
+    return { signal }
 }
 
 export class ExecutionKernel implements ExecutionKernelType {
     private layers: KernelLayer[] = []
-    private snapshot: KernelSnapshot = {
-        executors: new Map(),
-        routes: new Map()
-    }
+    private snapshot: KernelSnapshot = {}
     private readonly events = new ExecutionEvents()
     private readonly createError: CreateExecutionError = createExecutionError
 
@@ -118,25 +109,25 @@ export class ExecutionKernel implements ExecutionKernelType {
     }
 
     resolveConsistency = <T extends Entity>(
-        handle: StoreHandle<T>,
+        _handle: StoreHandle<T>,
         options?: ExecutionOptions
     ): WriteConsistency => {
-        const normalizedOptions = normalizeExecutionOptions({
-            options,
-            defaultRoute: handle.config.defaultRoute
-        })
+        normalizeExecutionOptions({ options })
         const resolved = resolveExecution({
             snapshot: this.snapshot,
             phase: 'write',
-            route: normalizedOptions?.route,
             createError: this.createError
         })
         if (!resolved) return ExecutionKernel.DEFAULT_CONSISTENCY
 
         return {
             ...ExecutionKernel.DEFAULT_CONSISTENCY,
-            ...resolved.consistency
+            ...resolved.spec.consistency
         }
+    }
+
+    hasExecutor = (phase: KernelPhase): boolean => {
+        return this.snapshot[phase] !== undefined
     }
 
     subscribe = (listener: (event: ExecutionEvent) => void): (() => void) => {
@@ -149,34 +140,30 @@ export class ExecutionKernel implements ExecutionKernelType {
     >({
         phase,
         request,
-        options,
-        defaultRoute
+        options
     }: {
         phase: KernelPhase
         request: Request
         options?: ExecutionOptions
-        defaultRoute?: ExecutionRoute
     }): Promise<Output> => {
         const normalizedOptions = normalizeExecutionOptions({
-            options,
-            defaultRoute
+            options
         })
         const resolved = resolveExecution({
             snapshot: this.snapshot,
             phase,
-            route: normalizedOptions?.route,
             createError: this.createError
         })
         if (!resolved) {
             throw this.createError({
-                code: 'E_ROUTE_NOT_FOUND',
-                message: '[Atoma] execution: 未配置默认 route',
-                retryable: false
+                code: 'E_EXECUTOR_MISSING',
+                message: `[Atoma] execution: 未注册 ${phase} executor`,
+                retryable: false,
+                details: { phase }
             })
         }
         const meta = KERNEL_PHASE_META[phase]
         const eventBase = {
-            route: resolved.resolution.route,
             executor: resolved.resolution.executor,
             resolution: resolved.resolution,
             request,
@@ -218,8 +205,8 @@ export class ExecutionKernel implements ExecutionKernelType {
                 fallbackMessage: meta.fallbackMessage,
                 retryable: false,
                 details: {
-                    route: resolved.resolution.route,
-                    executor: resolved.resolution.executor
+                    executor: resolved.resolution.executor,
+                    phase
                 },
                 createError: this.createError
             })
@@ -236,8 +223,7 @@ export class ExecutionKernel implements ExecutionKernelType {
         return await this.executePhase({
             phase: 'query',
             request,
-            options,
-            defaultRoute: request.handle.config.defaultRoute
+            options
         })
     }
 
@@ -245,8 +231,7 @@ export class ExecutionKernel implements ExecutionKernelType {
         return await this.executePhase({
             phase: 'write',
             request,
-            options,
-            defaultRoute: request.handle.config.defaultRoute
+            options
         })
     }
 }

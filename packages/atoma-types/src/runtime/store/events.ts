@@ -1,4 +1,4 @@
-import type { Entity, ActionContext, Query, QueryResult, StoreToken, ExecutionRoute, StoreChange } from '../../core'
+import type { Entity, ActionContext, Query, QueryResult, StoreToken, StoreChange } from '../../core'
 import type { WriteEntry } from '../persistence'
 
 export type WriteEventSource =
@@ -26,13 +26,11 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
         storeName: StoreToken
         context: ActionContext
         source: WriteEventSource
-        route?: ExecutionRoute
         writeEntries: ReadonlyArray<WriteEntry>
     }>
     writeCommitted: Readonly<{
         storeName: StoreToken
         context: ActionContext
-        route?: ExecutionRoute
         writeEntries: ReadonlyArray<WriteEntry>
         result?: unknown
         changes?: ReadonlyArray<StoreChange<T>>
@@ -40,7 +38,6 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
     writeFailed: Readonly<{
         storeName: StoreToken
         context: ActionContext
-        route?: ExecutionRoute
         writeEntries: ReadonlyArray<WriteEntry>
         error: unknown
     }>
@@ -48,21 +45,18 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
         storeName: StoreToken
         context: ActionContext
         source: ChangeEventSource
-        route?: ExecutionRoute
         changes: ReadonlyArray<StoreChange<T>>
     }>
     changeCommitted: Readonly<{
         storeName: StoreToken
         context: ActionContext
         source: ChangeEventSource
-        route?: ExecutionRoute
         changes: ReadonlyArray<StoreChange<T>>
     }>
     changeFailed: Readonly<{
         storeName: StoreToken
         context: ActionContext
         source: ChangeEventSource
-        route?: ExecutionRoute
         changes: ReadonlyArray<StoreChange<T>>
         error: unknown
     }>

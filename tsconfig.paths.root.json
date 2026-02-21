@@ -21,6 +21,9 @@
             "atoma-backend-shared": [
                 "packages/plugins/atoma-backend-shared/src/index.ts"
             ],
+            "atoma-backend-atoma-server": [
+                "packages/plugins/atoma-backend-atoma-server/src/index.ts"
+            ],
             "atoma-client": [
                 "packages/atoma-client/src/index.ts"
             ],

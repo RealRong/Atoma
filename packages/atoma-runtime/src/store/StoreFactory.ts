@@ -68,7 +68,6 @@ export class StoreFactory {
             state,
             storeName: name,
             config: {
-                defaultRoute: storeSchema.write?.route,
                 idGenerator,
                 dataProcessor
             }

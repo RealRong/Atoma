@@ -30,6 +30,7 @@ export class PluginContext implements PluginContextType {
             },
             execution: {
                 apply: runtime.execution.apply,
+                hasExecutor: runtime.execution.hasExecutor,
                 subscribe: runtime.execution.subscribe
             },
             snapshot: {

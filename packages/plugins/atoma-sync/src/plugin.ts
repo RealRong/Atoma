@@ -159,8 +159,9 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
 
     const syncWrites = new SyncWrites({
         runtime,
+        events: ctx.events,
         outbox: stores.outbox,
-        enqueueRoutes: opts.enqueueRoutes ?? ['direct-local'],
+        resources: opts.resources,
         onEvent,
         onError
     })

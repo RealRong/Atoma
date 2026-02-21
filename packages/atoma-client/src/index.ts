@@ -7,10 +7,8 @@ import type {
 import type { Schema } from 'atoma-types/runtime'
 import { createId } from 'atoma-shared'
 import { Runtime } from 'atoma-runtime'
-import { LOCAL_ROUTE, registerLocalRoute } from './execution/registerLocalRoute'
 import { PluginContext } from './plugins/PluginContext'
 import { setupPlugins } from './plugins/setupPlugins'
-export { LOCAL_ROUTE } from './execution/registerLocalRoute'
 
 export function createClient<
     const E extends Record<string, Entity>,
@@ -25,12 +23,6 @@ export function createClient<
         throw new Error('[Atoma] createClient: plugins 必须是数组')
     }
 
-    const rawDefaultRoute = options.defaultRoute
-    const defaultRoute = rawDefaultRoute === undefined ? LOCAL_ROUTE : String(rawDefaultRoute).trim()
-    if (rawDefaultRoute !== undefined && !defaultRoute) {
-        throw new Error('[Atoma] createClient: defaultRoute 不能为空')
-    }
-
     const runtime = new Runtime({
         id: createId(),
         schema: (options.schema ?? {}) as Schema
@@ -40,16 +32,11 @@ export function createClient<
     const disposers: Array<() => void> = []
     let pluginSetup: ReturnType<typeof setupPlugins> | null = null
     try {
-        disposers.push(registerLocalRoute(runtime))
         pluginSetup = setupPlugins({
             context,
             rawPlugins: userPlugins
         })
         disposers.push(pluginSetup.dispose)
-        disposers.push(runtime.execution.apply({
-            id: 'client.default-route',
-            defaultRoute
-        }))
     } catch (error) {
         if (pluginSetup && !disposers.includes(pluginSetup.dispose)) {
             try {

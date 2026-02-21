@@ -38,6 +38,21 @@ function toProtocolWriteOptions(options: WriteOptions | undefined): ProtocolWrit
     }
 }
 
+function requireProtocolBaseVersion({
+    action,
+    id,
+    baseVersion
+}: {
+    action: 'update' | 'delete'
+    id: string
+    baseVersion: number | undefined
+}): number {
+    if (typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0) {
+        return baseVersion
+    }
+    throw new Error(`[Sync] Missing baseVersion for ${action} entry (id=${id})`)
+}
+
 function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
     const options = toProtocolWriteOptions(entry.options)
 
@@ -54,11 +69,16 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
     }
 
     if (entry.action === 'update') {
+        const baseVersion = requireProtocolBaseVersion({
+            action: 'update',
+            id: entry.item.id,
+            baseVersion: entry.item.baseVersion
+        })
         return {
             action: 'update',
             item: {
                 id: entry.item.id,
-                baseVersion: entry.item.baseVersion,
+                baseVersion,
                 value: entry.item.value,
                 ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
             },
@@ -79,11 +99,16 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
         }
     }
 
+    const baseVersion = requireProtocolBaseVersion({
+        action: 'delete',
+        id: entry.item.id,
+        baseVersion: entry.item.baseVersion
+    })
     return {
         action: 'delete',
         item: {
             id: entry.item.id,
-            baseVersion: entry.item.baseVersion,
+            baseVersion,
             ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
         },
         ...(options ? { options } : {})

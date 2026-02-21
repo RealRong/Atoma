@@ -34,13 +34,11 @@ export type StoreUpdater<T> = (current: Readonly<T>) => T
 
 export interface StoreOperationOptions {
     force?: boolean
-    route?: ExecutionRoute
     signal?: AbortSignal
     context?: Partial<ActionContext>
 }
 
 export type StoreReadOptions = Readonly<{
-    route?: ExecutionRoute
     signal?: AbortSignal
 }>
 
@@ -62,14 +60,9 @@ export interface StoreConfig<T> {
     dataProcessor?: StoreDataProcessor<T>
     indexes?: Array<IndexDefinition<T>>
     storeName?: StoreToken
-    write?: Readonly<{
-        route?: ExecutionRoute
-    }>
 }
 
 export type StoreToken = string
-
-export type ExecutionRoute = string
 
 declare const RELATIONS_BRAND: unique symbol
 
