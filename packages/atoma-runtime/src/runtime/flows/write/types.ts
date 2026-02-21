@@ -3,6 +3,7 @@ import type {
     ActionContext,
     ExecutionRoute,
     StoreChange,
+    WriteManyResult,
     PartialWithId,
     StoreOperationOptions,
     StoreUpdater,
@@ -20,19 +21,21 @@ export type WriteScope<T extends Entity> = Readonly<{
 
 export type PreparedWrite<T extends Entity> = Readonly<{
     entry: WriteEntry
-    optimisticChange: StoreChange<T>
+    optimistic: StoreChange<T>
     output?: T
 }>
+
+export type PreparedWrites<T extends Entity> = ReadonlyArray<PreparedWrite<T>>
 
 export type WriteCommitRequest<T extends Entity> = Readonly<{
     runtime: Runtime
     scope: WriteScope<T>
-    prepared: PreparedWrite<T>
+    prepared: PreparedWrites<T>
 }>
 
 export type WriteCommitResult<T extends Entity> = Readonly<{
     changes: ReadonlyArray<StoreChange<T>>
-    output?: T
+    results: WriteManyResult<T | void>
 }>
 
 export type IntentAction = 'create' | 'update' | 'upsert' | 'delete'

@@ -1,8 +1,8 @@
-import type { Entity, PartialWithId, StoreChange } from 'atoma-types/core'
-import type { Runtime, WriteEntry } from 'atoma-types/runtime'
+import type { Entity, PartialWithId } from 'atoma-types/core'
+import type { Runtime } from 'atoma-types/runtime'
 import { createIdempotencyKey, ensureWriteItemMeta, requireBaseVersion, resolvePositiveVersion } from 'atoma-shared'
 import { toChange } from 'atoma-core/store'
-import type { IntentInput, IntentInputByAction, PreparedWrite } from '../types'
+import type { IntentInput, IntentInputByAction, PreparedWrite, PreparedWrites } from '../types'
 import { prepareCreateInput, prepareUpdateInput, prepareUpsertInput, resolveWriteBase } from '../utils/prepareWriteInput'
 
 function requireEntityObject<T extends Entity>(value: unknown, id: string): T {
@@ -79,40 +79,7 @@ function createMeta(now: () => number) {
     })
 }
 
-function toOptimisticChange<T extends Entity>({
-    id,
-    before,
-    after
-}: {
-    id: string
-    before?: T
-    after?: T
-}): StoreChange<T> {
-    return toChange({ id, before, after })
-}
-
-function toPreparedWrite<T extends Entity>({
-    entry,
-    optimistic,
-    output
-}: {
-    entry: WriteEntry
-    optimistic: StoreChange<T>
-    output?: T
-}): PreparedWrite<T> {
-    return output === undefined
-        ? {
-            entry,
-            optimisticChange: optimistic
-        }
-        : {
-            entry,
-            optimisticChange: optimistic,
-            output
-        }
-}
-
-export async function compileIntentToWrite<T extends Entity>(
+async function prepareWrite<T extends Entity>(
     runtime: Runtime,
     input: IntentInput<T>
 ): Promise<PreparedWrite<T>> {
@@ -132,7 +99,7 @@ export async function compileIntentToWrite<T extends Entity>(
             const current = snapshot.get(id)
             const meta = createMeta(now)
 
-            return toPreparedWrite({
+            return {
                 entry: {
                     action: 'create',
                     item: {
@@ -141,13 +108,13 @@ export async function compileIntentToWrite<T extends Entity>(
                         meta
                     }
                 },
-                optimistic: toOptimisticChange({
+                optimistic: toChange({
                     id,
                     before: current,
                     after: prepared
                 }),
                 output: prepared
-            })
+            }
         }
         case 'update': {
             const base = await resolveWriteBase(
@@ -174,7 +141,7 @@ export async function compileIntentToWrite<T extends Entity>(
             const current = snapshot.get(id)
             const meta = createMeta(now)
 
-            return toPreparedWrite({
+            return {
                 entry: {
                     action: 'update',
                     item: {
@@ -184,13 +151,13 @@ export async function compileIntentToWrite<T extends Entity>(
                         meta
                     }
                 },
-                optimistic: toOptimisticChange({
+                optimistic: toChange({
                     id,
                     before: current,
                     after: prepared
                 }),
                 output: prepared
-            })
+            }
         }
         case 'upsert': {
             const current = snapshot.get(input.item.id)
@@ -213,7 +180,7 @@ export async function compileIntentToWrite<T extends Entity>(
                 : undefined
             const meta = createMeta(now)
 
-            return toPreparedWrite({
+            return {
                 entry: {
                     action: 'upsert',
                     item: {
@@ -229,13 +196,13 @@ export async function compileIntentToWrite<T extends Entity>(
                         }
                     }
                 },
-                optimistic: toOptimisticChange({
+                optimistic: toChange({
                     id,
                     before: current,
                     after: normalized
                 }),
                 output: normalized
-            })
+            }
         }
         case 'delete': {
             const base = await resolveWriteBase(
@@ -251,7 +218,7 @@ export async function compileIntentToWrite<T extends Entity>(
 
             if (input.options?.force) {
                 const previous = current ?? (base as T)
-                return toPreparedWrite({
+                return {
                     entry: {
                         action: 'delete',
                         item: {
@@ -260,11 +227,11 @@ export async function compileIntentToWrite<T extends Entity>(
                             meta
                         }
                     },
-                    optimistic: toOptimisticChange({
+                    optimistic: toChange({
                         id,
                         before: previous
                     })
-                })
+                }
             }
 
             const after = {
@@ -278,7 +245,7 @@ export async function compileIntentToWrite<T extends Entity>(
                 value: after
             })
 
-            return toPreparedWrite({
+            return {
                 entry: {
                     action: 'update',
                     item: {
@@ -288,12 +255,19 @@ export async function compileIntentToWrite<T extends Entity>(
                         meta
                     }
                 },
-                optimistic: toOptimisticChange({
+                optimistic: toChange({
                     id,
                     before: current,
                     after
                 })
-            })
+            }
         }
     }
+}
+
+export async function prepareWrites<T extends Entity>(
+    runtime: Runtime,
+    inputs: ReadonlyArray<IntentInput<T>>
+): Promise<PreparedWrites<T>> {
+    return await Promise.all(inputs.map(input => prepareWrite(runtime, input)))
 }

@@ -34,9 +34,6 @@ export type StoreUpdater<T> = (current: Readonly<T>) => T
 
 export interface StoreOperationOptions {
     force?: boolean
-    batch?: {
-        concurrency?: number
-    }
     route?: ExecutionRoute
     signal?: AbortSignal
     context?: Partial<ActionContext>
