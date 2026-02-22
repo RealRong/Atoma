@@ -1,4 +1,5 @@
 import { assertRemoteOpResults, createOpId, buildWriteOp, buildChangesPullOp, assertWriteResultData } from 'atoma-types/protocol-tools'
+import type { WriteCoordinator } from 'atoma-types/client/ops'
 import type {
     Meta,
     RemoteOp,
@@ -38,22 +39,7 @@ function toProtocolWriteOptions(options: WriteOptions | undefined): ProtocolWrit
     }
 }
 
-function requireProtocolBaseVersion({
-    action,
-    id,
-    baseVersion
-}: {
-    action: 'update' | 'delete'
-    id: string
-    baseVersion: number | undefined
-}): number {
-    if (typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0) {
-        return baseVersion
-    }
-    throw new Error(`[Sync] Missing baseVersion for ${action} entry (id=${id})`)
-}
-
-function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
+function toProtocolWriteEntryFallback(entry: WriteEntry): ProtocolWriteEntry {
     const options = toProtocolWriteOptions(entry.options)
 
     if (entry.action === 'create') {
@@ -69,21 +55,15 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
     }
 
     if (entry.action === 'update') {
-        const baseVersion = requireProtocolBaseVersion({
-            action: 'update',
-            id: entry.item.id,
-            baseVersion: entry.item.baseVersion
-        })
         return {
             action: 'update',
             item: {
                 id: entry.item.id,
-                baseVersion,
                 value: entry.item.value,
                 ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
             },
             ...(options ? { options } : {})
-        }
+        } as unknown as ProtocolWriteEntry
     }
 
     if (entry.action === 'upsert') {
@@ -91,7 +71,6 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
             action: 'upsert',
             item: {
                 id: entry.item.id,
-                ...(typeof entry.item.expectedVersion === 'number' ? { expectedVersion: entry.item.expectedVersion } : {}),
                 value: entry.item.value,
                 ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
             },
@@ -99,19 +78,43 @@ function toProtocolWriteEntry(entry: WriteEntry): ProtocolWriteEntry {
         }
     }
 
-    const baseVersion = requireProtocolBaseVersion({
-        action: 'delete',
-        id: entry.item.id,
-        baseVersion: entry.item.baseVersion
-    })
     return {
         action: 'delete',
         item: {
             id: entry.item.id,
-            baseVersion,
             ...(entry.item.meta ? { meta: toProtocolWriteItemMeta(entry.item.meta) } : {})
         },
         ...(options ? { options } : {})
+    } as unknown as ProtocolWriteEntry
+}
+
+function toProtocolWriteEntries(args: {
+    coordinator?: WriteCoordinator
+    storeName: string
+    entries: ReadonlyArray<WriteEntry>
+}): ProtocolWriteEntry[] {
+    const { coordinator, storeName, entries } = args
+    if (coordinator) {
+        return Array.from(coordinator.encode({
+            storeName,
+            entries
+        }))
+    }
+    return entries.map((entry) => toProtocolWriteEntryFallback(entry))
+}
+
+function withReturningOption(args: {
+    entry: ProtocolWriteEntry
+    returning: boolean
+}): ProtocolWriteEntry {
+    const { entry, returning } = args
+    const baseOptions = (entry.options && typeof entry.options === 'object') ? entry.options : undefined
+    return {
+        ...entry,
+        options: {
+            ...(baseOptions ? baseOptions : {}),
+            returning
+        }
     }
 }
 
@@ -141,7 +144,6 @@ function toWriteItemResult(itemResult: ProtocolWriteItemResult): WriteItemResult
         return {
             ok: true,
             id: itemResult.id,
-            version: itemResult.version,
             ...(itemResult.data !== undefined ? { data: itemResult.data } : {})
         }
     }
@@ -152,8 +154,7 @@ function toWriteItemResult(itemResult: ProtocolWriteItemResult): WriteItemResult
         ...(itemResult.current
             ? {
                 current: {
-                    ...(itemResult.current.value !== undefined ? { value: itemResult.current.value } : {}),
-                    ...(typeof itemResult.current.version === 'number' ? { version: itemResult.current.version } : {})
+                    ...(itemResult.current.value !== undefined ? { value: itemResult.current.value } : {})
                 }
             }
             : {})
@@ -162,6 +163,7 @@ function toWriteItemResult(itemResult: ProtocolWriteItemResult): WriteItemResult
 
 export function createOperationSyncDriver(args: {
     executeOperations: ExecuteOperations
+    resolveWriteCoordinator?: () => WriteCoordinator | undefined
     now?: () => number
 }): SyncTransport {
     const now = args.now ?? (() => Date.now())
@@ -229,22 +231,37 @@ export function createOperationSyncDriver(args: {
             }
 
             for (const group of groups) {
+                let protocolEntries: ProtocolWriteEntry[]
+                try {
+                    protocolEntries = toProtocolWriteEntries({
+                        coordinator: args.resolveWriteCoordinator?.(),
+                        storeName: group.resource,
+                        entries: group.entries.map((value) => value.entry.entry)
+                    })
+                    if (protocolEntries.length !== group.entries.length) {
+                        throw new Error(`[Sync] write coordinator returned entries.length=${protocolEntries.length}, expected=${group.entries.length}`)
+                    }
+                } catch (error) {
+                    for (const e of group.entries) {
+                        outcomes[e.index] = {
+                            kind: 'reject',
+                            result: {
+                                ok: false,
+                                error: toWriteError(error, 'Write encode failed')
+                            }
+                        }
+                    }
+                    continue
+                }
+
                 const op = buildWriteOp({
                     opId: createOpId('w', { now }),
                     write: {
                         resource: group.resource,
-                        entries: group.entries.map(e => {
-                            const raw = toProtocolWriteEntry(e.entry.entry)
-                            const baseOptions = (raw.options && typeof raw.options === 'object') ? raw.options : undefined
-                            const options = {
-                                ...(baseOptions ? baseOptions : {}),
-                                returning: input.returning
-                            }
-                            return {
-                                ...raw,
-                                options
-                            }
-                        })
+                        entries: protocolEntries.map((entry) => withReturningOption({
+                            entry,
+                            returning: input.returning
+                        }))
                     }
                 })
 

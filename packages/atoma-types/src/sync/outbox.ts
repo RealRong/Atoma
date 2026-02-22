@@ -1,6 +1,5 @@
 import type { ResourceToken } from '../protocol'
 import type { WriteEntry } from '../runtime'
-import type { EntityId, Version } from '../shared'
 
 export type OutboxWrite = {
     resource: ResourceToken
@@ -34,7 +33,6 @@ export interface OutboxStore {
         ack: string[]
         reject: string[]
         retryable: string[]
-        rebase?: Array<{ resource: ResourceToken; id: EntityId; baseVersion: Version; afterEnqueuedAtMs?: number }>
     }) => Promise<void>
 
     recover: (args: { nowMs: number; inFlightTimeoutMs: number }) => Promise<void>

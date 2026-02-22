@@ -3,6 +3,7 @@ import type {
     Entity,
     StoreToken
 } from '../../core'
+import type { EntityId } from '../../shared'
 import type { Runtime, StoreEventName, StoreEventListener, StoreEventListenerOptions, StoreSession } from '../../runtime'
 import type { ServiceRegistry, ServiceToken } from '../services'
 
@@ -27,6 +28,7 @@ export type PluginRuntime = Readonly<{
     stores: Readonly<{
         list: () => StoreToken[]
         use: <T extends Entity = Entity>(storeName: StoreToken) => StoreSession<T>
+        peek: <T extends Entity = Entity>(storeName: StoreToken, id: EntityId) => T | undefined
     }>
     action: Readonly<{
         createContext: (context?: Partial<ActionContext>) => ActionContext

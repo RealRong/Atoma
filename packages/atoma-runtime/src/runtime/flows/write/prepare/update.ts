@@ -1,6 +1,5 @@
 import type { Entity, ActionContext, PartialWithId } from 'atoma-types/core'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
-import { resolvePositiveVersion } from 'atoma-shared'
 import { toChange } from 'atoma-core/store'
 import type { WriteScope, IntentCommandByAction, PreparedWrite } from '../contracts'
 import { requireOutbound, createMeta, requireProcessed, resolveWriteBase, requireUpdatedEntity } from './utils'
@@ -48,7 +47,6 @@ export async function prepareUpdate<T extends Entity>(
     })
     const id = intent.id
     const current = snapshot.get(id)
-    const baseVersion = resolvePositiveVersion(base as T | undefined)
     const meta = createMeta(now)
 
     return {
@@ -56,7 +54,6 @@ export async function prepareUpdate<T extends Entity>(
             action: 'update',
             item: {
                 id,
-                ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
                 value: outbound,
                 meta
             }

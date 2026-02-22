@@ -6,6 +6,7 @@
 
 - **Always reply in Simplified Chinese.**
 - **Never revert or overwrite existing changes you did not introduce.** Existing modifications in this repo are assumed to be important.
+- **Ignore all documents under `docs/`; they are legacy design docs. Only use documents in the repository root.**
 - Prioritize root-cause fixes; avoid temporary compatibility patches.
 - Unless explicitly requested, do not add transition aliases / compatibility wrappers / deprecated dual paths.
 - 命名重构默认**一步到位**：不保留旧名并存、不保留兼容别名、不保留过渡导出。

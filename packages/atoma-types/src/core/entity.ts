@@ -14,7 +14,6 @@ export interface Base extends Entity {
     updatedAt: number
     deleted?: boolean
     deletedAt?: number
-    version?: number
 }
 
 export type PartialWithId<T> = Partial<T> & { id: EntityId }

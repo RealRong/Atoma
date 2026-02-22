@@ -1,5 +1,5 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
+import { OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN } from 'atoma-types/client/ops'
 import type { SyncTransport } from 'atoma-types/sync'
 import { createOperationSyncDriver } from '#sync/transport/operation-driver'
 import { SYNC_TRANSPORT_TOKEN } from '#sync/services'
@@ -32,6 +32,7 @@ export function syncOperationDriverPlugin(options: SyncOperationDriverPluginOpti
                         ...(input.signal ? { signal: input.signal } : {})
                     })
                 },
+                resolveWriteCoordinator: () => ctx.services.resolve(WRITE_COORDINATOR_TOKEN),
                 ...(options.now ? { now: options.now } : {})
             })
 

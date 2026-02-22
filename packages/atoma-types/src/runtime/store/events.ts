@@ -7,7 +7,7 @@ export type WriteEventSource =
     | 'upsert'
     | 'delete'
 
-export type ChangeEventSource =
+export type ChangeDirection =
     | 'apply'
     | 'revert'
 
@@ -46,19 +46,19 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
     changeStart: Readonly<{
         storeName: StoreToken
         context: ActionContext
-        source: ChangeEventSource
+        direction: ChangeDirection
         changes: ReadonlyArray<StoreChange<T>>
     }>
     changeCommitted: Readonly<{
         storeName: StoreToken
         context: ActionContext
-        source: ChangeEventSource
+        direction: ChangeDirection
         changes: ReadonlyArray<StoreChange<T>>
     }>
     changeFailed: Readonly<{
         storeName: StoreToken
         context: ActionContext
-        source: ChangeEventSource
+        direction: ChangeDirection
         changes: ReadonlyArray<StoreChange<T>>
         error: unknown
     }>

@@ -1,5 +1,5 @@
 import type { Entity, ActionContext, PageInfo, Query } from '../core'
-import type { EntityId, Version } from '../shared'
+import type { EntityId } from '../shared'
 import type { StoreHandle } from './store/handle'
 
 export type WriteStatus = 'confirmed' | 'partial' | 'rejected'
@@ -18,19 +18,16 @@ type WriteItemByAction = {
     }
     update: {
         id: EntityId
-        baseVersion?: Version
         value: unknown
         meta?: WriteItemMeta
     }
     upsert: {
         id: EntityId
-        expectedVersion?: Version
         value: unknown
         meta?: WriteItemMeta
     }
     delete: {
         id: EntityId
-        baseVersion?: Version
         meta?: WriteItemMeta
     }
 }
@@ -64,11 +61,11 @@ export type WriteError = {
 }
 
 export type WriteItemResult =
-    | { ok: true; id: EntityId; version: Version; data?: unknown }
+    | { ok: true; id: EntityId; data?: unknown }
     | {
         ok: false
         error: WriteError
-        current?: { value?: unknown; version?: Version }
+        current?: { value?: unknown }
     }
 
 export type ExecutionOptions = Readonly<{

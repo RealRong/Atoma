@@ -4,7 +4,7 @@ import type {
     StoreChange,
     StoreOperationOptions
 } from 'atoma-types/core'
-import type { Runtime, ChangeEventSource, StoreHandle } from 'atoma-types/runtime'
+import type { Runtime, ChangeDirection, StoreHandle } from 'atoma-types/runtime'
 
 export class ChangeFlow {
     private readonly runtime: Runtime
@@ -15,12 +15,12 @@ export class ChangeFlow {
 
     private replay = async <T extends Entity>({
         handle,
-        source,
+        direction,
         changes,
         options
     }: {
         handle: StoreHandle<T>
-        source: ChangeEventSource
+        direction: ChangeDirection
         changes: ReadonlyArray<StoreChange<T>>
         options?: StoreOperationOptions
     }): Promise<void> => {
@@ -30,12 +30,12 @@ export class ChangeFlow {
         this.runtime.events.emit('changeStart', {
             storeName,
             context,
-            source,
+            direction,
             changes
         })
 
         try {
-            const replayChanges = source === 'apply'
+            const replayChanges = direction === 'apply'
                 ? [...changes]
                 : invertChanges([...changes].reverse())
             const delta = handle.state.apply(replayChanges)
@@ -43,14 +43,14 @@ export class ChangeFlow {
             this.runtime.events.emit('changeCommitted', {
                 storeName,
                 context,
-                source,
+                direction,
                 changes: delta?.changes ?? []
             })
         } catch (error) {
             this.runtime.events.emit('changeFailed', {
                 storeName,
                 context,
-                source,
+                direction,
                 changes,
                 error
             })
@@ -65,7 +65,7 @@ export class ChangeFlow {
     ): Promise<void> => {
         await this.replay({
             handle,
-            source: 'apply',
+            direction: 'apply',
             changes,
             options
         })
@@ -78,7 +78,7 @@ export class ChangeFlow {
     ): Promise<void> => {
         await this.replay({
             handle,
-            source: 'revert',
+            direction: 'revert',
             changes,
             options
         })

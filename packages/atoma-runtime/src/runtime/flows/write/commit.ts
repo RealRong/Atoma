@@ -1,11 +1,9 @@
 import type {
     Entity,
     StoreChange,
-    StoreWritebackArgs,
     WriteManyItemErr,
     WriteManyResult,
 } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
 import type {
     ExecutionOptions,
     Runtime,
@@ -36,23 +34,19 @@ function reconcileWriteResult<T extends Entity>({
     scope,
     results,
     optimisticByIndex,
-    upserts,
-    versionUpdates
+    upserts
 }: {
     scope: WriteScope<T>
     results: WriteManyResult<T | void>
     optimisticByIndex: ReadonlyArray<ReadonlyArray<StoreChange<T>>>
     upserts: T[]
-    versionUpdates: Array<{ id: EntityId; version: number }>
 }): ReconcileWriteResult<T> {
-    const writeback: StoreWritebackArgs<T> | undefined = (upserts.length || versionUpdates.length)
-        ? {
-            ...(upserts.length ? { upserts } : {}),
-            ...(versionUpdates.length ? { versionUpdates } : {})
-        }
-        : undefined
-    const transactionChanges = writeback
-        ? (scope.handle.state.writeback(writeback)?.changes ?? [])
+    const entries = upserts.map((item) => ({
+        action: 'upsert' as const,
+        item
+    }))
+    const transactionChanges = entries.length
+        ? (scope.handle.state.writeback(entries)?.changes ?? [])
         : []
 
     const retainedOptimistic: StoreChange<T>[] = []
@@ -104,8 +98,7 @@ function toWriteManyError(
         ...(current
             ? {
                 current: {
-                    ...(current.value !== undefined ? { value: current.value } : {}),
-                    ...(typeof current.version === 'number' ? { version: current.version } : {})
+                    ...(current.value !== undefined ? { value: current.value } : {})
                 }
             }
             : {})
@@ -146,7 +139,6 @@ async function commitRemoteWrite<T extends Entity>({
 
     const results: WriteManyResult<T | void> = new Array(entries.length)
     const upserts: T[] = []
-    const versionUpdates: Array<{ id: EntityId; version: number }> = []
 
     const mapped = await Promise.all(
         entries.map(async (entry, index) => {
@@ -161,14 +153,6 @@ async function commitRemoteWrite<T extends Entity>({
 
             if (!itemResult.ok) {
                 return { isError: true as const, index, result: toWriteManyError(entry, itemResult, index) }
-            }
-
-            let versionUpdate: { id: EntityId; version: number } | undefined
-            if (typeof itemResult.version === 'number' && Number.isFinite(itemResult.version) && itemResult.version > 0) {
-                const id = itemResult.id ?? entry.item.id
-                if (id) {
-                    versionUpdate = { id, version: itemResult.version }
-                }
             }
 
             let output: T | void = resolvePreparedOutput(preparedWrite, index)
@@ -186,7 +170,6 @@ async function commitRemoteWrite<T extends Entity>({
                 isError: false as const,
                 index,
                 result: { index, ok: true, value: output } as Extract<WriteManyResult<T | void>[0], { ok: true }>,
-                versionUpdate,
                 upsert
             }
         })
@@ -197,7 +180,6 @@ async function commitRemoteWrite<T extends Entity>({
             results[item.index] = item.result
         } else {
             results[item.index] = item.result
-            if (item.versionUpdate) versionUpdates.push(item.versionUpdate)
             if (item.upsert) upserts.push(item.upsert)
         }
     }
@@ -206,8 +188,7 @@ async function commitRemoteWrite<T extends Entity>({
         scope,
         results,
         optimisticByIndex,
-        upserts,
-        versionUpdates
+        upserts
     })
     return {
         commit: {

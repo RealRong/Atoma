@@ -1,6 +1,6 @@
 import { AbortError, computeBackoffDelayMs, resolveRetryBackoff, RetryableSyncError, sleepMs, toError } from '#sync/internal'
 import type { RetryBackoff } from '#sync/internal/backoff'
-import type { OutboxStore, SyncApplier, SyncEvent, SyncOutboxItem, SyncPhase, SyncPushOutcome, SyncTransport, SyncWriteAck, SyncWriteReject } from 'atoma-types/sync'
+import type { OutboxStore, SyncApplier, SyncEvent, SyncPhase, SyncPushOutcome, SyncTransport, SyncWriteAck, SyncWriteReject } from 'atoma-types/sync'
 
 export class PushLane {
     private disposed = false
@@ -240,7 +240,6 @@ export class PushLane {
         const rejectedKeys: string[] = []
         const retryableKeys: string[] = []
 
-        const rebaseById = new Map<string, { resource: string; id: string; baseVersion: number; afterEnqueuedAtMs: number }>()
         let retryError: Error | undefined
 
         for (let i = 0; i < outcomes.length; i++) {
@@ -265,21 +264,6 @@ export class PushLane {
                     result: outcome.result
                 })
                 ackedKeys.push(entry.idempotencyKey)
-
-                const id = outcome.result.id
-                const version = outcome.result.version
-                if (Number.isFinite(version) && version > 0) {
-                    const existing = rebaseById.get(id)
-                    const afterEnqueuedAtMs = entry.enqueuedAtMs
-                    if (!existing || afterEnqueuedAtMs > existing.afterEnqueuedAtMs) {
-                        rebaseById.set(id, {
-                            resource: entry.resource,
-                            id,
-                            baseVersion: version,
-                            afterEnqueuedAtMs
-                        })
-                    }
-                }
                 continue
             }
 
@@ -340,8 +324,7 @@ export class PushLane {
         await this.deps.outbox.commit({
             ack: ackedKeys,
             reject: rejectedKeys,
-            retryable: retryableKeys,
-            rebase: Array.from(rebaseById.values())
+            retryable: retryableKeys
         })
 
         if (retryableKeys.length) {

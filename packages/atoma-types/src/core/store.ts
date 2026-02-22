@@ -24,7 +24,6 @@ export type WriteManyItemErr = {
     error: unknown
     current?: {
         value?: unknown
-        version?: number
     }
 }
 

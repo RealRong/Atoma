@@ -8,7 +8,7 @@ import type {
     StoreDelta,
     StoreOperationOptions,
     StoreToken,
-    StoreWritebackArgs,
+    StoreWritebackEntry,
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Schema, StoreHandle, StoreCatalog, StoreSession } from 'atoma-types/runtime'
@@ -79,26 +79,25 @@ export class Catalog implements StoreCatalog {
                 await this.change.revert(handle, changes, options)
             },
             writeback: async (
-                writeback: StoreWritebackArgs<Entity>,
+                entries: ReadonlyArray<StoreWritebackEntry<Entity>>,
                 options?: StoreOperationOptions
             ) => {
                 const context = options?.context
                     ? this.runtime.engine.action.createContext(options.context)
                     : undefined
-                const upserts = Array.isArray(writeback.upserts) ? writeback.upserts : []
-                const processed = upserts.length
-                    ? await Promise.all(
-                        upserts.map(item => this.runtime.processor.writeback(handle, item, context))
-                    )
-                    : []
-                const deletes = Array.isArray(writeback.deletes) ? writeback.deletes : []
-                const versionUpdates = Array.isArray(writeback.versionUpdates) ? writeback.versionUpdates : []
+                if (!entries.length) return null
 
-                return handle.state.writeback({
-                    ...(processed.length ? { upserts: processed.filter((item): item is Entity => item !== undefined) } : {}),
-                    ...(deletes.length ? { deletes } : {}),
-                    ...(versionUpdates.length ? { versionUpdates } : {})
-                }) as StoreDelta<Entity> | null
+                const normalized = await Promise.all(entries.map(async (entry) => {
+                    if (entry.action === 'delete') return entry
+                    const processed = await this.runtime.processor.writeback(handle, entry.item, context)
+                    return processed
+                        ? { action: 'upsert', item: processed } as const
+                        : undefined
+                }))
+                const appliedEntries = normalized.filter((entry): entry is StoreWritebackEntry<Entity> => entry !== undefined)
+                if (!appliedEntries.length) return null
+
+                return handle.state.writeback(appliedEntries) as StoreDelta<Entity> | null
             }
         }
 

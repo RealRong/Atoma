@@ -2,23 +2,17 @@ import type {
     Entity,
     StoreChange,
     StoreDelta,
-    StoreWritebackArgs,
+    StoreWritebackEntry,
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import { reuse } from './mutation'
 import { mergeChanges, toChange } from './changes'
 
-type VersionedEntity = Entity & {
-    version?: unknown
-}
-
 export function writeback<T extends Entity>(
     before: Map<EntityId, T>,
-    args: StoreWritebackArgs<T>
+    entries: ReadonlyArray<StoreWritebackEntry<T>>
 ): StoreDelta<T> | null {
-    const { upserts = [], deletes = [], versionUpdates = [] } = args
-
-    if (!upserts.length && !deletes.length && !versionUpdates.length) return null
+    if (!entries.length) return null
 
     let after = before
     let writable = false
@@ -45,12 +39,18 @@ export function writeback<T extends Entity>(
         }))
     }
 
-    deletes.forEach((id) => {
-        if (!after.has(id)) return
-        commitChange(id, after.get(id), undefined)
-    })
+    entries.forEach((entry) => {
+        if (!entry) return
 
-    upserts.forEach((item) => {
+        if (entry.action === 'delete') {
+            const id = entry.id
+            if (!after.has(id)) return
+            commitChange(id, after.get(id), undefined)
+            return
+        }
+
+        if (entry.action !== 'upsert') return
+        const item = entry.item
         if (!item) return
         const id = item.id
         if (id === undefined || id === null) return
@@ -62,21 +62,6 @@ export function writeback<T extends Entity>(
         if (after.has(id) && existing === next) return
 
         commitChange(id, existing, next)
-    })
-
-    versionUpdates.forEach((value) => {
-        if (!value) return
-        const id = value.id
-        const version = value.version
-        const current = after.get(id)
-        if (!current || typeof current !== 'object') return
-        if ((current as VersionedEntity).version === version) return
-
-        const next = {
-            ...current,
-            version
-        } as T
-        commitChange(id, current, next)
     })
 
     const changes = mergeChanges(rawChanges)

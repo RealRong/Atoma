@@ -1,365 +1,354 @@
-# StoreWriteback 与 Version 模型重构最终方案（一步到位）
+# Version 语义剥离到 atoma-server 的最终重构方案（一步到位）
 
-## 1. 背景与问题
+## 1. 结论先行
 
-当前 `StoreWritebackArgs` 已承载三类写回语义：`upserts / deletes / versionUpdates`，这在功能上可用，但存在明显的架构边界问题：
+在“`version` 是 `atoma-server` 强绑定语义”的前提下，最优架构是：
 
-1. `version` 字段处理被下沉到了 core 通用算法层，导致领域算法与运行时并发语义耦合。
-2. 版本类型在多个关键契约仍使用裸 `number`，没有完全统一到 `Version` 标量。
-3. 写回策略默认“覆盖写 version”，没有明确的单调性策略约束（可能产生旧回执回退版本风险）。
-4. `StoreWritebackArgs` 内部可变数组/对象较多，与当前类型系统的只读风格不一致。
+1. `atoma-runtime` 与 `atoma-core` **完全不触碰** version。
+2. 客户端侧 version 语义由 `atoma-backend-atoma-server` **独占负责**。
+3. 服务端侧 version 语义继续由 `atoma-server` 协议与适配器负责。
+4. `sync` 不再把 version 当 runtime 公共语义，改为依赖 backend 侧版本协调器。
 
-结论：
+本方案不保留兼容层，不做双轨迁移，直接收敛到目标架构。
 
-- `versionUpdates` 这个能力本身是必要的。
-- 但它的“应用位置”和“类型契约严谨度”需要重构。
+---
 
-## 2. 目标与非目标
+## 2. 固定设计前提
 
-### 2.1 目标
+1. version 不是通用状态库语义，而是后端并发控制语义（CAS/LWW/回执版本）。
+2. runtime 的职责是本地状态编排，不是协议并发策略实现。
+3. protocol 允许定义 version，不代表 runtime 必须内建 version。
+4. 无用户、无兼容成本，本次重构以架构纯度与长期维护成本最低为目标。
 
-1. 保留 `writeback` 作为统一回写入口，不拆分成多入口。
-2. 保留 `versionUpdates`，覆盖 sync ack 仅版本回写场景。
-3. 将 `version` 处理职责从 core 移至 runtime/store 层。
-4. 全链路统一 `Version` 标量，消除裸 `number` 语义漂移。
-5. 明确版本写回策略，避免乱序回执导致版本回退。
+---
 
-### 2.2 非目标
+## 3. 当前链路问题复盘（代码事实）
 
-1. 不引入兼容别名、过渡导出、双轨 API。
-2. 不新增第二套版本模型（仍保持单一 `Version` + CAS 体系）。
-3. 不改变外部业务语义（写回仍然触发正常 delta/change 流）。
+### 3.1 runtime/core 已被 version 污染
 
-## 3. 设计原则
+1. runtime prepare 阶段读取实体 `version` 并写入 `baseVersion`：
+- `packages/atoma-runtime/src/runtime/flows/write/prepare/update.ts`
+- `packages/atoma-runtime/src/runtime/flows/write/prepare/delete.ts`
 
-1. 分层单向：`shared -> core -> runtime -> client/plugin`。
-2. core 只保留通用变更算法，不做业务字段特化（如 `version`）。
-3. runtime 负责执行语义与元数据回写（version、回执、事件时序）。
-4. 契约最小化：优先收紧类型，不轻易扩张参数面。
-5. 一步到位：改名与语义收敛一次完成，不保留旧路径。
+2. runtime 本地提交推导 `nextVersion` 并写回：
+- `packages/atoma-runtime/src/runtime/flows/write/apply.ts`
 
-## 4. 现状诊断（链路视角）
+3. runtime 远端提交消费 `result.version` 并回写：
+- `packages/atoma-runtime/src/runtime/flows/write/commit.ts`
 
-### 4.1 类型层现状
+4. core 通用 writeback 直接特化 `current.version` 字段：
+- `packages/atoma-core/src/store/writeback.ts`
 
-1. `StoreWritebackArgs` 目前定义为：`upserts?: T[]; deletes?: EntityId[]; versionUpdates?: Array<{ id: EntityId; version: number }>`。
-2. `Version` 已在 `shared/scalars` 定义，但上述契约未统一复用。
+### 3.2 backend 侧语义边界未闭合
 
-### 4.2 执行层现状
+1. `atoma-backend-atoma-server` 目前仅薄封装，直接复用 shared 执行器：
+- `packages/plugins/atoma-backend-atoma-server/src/plugin.ts`
 
-1. runtime 远程提交后会收集 `itemResult.version` 并写入 `versionUpdates`。
-2. 本地无远端执行器时，会基于本地状态推导 `nextVersion`，同样通过 `versionUpdates` 写回。
-3. sync ack 场景可能只携带版本，不携带完整实体；该场景强依赖 `versionUpdates`。
+2. version 推导逻辑实际上在 `atoma-backend-shared`：
+- `packages/plugins/atoma-backend-shared/src/write/buildWriteEntry.ts`
 
-### 4.3 架构问题根因
+这导致“atoma-server 专属语义”并未真正归位到 `atoma-backend-atoma-server`。
 
-1. `versionUpdates` 是“运行时回执元数据”，不属于 core 变更算法的稳定职责。
-2. 当前 core 直接修改实体 `version` 字段，使 core 对实体结构形成隐式约束。
+### 3.3 sync 深度耦合 runtime version
 
-## 5. 目标架构（最终态）
+1. outbox 存的是 runtime `WriteEntry`，隐含 `baseVersion` 语义：
+- `packages/plugins/atoma-sync/src/persistence/SyncWrites.ts`
+- `packages/atoma-types/src/sync/outbox.ts`
 
-### 5.1 回写契约保持单入口
+2. push ack 后会对 outbox 做 `baseVersion` rebase：
+- `packages/plugins/atoma-sync/src/lanes/push-lane.ts`
+- `packages/plugins/atoma-sync/src/storage/outbox-store.ts`
 
-`StoreWritebackArgs` 继续保留三类能力：
+3. ack 版本通过 `versionUpdates` 回写 runtime store：
+- `packages/plugins/atoma-sync/src/applier/writeback-applier.ts`
 
-1. `upserts`：服务端返回实体或本地归一化后的实体写回。
-2. `deletes`：删除回写。
-3. `versionUpdates`：纯版本回执写回（可无实体数据）。
+### 3.4 服务端 version 是强语义（不应上移到 runtime）
 
-说明：
+1. protocol write 模型要求 update/delete 带 baseVersion，结果带 version：
+- `packages/atoma-types/src/protocol/operation.ts`
+- `packages/atoma-types/src/protocol-tools/ops/validate/write.ts`
 
-- 不建议删除 `versionUpdates`。
-- 不建议拆成独立 `writeVersion` API（会增加调用面和时序分叉）。
+2. atoma-server 写语义明确依赖 version：
+- `packages/atoma-server/src/ops/writeSemantics.ts`
+- `packages/atoma-server/src/ops/opsExecutor/write.ts`
+- `packages/atoma-server/src/adapters/prisma/PrismaAdapter.ts`
+- `packages/atoma-server/src/adapters/typeorm/TypeormAdapter.ts`
 
-### 5.2 职责边界调整
+---
 
-1. core
-- 仅处理 `upserts/deletes` 对 map 的通用变更计算。
-- 不再处理 `version` 字段特化逻辑。
+## 4. 目标架构（最终态）
 
-2. runtime/store
-- 在 `StoreState.writeback` 侧负责应用 `versionUpdates`。
-- 版本更新策略在这里统一实现并可测试。
+## 4.1 三层职责边界
 
-3. client/plugin
-- 继续通过 `stores.use(name).writeback(args)` 触发回写。
-- 不感知版本应用细节，只传标准化回执数据。
+1. Runtime/Core 域（无 version）
+- 只处理 `change/delta/query/processor`。
+- 不读写实体 `version`。
+- 不生成或消费 `baseVersion/expectedVersion/versionUpdates`。
 
-### 5.3 版本策略（强约束）
+2. Backend Bridge 域（atoma-backend-atoma-server）
+- 负责把 runtime 写意图转成 protocol 写语义。
+- 负责注入 `baseVersion/expectedVersion`。
+- 负责消费 `result.version` 并维护本地版本视图。
+- 负责 conflict/rebase/version 幂等策略。
 
-版本写回采用单调递增策略：
+3. Server Protocol 域（atoma-server）
+- 继续执行当前 version 规则（CAS/LWW/服务端递增）。
+- 向客户端返回 protocol 级 version 回执。
 
-1. 当目标实体不存在：忽略该 `versionUpdate`（不创建空壳实体）。
-2. 当 `incomingVersion <= currentVersion`：忽略（防回退）。
-3. 仅当 `incomingVersion > currentVersion`：应用更新并产出 change。
-4. `version` 非正数/非有限数：视为非法输入，按统一校验策略处理（忽略或抛错，需在契约中固定）。
+## 4.2 关键原则
 
-推荐：
+1. runtime 的写模型是“业务意图模型”，不是“协议并发模型”。
+2. version 状态只在 backend 插件维护（client 侧单一真相）。
+3. sync 使用 backend 版本协调器，不直接操作 runtime version 字段。
 
-- runtime 内部采取“忽略非法版本 + 记录 debug 事件”，避免同步链路因脏数据中断。
+## 4.3 Runtime 与插件的固定契约（必须锁死）
 
-### 5.4 一致性语义
+1. runtime 负责定义并产出“统一写语义”（create/update/upsert/delete + meta + options）。
+2. 插件负责把 runtime 写语义映射为后端协议 `WriteEntry`，并处理后端结果映射。
+3. 插件可以维护私有 side effect（如 VersionStore），但不能重定义 runtime 的公共写模型。
+4. runtime 的公共 `writeback` 契约固定为业务数据回写，不接受插件私有字段。
+5. 结论：插件负责“协议映射与语义实现”，runtime 负责“统一语义与状态编排”。
 
-1. optimistic 变更与 version 回写仍通过 `mergeChanges` 收敛。
-2. 版本写回产生的 change 保持可观测（历史、调试、订阅都可见）。
-3. 事件顺序保持：`writeStart -> writeCommitted/writeFailed`，不新增阶段。
+---
 
-## 6. 类型模型最终建议
+## 5. 类型与契约重构（一步到位）
 
-### 6.1 收敛后的核心类型
+## 5.1 atoma-types/core
 
-1. 新增（或内联）`VersionUpdate` 概念：`{ id: EntityId; version: Version }`。
-2. `StoreWritebackArgs.versionUpdates` 改为只读数组与只读元素。
-3. `WriteManyItemErr.current.version`、`Base.version` 等位置统一改为 `Version`。
+1. `packages/atoma-types/src/core/entity.ts`
+- 从 `Base` 移除 `version` 字段。
 
-### 6.2 只读化约束
+2. `packages/atoma-types/src/core/writeback.ts`
+- 从 `StoreWritebackArgs` 移除 `versionUpdates`。
+- `writeback` 仅保留 `upserts/deletes`。
 
-1. `StoreWritebackArgs` 内部集合全部使用只读语义。
-2. runtime 内部如需变更，显式复制后处理，不污染输入引用。
+## 5.2 atoma-types/runtime
 
-### 6.3 命名与语义
+1. `packages/atoma-types/src/runtime/persistence.ts`
+- `WriteEntry.update/delete` 去掉 `baseVersion`。
+- `WriteEntry.upsert` 去掉 `expectedVersion`。
+- `WriteItemResult.ok` 去掉 `version`。
+- `WriteItemResult.current` 去掉 `current.version`。
 
-1. 保留 `versionUpdates` 命名，不改成泛化 `metadata`（避免过度抽象）。
-2. `version` 仍叫 `version`，不引入 `revision/etag` 新术语，保持全仓词根稳定。
+2. runtime 只保留：
+- `action + item + meta + options` 的业务写意图。
 
-## 7. 一次性实施计划（无兼容保留）
+3. runtime 写回契约固定为：
+- `writeback({ upserts?, deletes? })`
+- 不允许插件注入 `pluginMeta`、`versionUpdates` 等私有字段到 runtime 写回接口。
 
-### 7.1 Step 1：类型层收敛（atoma-types）
+## 5.3 atoma-types/sync
 
-1. 收紧 `StoreWritebackArgs` 类型（`Version` + `ReadonlyArray`）。
-2. 清理同类裸 `number` 版本字段，统一到 `Version`。
-3. 更新 runtime/core/client/sync 受影响类型导出。
+1. `packages/atoma-types/src/sync/outbox.ts`
+- `commit.rebase` 去掉 `baseVersion` 模型。
 
-### 7.2 Step 2：核心算法边界收敛（atoma-core）
+2. sync outbox 不再承载“待提升 baseVersion”的职责。
 
-1. 从 core `writeback` 中移除 `versionUpdates` 的字段特化写入。
-2. 保持 core 只负责 `upserts/deletes` 的 delta 计算。
+## 5.4 atoma-types/protocol（保持）
 
-### 7.3 Step 3：运行时回写落位（atoma-runtime）
+1. `protocol/operation.ts` 继续保留 version 强约束。
+2. protocol-tools 校验继续保留 version 规则。
 
-1. 在 `StoreState.writeback` 中串联：先应用数据写回，再应用版本写回。
-2. 版本写回按单调策略执行，合并成统一 delta 输出。
-3. 保证索引刷新、订阅通知、变更合并语义不变。
+说明：protocol 是 atoma-server 域契约，保持不变。
 
-### 7.4 Step 4：写链路调用点更新（runtime flows）
+---
 
-1. `commit/apply` 内 `versionUpdates` 容器类型统一为 `Version`。
-2. 本地推导版本与远端 ack 版本均遵循同一校验策略。
-3. 保持 `writeback` 入口不变，避免外层 API 扩散。
+## 6. 运行时与核心实现重构
 
-### 7.5 Step 5：sync/plugin 与外围契约清理
+## 6.1 atoma-core
 
-1. sync ack applier 的版本数据类型统一。
-2. 清理 `as any` 风险点，确保回执写回受类型约束。
-3. 事件与调试输出补充版本忽略原因（可选但推荐）。
+1. `packages/atoma-core/src/store/writeback.ts`
+- 删除 `version` 字段特化逻辑。
+- 仅保留 map upsert/delete 与 change 合并算法。
 
-### 7.6 Step 6：文档与规范更新
+## 6.2 atoma-runtime
 
-1. 更新 runtime/change/writeback 设计文档中的版本责任说明。
-2. 在架构规范中显式写入：`version` 回写属于 runtime，不属于 core。
+1. 删除 version 相关写准备：
+- `prepare/update.ts`
+- `prepare/delete.ts`
 
-## 8. 验证方案
+2. 删除本地版本推导：
+- `write/apply.ts` 中 `collectLocalVersionUpdates` 全链路删除。
 
-### 8.1 类型与构建
+3. 删除远端版本回写：
+- `write/commit.ts` 中 `result.version -> versionUpdates` 删除。
+
+4. `StoreState.writeback` 仅处理 `upserts/deletes`。
+
+---
+
+## 7. atoma-backend-atoma-server 作为 version 唯一客户端入口
+
+## 7.1 新增内部模块（建议）
+
+在 `packages/plugins/atoma-backend-atoma-server/src/` 新增：
+
+1. `version/VersionStore.ts`
+- 维护 `resource + id -> latestServerVersion`。
+- 支持内存/持久化实现。
+
+2. `version/VersionCoordinator.ts`
+- 根据 runtime 写意图与 VersionStore 生成 protocol 写条目。
+- 处理 `update/delete` 的 baseVersion 解析。
+- 处理 `upsert(cas)` 的 expectedVersion 解析。
+
+3. `write/encodeWriteEntries.ts`
+- runtime entries -> protocol entries（注入 version 字段）。
+
+4. `write/applyWriteResults.ts`
+- 消费 protocol `result.version`，更新 VersionStore。
+- 输出 runtime 需要的结果结构（无 version）。
+
+5. `sync/VersionRebase.ts`
+- 处理 push ack 后的版本前推逻辑（更新 VersionStore，而非改 runtime/outbox entry）。
+
+## 7.2 执行器接入
+
+`atoma-backend-atoma-server` 不再直接裸用 shared 的版本构造逻辑，而是：
+
+1. 先用 coordinator 编码写请求。
+2. 调用 `HttpOperationClient` 发 protocol 请求。
+3. 解码响应并更新 VersionStore。
+4. 将结果映射回 runtime 结果模型（无 version 字段）。
+
+## 7.3 插件边界约束（防止职责回流）
+
+1. 插件只能做编码/解码与 side effect，不得改写 runtime 事件语义。
+2. 插件不得扩展 runtime 的 `StoreState` / `writeback` 公共结构。
+3. 插件若需要额外数据（如 serverVersion、conflictMeta），只保存在插件私有存储或私有事件中。
+
+---
+
+## 8. atoma-backend-shared 收敛策略
+
+1. `atoma-backend-shared` 只保留通用 op 执行骨架、错误归一、query/write 调度。
+2. 移除 atoma-server 专属 version 注入逻辑（尤其 `buildWriteEntry` 的 base/expected 推导）。
+3. 若需要可扩展，改为“注入 codec/coordinator hook”，但 shared 默认不包含 version 策略。
+
+---
+
+## 9. sync 全链路重构（与 version 脱耦）
+
+## 9.1 Outbox 模型
+
+1. outbox 仅存业务写意图（无 baseVersion/expectedVersion）。
+2. push 前由 `atoma-backend-atoma-server` 协调器注入协议 version 字段。
+
+## 9.2 PushLane rebase
+
+1. 删除 `rebaseById.baseVersion` 回写 outbox 逻辑。
+2. 改为 `ack -> VersionStore.bump(resource,id,serverVersion)`。
+
+## 9.3 WritebackApplier
+
+1. 删除 `versionUpdates` 写回 runtime。
+2. 仅写回业务数据（upserts/deletes）。
+3. version 状态维护留在 backend 插件。
+
+## 9.4 Sync driver
+
+1. `operation-driver` 不再从 runtime `WriteEntry` 直接要求 `baseVersion`。
+2. 增加 backend 协调器依赖（由 `atoma-backend-atoma-server` 通过 service token 提供）。
+3. 没有该协调器时，对需要版本的动作直接 fail-fast（错误信息明确）。
+4. sync 侧只调用协调器获取协议条目，不直接读取 runtime/store 的 version 信息。
+
+---
+
+## 10. 其他 backend 插件的定位（必须明确）
+
+为了保持架构一致性，需做单一决策（推荐 A）：
+
+1. 方案 A（推荐）：
+- `atoma-backend-memory`、`atoma-backend-indexeddb` 转为“version-free 本地后端”。
+- 不模拟 atoma-server 版本语义。
+- 若要走 sync + CAS，统一使用 `atoma-backend-atoma-server`。
+
+2. 方案 B：
+- 让 memory/indexeddb 也实现一套 server-like version 协调器。
+- 代价是维护两套后端 version 语义，不符合“最简架构”目标。
+
+本方案采用 **A**。
+
+---
+
+## 11. 一次性实施顺序（无兼容）
+
+1. 修改 `atoma-types`：runtime/core/sync 去 version；protocol 保持。
+2. 先定义固定契约：runtime 写语义模型 + runtime writeback 最小模型 + backend 协调器 service token。
+3. 修改 `atoma-core`：删除 writeback version 特化。
+4. 修改 `atoma-runtime`：删除 prepare/apply/commit 中所有 version 逻辑。
+5. 修改 `atoma-backend-shared`：剥离 version 注入能力。
+6. 修改 `atoma-backend-atoma-server`：新增 VersionStore + VersionCoordinator 并接管写编码/回执处理。
+7. 修改 `atoma-sync`：outbox/push/applier/driver 改为 backend 侧 version 协调。
+8. 修改 memory/indexeddb：切到 version-free 执行路径。
+9. 清理 `atoma-shared` 中仅服务 runtime 的 version helper（如不再需要则迁移或删除）。
+
+---
+
+## 12. 验证矩阵
+
+## 12.1 结构性验证
+
+1. runtime/core 代码中不再出现：
+- `baseVersion`
+- `expectedVersion`
+- `versionUpdates`
+- 对实体 `version` 的读写
+
+2. version 相关实现仅存在于：
+- `atoma-backend-atoma-server`
+- `atoma-server`
+- `protocol/protocol-tools`
+
+3. runtime 公共接口中不再出现插件私有写回字段：
+- `writeback` 仅允许 `upserts/deletes`。
+- 插件私有信息只能停留在插件内部存储与内部流程。
+
+## 12.2 行为验证
+
+1. atoma-server 路径下：
+- create/update/upsert/delete 的 CAS/LWW 行为与现状一致。
+- 冲突返回与幂等行为一致。
+
+2. sync 路径下：
+- ack/retry/reject 不丢单。
+- 不出现版本回退。
+- 不再依赖 runtime/store 的 version 字段。
+
+3. 非 atoma-server 路径下：
+- runtime 本地写与查询正常。
+- 不要求任何 version 字段即可工作。
+
+## 12.3 命令建议
 
 1. `pnpm --filter atoma-types run typecheck`
 2. `pnpm --filter atoma-core run typecheck`
 3. `pnpm --filter atoma-runtime run typecheck`
-4. `pnpm --filter atoma-client run typecheck`
-5. `pnpm --filter atoma-sync run typecheck`（若脚本存在）
-6. `pnpm typecheck`
+4. `pnpm --filter atoma-backend-shared run typecheck`
+5. `pnpm --filter atoma-backend-atoma-server run typecheck`
+6. `pnpm --filter atoma-sync run typecheck`
+7. `pnpm typecheck`
+8. `pnpm test`
 
-### 8.2 行为矩阵（必须覆盖）
+---
 
-1. 仅 `upserts`。
-2. 仅 `deletes`。
-3. 仅 `versionUpdates`。
-4. `upserts + versionUpdates` 同 id 混合。
-5. `versionUpdates` 乱序回执（旧版本晚到）。
-6. `versionUpdates` 指向不存在实体。
-7. optimistic 成功/失败与版本回写并存。
-8. sync ack 只返回 version。
+## 13. 风险与控制
 
-### 8.3 不变量检查
+1. 风险：sync 改造跨度大。
+- 控制：先锁定 outbox 语义，再改 driver，再改 applier，最后联调 push lane。
 
-1. 版本不回退。
-2. 同一输入在重复执行下幂等。
-3. delta/change 可解释且顺序稳定。
-4. 索引与快照一致。
+2. 风险：shared 与 atoma-server plugin 职责拆分后接口不稳定。
+- 控制：先定义稳定的 codec/coordinator 接口，再做包内迁移。
 
-## 9. 风险与处置
+3. 风险：memory/indexeddb 行为变化。
+- 控制：文档明确其定位为 version-free，本地开发用途；需要 server 语义时使用 atoma-server plugin。
 
-1. 风险：版本策略改变可能影响历史行为。
-- 处置：先落地行为矩阵测试，以“单调不回退”为明确新规范。
+---
 
-2. 风险：从 core 挪到 runtime 后，delta 合并顺序出错。
-- 处置：固定“数据写回 -> 版本写回 -> mergeChanges”顺序，并用回归用例锁定。
+## 14. 最终决策（本方案生效）
 
-3. 风险：sync 侧仍有弱类型输入。
-- 处置：以类型收紧为准，不再接受隐式 `any` 透传。
-
-## 10. 最终决策
-
-1. `versionUpdates`：保留。
-2. `StoreWritebackArgs`：保留单入口，不新增额外参数。
-3. `version` 职责位置：runtime/store（非 core）。
-4. 版本策略：单调递增（仅接收更大版本）。
-5. 重构策略：一步到位，不保留兼容。
-
-## 11. 预期收益
-
-1. 边界清晰：core 回归纯算法，runtime 承担运行时语义。
-2. 可读性提升：看到 `version` 就能定位到 runtime 层。
-3. 正确性提升：防止乱序 ack 造成版本回退。
-4. 维护成本降低：类型一致、路径单一、术语稳定。
-
-## 12. 全链路复审补充（version / atoma-server / atoma-backend-atoma-server）
-
-本节基于代码复审，对 `version` 实际流转路径做精确还原，并给出修正后的最终方案。
-
-### 12.1 客户端后端插件链路（现状）
-
-1. `atoma-backend-atoma-server` 当前仅做薄封装，直接复用 `buildOperationExecutor`。
-2. `buildOperationExecutor` 在写路径调用 `buildWriteEntries`，由后者把 runtime 写入条目转换为 protocol 写入条目。
-3. `buildWriteEntry` 会读取 `handle.state.snapshot()` 并补齐 `baseVersion/expectedVersion`。
-
-结论：`atoma-backend-atoma-server` 目前并未形成“version 专属边界”，version 语义仍在 `atoma-backend-shared`。
-
-### 12.2 runtime/core 链路（现状）
-
-1. runtime `prepareUpdate/prepareDelete` 会从实体读 `version` 并写入 `baseVersion`。
-2. runtime 本地提交 (`applyLocalWrites`) 会推导 `nextVersion`，并通过 `versionUpdates` 再次写回状态。
-3. runtime 远端提交 (`commit`) 会读取 `WriteItemResult.version` 并转成 `versionUpdates`。
-4. core `writeback` 直接对实体对象做 `version` 字段写入。
-
-结论：runtime 与 core 当前都在直接触碰 version，且 core 已发生字段特化污染。
-
-### 12.3 sync 链路（现状）
-
-1. `SyncWrites` 直接把 runtime `writeEntries` 入 outbox。
-2. `operation-driver` 转 protocol 时强制要求 `update/delete` 必须有 `baseVersion`。
-3. push ack 会用 `result.version` 做 outbox `rebase(baseVersion)`。
-4. `WritebackApplier` 会把 ack 版本通过 `versionUpdates` 回写 runtime store。
-
-结论：sync 目前把 version 当作基础语义，深度耦合 runtime 与 protocol。
-
-### 12.4 atoma-server 链路（现状）
-
-1. protocol 写模型要求 `update/delete` 带 `baseVersion`，写结果要求返回 `version`。
-2. `writeSemantics` 对 `create/update/upsert/delete` 全路径要求或生成 `version`，并把 `serverVersion` 用于 replay/sync。
-3. ORM adapter（Prisma/TypeORM）都以内置 version 规则执行 CAS/LWW 语义。
-
-结论：`version` 在服务端是强语义，不是可选装饰字段。
-
-## 13. 决策修正（覆盖第 10 节）
-
-在你明确“version 是 atoma-server 强绑定语义”的前提下，最终建议修正为：
-
-1. **runtime 不触碰 version。**
-2. **core 不触碰 version。**
-3. **version 只在 atoma-backend-atoma-server（及其服务端协议链）内生效。**
-
-即：前文“version 放 runtime/store”的结论在该前提下不再最优，本节结论覆盖第 10 节。
-
-## 14. 最优目标态（无兼容，一步到位）
-
-### 14.1 语义边界
-
-1. runtime/core：
-- 只承担通用状态语义（entity data + change/delta）。
-- 不读写 `entity.version`，不产出/消费 `baseVersion/expectedVersion/versionUpdates`。
-
-2. atoma-backend-atoma-server：
-- 独占维护 version 语义：请求注入、结果解析、冲突处理、版本推进、重试重放策略。
-- 独占维护“本地版本视图”（Version Store / Version Cache）。
-
-3. atoma-server：
-- 保持现有 version 语义与协议约束不变。
-
-### 14.2 类型边界
-
-1. `atoma-types/runtime` 写入契约去 version 化：
-- `WriteEntry.update/delete/upsert` 不暴露 `baseVersion/expectedVersion`。
-- `WriteItemResult.ok` 不强制 `version` 字段。
-
-2. `atoma-types/core` 去 version 化：
-- `StoreWritebackArgs` 去掉 `versionUpdates`。
-- `Base.version` 从 core 公共基类中移除。
-
-3. `atoma-types/protocol` 保持 version 语义（这是 atoma-server 协议域，不是 runtime 域）。
-
-### 14.3 组件职责重排
-
-1. `atoma-backend-shared` 收敛为“通用执行骨架”，不承担 atoma-server version 规则。
-2. 将 `buildWriteEntry`（含 base/expected 推导）下沉到 `atoma-backend-atoma-server`。
-3. 若 memory/indexeddb 仍需模拟 atoma-server：
-- 要么迁移为 atoma-server 语义实现的一部分。
-- 要么独立声明其并发语义，不再复用 atoma-server 的 version 规则。
-
-## 15. sync 专项重构（关键）
-
-如果 version 从 runtime 脱钩，sync 必须同步收敛，否则会断链。
-
-### 15.1 outbox 模型
-
-1. outbox 存储“版本无关的写意图”，不存 `baseVersion`。
-2. push 时由 `atoma-backend-atoma-server` 的 Version Coordinator 动态注入 `baseVersion/expectedVersion`。
-
-### 15.2 rebase 模型
-
-1. ack 后不再回写 outbox 条目的 `baseVersion`。
-2. 改为更新 Version Store（`resource + id -> latestServerVersion`）。
-3. 后续重试由 Version Store 重新计算写入基线版本。
-
-### 15.3 写回模型
-
-1. `WritebackApplier` 不再通过 runtime `versionUpdates` 回写版本。
-2. runtime 只回写业务数据（upserts/deletes）。
-3. 版本状态由 backend 插件私有维护（可持久化）。
-
-## 16. 一次性落地顺序（建议执行清单）
-
-1. `atoma-types` 先切边界：
-- runtime/core 去 version 字段。
-- protocol 保持不变。
-
-2. `atoma-core`：
-- 删除 `writeback` 中 version 特化。
-
-3. `atoma-runtime`：
-- 删除 prepare/apply/commit 中所有 version 推导与 `versionUpdates` 流程。
-- `StoreState.writeback` 仅处理 upserts/deletes。
-
-4. `atoma-backend-atoma-server`：
-- 新增 Version Coordinator（注入请求版本、消费响应版本、处理冲突与幂等）。
-- 承接原 `buildWriteEntry` 的 version 逻辑。
-
-5. `atoma-backend-shared`：
-- 去除 atoma-server 专属 version 逻辑，只保留通用 op 执行框架。
-
-6. `atoma-sync`：
-- outbox/rebase/applier 全链路改为“版本由 backend 侧维护”。
-
-7. 清理：
-- `atoma-shared` 中通用 `version` helper 如仅服务 backend 语义，迁移到 backend 域。
-
-## 17. 校验标准（新增）
-
-1. 结构性校验：
-- runtime/core 代码中不再出现 `baseVersion/expectedVersion/versionUpdates`。
-- runtime 不再读取或写入 `entity.version`。
-
-2. 行为校验：
-- atoma-server 后端下：CAS/LWW 行为与当前一致。
-- sync 重试下：不出现版本回退、不会因旧 outbox 条目导致永久冲突。
-- 非 atoma-server 后端下：runtime 可运行且不携带 version 假设。
-
-3. 回归校验：
-- `writeStart -> writeCommitted/writeFailed` 事件时序不变。
-- optimistic/rollback 与最终状态一致性不变。
-
-## 18. 最终结论（本次复审）
-
-1. 若你把 version 定义为 atoma-server 专属语义，runtime 不该触碰。
-2. 当前实现存在跨层污染，最佳解是把 version 全量收敛到 `atoma-backend-atoma-server` 链路。
-3. 这会牵引 sync/outbox 一并重构；但在“无用户、无兼容成本”前提下，这是最干净、长期成本最低的架构。
+1. `version` 从 runtime/core **完全剥离**。
+2. `version` 客户端职责收敛到 `atoma-backend-atoma-server`。
+3. `atoma-server` 保持 version 强语义中心。
+4. `sync` 改为依赖 backend 版本协调器，不再依赖 runtime version。
+5. 全仓不保留兼容别名与过渡路径，直接一次性收敛。

@@ -22,7 +22,6 @@ const OUTBOX_STORE_NAME = 'outbox_entries'
 const OUTBOX_INDEX_BY_OUTBOX = 'by_outbox'
 const OUTBOX_INDEX_BY_OUTBOX_STATUS_ENQUEUED = 'by_outbox_status_enqueued'
 const OUTBOX_INDEX_BY_OUTBOX_STATUS_INFLIGHT_AT = 'by_outbox_status_inFlightAt'
-const OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ID_ENQUEUED = 'by_outbox_status_resource_id_enqueued'
 const DB_VERSION = 3
 const MIN_TIME_MS = 0
 const MAX_TIME_MS = Number.MAX_SAFE_INTEGER
@@ -41,7 +40,6 @@ function ensureOutboxSchema(db: IDBPDatabase<any>, args?: { recreateOutbox?: boo
     store.createIndex(OUTBOX_INDEX_BY_OUTBOX, 'outboxKey')
     store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_ENQUEUED, ['outboxKey', 'status', 'enqueuedAtMs'])
     store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_INFLIGHT_AT, ['outboxKey', 'status', 'inFlightAtMs'])
-    store.createIndex(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ID_ENQUEUED, ['outboxKey', 'status', 'resource', 'id', 'enqueuedAtMs'])
 }
 
 async function openSyncDb(): Promise<IDBPDatabase<any>> {
@@ -201,7 +199,6 @@ export class DefaultOutboxStore implements OutboxStore {
         ack: string[]
         reject: string[]
         retryable: string[]
-        rebase?: Array<{ resource: string; id: string; baseVersion: number; afterEnqueuedAtMs?: number }>
     }): Promise<void> {
         await this.initialized
         if (this.memory) return this.memory.commit(args)
@@ -209,12 +206,11 @@ export class DefaultOutboxStore implements OutboxStore {
         const ackSet = new Set([...(args.ack ?? []), ...(args.reject ?? [])])
         const retrySet = new Set(args.retryable ?? [])
 
-        if (!ackSet.size && !retrySet.size && (!args.rebase || !args.rebase.length)) return
+        if (!ackSet.size && !retrySet.size) return
 
         const db = await openSyncDb()
         const tx = db.transaction(OUTBOX_STORE_NAME, 'readwrite')
         const store = tx.store
-        const index = store.index(OUTBOX_INDEX_BY_OUTBOX_STATUS_RESOURCE_ID_ENQUEUED)
 
         for (const idempotencyKey of ackSet) {
             await store.delete(this.pk(idempotencyKey))
@@ -230,45 +226,6 @@ export class DefaultOutboxStore implements OutboxStore {
                 inFlightAtMs: undefined
             }
             await store.put(next)
-        }
-
-        if (Array.isArray(args.rebase)) {
-            for (const r of args.rebase) {
-                const resource = String((r as any)?.resource ?? '')
-                const id = String((r as any)?.id ?? '')
-                const baseVersion = (r as any)?.baseVersion
-                const after = (typeof (r as any)?.afterEnqueuedAtMs === 'number' && Number.isFinite((r as any)?.afterEnqueuedAtMs))
-                    ? Math.floor((r as any).afterEnqueuedAtMs)
-                    : undefined
-
-                if (!resource || !id) continue
-                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) continue
-
-                const range = IDBKeyRange.bound(
-                    [this.storageKey, 'pending', resource, id, MIN_TIME_MS],
-                    [this.storageKey, 'pending', resource, id, MAX_TIME_MS]
-                )
-
-                for (let cursor = await index.openCursor(range); cursor; cursor = await cursor.continue()) {
-                    const raw = cursor.value as PersistedOutboxEntry
-                    const item: any = raw.entry?.item
-                    if (after !== undefined && raw.enqueuedAtMs <= after) continue
-                    if (typeof item?.baseVersion !== 'number' || !Number.isFinite(item.baseVersion) || item.baseVersion <= 0) continue
-                    if (item.baseVersion >= baseVersion) continue
-
-                    const next: PersistedOutboxEntry = {
-                        ...raw,
-                        entry: {
-                            ...(raw.entry as any),
-                            item: {
-                            ...(item as any),
-                            baseVersion
-                            }
-                        }
-                    }
-                    await cursor.update(next)
-                }
-            }
         }
 
         await tx.done
@@ -489,7 +446,7 @@ class MemoryOutboxStore {
         return out
     }
 
-    async commit(args: { ack: string[]; reject: string[]; retryable: string[]; rebase?: Array<{ resource: string; id: string; baseVersion: number; afterEnqueuedAtMs?: number }> }): Promise<void> {
+    async commit(args: { ack: string[]; reject: string[]; retryable: string[] }): Promise<void> {
         const ackSet = new Set([...(args.ack ?? []), ...(args.reject ?? [])])
         const retrySet = new Set(args.retryable ?? [])
 
@@ -501,33 +458,6 @@ class MemoryOutboxStore {
             if (!e) continue
             e.status = 'pending'
             e.inFlightAtMs = undefined
-        }
-
-        if (Array.isArray(args.rebase)) {
-            for (const r of args.rebase) {
-                const resource = String((r as any)?.resource ?? '')
-                const id = String((r as any)?.id ?? '')
-                const baseVersion = (r as any)?.baseVersion
-                const after = (typeof (r as any)?.afterEnqueuedAtMs === 'number' && Number.isFinite((r as any)?.afterEnqueuedAtMs))
-                    ? Math.floor((r as any).afterEnqueuedAtMs)
-                    : undefined
-
-                if (!resource || !id) continue
-                if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) continue
-
-                for (const key of this.order) {
-                    const e = this.byKey.get(key)
-                    if (!e || e.status !== 'pending') continue
-                    if (after !== undefined && e.enqueuedAtMs <= after) continue
-                    if (e.resource !== resource) continue
-                    const item: any = e.entry?.item
-                    if (item?.id !== id) continue
-                    if (typeof item.baseVersion !== 'number' || !Number.isFinite(item.baseVersion) || item.baseVersion <= 0) continue
-                    if (item.baseVersion < baseVersion) {
-                        item.baseVersion = baseVersion
-                    }
-                }
-            }
         }
 
         this.events?.onQueueChange?.(await this.stats())

@@ -9,6 +9,9 @@ import {
     createOpId
 } from 'atoma-types/protocol-tools'
 import type {
+    WriteEntry as ProtocolWriteEntry
+} from 'atoma-types/protocol'
+import type {
     ExecutionError,
     ExecutionOptions,
     ExecutionSpec,
@@ -19,7 +22,6 @@ import type {
     WriteRequest,
     WriteOutput
 } from 'atoma-types/runtime'
-import { buildWriteEntries } from './write/buildWriteEntry'
 
 type OperationRuntime = Readonly<{
     now: () => number
@@ -31,6 +33,11 @@ type WriteGroup = {
         entry: RuntimeWriteEntry
     }>
 }
+
+type WriteEntryEncoder = <T extends Entity>(args: {
+    request: WriteRequest<T>
+    entries: ReadonlyArray<RuntimeWriteEntry>
+}) => ReadonlyArray<ProtocolWriteEntry>
 
 function createOperationError(args: {
     code: 'E_OPERATION_RESULT_MISSING' | 'E_OPERATION_FAILED'
@@ -172,9 +179,10 @@ async function executeOperationWrite<T extends Entity>(args: {
     runtime: OperationRuntime
     operationClient: OperationClient
     request: WriteRequest<T>
+    writeEntryEncoder?: WriteEntryEncoder
     options?: ExecutionOptions
 }): Promise<WriteOutput> {
-    const { runtime, operationClient, request, options } = args
+    const { runtime, operationClient, request, writeEntryEncoder, options } = args
     try {
         if (!request.entries.length) {
             return {
@@ -183,10 +191,12 @@ async function executeOperationWrite<T extends Entity>(args: {
             }
         }
 
-        const protocolEntries = buildWriteEntries({
-            handle: request.handle,
-            entries: request.entries
-        })
+        const protocolEntries = (writeEntryEncoder
+            ? writeEntryEncoder({
+                request,
+                entries: request.entries
+            })
+            : request.entries) as ReadonlyArray<ProtocolWriteEntry>
         const groups = groupWriteEntries(request.entries)
         const envelope = await operationClient.executeOperations({
             ops: groups.map(group => buildWriteOp({
@@ -276,6 +286,7 @@ async function executeOperationWrite<T extends Entity>(args: {
 export function buildOperationExecutor(args: {
     runtime: OperationRuntime
     operationClient: OperationClient
+    writeEntryEncoder?: WriteEntryEncoder
 }): ExecutionSpec {
     return {
         query: async <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions): Promise<ExecutionQueryOutput<T>> => {
@@ -291,6 +302,7 @@ export function buildOperationExecutor(args: {
                 runtime: args.runtime,
                 operationClient: args.operationClient,
                 request,
+                writeEntryEncoder: args.writeEntryEncoder,
                 options
             })
         }

@@ -41,40 +41,43 @@ export class WritebackApplier implements SyncApplier {
                 ).data.filter((i: any): i is any => i !== undefined)
                 : []
 
-            await this.deps.runtime.stores.use(resource as any).writeback({
-                upserts: upsertsRaw,
-                deletes: uniqueDeleteKeys
-            } as any)
+            await this.deps.runtime.stores.use(resource as any).writeback([
+                ...uniqueDeleteKeys.map((id) => ({
+                    action: 'delete',
+                    id
+                })),
+                ...upsertsRaw.map((item) => ({
+                    action: 'upsert',
+                    item
+                }))
+            ] as any)
         }
     }
 
     applyWriteAck = async (ack: SyncWriteAck) => {
-        const upserts: any[] = []
-        const deletes: EntityId[] = []
-        const versionUpdates: Array<{ id: EntityId; version: number }> = []
-
-        const version = (ack.result as any)?.version
-        if (typeof version === 'number' && Number.isFinite(version)) {
-            versionUpdates.push({ id: String((ack.result as any).id) as EntityId, version })
-        }
+        const entries: Array<
+            | { action: 'upsert'; item: any }
+            | { action: 'delete'; id: EntityId }
+        > = []
 
         const serverData = (ack.result as any)?.data
         if (serverData && typeof serverData === 'object') {
-            upserts.push(serverData)
+            entries.push({
+                action: 'upsert',
+                item: serverData
+            })
         }
 
-        await this.deps.runtime.stores.use(ack.resource as any).writeback({
-            upserts,
-            deletes,
-            versionUpdates
-        } as any)
+        await this.deps.runtime.stores.use(ack.resource as any).writeback(entries as any)
     }
 
     applyWriteReject = async (
         reject: SyncWriteReject
     ) => {
-        const upserts: any[] = []
-        const deletes: EntityId[] = []
+        const entries: Array<
+            | { action: 'upsert'; item: any }
+            | { action: 'delete'; id: EntityId }
+        > = []
 
         if (reject.entry.action === 'create') {
             const tempId = (reject.entry.item as any)?.id
@@ -82,20 +85,23 @@ export class WritebackApplier implements SyncApplier {
                 ? (tempId as EntityId)
                 : null
             if (tempKey !== null) {
-                deletes.push(tempKey)
+                entries.push({
+                    action: 'delete',
+                    id: tempKey
+                })
             }
         }
 
         const error = (reject.result as any)?.error
         const current = (reject.result as any)?.current
         if (error?.code === 'CONFLICT' && current?.value) {
-            upserts.push(current.value)
+            entries.push({
+                action: 'upsert',
+                item: current.value
+            })
         }
 
-        await this.deps.runtime.stores.use(reject.resource as any).writeback({
-            upserts,
-            deletes
-        } as any)
+        await this.deps.runtime.stores.use(reject.resource as any).writeback(entries as any)
     }
 
     applyWriteResults: SyncApplier['applyWriteResults'] = async (args) => {

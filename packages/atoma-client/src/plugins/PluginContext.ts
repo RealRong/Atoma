@@ -1,6 +1,7 @@
 import type {
     PluginContext as PluginContextType,
 } from 'atoma-types/client/plugins'
+import type { Entity } from 'atoma-types/core'
 import type { Runtime } from 'atoma-runtime'
 import { ServiceRegistry } from './ServiceRegistry'
 
@@ -23,7 +24,11 @@ export class PluginContext implements PluginContextType {
             now: runtime.now,
             stores: {
                 list: runtime.stores.list,
-                use: runtime.stores.use
+                use: runtime.stores.use,
+                peek: <T extends Entity = Entity>(storeName: string, id: string) => {
+                    const { snapshot } = runtime.stores.inspect<T>(storeName)
+                    return snapshot.get(id)
+                }
             },
             action: {
                 createContext: runtime.engine.action.createContext

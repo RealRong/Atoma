@@ -1,4 +1,4 @@
-import type { Entity, IndexesLike, StoreChange, StoreDelta, StoreWritebackArgs } from 'atoma-types/core'
+import type { Entity, IndexesLike, StoreChange, StoreDelta, StoreWritebackEntry } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Engine, StoreState as StoreStateType } from 'atoma-types/runtime'
 import { mergeChanges, toChange } from 'atoma-core/store'
@@ -107,9 +107,9 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
         return this.commit(before, after, normalized)
     }
 
-    writeback = (writeback: StoreWritebackArgs<T>): StoreDelta<T> | null => {
+    writeback = (entries: ReadonlyArray<StoreWritebackEntry<T>>): StoreDelta<T> | null => {
         const before = this.current as Map<EntityId, T>
-        const result = this.engine.mutation.writeback(before, writeback)
+        const result = this.engine.mutation.writeback(before, entries)
         if (!result) return null
 
         return this.commit(

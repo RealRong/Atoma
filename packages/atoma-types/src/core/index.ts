@@ -84,11 +84,11 @@ export type {
 } from './indexes'
 
 export type {
+    StoreWritebackEntry,
     StoreCreateChange,
     StoreUpdateChange,
     StoreDeleteChange,
     StoreChange,
     ChangeDirection,
-    StoreWritebackArgs,
     StoreDelta,
 } from './writeback'

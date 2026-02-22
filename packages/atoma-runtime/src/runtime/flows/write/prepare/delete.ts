@@ -1,6 +1,5 @@
 import type { Entity } from 'atoma-types/core'
 import type { Runtime } from 'atoma-types/runtime'
-import { resolvePositiveVersion } from 'atoma-shared'
 import { toChange } from 'atoma-core/store'
 import type { WriteScope, IntentCommandByAction, PreparedWrite } from '../contracts'
 import { requireOutbound, createMeta, resolveWriteBase } from './utils'
@@ -27,13 +26,11 @@ export async function prepareDelete<T extends Entity>(
 
     if (intent.options?.force) {
         const previous = current ?? (base as T)
-        const baseVersion = resolvePositiveVersion(previous)
         return {
             entry: {
                 action: 'delete',
                 item: {
                     id,
-                    ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
                     meta
                 }
             },
@@ -49,7 +46,6 @@ export async function prepareDelete<T extends Entity>(
         deleted: true,
         deletedAt: runtime.now()
     } as unknown as T
-    const baseVersion = resolvePositiveVersion(base as T | undefined)
     const outbound = await requireOutbound({
         runtime,
         scope,
@@ -61,7 +57,6 @@ export async function prepareDelete<T extends Entity>(
             action: 'update',
             item: {
                 id,
-                ...(typeof baseVersion === 'number' ? { baseVersion } : {}),
                 value: outbound,
                 meta
             }

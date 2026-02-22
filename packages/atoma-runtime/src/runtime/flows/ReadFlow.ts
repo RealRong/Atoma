@@ -3,6 +3,7 @@ import type {
     Query as StoreQuery,
     QueryOneResult,
     QueryResult,
+    StoreWritebackEntry,
     StoreReadOptions
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
@@ -79,21 +80,16 @@ export class ReadFlow implements Read {
 
     private applyStoreWriteback = <T extends Entity>({
         handle,
-        upserts = [],
-        deletes = []
+        entries
     }: {
         handle: StoreHandle<T>
-        upserts?: T[]
-        deletes?: EntityId[]
+        entries: ReadonlyArray<StoreWritebackEntry<T>>
     }): ReadonlyMap<EntityId, T> => {
-        if (!upserts.length && !deletes.length) {
+        if (!entries.length) {
             return handle.state.snapshot() as ReadonlyMap<EntityId, T>
         }
 
-        handle.state.writeback({
-            ...(upserts.length ? { upserts } : {}),
-            ...(deletes.length ? { deletes } : {})
-        })
+        handle.state.writeback(entries)
         return handle.state.snapshot() as ReadonlyMap<EntityId, T>
     }
 
@@ -116,7 +112,10 @@ export class ReadFlow implements Read {
                     const remote = await this.writebackArray(handle, this.getOutputData(output))
                     const snapshot = this.applyStoreWriteback({
                         handle,
-                        upserts: remote
+                        entries: remote.map((item) => ({
+                            action: 'upsert' as const,
+                            item
+                        }))
                     })
                     return this.toQueryResult(
                         remote.map((item) => snapshot.get(item.id) ?? item),
@@ -168,8 +167,16 @@ export class ReadFlow implements Read {
 
                 const snapshot = this.applyStoreWriteback({
                     handle,
-                    upserts: remote,
-                    deletes: toRemove
+                    entries: [
+                        ...toRemove.map((id) => ({
+                            action: 'delete' as const,
+                            id
+                        })),
+                        ...remote.map((item) => ({
+                            action: 'upsert' as const,
+                            item
+                        }))
+                    ]
                 })
 
                 return this.toQueryResult(
@@ -216,7 +223,10 @@ export class ReadFlow implements Read {
                     const remote = await this.writebackArray(handle, this.getOutputData(output))
                     const snapshot = this.applyStoreWriteback({
                         handle,
-                        upserts: remote
+                        entries: remote.map((item) => ({
+                            action: 'upsert' as const,
+                            item
+                        }))
                     })
                     remote.forEach((item) => {
                         resolvedById.set(item.id, snapshot.get(item.id) ?? item)

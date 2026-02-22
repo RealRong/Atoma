@@ -260,35 +260,35 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 releaseWriteContext(context.id)
             }))
             stopEvents.push(_ctx.events.on('changeStart', (args) => {
-                const { storeName, context, source } = args
+                const { storeName, context, direction } = args
                 const entry = getWriteContext(String(storeName), context.id)
                 entry.ctx.emit(`${prefix}:change:start`, {
                     storeName: entry.storeName,
                     id: context.id,
                     origin: context.origin,
                     scope: context.scope,
-                    source,
+                    direction,
                     changeCount: Array.isArray(args.changes) ? args.changes.length : 0
                 })
             }))
             stopEvents.push(_ctx.events.on('changeCommitted', (args) => {
-                const { storeName, context, source } = args
+                const { storeName, context, direction } = args
                 const entry = getWriteContext(String(storeName), context.id)
                 entry.ctx.emit(`${prefix}:change:finish`, {
                     storeName: entry.storeName,
                     id: context.id,
-                    source,
+                    direction,
                     changeCount: Array.isArray(args.changes) ? args.changes.length : 0
                 })
                 releaseWriteContext(context.id)
             }))
             stopEvents.push(_ctx.events.on('changeFailed', (args) => {
-                const { storeName, context, source, error } = args
+                const { storeName, context, direction, error } = args
                 const entry = getWriteContext(String(storeName), context.id)
                 entry.ctx.emit(`${prefix}:change:failed`, {
                     storeName: entry.storeName,
                     id: context.id,
-                    source,
+                    direction,
                     message: error instanceof Error ? error.message : String(error)
                 })
                 releaseWriteContext(context.id)

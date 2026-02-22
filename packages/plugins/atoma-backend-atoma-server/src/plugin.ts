@@ -1,10 +1,9 @@
 import { HttpOperationClient } from 'atoma-backend-http'
 import { buildOperationExecutor } from 'atoma-backend-shared'
-import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
+import { OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN } from 'atoma-types/client/ops'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
 import type { AtomaServerBackendPluginOptions } from './types'
-
-const ATOMA_SERVER_EXECUTOR_ID = 'backend.atoma-server.operation'
+import { createWriteCoordinator } from './write/createWriteCoordinator'
 
 function safeDispose(dispose?: () => void): void {
     if (typeof dispose !== 'function') return
@@ -29,7 +28,7 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
 
     return {
         id: `atoma-server:${normalizedOptions.baseURL}`,
-        provides: [OPERATION_CLIENT_TOKEN],
+        provides: [OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN],
         setup: (ctx) => {
             const operationClient = new HttpOperationClient({
                 baseURL: normalizedOptions.baseURL,
@@ -45,7 +44,9 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
                 batch: normalizedOptions.batch
             })
 
+            const writeCoordinator = createWriteCoordinator(ctx.runtime)
             const unregisterService = ctx.services.register(OPERATION_CLIENT_TOKEN, operationClient)
+            const unregisterWriteCoordinator = ctx.services.register(WRITE_COORDINATOR_TOKEN, writeCoordinator)
             let unregisterExecution: (() => void) | undefined
 
             try {
@@ -55,10 +56,17 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
                         runtime: {
                             now: ctx.runtime.now
                         },
-                        operationClient
+                        operationClient,
+                        writeEntryEncoder: ({ request, entries }) => {
+                            return writeCoordinator.encode({
+                                storeName: request.handle.storeName,
+                                entries
+                            })
+                        }
                     })
                 })
             } catch (error) {
+                safeDispose(unregisterWriteCoordinator)
                 safeDispose(unregisterService)
                 throw error
             }
@@ -66,6 +74,7 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
             return {
                 dispose: () => {
                     safeDispose(unregisterExecution)
+                    safeDispose(unregisterWriteCoordinator)
                     safeDispose(unregisterService)
                 }
             }

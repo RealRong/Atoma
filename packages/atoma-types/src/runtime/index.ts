@@ -26,7 +26,7 @@ export type {
     StoreEventPayloadMap,
     StoreEventBus,
     WriteEventSource,
-    ChangeEventSource
+    ChangeDirection
 } from './store/events'
 
 export type {

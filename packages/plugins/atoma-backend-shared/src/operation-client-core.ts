@@ -185,7 +185,6 @@ export class StorageOperationClient implements OperationClient {
 
             const returning = options?.returning !== false
             const select = options?.select
-            const upsertConflict: 'cas' | 'lww' = options?.upsert?.conflict === 'lww' ? 'lww' : 'cas'
             const upsertApply: 'merge' | 'replace' = options?.upsert?.apply === 'replace' ? 'replace' : 'merge'
 
             try {
@@ -238,23 +237,7 @@ export class StorageOperationClient implements OperationClient {
                         continue
                     }
 
-                    const baseVersion = raw?.baseVersion
                     const currentVersion = (current as any)?.version
-                    if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
-                        results[index] = { ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for update', kind: 'validation', details: { resource, id: id } }) }
-                        continue
-                    }
-                    if (typeof currentVersion !== 'number') {
-                        results[index] = { ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
-                        continue
-                    }
-                    if (currentVersion !== baseVersion) {
-                        results[index] = { ok: false,
-                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, id: id, currentVersion } }),
-                            current: { value: this.toResponseValue(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
-                        }
-                        continue
-                    }
 
                     const candidate = raw?.value
                     if (!isPlainObject(candidate)) {
@@ -262,7 +245,9 @@ export class StorageOperationClient implements OperationClient {
                         continue
                     }
 
-                    const nextVersion = baseVersion + 1
+                    const nextVersion = (typeof currentVersion === 'number' && Number.isFinite(currentVersion))
+                        ? currentVersion + 1
+                        : 1
                     const next = isPlainObject(current)
                         ? { ...(current as any), ...(candidate as any) }
                         : { ...(candidate as any) }
@@ -295,7 +280,6 @@ export class StorageOperationClient implements OperationClient {
                     }
 
                     const current = await this.adapter.get(resource, id)
-                    const expectedVersion = raw?.expectedVersion
 
                     if (!current) {
                         const next = { ...(candidate as any), id, version: 1 }
@@ -309,35 +293,10 @@ export class StorageOperationClient implements OperationClient {
                     }
 
                     const currentVersion = (current as any)?.version
-                    if (upsertConflict === 'cas') {
-                        if (!(typeof expectedVersion === 'number' && Number.isFinite(expectedVersion))) {
-                            results[index] = { ok: false,
-                                error: standardError({
-                                    code: 'CONFLICT',
-                                    message: 'CAS upsert requires expectedVersion for existing entity',
-                                    kind: 'conflict',
-                                    details: { resource, id: id, currentVersion, hint: 'rebase' }
-                                }),
-                                current: { value: this.toResponseValue(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
-                            }
-                            continue
-                        }
-                        if (typeof currentVersion !== 'number') {
-                            results[index] = { ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
-                            continue
-                        }
-                        if (currentVersion !== expectedVersion) {
-                            results[index] = { ok: false,
-                                error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, id: id, currentVersion } }),
-                                current: { value: this.toResponseValue(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
-                            }
-                            continue
-                        }
-                    }
 
-                    const nextVersion = (typeof expectedVersion === 'number' && Number.isFinite(expectedVersion))
-                        ? expectedVersion + 1
-                        : (typeof currentVersion === 'number' && Number.isFinite(currentVersion) ? currentVersion + 1 : 1)
+                    const nextVersion = (typeof currentVersion === 'number' && Number.isFinite(currentVersion))
+                        ? currentVersion + 1
+                        : 1
 
                     const next = upsertApply === 'merge' && isPlainObject(current) && isPlainObject(candidate)
                         ? { ...(current as any), ...(candidate as any) }
@@ -369,24 +328,10 @@ export class StorageOperationClient implements OperationClient {
                         results[index] = { ok: false, error: standardError({ code: 'NOT_FOUND', message: 'Not found', kind: 'not_found', details: { resource, id: id } }) }
                         continue
                     }
-                    const baseVersion = raw?.baseVersion
                     const currentVersion = (current as any)?.version
-                    if (!(typeof baseVersion === 'number' && Number.isFinite(baseVersion) && baseVersion > 0)) {
-                        results[index] = { ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing baseVersion for delete', kind: 'validation', details: { resource, id: id } }) }
-                        continue
-                    }
-                    if (typeof currentVersion !== 'number') {
-                        results[index] = { ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing version field', kind: 'validation', details: { resource } }) }
-                        continue
-                    }
-                    if (currentVersion !== baseVersion) {
-                        results[index] = { ok: false,
-                            error: standardError({ code: 'CONFLICT', message: 'Version conflict', kind: 'conflict', details: { resource, id: id, currentVersion } }),
-                            current: { value: this.toResponseValue(current), ...(typeof currentVersion === 'number' ? { version: currentVersion } : {}) }
-                        }
-                        continue
-                    }
-                    const nextVersion = baseVersion + 1
+                    const nextVersion = (typeof currentVersion === 'number' && Number.isFinite(currentVersion))
+                        ? currentVersion + 1
+                        : 1
                     await this.adapter.delete(resource, id)
                     results[index] = { ok: true, id: id, version: nextVersion }
                     continue

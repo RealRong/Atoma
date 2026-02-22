@@ -7,7 +7,7 @@ import type {
     StoreDelta,
     StoreOperationOptions,
     StoreToken,
-    StoreWritebackArgs,
+    StoreWritebackEntry,
 } from '../../core'
 import type { EntityId } from '../../shared'
 import type { StoreState } from './state'
@@ -17,7 +17,10 @@ export type StoreSession<T extends Entity = Entity> = Readonly<{
     query: (query: Query<T>) => QueryResult<T>
     apply: (changes: ReadonlyArray<StoreChange<T>>, options?: StoreOperationOptions) => Promise<void>
     revert: (changes: ReadonlyArray<StoreChange<T>>, options?: StoreOperationOptions) => Promise<void>
-    writeback: (args: StoreWritebackArgs<T>, options?: StoreOperationOptions) => Promise<StoreDelta<T> | null>
+    writeback: (
+        entries: ReadonlyArray<StoreWritebackEntry<T>>,
+        options?: StoreOperationOptions
+    ) => Promise<StoreDelta<T> | null>
 }>
 
 export type StoreCatalog = Readonly<{
