@@ -38,7 +38,9 @@ export class PluginContext implements PluginContextType {
             },
         }
         this.events = {
-            register: runtime.events.register
+            on: runtime.events.on,
+            off: runtime.events.off,
+            once: runtime.events.once
         }
     }
 }

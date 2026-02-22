@@ -8,7 +8,7 @@ export type {
     ExecutionError
 } from './execution'
 export type { Read } from './read'
-export type { Transform, TransformPipeline } from './transform'
+export type { Processor } from './processor'
 export type { Write } from './write'
 export type { StoreCatalog, StoreSession } from './store/catalog'
 export type { StoreHandle } from './store/handle'
@@ -20,12 +20,11 @@ export type {
 export type { StoreState } from './store/state'
 export type { Schema, StoreSchema } from './schema'
 export type {
-    StoreEvents,
     StoreEventName,
-    StoreEventEmit,
-    StoreEventHandlers,
+    StoreEventListener,
+    StoreEventListenerOptions,
     StoreEventPayloadMap,
-    StoreEventRegistry,
+    StoreEventBus,
     WriteEventSource,
     ChangeEventSource
 } from './store/events'

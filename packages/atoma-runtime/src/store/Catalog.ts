@@ -4,7 +4,7 @@ import type {
     QueryResult,
     Store,
     StoreChange,
-    StoreDataProcessor,
+    StoreProcessor,
     StoreDelta,
     StoreOperationOptions,
     StoreToken,
@@ -12,54 +12,50 @@ import type {
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Schema, StoreHandle, StoreCatalog, StoreSession } from 'atoma-types/runtime'
-import { StoreFactory } from './StoreFactory'
+import { Factory } from './Factory'
 import { ChangeFlow } from '../runtime/flows/ChangeFlow'
 
-type StoreEntry = Readonly<{
+type CatalogEntry = Readonly<{
     handle: StoreHandle<Entity>
     api: Store<Entity>
     session: StoreSession<Entity>
 }>
 
-export class Stores implements StoreCatalog {
-    private readonly stores = new Map<string, StoreEntry>()
-    private readonly storeFactory: StoreFactory
-    private readonly changeFlow: ChangeFlow
+export class Catalog implements StoreCatalog {
+    private readonly entries = new Map<string, CatalogEntry>()
+    private readonly factory: Factory
+    private readonly change: ChangeFlow
     private readonly runtime: Runtime
     private readonly deps: {
         schema: Schema
-        dataProcessor?: StoreDataProcessor<Entity>
-        defaults?: {
-            idGenerator?: () => EntityId
-        }
+        createId?: () => EntityId
+        processor?: StoreProcessor<Entity>
     }
 
     constructor(
         runtime: Runtime,
         deps: {
             schema: Schema
-            dataProcessor?: StoreDataProcessor<Entity>
-            defaults?: {
-                idGenerator?: () => EntityId
-            }
+            createId?: () => EntityId
+            processor?: StoreProcessor<Entity>
         }
     ) {
         this.runtime = runtime
         this.deps = deps
-        this.changeFlow = new ChangeFlow(this.runtime)
-        this.storeFactory = new StoreFactory({
+        this.change = new ChangeFlow(this.runtime)
+        this.factory = new Factory({
             runtime: this.runtime,
             schema: this.deps.schema,
-            defaults: this.deps.defaults,
-            dataProcessor: this.deps.dataProcessor
+            createId: this.deps.createId,
+            processor: this.deps.processor
         })
     }
 
-    private ensureEntry = (name: StoreToken): StoreEntry => {
-        const existing = this.stores.get(name)
+    private ensureEntry = (name: StoreToken): CatalogEntry => {
+        const existing = this.entries.get(name)
         if (existing) return existing
 
-        const built = this.storeFactory.build(name)
+        const built = this.factory.build(name)
         const handle = built.handle as StoreHandle<Entity>
         const api = built.api as Store<Entity>
         const session: StoreSession<Entity> = {
@@ -74,13 +70,13 @@ export class Stores implements StoreCatalog {
                 changes: ReadonlyArray<StoreChange<Entity>>,
                 options?: StoreOperationOptions
             ) => {
-                await this.changeFlow.apply(handle, changes, options)
+                await this.change.apply(handle, changes, options)
             },
             revert: async (
                 changes: ReadonlyArray<StoreChange<Entity>>,
                 options?: StoreOperationOptions
             ) => {
-                await this.changeFlow.revert(handle, changes, options)
+                await this.change.revert(handle, changes, options)
             },
             writeback: async (
                 writeback: StoreWritebackArgs<Entity>,
@@ -92,7 +88,7 @@ export class Stores implements StoreCatalog {
                 const upserts = Array.isArray(writeback.upserts) ? writeback.upserts : []
                 const processed = upserts.length
                     ? await Promise.all(
-                        upserts.map(item => this.runtime.transform.writeback(handle, item, context))
+                        upserts.map(item => this.runtime.processor.writeback(handle, item, context))
                     )
                     : []
                 const deletes = Array.isArray(writeback.deletes) ? writeback.deletes : []
@@ -106,17 +102,17 @@ export class Stores implements StoreCatalog {
             }
         }
 
-        const entry: StoreEntry = {
+        const entry: CatalogEntry = {
             handle,
             api,
             session
         }
 
-        this.runtime.events.emit.storeCreated({
+        this.runtime.events.emit('storeCreated', {
             storeName: name
         })
 
-        this.stores.set(name, entry)
+        this.entries.set(name, entry)
 
         return entry
     }
@@ -142,6 +138,6 @@ export class Stores implements StoreCatalog {
     }
 
     list = (): StoreToken[] => {
-        return Array.from(this.stores.keys()) as StoreToken[]
+        return Array.from(this.entries.keys()) as StoreToken[]
     }
 }

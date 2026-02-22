@@ -69,38 +69,23 @@ export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
 
 export type StoreEventName = keyof StoreEventPayloadMap<Entity>
 
-export type StoreEventEmit = Readonly<{
-    [K in StoreEventName]: <T extends Entity>(args: StoreEventPayloadMap<T>[K]) => void
+export type StoreEventListener<K extends StoreEventName = StoreEventName> = <T extends Entity>(args: StoreEventPayloadMap<T>[K]) => void
+
+export type StoreEventListenerOptions = Readonly<{
+    once?: boolean
+    signal?: AbortSignal
 }>
 
-export type StoreEventHandlers = Readonly<{
-    [K in StoreEventName]?: <T extends Entity>(args: StoreEventPayloadMap<T>[K]) => void
-}>
-
-export type StoreEvents = Readonly<{
-    read?: Readonly<{
-        onStart?: StoreEventHandlers['readStart']
-        onFinish?: StoreEventHandlers['readFinish']
-    }>
-    write?: Readonly<{
-        onStart?: StoreEventHandlers['writeStart']
-        onCommitted?: StoreEventHandlers['writeCommitted']
-        onFailed?: StoreEventHandlers['writeFailed']
-    }>
-    change?: Readonly<{
-        onStart?: StoreEventHandlers['changeStart']
-        onCommitted?: StoreEventHandlers['changeCommitted']
-        onFailed?: StoreEventHandlers['changeFailed']
-    }>
-    store?: Readonly<{
-        onCreated?: StoreEventHandlers['storeCreated']
-    }>
-}>
-
-export type StoreEventRegistry = Readonly<{
-    register: (events: StoreEvents) => () => void
+export type StoreEventBus = Readonly<{
+    on: <K extends StoreEventName>(
+        name: K,
+        listener: StoreEventListener<K>,
+        options?: StoreEventListenerOptions
+    ) => () => void
+    off: <K extends StoreEventName>(name: K, listener: StoreEventListener<K>) => void
+    once: <K extends StoreEventName>(name: K, listener: StoreEventListener<K>) => () => void
+    emit: <K extends StoreEventName, T extends Entity = Entity>(name: K, payload: StoreEventPayloadMap<T>[K]) => void
     has: Readonly<{
         event: (name: StoreEventName) => boolean
     }>
-    emit: StoreEventEmit
 }>

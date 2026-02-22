@@ -17,11 +17,11 @@ Core/Runtime 不再感知 observability。需要 trace/debug 时，请显式安�
 
 ## 插件行为（零核心耦合）
 
-插件通过 `ctx.events.register(...)` 订阅：
+插件通过 `ctx.events.on(...)` 订阅：
 
-- `store.onCreated`
-- `read.onStart/onFinish`
-- `write.onStart/onCommitted/onFailed`
+- `storeCreated`
+- `readStart/readFinish`
+- `writeStart/writeCommitted/writeFailed`
 
 随后由 `StoreObservability` 发出 debug 事件（默认前缀 `obs:*`）。
 当启用 `injectTraceMeta`（默认开启）时，插件还会把 `traceId/requestId` 写入 `op.meta`。

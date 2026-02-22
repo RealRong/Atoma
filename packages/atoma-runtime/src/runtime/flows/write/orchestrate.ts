@@ -4,31 +4,31 @@ import type {
 } from 'atoma-types/core'
 import type {
     Runtime,
-    WriteEventSource
+    WriteEventSource,
+    WriteStatus
 } from 'atoma-types/runtime'
-import { commitWrites } from './commit/commitWrites'
-import { prepareLocalWrites } from './prepare/prepareLocalWrite'
+import { commitWrites } from './commit'
+import { prepare } from './prepare'
 import type {
     IntentCommand,
-    IntentInput,
     PreparedWrites,
     WriteScope
-} from './types'
+} from './contracts'
 
 export type OrchestrateWriteResult<T extends Entity> = Readonly<{
     prepared: PreparedWrites<T>
-    status: 'confirmed' | 'partial' | 'rejected' | 'enqueued'
+    status: WriteStatus
     results: WriteManyResult<T | void>
 }>
 
 export async function orchestrateWrite<T extends Entity>({
     runtime,
-    session,
+    scope,
     source,
     intents
 }: {
     runtime: Runtime
-    session: WriteScope<T>
+    scope: WriteScope<T>
     source: WriteEventSource
     intents: ReadonlyArray<IntentCommand<T>>
 }): Promise<OrchestrateWriteResult<T>> {
@@ -40,15 +40,10 @@ export async function orchestrateWrite<T extends Entity>({
         }
     }
 
-    const inputs: IntentInput<T>[] = intents.map((intent) => ({
-        kind: 'intent',
-        scope: session,
-        ...intent
-    }))
-    const prepared = await prepareLocalWrites(runtime, inputs)
+    const prepared = await prepare(runtime, scope, intents)
     const writeEntries = prepared.map((item) => item.entry)
-    const { handle, context } = session
-    runtime.events.emit.writeStart({
+    const { handle, context } = scope
+    runtime.events.emit('writeStart', {
         storeName: handle.storeName,
         context,
         source,
@@ -58,7 +53,7 @@ export async function orchestrateWrite<T extends Entity>({
     try {
         const commitResult = await commitWrites<T>({
             runtime,
-            scope: session,
+            scope,
             prepared
         })
         const singleResult = prepared.length === 1
@@ -73,7 +68,7 @@ export async function orchestrateWrite<T extends Entity>({
             }
         }
 
-        runtime.events.emit.writeCommitted({
+        runtime.events.emit('writeCommitted', {
             storeName: handle.storeName,
             context,
             writeEntries,
@@ -88,7 +83,7 @@ export async function orchestrateWrite<T extends Entity>({
             results: commitResult.results
         }
     } catch (error) {
-        runtime.events.emit.writeFailed({
+        runtime.events.emit('writeFailed', {
             storeName: handle.storeName,
             context,
             writeEntries,

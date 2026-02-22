@@ -6,7 +6,7 @@ export type StoreHandle<T extends Entity = Entity> = {
     storeName: StoreToken
     relations?: () => unknown | undefined
     config: Readonly<{
-        idGenerator: StoreConfig<T>['idGenerator']
-        dataProcessor: StoreConfig<T>['dataProcessor']
+        createId: StoreConfig<T>['createId']
+        processor: StoreConfig<T>['processor']
     }>
 }

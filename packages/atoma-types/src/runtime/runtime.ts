@@ -1,21 +1,21 @@
 import type { Engine } from './engine/api'
 import type { Debug } from './debug'
-import type { StoreEventRegistry } from './store/events'
+import type { StoreEventBus } from './store/events'
 import type { Read } from './read'
 import type { StoreCatalog } from './store/catalog'
 import type { ExecutionKernel } from './execution'
-import type { Transform } from './transform'
+import type { Processor } from './processor'
 import type { Write } from './write'
 
 export type Runtime = Readonly<{
     id: string
     now: () => number
     stores: StoreCatalog
-    events: StoreEventRegistry
+    events: StoreEventBus
     execution: ExecutionKernel
     read: Read
     write: Write
-    transform: Transform
+    processor: Processor
     engine: Engine
     debug: Debug
 }>

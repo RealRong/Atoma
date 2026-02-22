@@ -1,161 +1,52 @@
-import { toErrorWithFallback } from 'atoma-shared'
 import type {
-    DataProcessorContext,
-    DataProcessorMode,
-    DataProcessorStage,
-    DataProcessorStageFn,
-    DataProcessorValidate,
+    ProcessorContext,
+    ProcessorMode,
+    ProcessorHandler,
     Entity,
     ActionContext,
-    SchemaValidator,
-    StoreDataProcessor
+    StoreProcessor
 } from 'atoma-types/core'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 
-const STAGE_ORDER: DataProcessorStage[] = [
-    'deserialize',
-    'normalize',
-    'transform',
-    'validate',
-    'sanitize',
-    'serialize'
-]
-
-const hasValidatorShape = (value: unknown): boolean => {
-    if (!value || typeof value !== 'object') return false
-    const v = value as {
-        safeParse?: unknown
-        parse?: unknown
-        validateSync?: unknown
-        validate?: unknown
-    }
-    return typeof v.safeParse === 'function'
-        || typeof v.parse === 'function'
-        || typeof v.validateSync === 'function'
-        || typeof v.validate === 'function'
-}
-
-async function applySchemaValidator<T>(item: T, schema: SchemaValidator<T>): Promise<T> {
-    const validator = schema as {
-        safeParse?: (input: T) => { success: boolean; data: T; error?: unknown }
-        parse?: (input: T) => T
-        validateSync?: (input: T) => T
-        validate?: (input: T) => Promise<T> | T
-    }
-
-    try {
-        if (validator.safeParse) {
-            const result = validator.safeParse(item)
-            if (!result.success) {
-                throw toErrorWithFallback(result.error, 'Schema validation failed')
-            }
-            return result.data as T
-        }
-
-        if (validator.parse) {
-            return validator.parse(item)
-        }
-
-        if (validator.validateSync) {
-            return validator.validateSync(item)
-        }
-
-        if (validator.validate) {
-            return await validator.validate(item)
-        }
-
-        if (typeof schema === 'function') {
-            return await schema(item)
-        }
-    } catch (error) {
-        throw toErrorWithFallback(error, 'Schema validation failed')
-    }
-
-    return item
-}
-
-async function runValidateStage<T>(
-    value: T,
-    validator: DataProcessorValidate<T>,
-    context: DataProcessorContext<T>
-): Promise<T | undefined> {
-    if (typeof validator === 'function') {
-        return await (validator as DataProcessorStageFn<T>)(value, context)
-    }
-    if (hasValidatorShape(validator)) {
-        return await applySchemaValidator(value, validator as SchemaValidator<T>)
-    }
-    throw new Error('[Atoma] dataProcessor.validate must be a function or schema validator')
-}
-
-export class TransformPipeline {
+export class Processor {
     private readonly runtime: Runtime
 
     constructor(runtime: Runtime) {
         this.runtime = runtime
     }
 
-    private run<T extends Entity>(
-        mode: DataProcessorMode,
+    private async run<T extends Entity>(
+        mode: ProcessorMode,
         handle: StoreHandle<T>,
         data: T,
         context?: ActionContext
     ): Promise<T | undefined> {
-        return this.process(mode, data, {
+        const processor = handle.config.processor as StoreProcessor<T> | undefined
+        if (!processor) return data
+
+        const processorContext: ProcessorContext = {
             storeName: handle.storeName,
             runtime: this.runtime,
             context,
-            dataProcessor: handle.config.dataProcessor
-        })
-    }
-
-    async process<T>(
-        mode: DataProcessorMode,
-        data: T,
-        {
-            storeName,
-            runtime,
-            context,
-            adapter,
-            dataProcessor
-        }: {
-            storeName: string
-            runtime: Runtime
-            context?: ActionContext
-            adapter?: unknown
-            dataProcessor?: StoreDataProcessor<T>
+            mode
         }
-    ): Promise<T | undefined> {
-        const pipeline = dataProcessor
-        if (!pipeline) return data
 
+        const modeHandler = processor[mode]
         let current: T | undefined = data
-        for (const stage of STAGE_ORDER) {
-            if (current === undefined) return undefined
-            const handler = pipeline[stage]
-            if (!handler) continue
-
-            const stageContext: DataProcessorContext<T> = {
-                storeName,
-                runtime,
-                context,
-                adapter,
-                mode,
-                stage
+        if (modeHandler) {
+            if (typeof modeHandler !== 'function') {
+                throw new Error(`[Atoma] processor.${mode} must be a function`)
             }
-
-            if (stage === 'validate') {
-                current = await runValidateStage(current, handler as DataProcessorValidate<T>, stageContext)
-                continue
-            }
-            if (typeof handler !== 'function') {
-                throw new Error(`[Atoma] dataProcessor.${stage} must be a function`)
-            }
-
-            current = await (handler as DataProcessorStageFn<T>)(current, stageContext)
+            current = await modeHandler(current, processorContext)
         }
+        if (current === undefined) return undefined
+        if (!processor.validate) return current
 
-        return current
+        const validator = processor.validate as ProcessorHandler<T>
+        if (typeof validator !== 'function') {
+            throw new Error('[Atoma] processor.validate must be a function')
+        }
+        return await validator(current, processorContext)
     }
 
     async inbound<T extends Entity>(

@@ -1,7 +1,7 @@
 import type { EntityId } from '../shared'
 import type { PartialWithId } from './entity'
 import type { ActionContext } from './action'
-import type { StoreDataProcessor } from './processor'
+import type { StoreProcessor } from './processor'
 import type { Query, QueryOneResult, QueryResult } from './query'
 
 export type UpsertConflict = 'cas' | 'lww'
@@ -56,8 +56,8 @@ export interface IndexDefinition<T> {
 }
 
 export interface StoreConfig<T> {
-    idGenerator?: () => EntityId
-    dataProcessor?: StoreDataProcessor<T>
+    createId?: () => EntityId
+    processor?: StoreProcessor<T>
     indexes?: Array<IndexDefinition<T>>
     storeName?: StoreToken
 }

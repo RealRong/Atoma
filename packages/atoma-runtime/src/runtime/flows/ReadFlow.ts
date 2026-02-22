@@ -27,12 +27,12 @@ export class ReadFlow implements Read {
     }): Promise<QueryResult<T>> => {
         const startedAt = this.runtime.now()
         const storeName = handle.storeName
-        this.runtime.events.emit.readStart({
+        this.runtime.events.emit('readStart', {
             storeName,
             query
         })
         const result = await run()
-        this.runtime.events.emit.readFinish({
+        this.runtime.events.emit('readFinish', {
             storeName,
             query,
             result,
@@ -71,7 +71,7 @@ export class ReadFlow implements Read {
     private writebackArray = async <T extends Entity>(handle: StoreHandle<T>, input: unknown[]): Promise<T[]> => {
         const output: T[] = []
         for (const item of input) {
-            const processed = await this.runtime.transform.writeback(handle, item as T)
+            const processed = await this.runtime.processor.writeback(handle, item as T)
             if (processed !== undefined) output.push(processed)
         }
         return output

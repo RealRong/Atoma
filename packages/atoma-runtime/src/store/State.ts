@@ -1,9 +1,9 @@
 import type { Entity, IndexesLike, StoreChange, StoreDelta, StoreWritebackArgs } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Engine, StoreState } from 'atoma-types/runtime'
+import type { Engine, StoreState as StoreStateType } from 'atoma-types/runtime'
 import { mergeChanges, toChange } from 'atoma-core/store'
 
-export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T> {
+export class StoreState<T extends Entity = Entity> implements StoreStateType<T> {
     private current: ReadonlyMap<EntityId, T>
     private listeners = new Set<() => void>()
     private readonly engine: Engine
@@ -113,8 +113,8 @@ export class SimpleStoreState<T extends Entity = Entity> implements StoreState<T
         if (!result) return null
 
         return this.commit(
-            result.before as Map<EntityId, T>,
-            result.after as Map<EntityId, T>,
+            result.before,
+            result.after,
             result.changes
         )
     }

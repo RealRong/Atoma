@@ -1,4 +1,7 @@
-export type { CreateClientOptions } from './options'
+export type {
+    CreateClientOptions,
+    CreateClientStoresOptions
+} from './options'
 
 export type { AtomaSchema } from './schema'
 

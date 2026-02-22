@@ -8,20 +8,8 @@ import type {
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Write, StoreHandle } from 'atoma-types/runtime'
-import { orchestrateWrite } from './write/orchestrateWrite'
-import type { IntentCommandByAction, NonDeleteIntentAction, PreparedWrites, WriteScope } from './write/types'
-
-function createWriteSession<T extends Entity>(
-    runtime: Runtime,
-    handle: StoreHandle<T>,
-    options?: StoreOperationOptions
-): WriteScope<T> {
-    return {
-        handle,
-        context: runtime.engine.action.createContext(options?.context),
-        signal: options?.signal
-    }
-}
+import { orchestrateWrite } from './write/orchestrate'
+import type { IntentCommandByAction, NonDeleteIntentAction, WriteScope } from './write/contracts'
 
 export class WriteFlow implements Write {
     private readonly runtime: Runtime
@@ -30,49 +18,12 @@ export class WriteFlow implements Write {
         this.runtime = runtime
     }
 
-    private unwrapSingleResult<T extends Entity>({
-        prepared,
-        results
-    }: {
-        prepared: PreparedWrites<T>
-        results: WriteManyResult<T | void>
-    }): T | void {
-        const preparedWrite = prepared[0]
-        const result = results[0]
-        if (!preparedWrite || !result || !result.ok) {
-            throw new Error('[Atoma] write: missing write result at index=0')
+    private createScope<T extends Entity>(handle: StoreHandle<T>, options?: StoreOperationOptions): WriteScope<T> {
+        return {
+            handle,
+            context: this.runtime.engine.action.createContext(options?.context),
+            signal: options?.signal
         }
-
-        const output = result.value ?? preparedWrite.output
-        return output
-    }
-
-    private requireEntityOutput<T extends Entity>(value: T | void): T {
-        if (value === undefined) {
-            throw new Error('[Atoma] write: missing write output at index=0')
-        }
-        return value
-    }
-
-    private toDeleteResults<T extends Entity>(results: WriteManyResult<T | void>): WriteManyResult<void> {
-        return results.map((item) => item.ok
-            ? { index: item.index, ok: true, value: undefined }
-            : item
-        )
-    }
-
-    private toEntityResults<T extends Entity>(results: WriteManyResult<T | void>): WriteManyResult<T> {
-        return results.map((item) => {
-            if (!item.ok) return item
-            if (item.value === undefined) {
-                throw new Error(`[Atoma] write: missing write output at index=${item.index}`)
-            }
-            return {
-                index: item.index,
-                ok: true,
-                value: item.value
-            }
-        })
     }
 
     private runSingle<T extends Entity>(args: {
@@ -105,22 +56,30 @@ export class WriteFlow implements Write {
             source: NonDeleteIntentAction
             intent: IntentCommandByAction<T, NonDeleteIntentAction>
         }): Promise<T | void> {
-        const session = createWriteSession(this.runtime, handle, options)
+        const scope = this.createScope(handle, options)
         const { prepared, results } = await orchestrateWrite({
             runtime: this.runtime,
-            session,
+            scope,
             source,
             intents: [intent]
         })
-        const output = this.unwrapSingleResult({
-            prepared,
-            results
-        })
+        const preparedWrite = prepared[0]
+        const result = results[0]
+        if (!preparedWrite || !result) {
+            throw new Error('[Atoma] write: missing write result at index=0')
+        }
+        if (!result.ok) {
+            throw result.error
+        }
 
         if (source === 'delete') {
             return
         }
-        return this.requireEntityOutput(output)
+        const output = result.value ?? preparedWrite.output
+        if (output === undefined) {
+            throw new Error('[Atoma] write: missing write output at index=0')
+        }
+        return output
     }
 
     private runMany<T extends Entity>(args: {
@@ -153,21 +112,34 @@ export class WriteFlow implements Write {
             source: NonDeleteIntentAction
             intents: ReadonlyArray<IntentCommandByAction<T, NonDeleteIntentAction>>
         }): Promise<WriteManyResult<T | void>> {
-        const session = createWriteSession(this.runtime, handle, options)
+        const scope = this.createScope(handle, options)
         const { results } = await orchestrateWrite({
             runtime: this.runtime,
-            session,
+            scope,
             source,
             intents
         })
         if (source === 'delete') {
-            return this.toDeleteResults(results)
+            return results.map((item) => item.ok
+                ? { index: item.index, ok: true, value: undefined }
+                : item
+            )
         }
-        return this.toEntityResults(results)
+        return results.map((item) => {
+            if (!item.ok) return item
+            if (item.value === undefined) {
+                throw new Error(`[Atoma] write: missing write output at index=${item.index}`)
+            }
+            return {
+                index: item.index,
+                ok: true,
+                value: item.value
+            }
+        })
     }
 
     create = async <T extends Entity>(handle: StoreHandle<T>, item: Partial<T>, options?: StoreOperationOptions): Promise<T> => {
-        return await this.runSingle({
+        return this.runSingle({
             handle,
             options,
             source: 'create',
@@ -180,7 +152,7 @@ export class WriteFlow implements Write {
         items: Array<Partial<T>>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>> => {
-        return await this.runMany({
+        return this.runMany({
             handle,
             options,
             source: 'create',
@@ -189,7 +161,7 @@ export class WriteFlow implements Write {
     }
 
     update = async <T extends Entity>(handle: StoreHandle<T>, id: EntityId, updater: StoreUpdater<T>, options?: StoreOperationOptions): Promise<T> => {
-        return await this.runSingle({
+        return this.runSingle({
             handle,
             options,
             source: 'update',
@@ -202,7 +174,7 @@ export class WriteFlow implements Write {
         items: Array<{ id: EntityId; updater: StoreUpdater<T> }>,
         options?: StoreOperationOptions
     ): Promise<WriteManyResult<T>> => {
-        return await this.runMany({
+        return this.runMany({
             handle,
             options,
             source: 'update',
@@ -211,7 +183,7 @@ export class WriteFlow implements Write {
     }
 
     upsert = async <T extends Entity>(handle: StoreHandle<T>, item: PartialWithId<T>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<T> => {
-        return await this.runSingle({
+        return this.runSingle({
             handle,
             options,
             source: 'upsert',
@@ -220,7 +192,7 @@ export class WriteFlow implements Write {
     }
 
     upsertMany = async <T extends Entity>(handle: StoreHandle<T>, items: Array<PartialWithId<T>>, options?: StoreOperationOptions & UpsertWriteOptions): Promise<WriteManyResult<T>> => {
-        return await this.runMany({
+        return this.runMany({
             handle,
             options,
             source: 'upsert',
@@ -238,7 +210,7 @@ export class WriteFlow implements Write {
     }
 
     deleteMany = async <T extends Entity>(handle: StoreHandle<T>, ids: EntityId[], options?: StoreOperationOptions): Promise<WriteManyResult<void>> => {
-        return await this.runMany({
+        return this.runMany({
             handle,
             options,
             source: 'delete',

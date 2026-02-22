@@ -1,72 +1,64 @@
 /**
  * Runtime: Unified entrypoint for read/write flows.
- * - Owns all subsystems (execution, transform, stores).
+ * - Owns all subsystems (execution, processor, stores).
  * - Exposes runtime.read/runtime.write flow entrypoints.
  */
-import type { Entity, StoreDataProcessor } from 'atoma-types/core'
+import type { Entity, StoreProcessor } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type {
     Runtime as RuntimeType,
-    Debug,
+    Debug as DebugType,
     ExecutionKernel as ExecutionKernelType,
     Engine as EngineType,
-    StoreEventRegistry as StoreEventRegistryType,
+    StoreEventBus as StoreEventBusType,
     Read,
     Schema,
-    Transform,
+    Processor as ProcessorType,
     Write,
     StoreCatalog
 } from 'atoma-types/runtime'
-import { TransformPipeline } from './transform/TransformPipeline'
-import { Stores } from '../store/Stores'
-import { StoreEventRegistry } from './registry/StoreEventRegistry'
+import { Processor } from './Processor'
+import { Catalog } from '../store/Catalog'
+import { EventBus } from '../store/EventBus'
 import { ExecutionKernel } from '../execution/ExecutionKernel'
 import { ReadFlow } from './flows/ReadFlow'
 import { WriteFlow } from './flows/WriteFlow'
 import { Engine } from '../engine'
-import { Probe } from './debug/Probe'
+import { Debug } from './Debug'
 
 /**
  * Configuration for creating a Runtime.
  */
-export interface Options {
+export interface RuntimeConfig {
     id: string
-    schema: Schema
-    dataProcessor?: StoreDataProcessor<Entity>
-    defaults?: {
-        idGenerator?: () => EntityId
-    }
-    execution?: ExecutionKernelType
-    now?: () => number
-    events?: StoreEventRegistryType
-    engine?: EngineType
+    stores: Readonly<{
+        schema: Schema
+        createId?: () => EntityId
+        processor?: StoreProcessor<Entity>
+    }>
 }
 
 export class Runtime implements RuntimeType {
     readonly id: string
     readonly now: () => number
     readonly execution: ExecutionKernelType
-    readonly transform: Transform
+    readonly processor: ProcessorType
     readonly stores: StoreCatalog
     readonly read: Read
     readonly write: Write
-    readonly events: StoreEventRegistryType
+    readonly events: StoreEventBusType
     readonly engine: EngineType
-    readonly debug: Debug
+    readonly debug: DebugType
 
-    constructor(config: Options) {
+    constructor(config: RuntimeConfig) {
         this.id = String(config.id)
-        this.now = config.now ?? (() => Date.now())
-        this.engine = config.engine ?? new Engine()
-        this.transform = new TransformPipeline(this)
-        this.execution = config.execution ?? new ExecutionKernel()
-        this.events = config.events ?? new StoreEventRegistry()
-        this.stores = new Stores(this, {
-            schema: config.schema,
-            dataProcessor: config.dataProcessor,
-            defaults: config.defaults
-        })
-        this.debug = new Probe(this)
+        this.now = () => Date.now()
+        this.engine = new Engine()
+        this.processor = new Processor(this)
+        this.execution = new ExecutionKernel()
+        this.events = new EventBus()
+        this.stores = new Catalog(this, config.stores)
+        this.debug = new Debug(this)
         this.read = new ReadFlow(this)
         this.write = new WriteFlow(this)
     }

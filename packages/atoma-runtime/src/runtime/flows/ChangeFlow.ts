@@ -27,7 +27,7 @@ export class ChangeFlow {
         const context = this.runtime.engine.action.createContext(options?.context)
         const storeName = handle.storeName
 
-        this.runtime.events.emit.changeStart({
+        this.runtime.events.emit('changeStart', {
             storeName,
             context,
             source,
@@ -40,14 +40,14 @@ export class ChangeFlow {
                 : invertChanges([...changes].reverse())
             const delta = handle.state.apply(replayChanges)
 
-            this.runtime.events.emit.changeCommitted({
+            this.runtime.events.emit('changeCommitted', {
                 storeName,
                 context,
                 source,
                 changes: delta?.changes ?? []
             })
         } catch (error) {
-            this.runtime.events.emit.changeFailed({
+            this.runtime.events.emit('changeFailed', {
                 storeName,
                 context,
                 source,

@@ -31,8 +31,14 @@ export function setupPlugins({
             resolve: context.services.resolve
         },
         events: {
-            register: (events) => {
-                const unregister = context.events.register(events)
+            on: (name, listener, options) => {
+                const unregister = context.events.on(name, listener, options)
+                unregisters.push(unregister)
+                return unregister
+            },
+            off: context.events.off,
+            once: (name, listener) => {
+                const unregister = context.events.once(name, listener)
                 unregisters.push(unregister)
                 return unregister
             }

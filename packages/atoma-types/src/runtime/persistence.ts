@@ -2,7 +2,7 @@ import type { Entity, ActionContext, PageInfo, Query } from '../core'
 import type { EntityId, Version } from '../shared'
 import type { StoreHandle } from './store/handle'
 
-export type WriteStatus = 'confirmed' | 'partial' | 'rejected' | 'enqueued'
+export type WriteStatus = 'confirmed' | 'partial' | 'rejected'
 
 export type WriteItemMeta = {
     idempotencyKey?: string
@@ -82,9 +82,7 @@ export type WriteRequest<T extends Entity> = Readonly<{
 }>
 
 export type WriteOutput = Readonly<{
-    status: 'enqueued'
-}> | Readonly<{
-    status: Exclude<WriteStatus, 'enqueued'>
+    status: WriteStatus
     /**
      * Results are aligned with request.entries by index.
      * results[i] corresponds to request.entries[i].

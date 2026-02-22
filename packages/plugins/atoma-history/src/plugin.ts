@@ -104,26 +104,21 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                 emitChanged()
             }
 
-            const stopEvents = ctx.events.register({
-                write: {
-                    onCommitted: (args) => {
-                        recordChanges({
-                            storeName: String(args.storeName),
-                            changes: args.changes,
-                            context: args.context
-                        })
-                    }
-                },
-                change: {
-                    onCommitted: (args) => {
-                        recordChanges({
-                            storeName: String(args.storeName),
-                            changes: args.changes,
-                            context: args.context
-                        })
-                    }
-                }
-            })
+            const stopEvents: Array<() => void> = []
+            stopEvents.push(ctx.events.on('writeCommitted', (args) => {
+                recordChanges({
+                    storeName: String(args.storeName),
+                    changes: args.changes,
+                    context: args.context
+                })
+            }))
+            stopEvents.push(ctx.events.on('changeCommitted', (args) => {
+                recordChanges({
+                    storeName: String(args.storeName),
+                    changes: args.changes,
+                    context: args.context
+                })
+            }))
 
             const hub = ctx.services.resolve(HUB_TOKEN)
             const source: Source = {
@@ -215,10 +210,12 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
             return {
                 extension: { history },
                 dispose: () => {
-                    try {
-                        stopEvents?.()
-                    } catch {
-                        // ignore
+                    while (stopEvents.length) {
+                        try {
+                            stopEvents.pop()?.()
+                        } catch {
+                            // ignore
+                        }
                     }
                     try {
                         unregisterSource?.()

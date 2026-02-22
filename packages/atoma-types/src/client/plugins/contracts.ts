@@ -3,11 +3,17 @@ import type {
     Entity,
     StoreToken
 } from '../../core'
-import type { Runtime, StoreEvents, StoreSession } from '../../runtime'
+import type { Runtime, StoreEventName, StoreEventListener, StoreEventListenerOptions, StoreSession } from '../../runtime'
 import type { ServiceRegistry, ServiceToken } from '../services'
 
 export type PluginEvents = Readonly<{
-    register: (events: StoreEvents) => () => void
+    on: <K extends StoreEventName>(
+        name: K,
+        listener: StoreEventListener<K>,
+        options?: StoreEventListenerOptions
+    ) => () => void
+    off: <K extends StoreEventName>(name: K, listener: StoreEventListener<K>) => void
+    once: <K extends StoreEventName>(name: K, listener: StoreEventListener<K>) => () => void
 }>
 
 export type PluginServices = Readonly<{

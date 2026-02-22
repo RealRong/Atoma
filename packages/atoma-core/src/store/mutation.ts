@@ -16,20 +16,20 @@ const toObjectRecord = (value: unknown): Record<string, unknown> | null => {
 
 export function create<T>(
     obj: Partial<T>,
-    idGenerator?: () => EntityId,
+    createId?: () => EntityId,
     options?: MutationTimeOptions
 ): PartialWithId<T> {
     const nowMs = (options?.now ?? Date.now)()
     const base = obj as Partial<T> & { id?: EntityId }
     const hasId = typeof base.id === 'string' && base.id.length > 0
 
-    if (!hasId && typeof idGenerator !== 'function') {
-        throw new Error('[Atoma] create: id missing and idGenerator is required')
+    if (!hasId && typeof createId !== 'function') {
+        throw new Error('[Atoma] create: id missing and createId is required')
     }
 
     return {
         ...obj,
-        id: hasId ? base.id : idGenerator!(),
+        id: hasId ? base.id : createId!(),
         updatedAt: nowMs,
         createdAt: nowMs
     } as PartialWithId<T>

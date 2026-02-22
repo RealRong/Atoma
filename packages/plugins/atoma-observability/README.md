@@ -17,11 +17,11 @@ Core/runtime no longer knows about observability. If you want traces/debug event
 
 ## Plugin behavior (no core coupling)
 
-The plugin registers `ctx.events.register(...)` and listens to:
+The plugin registers `ctx.events.on(...)` listeners and listens to:
 
-- `store.onCreated`
-- `read.onStart/onFinish`
-- `write.onStart/onCommitted/onFailed`
+- `storeCreated`
+- `readStart/readFinish`
+- `writeStart/writeCommitted/writeFailed`
 
 It then uses `StoreObservability` to emit debug events (default prefix: `obs:*`).
 When `injectTraceMeta` is enabled (default), the plugin also writes `traceId/requestId` into `op.meta` for ops it can associate with a trace.

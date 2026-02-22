@@ -1,7 +1,7 @@
 import type { Entity, StoreToken } from 'atoma-types/core'
 import type {
     Runtime,
-    Debug,
+    Debug as DebugType,
     IndexDebugSnapshot,
 } from 'atoma-types/runtime'
 
@@ -19,14 +19,14 @@ function estimateSampleSize(sample: unknown[]): number {
     }
 }
 
-export class Probe implements Debug {
+export class Debug implements DebugType {
     private readonly runtime: Runtime
 
     constructor(runtime: Runtime) {
         this.runtime = runtime
     }
 
-    readonly snapshotStore: Debug['snapshotStore'] = (storeName: StoreToken) => {
+    readonly snapshotStore: DebugType['snapshotStore'] = (storeName: StoreToken) => {
         const name = String(storeName)
 
         try {
@@ -45,7 +45,7 @@ export class Probe implements Debug {
         }
     }
 
-    readonly snapshotIndexes: Debug['snapshotIndexes'] = <T extends Entity = Entity>(storeName: StoreToken) => {
+    readonly snapshotIndexes: DebugType['snapshotIndexes'] = <T extends Entity = Entity>(storeName: StoreToken) => {
         const name = String(storeName)
 
         try {

@@ -22,14 +22,10 @@ export type {
 } from './query'
 
 export type {
-    SchemaValidator,
-    DataProcessorMode,
-    DataProcessorStage,
-    DataProcessorBaseContext,
-    DataProcessorContext,
-    DataProcessorStageFn,
-    DataProcessorValidate,
-    StoreDataProcessor,
+    ProcessorMode,
+    ProcessorContext,
+    ProcessorHandler,
+    StoreProcessor,
 } from './processor'
 
 export type {

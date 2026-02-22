@@ -63,13 +63,3 @@ type IntentCommandMap<T extends Entity> = {
 
 export type IntentCommand<T extends Entity> = IntentCommandMap<T>[IntentAction]
 export type IntentCommandByAction<T extends Entity, A extends IntentAction> = IntentCommandMap<T>[A]
-
-type IntentInputMap<T extends Entity> = {
-    [A in IntentAction]: Readonly<{
-        kind: 'intent'
-        scope: WriteScope<T>
-    } & IntentCommandMap<T>[A]>
-}
-
-export type IntentInput<T extends Entity> = IntentInputMap<T>[IntentAction]
-export type IntentInputByAction<T extends Entity, A extends IntentAction> = IntentInputMap<T>[A]

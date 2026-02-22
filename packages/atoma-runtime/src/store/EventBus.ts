@@ -1,48 +1,31 @@
 import type { Entity } from 'atoma-types/core'
 import type {
-    StoreEventEmit,
     StoreEventName,
-    StoreEventHandlers,
+    StoreEventListener,
+    StoreEventListenerOptions,
     StoreEventPayloadMap,
-    StoreEventRegistry as StoreEventRegistryType,
-    StoreEvents
+    StoreEventBus as StoreEventBusType,
 } from 'atoma-types/runtime'
 
-const STORE_EVENT_NAMES: StoreEventName[] = [
-    'readStart',
-    'readFinish',
-    'writeStart',
-    'writeCommitted',
-    'writeFailed',
-    'changeStart',
-    'changeCommitted',
-    'changeFailed',
-    'storeCreated'
-]
-
 type HandlerSetMap = {
-    [K in StoreEventName]: Set<NonNullable<StoreEventHandlers[K]>>
-}
-
-type HandlerInputMap = {
-    [K in StoreEventName]: StoreEventHandlers[K] | undefined
+    [K in StoreEventName]: Map<StoreEventListener<StoreEventName>, Readonly<{ once: boolean }>>
 }
 
 function createHandlerSets(): HandlerSetMap {
     return {
-        readStart: new Set(),
-        readFinish: new Set(),
-        writeStart: new Set(),
-        writeCommitted: new Set(),
-        writeFailed: new Set(),
-        changeStart: new Set(),
-        changeCommitted: new Set(),
-        changeFailed: new Set(),
-        storeCreated: new Set()
+        readStart: new Map(),
+        readFinish: new Map(),
+        writeStart: new Map(),
+        writeCommitted: new Map(),
+        writeFailed: new Map(),
+        changeStart: new Map(),
+        changeCommitted: new Map(),
+        changeFailed: new Map(),
+        storeCreated: new Map()
     }
 }
 
-export class StoreEventRegistry implements StoreEventRegistryType {
+export class EventBus implements StoreEventBusType {
     private readonly handlers: HandlerSetMap = createHandlerSets()
 
     get has() {
@@ -51,70 +34,60 @@ export class StoreEventRegistry implements StoreEventRegistryType {
         }
     }
 
-    register = (events: StoreEvents) => {
-        if (!events) return () => {}
-
-        const cleanups: Array<() => void> = []
-        const entries = this.toHandlerInputMap(events)
-
-        for (const eventName of STORE_EVENT_NAMES) {
-            this.addHandler(eventName, entries[eventName], cleanups)
-        }
+    on = <K extends StoreEventName>(
+        name: K,
+        listener: StoreEventListener<K>,
+        options?: StoreEventListenerOptions
+    ): (() => void) => {
+        const listeners = this.handlers[name]
+        listeners.set(listener as StoreEventListener<StoreEventName>, {
+            once: options?.once === true
+        })
 
         let active = true
+        const signal = options?.signal
+        const onAbort = () => {
+            this.off(name, listener)
+        }
+
+        if (signal) {
+            if (signal.aborted) {
+                this.off(name, listener)
+                return () => {}
+            }
+            signal.addEventListener('abort', onAbort, { once: true })
+        }
+
         return () => {
             if (!active) return
             active = false
-            cleanups.forEach(cleanup => cleanup())
+            if (signal) {
+                signal.removeEventListener('abort', onAbort)
+            }
+            this.off(name, listener)
         }
     }
 
-    readonly emit: StoreEventEmit = {
-        readStart: <T extends Entity>(payload: StoreEventPayloadMap<T>['readStart']) => this.emitEvent('readStart', payload),
-        readFinish: <T extends Entity>(payload: StoreEventPayloadMap<T>['readFinish']) => this.emitEvent('readFinish', payload),
-        writeStart: <T extends Entity>(payload: StoreEventPayloadMap<T>['writeStart']) => this.emitEvent('writeStart', payload),
-        writeCommitted: <T extends Entity>(payload: StoreEventPayloadMap<T>['writeCommitted']) => this.emitEvent('writeCommitted', payload),
-        writeFailed: <T extends Entity>(payload: StoreEventPayloadMap<T>['writeFailed']) => this.emitEvent('writeFailed', payload),
-        changeStart: <T extends Entity>(payload: StoreEventPayloadMap<T>['changeStart']) => this.emitEvent('changeStart', payload),
-        changeCommitted: <T extends Entity>(payload: StoreEventPayloadMap<T>['changeCommitted']) => this.emitEvent('changeCommitted', payload),
-        changeFailed: <T extends Entity>(payload: StoreEventPayloadMap<T>['changeFailed']) => this.emitEvent('changeFailed', payload),
-        storeCreated: <T extends Entity>(payload: StoreEventPayloadMap<T>['storeCreated']) => this.emitEvent('storeCreated', payload)
+    off = <K extends StoreEventName>(name: K, listener: StoreEventListener<K>): void => {
+        const listeners = this.handlers[name]
+        listeners.delete(listener as StoreEventListener<StoreEventName>)
     }
 
-    private toHandlerInputMap = (events: StoreEvents): HandlerInputMap => {
-        return {
-            readStart: events.read?.onStart,
-            readFinish: events.read?.onFinish,
-            writeStart: events.write?.onStart,
-            writeCommitted: events.write?.onCommitted,
-            writeFailed: events.write?.onFailed,
-            changeStart: events.change?.onStart,
-            changeCommitted: events.change?.onCommitted,
-            changeFailed: events.change?.onFailed,
-            storeCreated: events.store?.onCreated
-        }
+    once = <K extends StoreEventName>(name: K, listener: StoreEventListener<K>): (() => void) => {
+        return this.on(name, listener, { once: true })
     }
 
-    private addHandler = <K extends StoreEventName>(
-        eventName: K,
-        handler: StoreEventHandlers[K] | undefined,
-        cleanups: Array<() => void>
-    ) => {
-        if (!handler) return
+    emit = <K extends StoreEventName, T extends Entity = Entity>(name: K, payload: StoreEventPayloadMap<T>[K]): void => {
+        const listeners = this.handlers[name]
+        if (!listeners.size) return
 
-        const set = this.handlers[eventName] as Set<NonNullable<StoreEventHandlers[K]>>
-        const entry = handler as NonNullable<StoreEventHandlers[K]>
-        set.add(entry)
-        cleanups.push(() => {
-            set.delete(entry)
-        })
-    }
-
-    private emitEvent = <K extends StoreEventName>(eventName: K, payload: unknown) => {
-        const set = this.handlers[eventName] as Set<(payload: unknown) => void>
-        for (const handler of set) {
+        const entries = Array.from(listeners.entries())
+        for (const [listener, options] of entries) {
+            if (options.once) {
+                listeners.delete(listener)
+            }
             try {
-                handler(payload)
+                listener(payload as StoreEventPayloadMap<Entity>[K])
             } catch {
                 // ignore
             }

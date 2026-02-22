@@ -213,29 +213,24 @@ export function registerBuiltinSources({
     const unregisterStoreSource = hub.register(storeRuntime.source)
     const unregisterIndexSource = hub.register(indexRuntime.source)
 
-    const stopEvents = ctx.events.register({
-        store: {
-            onCreated: () => {
-                storeRuntime.markChanged()
-                indexRuntime.markChanged()
-            }
-        },
-        write: {
-            onCommitted: () => {
-                storeRuntime.markChanged()
-                indexRuntime.markChanged()
-            }
-        },
-        change: {
-            onCommitted: () => {
-                storeRuntime.markChanged()
-                indexRuntime.markChanged()
-            }
-        }
-    })
+    const stopEvents: Array<() => void> = []
+    stopEvents.push(ctx.events.on('storeCreated', () => {
+        storeRuntime.markChanged()
+        indexRuntime.markChanged()
+    }))
+    stopEvents.push(ctx.events.on('writeCommitted', () => {
+        storeRuntime.markChanged()
+        indexRuntime.markChanged()
+    }))
+    stopEvents.push(ctx.events.on('changeCommitted', () => {
+        storeRuntime.markChanged()
+        indexRuntime.markChanged()
+    }))
 
     return () => {
-        safeDispose(stopEvents)
+        while (stopEvents.length) {
+            safeDispose(stopEvents.pop())
+        }
         safeDispose(unregisterIndexSource)
         safeDispose(unregisterStoreSource)
     }

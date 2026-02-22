@@ -164,7 +164,7 @@
 
 1. 单一 CAS 规则下 `create/update/upsert/delete` 的 version 行为矩阵。
 2. 批量写部分失败时 optimistic rollback 与 transactionChanges 合并顺序。
-3. `status='enqueued'` 分支和单条限制。
+3. 写状态固定为 `confirmed/partial/rejected`，不存在 `enqueued` 分支。
 4. `returning/select` 对 writeback 应用的边界行为。
 5. 不同 route（`direct-local` / server route）下相同行为的一致性。
 

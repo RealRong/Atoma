@@ -81,51 +81,47 @@ export class SyncWrites {
     private register() {
         const { outbox } = this.deps
 
-        this.unregister.push(this.deps.events.register({
-            write: {
-                onCommitted: (event: {
-                    storeName: string
-                    context: { origin: string }
-                    writeEntries: ReadonlyArray<WriteEntry>
-                    status?: WriteStatus
-                    results?: WriteManyResult<unknown>
-                }) => {
-                    if (event.context.origin === 'sync') return
+        this.unregister.push(this.deps.events.on('writeCommitted', (event: {
+            storeName: string
+            context: { origin: string }
+            writeEntries: ReadonlyArray<WriteEntry>
+            status?: WriteStatus
+            results?: WriteManyResult<unknown>
+        }) => {
+            if (event.context.origin === 'sync') return
 
-                    const resource = String(event.storeName)
-                    if (this.resourcesAllowSet && !this.resourcesAllowSet.has(resource)) return
+            const resource = String(event.storeName)
+            if (this.resourcesAllowSet && !this.resourcesAllowSet.has(resource)) return
 
-                    const writeEntries = filterCommittedWriteEntries({
-                        status: event.status,
-                        writeEntries: event.writeEntries,
-                        results: event.results
-                    })
-                    if (!writeEntries.length) return
+            const writeEntries = filterCommittedWriteEntries({
+                status: event.status,
+                writeEntries: event.writeEntries,
+                results: event.results
+            })
+            if (!writeEntries.length) return
 
-                    let writes: OutboxWrite[]
-                    try {
-                        writes = mapWriteEntriesToOutboxWrites({
-                            storeName: resource,
-                            writeEntries
-                        })
-                    } catch (error) {
-                        this.reportEnqueueFailure({
-                            resource,
-                            count: writeEntries.length,
-                            error
-                        })
-                        return
-                    }
-
-                    void outbox.enqueueWrites({ writes }).catch((error) => {
-                        this.reportEnqueueFailure({
-                            resource,
-                            count: writes.length,
-                            error
-                        })
-                    })
-                }
+            let writes: OutboxWrite[]
+            try {
+                writes = mapWriteEntriesToOutboxWrites({
+                    storeName: resource,
+                    writeEntries
+                })
+            } catch (error) {
+                this.reportEnqueueFailure({
+                    resource,
+                    count: writeEntries.length,
+                    error
+                })
+                return
             }
+
+            void outbox.enqueueWrites({ writes }).catch((error) => {
+                this.reportEnqueueFailure({
+                    resource,
+                    count: writes.length,
+                    error
+                })
+            })
         }))
     }
 
@@ -151,7 +147,6 @@ function filterCommittedWriteEntries(args: {
     results?: WriteManyResult<unknown>
 }): WriteEntry[] {
     if (!args.writeEntries.length) return []
-    if (args.status === 'enqueued') return []
     if (!args.results || !args.results.length) {
         if (args.status === 'rejected' || args.status === 'partial') {
             return []

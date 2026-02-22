@@ -1,10 +1,10 @@
-import { createId } from 'atoma-shared'
+import { createId as createEntityId } from 'atoma-shared'
 import type {
     Entity,
     Query,
     QueryResult,
     Store,
-    StoreDataProcessor,
+    StoreProcessor,
     StoreToken
 } from 'atoma-types/core'
 import { compileRelationsMap } from 'atoma-core/relations'
@@ -12,38 +12,34 @@ import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime } from 'atoma-types/runtime'
 import type { Schema, StoreSchema, StoreHandle } from 'atoma-types/runtime'
-import { SimpleStoreState } from './StoreState'
+import { StoreState } from './State'
 
 type BuildResult<T extends Entity = Entity> = Readonly<{
     handle: StoreHandle<T>
     api: Store<T>
 }>
 
-export class StoreFactory {
+export class Factory {
     private readonly runtime: Runtime
     private readonly schema: Schema
-    private readonly defaults?: {
-        idGenerator?: () => EntityId
-    }
-    private readonly dataProcessor?: StoreDataProcessor<Entity>
+    private readonly createId?: () => EntityId
+    private readonly processor?: StoreProcessor<Entity>
 
     constructor({
         runtime,
         schema,
-        defaults,
-        dataProcessor
+        createId,
+        processor
     }: {
         runtime: Runtime
         schema: Schema
-        defaults?: {
-            idGenerator?: () => EntityId
-        }
-        dataProcessor?: StoreDataProcessor<Entity>
+        createId?: () => EntityId
+        processor?: StoreProcessor<Entity>
     }) {
         this.runtime = runtime
         this.schema = schema
-        this.defaults = defaults
-        this.dataProcessor = dataProcessor
+        this.createId = createId
+        this.processor = processor
     }
 
     build = <T extends Entity = Entity>(storeName: string): BuildResult<T> => {
@@ -51,14 +47,14 @@ export class StoreFactory {
         const name = String(storeName)
         const storeSchema = (this.schema?.[name] ?? {}) as StoreSchema<T>
 
-        const idGenerator = storeSchema.idGenerator
-            ?? this.defaults?.idGenerator
-            ?? (() => createId({ kind: 'entity', sortable: true, now: runtime.now }))
-        const dataProcessor = this.mergeDataProcessor(this.dataProcessor as StoreDataProcessor<T> | undefined, storeSchema.dataProcessor)
+        const createIdFn = storeSchema.createId
+            ?? this.createId
+            ?? (() => createEntityId({ kind: 'entity', sortable: true, now: runtime.now }))
+        const processor = (storeSchema.processor ?? this.processor) as StoreProcessor<T> | undefined
 
         const indexes = runtime.engine.index.create<T>(storeSchema.indexes ?? null)
 
-        const state = new SimpleStoreState<T>({
+        const state = new StoreState<T>({
             initial: new Map<EntityId, T>(),
             indexes,
             engine: runtime.engine
@@ -68,8 +64,8 @@ export class StoreFactory {
             state,
             storeName: name,
             config: {
-                idGenerator,
-                dataProcessor
+                createId: createIdFn,
+                processor
             }
         }
 
@@ -139,17 +135,6 @@ export class StoreFactory {
             relation: this.runtime.engine.relation,
             relations: () => handle.relations?.(),
             useStore: (name: StoreToken) => this.runtime.stores.ensure(String(name)),
-        }
-    }
-
-    private mergeDataProcessor = <T extends Entity>(
-        base?: StoreDataProcessor<T>,
-        override?: StoreDataProcessor<T>
-    ): StoreDataProcessor<T> | undefined => {
-        if (!base && !override) return undefined
-        return {
-            ...(base ?? {}),
-            ...(override ?? {})
         }
     }
 }
