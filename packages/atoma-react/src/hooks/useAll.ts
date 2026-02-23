@@ -18,13 +18,13 @@ export function useAll<T extends Entity, Relations = {}, const Include extends R
     const memoedArr = useMemo(() => Array.from(all.values()), [all])
 
     const bindings = getStoreBindings(store, 'useAll')
-    const relations = bindings.relations?.() as Relations | undefined
+    const relations = bindings.relations?.()
     if (!options?.include || !relations) return memoedArr as Result
 
     const relationsResult = useRelations<T, Relations, Include>(
         memoedArr,
         options.include,
-        relations as Relations,
+        relations,
         (name) => bindings.useStore(name)
     )
     return relationsResult.data as unknown as Result

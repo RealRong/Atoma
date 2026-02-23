@@ -24,12 +24,6 @@ type CacheEntry<T extends Entity> = {
 const REMOTE_QUERY_CACHE = new WeakMap<object, Map<string, CacheEntry<any>>>()
 const FALLBACK_QUERY_CACHE = new Map<string, CacheEntry<any>>()
 
-function stripRuntimeOptions(options?: any) {
-    if (!options) return undefined
-    const { fetchPolicy: _fetchPolicy, result: _result, include: _include, ...rest } = options
-    return rest
-}
-
 function normalizeResult<T extends Entity>(res: any): { data: T[]; pageInfo?: PageInfo } {
     if (res && Array.isArray(res.data)) return { data: res.data, pageInfo: res.pageInfo }
     return { data: [] }
@@ -73,7 +67,7 @@ export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
     const runtime = bindings.scope
 
     const key = useMemo(() => {
-        const optionsKey = stableStringify(stripRuntimeOptions(args.options))
+        const optionsKey = stableStringify(args.options)
         return `${storeName}:remoteQuery:${optionsKey}`
     }, [storeName, args.options])
 

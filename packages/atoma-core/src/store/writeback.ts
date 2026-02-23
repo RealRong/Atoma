@@ -27,10 +27,11 @@ export function writeback<T extends Entity>(
     }
 
     const commitChange = (id: EntityId, current: T | undefined, next: T | undefined) => {
+        const target = ensureWritable()
         if (next === undefined) {
-            ensureWritable().delete(id)
+            target.delete(id)
         } else {
-            ensureWritable().set(id, next)
+            target.set(id, next)
         }
         rawChanges.push(toChange({
             id,
@@ -40,23 +41,28 @@ export function writeback<T extends Entity>(
     }
 
     entries.forEach((entry) => {
-        if (entry.action === 'delete') {
-            const id = entry.id
-            if (!after.has(id)) return
-            commitChange(id, after.get(id), undefined)
-            return
+        switch (entry.action) {
+            case 'delete': {
+                const id = entry.id
+                const current = after.get(id)
+                if (current === undefined && !after.has(id)) return
+                commitChange(id, current, undefined)
+                return
+            }
+            case 'upsert': {
+                const item = entry.item
+                const id = item.id
+                const current = after.get(id)
+                const hasCurrent = current !== undefined || after.has(id)
+                const next = hasCurrent
+                    ? reuse(current, item)
+                    : item
+                if (hasCurrent && current === next) return
+
+                commitChange(id, current, next)
+                return
+            }
         }
-
-        const item = entry.item
-        const id = item.id
-
-        const existing = after.get(id)
-        const next = existing
-            ? reuse(existing as T, item)
-            : item
-        if (after.has(id) && existing === next) return
-
-        commitChange(id, existing, next)
     })
 
     const changes = mergeChanges(rawChanges)

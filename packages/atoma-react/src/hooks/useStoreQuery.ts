@@ -57,6 +57,11 @@ export function useStoreQuery<T extends Entity, Relations = {}>(
 export function useStoreQuery<T extends Entity, Relations = {}>(
     store: Store<T, Relations>,
     options?: UseStoreQueryOptions<T>
+): T[]
+
+export function useStoreQuery<T extends Entity, Relations = {}>(
+    store: Store<T, Relations>,
+    options?: UseStoreQueryOptions<T>
 ): T[] {
     const resultMode: UseStoreQueryResultMode = options?.result ?? 'entities'
     const result = useStoreQueryInternal(store, options)

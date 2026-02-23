@@ -1,7 +1,7 @@
 import {
-    buildPrefetchPlan,
+    buildRelationPlan,
     type IncludeInput,
-    type PrefetchPlanEntry
+    type RelationPlanEntry
 } from 'atoma-core/relations'
 import type { Entity, FilterExpr, Query, RelationMap, StoreToken } from 'atoma-types/core'
 import type { RelationPrefetchOptions, RelationStore } from 'atoma-types/runtime'
@@ -16,7 +16,7 @@ export async function prefetchRelations<T extends Entity>(
     if (!items.length || !include || !relations) return
 
     const { onError = 'partial', timeout = 5000, maxConcurrency = 10 } = options
-    const plan = buildPrefetchPlan(items, include, relations)
+    const plan = buildRelationPlan(items, include, relations)
     const concurrencyLimit = normalizeConcurrency(maxConcurrency ?? 10)
 
     await runWithConcurrency(plan, concurrencyLimit, async (entry) => {
@@ -37,15 +37,12 @@ export async function prefetchRelations<T extends Entity>(
     })
 }
 
-async function prefetchPlanEntry(
-    entry: PrefetchPlanEntry,
+async function prefetchPlanEntry<T extends Entity>(
+    entry: RelationPlanEntry<T>,
     resolveStore: (name: StoreToken) => RelationStore | undefined,
     signal: AbortSignal
 ): Promise<void> {
     if (signal.aborted) return
-
-    validateIncludeQuery(entry.relationName, entry.includeQuery)
-    validateIncludeQuery(entry.relationName, entry.relationQuery)
 
     if (!entry.uniqueKeys.length) return
 
@@ -75,36 +72,12 @@ async function prefetchPlanEntry(
         : keyFilter
 
     const query: Query<unknown> = {
-        ...entry.query,
         filter,
-        page: undefined
+        ...(entry.query.sort ? { sort: entry.query.sort } : {})
     }
 
     if (signal.aborted) return
     await store.query(query)
-}
-
-function validateIncludeQuery(relName: string, query?: Query<unknown>) {
-    if (!query) return
-
-    const page = query.page
-    if (page === undefined) return
-
-    if (!page || typeof page !== 'object' || Array.isArray(page)) {
-        throw new Error(`include.${relName}.page 必须是对象，且仅支持 { limit?: number }`)
-    }
-
-    const pageRecord = page as Record<string, unknown>
-    const keys = Object.keys(pageRecord).filter(key => pageRecord[key] !== undefined)
-    const hasUnsupportedKey = keys.some(key => key !== 'limit')
-    if (hasUnsupportedKey) {
-        throw new Error(`include.${relName}.page 仅支持 limit，不支持 mode/offset/cursor`)
-    }
-
-    const limit = pageRecord.limit
-    if (limit !== undefined && (typeof limit !== 'number' || !Number.isFinite(limit) || limit < 0)) {
-        throw new Error(`include.${relName}.page.limit 必须是 >= 0 的有限数字`)
-    }
 }
 
 function normalizeConcurrency(limit: number): number {

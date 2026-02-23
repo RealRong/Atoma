@@ -1,7 +1,41 @@
-import type { Entity, StoreConfig } from '../core'
+import type {
+    Entity,
+    KeySelector,
+    RelationIncludeOptions,
+    StoreConfig
+} from '../core'
+
+type BelongsToSchema<T extends Entity = Entity> = Readonly<{
+    type: 'belongsTo'
+    to: string
+    foreignKey: KeySelector<T>
+    primaryKey?: string
+    options?: RelationIncludeOptions<Entity, Record<string, unknown>>
+}>
+
+type HasManySchema<T extends Entity = Entity> = Readonly<{
+    type: 'hasMany'
+    to: string
+    primaryKey?: KeySelector<T>
+    foreignKey: string
+    options?: RelationIncludeOptions<Entity, Record<string, unknown>>
+}>
+
+type HasOneSchema<T extends Entity = Entity> = Readonly<{
+    type: 'hasOne'
+    to: string
+    primaryKey?: KeySelector<T>
+    foreignKey: string
+    options?: RelationIncludeOptions<Entity, Record<string, unknown>>
+}>
+
+type RelationSchema<T extends Entity = Entity> =
+    | BelongsToSchema<T>
+    | HasManySchema<T>
+    | HasOneSchema<T>
 
 export type StoreSchema<T extends Entity = Entity> = {
-    relations?: Record<string, unknown>
+    relations?: Readonly<Record<string, RelationSchema<T>>>
     [key: string]: unknown
 } & Partial<Pick<StoreConfig<T>, 'indexes' | 'createId' | 'processor'>>
 

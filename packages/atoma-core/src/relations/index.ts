@@ -1,12 +1,14 @@
 export { belongsTo, hasMany, hasOne, variants } from './builders'
-export { compileRelationsMap } from './compile'
+export {
+    mergeIncludeQuery,
+    pickIncludeOptions,
+    type IncludeOptions
+} from './include'
 export { extractKeyValue, pickFirstKey, collectUniqueKeys } from './key'
 export {
-    buildPrefetchPlan,
-    buildProjectPlan,
-    collectRelationStoreTokens,
+    buildRelationPlan,
+    collectPlanStoreTokens,
     type IncludeInput,
-    type PrefetchPlanEntry,
-    type ProjectPlanEntry,
+    type RelationPlanEntry,
     type StandardRelationConfig
 } from './plan'

@@ -1,16 +1,15 @@
 import type {
     Entity,
     KeySelector,
-    Query,
+    RelationQuery,
     RelationIncludeInput,
     RelationConfig,
     RelationMap,
-    SortRule,
     StoreToken,
     VariantsConfig
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { mergeIncludeQuery, pickIncludeQuery, resolveLimit } from './include'
+import { mergeIncludeQuery, pickIncludeOptions } from './include'
 import { collectUniqueKeys } from './key'
 
 export type IncludeInput = RelationIncludeInput<Record<string, unknown>> | undefined
@@ -19,60 +18,21 @@ export type StandardRelationConfig<T extends Entity> = Exclude<RelationConfig<T,
 
 type RelationType = StandardRelationConfig<Entity>['type']
 
-export type PrefetchPlanEntry = Readonly<{
-    relationName: string
-    relationType: RelationType
-    store: StoreToken
-    targetKeyField: string
-    includeQuery: Query<unknown> | undefined
-    relationQuery: Query<unknown> | undefined
-    uniqueKeys: EntityId[]
-    query: Query<unknown>
-}>
-
-export type ProjectPlanEntry<T extends Entity> = Readonly<{
+export type RelationPlanEntry<T extends Entity> = Readonly<{
     relationName: string
     relationType: RelationType
     items: T[]
     store: StoreToken
     sourceKeySelector: KeySelector<T>
     targetKeyField: string
-    sort: SortRule[] | undefined
-    limit: number | undefined
+    uniqueKeys: EntityId[]
+    query: RelationQuery<unknown>
 }>
 
-function getRelationOptions<T extends Entity>(relation: StandardRelationConfig<T>): Query<unknown> | undefined {
-    return pickIncludeQuery((relation as { options?: unknown }).options)
-}
-
-function getIncludeQuery(includeValue: unknown): Query<unknown> | undefined {
-    return typeof includeValue === 'object' && includeValue !== null
-        ? pickIncludeQuery(includeValue)
-        : undefined
-}
-
-export function collectRelationStoreTokens<T extends Entity>(
-    include: IncludeInput,
-    relations: RelationMap<T> | undefined
-): StoreToken[] {
-    if (!include || !relations) return []
-
+export function collectPlanStoreTokens<T extends Entity>(entries: RelationPlanEntry<T>[]): StoreToken[] {
     const output = new Set<StoreToken>()
-
-    Object.entries(include).forEach(([name, value]) => {
-        if (value === false || value === undefined || value === null) return
-
-        const relation = relations[name]
-        if (!relation) return
-
-        if (relation.type === 'variants') {
-            relation.branches.forEach(branch => {
-                output.add(branch.relation.store)
-            })
-            return
-        }
-
-        output.add(relation.store)
+    entries.forEach(entry => {
+        output.add(entry.store)
     })
 
     return Array.from(output)
@@ -131,46 +91,21 @@ function forEachPlannableRelation<T extends Entity>(
     })
 }
 
-export function buildPrefetchPlan<T extends Entity>(
+export function buildRelationPlan<T extends Entity>(
     items: T[],
     include: IncludeInput,
     relations: RelationMap<T> | undefined
-): PrefetchPlanEntry[] {
+): RelationPlanEntry<T>[] {
     if (!items.length || !include || !relations) return []
 
-    const output: PrefetchPlanEntry[] = []
+    const output: RelationPlanEntry<T>[] = []
     forEachPlannableRelation(items, include, relations, ({ relationName, includeValue, relation, items }) => {
         const sourceKeySelector = getSourceKeySelector(relation)
-        const includeQuery = getIncludeQuery(includeValue)
-        const relationQuery = pickIncludeQuery(getRelationOptions(relation))
-        output.push({
-            relationName,
-            relationType: relation.type,
-            store: relation.store,
-            targetKeyField: getTargetKeyField(relation),
-            includeQuery,
-            relationQuery,
-            uniqueKeys: collectUniqueKeys(items, sourceKeySelector),
-            query: mergeIncludeQuery(relationQuery, includeQuery)
-        })
-    })
-
-    return output
-}
-
-export function buildProjectPlan<T extends Entity>(
-    items: T[],
-    include: IncludeInput,
-    relations: RelationMap<T> | undefined
-): ProjectPlanEntry<T>[] {
-    if (!items.length || !include || !relations) return []
-
-    const output: ProjectPlanEntry<T>[] = []
-    forEachPlannableRelation(items, include, relations, ({ relationName, includeValue, relation, items }) => {
-        const sourceKeySelector = getSourceKeySelector(relation)
+        const relationOptions = pickIncludeOptions((relation as { options?: unknown }).options)
+        const includeOptions = pickIncludeOptions(includeValue)
         const query = mergeIncludeQuery(
-            getRelationOptions(relation),
-            getIncludeQuery(includeValue)
+            relationOptions.query,
+            includeOptions.query
         )
         output.push({
             relationName,
@@ -179,8 +114,8 @@ export function buildProjectPlan<T extends Entity>(
             store: relation.store,
             sourceKeySelector,
             targetKeyField: getTargetKeyField(relation),
-            sort: query.sort,
-            limit: resolveLimit(query.page)
+            uniqueKeys: collectUniqueKeys(items, sourceKeySelector),
+            query
         })
     })
 

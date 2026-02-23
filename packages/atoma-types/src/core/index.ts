@@ -37,7 +37,8 @@ export type {
 
 export type {
     RelationType,
-    RelationIncludePage,
+    RelationPrefetchMode,
+    RelationQuery,
     RelationIncludeOptions,
     BelongsToConfig,
     HasManyConfig,

@@ -3,19 +3,20 @@ import type { Query } from './query'
 import type { StoreToken } from './store'
 
 export type RelationType = 'belongsTo' | 'hasMany' | 'hasOne' | 'variants'
+export type RelationPrefetchMode = 'on-mount' | 'on-change' | 'manual'
 
-export type RelationIncludePage = {
+export type RelationQuery<T = unknown> = Pick<Query<T>, 'filter' | 'sort'> & {
     limit?: number
 }
 
-// Relations include 专用（仅支持 Top-N 预览，不含 offset/cursor 分页）
-export type RelationIncludeOptions<T, Include extends Record<string, unknown> = Record<string, unknown>> = Pick<Query<T>, 'filter' | 'sort'> & {
-    page?: RelationIncludePage
+// Relations include 专用（仅支持 Top-N，limit 不支持 offset/cursor）
+export type RelationIncludeOptions<T, Include extends Record<string, unknown> = Record<string, unknown>> = {
+    query?: RelationQuery<T>
     include?: Include
     /** live=true 订阅子 store 实时变化；false 则使用快照（默认 true） */
     live?: boolean
     /** 关系预取策略（默认：belongsTo/hasOne 为 on-change，hasMany 为 on-mount） */
-    prefetch?: 'on-mount' | 'on-change' | 'manual'
+    prefetch?: RelationPrefetchMode
 }
 
 export interface BelongsToConfig<TSource, TTarget extends Entity, TTargetRelations = {}> {

@@ -40,7 +40,9 @@ type UseQueryOptions<T extends Entity, Relations, Include extends RelationInclud
         result?: UseQueryResultMode
     }
 
-const stripRuntimeOptions = (options?: any) => {
+const stripRuntimeOptions = <T extends Entity, Relations, Include extends RelationIncludeInput<Relations>>(
+    options?: UseQueryOptions<T, Relations, Include>
+): Query<T> | undefined => {
     if (!options) return undefined
     const { fetchPolicy: _fetchPolicy, result: _result, include: _include, ...rest } = options
     return rest
@@ -61,22 +63,19 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
     options?: UseQueryOptions<T, Relations, Include>
 ): UseQueryEntitiesResult<T, Relations, Include> | UseQueryIdsResult<T> {
     const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'cache-and-network'
-    const resultMode: UseQueryResultMode = (options as any)?.result || 'entities'
+    const resultMode: UseQueryResultMode = options?.result ?? 'entities'
 
-    const optionsForStoreQuery = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
+    const optionsForStoreQuery = useMemo(() => stripRuntimeOptions(options), [options])
 
-    const localEntities = useStoreQuery(store, optionsForStoreQuery
-        ? { ...(optionsForStoreQuery as any), result: 'entities' as const }
-        : ({ result: 'entities' as const } as any)
-    )
-    const localIds = useStoreQuery(store, optionsForStoreQuery
-        ? { ...(optionsForStoreQuery as any), result: 'ids' as const }
-        : ({ result: 'ids' as const } as any)
-    )
+    const localEntities = useStoreQuery(store, optionsForStoreQuery)
+    const localIds = useStoreQuery(store, {
+        ...(optionsForStoreQuery ?? {}),
+        result: 'ids' as const
+    })
 
     const remoteEnabled = resolveRemoteEnabled(fetchPolicy)
 
-    const optionsForRemote = useMemo(() => stripRuntimeOptions(options) as Query<T> | undefined, [options])
+    const optionsForRemote = useMemo(() => stripRuntimeOptions(options), [options])
 
     const remote = useRemoteQuery<T, Relations>({
         store,
@@ -138,8 +137,8 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
     }
 
     const bindings = getStoreBindings(store, 'useQuery')
-    const relations = bindings.relations?.() as Relations | undefined
-    const effectiveInclude = (options as any)?.include ?? ({} as Include)
+    const relations = bindings.relations?.()
+    const effectiveInclude = options?.include ?? ({} as Include)
 
     const relationsResult = useRelations<T, Relations, Include>(
         data as unknown as T[],

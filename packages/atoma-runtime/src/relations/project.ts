@@ -10,11 +10,11 @@ import type { EntityId } from 'atoma-types/shared'
 import type { StoreMap } from 'atoma-types/runtime'
 import { runQuery } from 'atoma-core/query'
 import {
-    buildProjectPlan,
+    buildRelationPlan,
     extractKeyValue,
     pickFirstKey,
     type IncludeInput,
-    type ProjectPlanEntry
+    type RelationPlanEntry
 } from 'atoma-core/relations'
 
 type RelationStoreStates = ReadonlyMap<StoreToken, StoreMap>
@@ -27,7 +27,7 @@ const createEqFilter = (field: string, value: EntityId): FilterExpr => ({
     value
 })
 
-const getDefaultRelationValue = (relationType: ProjectPlanEntry<Entity>['relationType']): null | [] => {
+const getDefaultRelationValue = (relationType: RelationPlanEntry<Entity>['relationType']): null | [] => {
     return relationType === 'hasMany' ? [] : null
 }
 
@@ -77,7 +77,7 @@ export function projectRelationsBatch<T extends Entity>(
     if (!items.length || !include || !relations) return items
 
     const results = items.map(item => ({ ...item })) as T[]
-    const plan = buildProjectPlan(results, include, relations)
+    const plan = buildRelationPlan(results, include, relations)
 
     plan.forEach(entry => {
         projectPlanned(entry, storeStates)
@@ -87,7 +87,7 @@ export function projectRelationsBatch<T extends Entity>(
 }
 
 function projectPlanned<TSource extends Entity>(
-    entry: ProjectPlanEntry<TSource>,
+    entry: RelationPlanEntry<TSource>,
     storeStates: RelationStoreStates
 ) {
     const items = entry.items
@@ -112,7 +112,7 @@ function projectPlanned<TSource extends Entity>(
 
 function projectBelongsTo<TSource extends Entity>(
     items: TSource[],
-    entry: ProjectPlanEntry<TSource>,
+    entry: RelationPlanEntry<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
     indexes: IndexQueryLike<Entity> | null
 ) {
@@ -179,15 +179,19 @@ function projectBelongsTo<TSource extends Entity>(
 
 function projectHasManyOrHasOne<TSource extends Entity>(
     items: TSource[],
-    entry: ProjectPlanEntry<TSource>,
+    entry: RelationPlanEntry<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
     indexes: IndexQueryLike<Entity> | null
 ) {
     const isHasOne = entry.relationType === 'hasOne'
+    const sortRules = entry.query.sort?.length
+        ? entry.query.sort
+        : DEFAULT_STABLE_SORT
 
     let bucket: Map<EntityId, Entity[]> | null = null
     let keyLookupMode: 'index' | 'scan' | undefined
     const perKeyCache = new Map<EntityId, Entity[]>()
+    const orderedCache = new Map<string, Entity[]>()
 
     const getTargetsByKey = (key: EntityId): Entity[] => {
         const cached = perKeyCache.get(key)
@@ -231,6 +235,21 @@ function projectHasManyOrHasOne<TSource extends Entity>(
         return output
     }
 
+    const getOrderedTargets = (targets: Entity[]): Entity[] => {
+        const cacheKey = targets.map(target => target.id).sort().join('\u0000')
+        const cached = orderedCache.get(cacheKey)
+        if (cached) return cached
+
+        const ordered = runQuery({
+            snapshot: new Map(targets.map(target => [target.id, target] as const)),
+            query: { sort: sortRules },
+            indexes: null
+        }).data
+
+        orderedCache.set(cacheKey, ordered)
+        return ordered
+    }
+
     items.forEach(item => {
         const keyValue = extractKeyValue(item, entry.sourceKeySelector)
         if (keyValue === undefined || keyValue === null) {
@@ -252,22 +271,9 @@ function projectHasManyOrHasOne<TSource extends Entity>(
             return
         }
 
-        const limit = isHasOne ? 1 : entry.limit
-        const sortRules = entry.sort?.length
-            ? entry.sort
-            : DEFAULT_STABLE_SORT
-
-        const projected = runQuery({
-            snapshot: new Map(deduped.map(item => [item.id, item] as const)),
-            query: {
-                sort: sortRules,
-                page: {
-                    mode: 'offset',
-                    limit
-                }
-            },
-            indexes: null
-        }).data
+        const ordered = getOrderedTargets(deduped)
+        const limit = isHasOne ? 1 : entry.query.limit
+        const projected = limit === undefined ? ordered : ordered.slice(0, limit)
 
         setRelationValue(item, entry.relationName, isHasOne
             ? (projected[0] ?? null)

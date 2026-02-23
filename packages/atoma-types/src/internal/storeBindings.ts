@@ -9,22 +9,22 @@ export type StoreSource<T extends Entity> = Readonly<{
     subscribe: (listener: () => void) => () => void
 }>
 
-export type StoreBindings<T extends Entity = Entity> = Readonly<{
+export type StoreBindings<T extends Entity = Entity, Relations = {}> = Readonly<{
     name: string
     scope: object
     source: StoreSource<T>
     state: () => StoreMap<T>
     query: (query: Query<T>) => QueryResult<T>
     relation: Engine['relation']
-    relations?: () => unknown | undefined
+    relations?: () => Relations | undefined
     useStore: (name: StoreToken) => Store<Entity, {}>
 }>
 
-export function getStoreBindings<T extends Entity, Relations = unknown>(
+export function getStoreBindings<T extends Entity, Relations = {}>(
     store: Store<T, Relations>,
     tag: string
-): StoreBindings<T> {
-    const bindings = (store as unknown as { [STORE_BINDINGS]?: StoreBindings<T> })[STORE_BINDINGS]
+): StoreBindings<T, Relations> {
+    const bindings = (store as unknown as { [STORE_BINDINGS]?: StoreBindings<T, Relations> })[STORE_BINDINGS]
     if (!bindings) {
         throw new Error(`[Atoma] ${tag}: store 缺少内部绑定（StoreBindings）`)
     }

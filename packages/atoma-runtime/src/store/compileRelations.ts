@@ -1,7 +1,5 @@
-import type { Entity, KeySelector } from 'atoma-types/core'
-import { belongsTo, hasMany, hasOne } from './builders'
-
-type GenericRelationMap = Record<string, unknown>
+import { belongsTo, hasMany, hasOne } from 'atoma-core/relations'
+import type { Entity, KeySelector, RelationMap } from 'atoma-types/core'
 
 function ensureRelationObject(def: unknown, path: string): Record<string, unknown> {
     if (!def || typeof def !== 'object' || Array.isArray(def)) {
@@ -57,16 +55,19 @@ function ensureOptionalBelongsToPrimaryKey(value: unknown, path: string): keyof 
     return value as keyof Entity & string
 }
 
-export function compileRelationsMap(relationsRaw: unknown, storeName: string): GenericRelationMap {
-    const relations: GenericRelationMap = {}
-    if (!relationsRaw || typeof relationsRaw !== 'object' || Array.isArray(relationsRaw)) return relations
+export function compileRelations<T extends Entity = Entity>(
+    relationsRaw: unknown,
+    storeName: string
+): RelationMap<T> {
+    const relations: Record<string, unknown> = {}
+    if (!relationsRaw || typeof relationsRaw !== 'object' || Array.isArray(relationsRaw)) {
+        return relations as RelationMap<T>
+    }
 
     const schema = relationsRaw as Record<string, unknown>
-
     for (const relationName of Object.keys(schema)) {
         const path = `schema.${storeName}.relations.${String(relationName)}`
         const def = ensureRelationObject(schema[relationName], path)
-
         const type = def.type
         const to = ensureStoreToken(def.to, path)
         const options = ensureOptionalObject(def.options, `${path}.options`)
@@ -101,5 +102,6 @@ export function compileRelationsMap(relationsRaw: unknown, storeName: string): G
         throw new Error(`[Atoma] ${path}.type is invalid: ${String(type)}`)
     }
 
-    return relations
+    return relations as RelationMap<T>
 }
+

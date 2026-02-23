@@ -57,7 +57,7 @@ export function useMany<T extends Entity, Relations = {}, const Include extends 
     const baseList = useStoreSelector(store, selectorFn, shallowEqual, 'useMany')
 
     const bindings = getStoreBindings(store, 'useMany')
-    const relations = bindings.relations?.() as Relations | undefined
+    const relations = bindings.relations?.()
     const effectiveInclude = (include ?? ({} as Include))
     const relationsResult = useRelations<T, Relations, Include>(
         baseList,

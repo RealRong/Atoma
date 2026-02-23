@@ -29,13 +29,13 @@ export function useOne<T extends Entity, Relations = {}, const Include extends R
     }, [id, base, store])
 
     const bindings = getStoreBindings(store, 'useOne')
-    const relations = bindings.relations?.() as Relations | undefined
+    const relations = bindings.relations?.()
     if (!options?.include || !relations) return base as Result
 
     const rel = useRelations<T, Relations, Include>(
         base ? [base] : [],
         options.include,
-        relations as Relations,
+        relations,
         (name) => bindings.useStore(name)
     )
     return rel.data[0] as unknown as Result
