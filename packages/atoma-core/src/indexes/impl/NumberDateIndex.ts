@@ -1,13 +1,13 @@
-import type { IndexDefinition, IndexType } from 'atoma-types/core'
+import type { IndexDefinition } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { binarySearchLeft, binarySearchRight } from '../internal/search'
 import { normalizeNumber } from '../internal/value'
 import type { CandidateResult, IndexStats } from 'atoma-types/core'
-import type { IndexDriver } from '../types'
+import type { IndexCondition, IndexDriver, RangeCondition } from '../types'
 
 export class NumberDateIndex<T> implements IndexDriver<T> {
     readonly type: 'number' | 'date'
-    readonly config: IndexDefinition<T>
+    readonly config: IndexDefinition<T> & { type: 'number' | 'date' }
 
     private valueMap = new Map<number, Set<EntityId>>()
     private sortedEntries: Array<{ value: number; ids: EntityId[] }> | null = null
@@ -19,7 +19,7 @@ export class NumberDateIndex<T> implements IndexDriver<T> {
     }
 
     add(id: EntityId, value: unknown): void {
-        const num = normalizeNumber(value, this.config.field, this.type as IndexType, id)
+        const num = normalizeNumber(value, this.config.field, this.type, id)
         const set = this.valueMap.get(num) || new Set<EntityId>()
         set.add(id)
         this.valueMap.set(num, set)
@@ -28,7 +28,7 @@ export class NumberDateIndex<T> implements IndexDriver<T> {
     }
 
     remove(id: EntityId, value: unknown): void {
-        const num = normalizeNumber(value, this.config.field, this.type as IndexType, id)
+        const num = normalizeNumber(value, this.config.field, this.type, id)
         const set = this.valueMap.get(num)
         if (set) {
             set.delete(id)
@@ -46,50 +46,39 @@ export class NumberDateIndex<T> implements IndexDriver<T> {
         this.dirty = true
     }
 
-    queryCandidates(condition: unknown): CandidateResult {
-        if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
-            const conditionObj = condition as Record<string, unknown> & { in?: unknown[] }
-            if (conditionObj.eq !== undefined) {
+    queryCandidates(condition: IndexCondition): CandidateResult {
+        switch (condition.op) {
+            case 'eq':
                 try {
-                    const num = normalizeNumber(conditionObj.eq, this.config.field, this.type as IndexType, 'eq')
+                    const num = normalizeNumber(condition.value, this.config.field, this.type, 'eq')
                     const set = this.valueMap.get(num)
                     if (!set || set.size === 0) return { kind: 'empty' }
                     return { kind: 'candidates', ids: set, exactness: 'exact' }
                 } catch {
                     return { kind: 'empty' }
                 }
-            }
-            if (conditionObj.in && Array.isArray(conditionObj.in)) {
+            case 'in': {
                 const result = new Set<EntityId>()
-                conditionObj.in.forEach((value) => {
+                condition.values.forEach(value => {
                     try {
-                        const num = normalizeNumber(value, this.config.field, this.type as IndexType, 'in')
+                        const num = normalizeNumber(value, this.config.field, this.type, 'in')
                         const set = this.valueMap.get(num)
                         if (set) set.forEach(id => result.add(id))
-                    } catch { /* ignore invalid */ }
+                    } catch {
+                        // ignore invalid
+                    }
                 })
                 if (result.size === 0) return { kind: 'empty' }
                 return { kind: 'candidates', ids: result, exactness: 'exact' }
             }
-            if (conditionObj.gt !== undefined || conditionObj.gte !== undefined || conditionObj.lt !== undefined || conditionObj.lte !== undefined) {
-                const result = this.queryRange(conditionObj)
+            case 'range': {
+                const result = this.queryRange(condition)
                 if (result.size === 0) return { kind: 'empty' }
                 return { kind: 'candidates', ids: result, exactness: 'exact' }
             }
-            return { kind: 'unsupported' }
+            default:
+                return { kind: 'unsupported' }
         }
-
-        if (condition !== undefined && condition !== null && (typeof condition !== 'object' || Array.isArray(condition))) {
-            try {
-                const num = normalizeNumber(condition, this.config.field, this.type as IndexType, 'eq')
-                const set = this.valueMap.get(num)
-                if (!set || set.size === 0) return { kind: 'empty' }
-                return { kind: 'candidates', ids: set, exactness: 'exact' }
-            } catch {
-                return { kind: 'empty' }
-            }
-        }
-        return { kind: 'unsupported' }
     }
 
     getStats(): IndexStats {
@@ -116,27 +105,27 @@ export class NumberDateIndex<T> implements IndexDriver<T> {
         return this.dirty
     }
 
-    private queryRange(cond: Record<string, unknown>): Set<EntityId> {
+    private queryRange(cond: RangeCondition): Set<EntityId> {
         const entries = this.buildSortedEntries()
-        const { gt, gte, lt, lte } = cond ?? {}
+        const { gt, gte, lt, lte } = cond
 
         let start = 0
         let end = entries.length
 
         try {
             if (gte !== undefined) {
-                const bound = normalizeNumber(gte, this.config.field, this.type as IndexType, 'gte')
+                const bound = normalizeNumber(gte, this.config.field, this.type, 'gte')
                 start = binarySearchLeft(entries, bound)
             } else if (gt !== undefined) {
-                const bound = normalizeNumber(gt, this.config.field, this.type as IndexType, 'gt')
+                const bound = normalizeNumber(gt, this.config.field, this.type, 'gt')
                 start = binarySearchRight(entries, bound)
             }
 
             if (lt !== undefined) {
-                const bound = normalizeNumber(lt, this.config.field, this.type as IndexType, 'lt')
+                const bound = normalizeNumber(lt, this.config.field, this.type, 'lt')
                 end = binarySearchLeft(entries, bound)
             } else if (lte !== undefined) {
-                const bound = normalizeNumber(lte, this.config.field, this.type as IndexType, 'lte')
+                const bound = normalizeNumber(lte, this.config.field, this.type, 'lte')
                 end = binarySearchRight(entries, bound)
             }
         } catch {

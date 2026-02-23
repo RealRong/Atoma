@@ -2,7 +2,7 @@ import type { IndexDefinition } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CandidateResult, IndexStats } from 'atoma-types/core'
 import { binarySearchPrefix, intersectAll } from '../internal/search'
-import type { IndexDriver } from '../types'
+import type { IndexCondition, IndexDriver } from '../types'
 
 const normalize = (value: unknown): string => {
     if (value === undefined || value === null) return ''
@@ -117,51 +117,41 @@ export class SubstringIndex<T> implements IndexDriver<T> {
         this.dirty = true
     }
 
-    queryCandidates(condition: unknown): CandidateResult {
-        if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
-            return { kind: 'unsupported' }
-        }
-
-        const conditionRecord = condition as {
-            startsWith?: unknown
-            endsWith?: unknown
-            contains?: unknown
-        }
-
-        if (conditionRecord.startsWith !== undefined) {
-            const prefix = normalize(conditionRecord.startsWith)
-            if (!prefix) return { kind: 'unsupported' }
-            const result = this.prefixSearch(prefix)
-            if (result.size === 0) return { kind: 'empty' }
-            return { kind: 'candidates', ids: result, exactness: 'exact' }
-        }
-
-        if (conditionRecord.endsWith !== undefined) {
-            const suffix = normalize(conditionRecord.endsWith)
-            if (!suffix) return { kind: 'unsupported' }
-            const result = this.suffixSearch(suffix)
-            if (result.size === 0) return { kind: 'empty' }
-            return { kind: 'candidates', ids: result, exactness: 'exact' }
-        }
-
-        if (conditionRecord.contains !== undefined) {
-            const needle = normalize(conditionRecord.contains)
-            if (!needle) return { kind: 'unsupported' }
-            if (needle.length < this.ngramSize) return { kind: 'unsupported' }
-            const grams = buildNgrams(needle, this.ngramSize)
-            if (!grams.length) return { kind: 'unsupported' }
-            const sets: Set<EntityId>[] = []
-            for (const gram of grams) {
-                const ids = this.gramMap.get(gram)
-                if (!ids || ids.size === 0) return { kind: 'empty' }
-                sets.push(ids)
+    queryCandidates(condition: IndexCondition): CandidateResult {
+        switch (condition.op) {
+            case 'startsWith': {
+                const prefix = normalize(condition.value)
+                if (!prefix) return { kind: 'unsupported' }
+                const result = this.prefixSearch(prefix)
+                if (result.size === 0) return { kind: 'empty' }
+                return { kind: 'candidates', ids: result, exactness: 'exact' }
             }
-            const result = intersectAll(sets)
-            if (result.size === 0) return { kind: 'empty' }
-            return { kind: 'candidates', ids: result, exactness: 'superset' }
+            case 'endsWith': {
+                const suffix = normalize(condition.value)
+                if (!suffix) return { kind: 'unsupported' }
+                const result = this.suffixSearch(suffix)
+                if (result.size === 0) return { kind: 'empty' }
+                return { kind: 'candidates', ids: result, exactness: 'exact' }
+            }
+            case 'contains': {
+                const needle = normalize(condition.value)
+                if (!needle) return { kind: 'unsupported' }
+                if (needle.length < this.ngramSize) return { kind: 'unsupported' }
+                const grams = buildNgrams(needle, this.ngramSize)
+                if (!grams.length) return { kind: 'unsupported' }
+                const sets: Set<EntityId>[] = []
+                for (const gram of grams) {
+                    const ids = this.gramMap.get(gram)
+                    if (!ids || ids.size === 0) return { kind: 'empty' }
+                    sets.push(ids)
+                }
+                const result = intersectAll(sets)
+                if (result.size === 0) return { kind: 'empty' }
+                return { kind: 'candidates', ids: result, exactness: 'superset' }
+            }
+            default:
+                return { kind: 'unsupported' }
         }
-
-        return { kind: 'unsupported' }
     }
 
     getStats(): IndexStats {

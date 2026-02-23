@@ -3,9 +3,7 @@ export type {
     ExecutionKernel,
     ExecutionRegistration,
     ExecutionSpec,
-    ExecutionPhase,
-    ExecutionErrorCode,
-    ExecutionError
+    ExecutionPhase
 } from './execution'
 export type { Read } from './read'
 export type { Processor } from './processor'
@@ -54,7 +52,6 @@ export type {
     RelationPrefetchOptions,
     StoreMap
 } from './engine/shared'
-export type { IndexEngine } from './engine/indexes'
 export type { QueryEngine, QueryState } from './engine/query'
 export type { RelationEngine, RelationStore } from './engine/relations'
 export type { MutationEngine } from './engine/mutation'

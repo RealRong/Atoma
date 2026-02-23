@@ -1,6 +1,5 @@
 import type { Engine as EngineType, QueryState } from 'atoma-types/runtime'
-import type { ActionContext, ActionOrigin, Entity, Query, IndexesLike, IndexDefinition } from 'atoma-types/core'
-import { Indexes } from 'atoma-core/indexes'
+import type { ActionContext, ActionOrigin, Entity, Query } from 'atoma-types/core'
 import { merge, putMany, deleteMany, reuse, upsertMany, writeback } from 'atoma-core/store'
 import { createActionContext } from 'atoma-core/action'
 import { runQuery } from 'atoma-core/query'
@@ -12,13 +11,6 @@ export class Engine implements EngineType {
 
     constructor(args?: { now?: () => number }) {
         this.now = args?.now ?? Date.now
-    }
-
-    readonly index = {
-        create: <T extends Entity>(definitions?: IndexDefinition<T>[] | null): IndexesLike<T> | null => {
-            if (!definitions?.length) return null
-            return new Indexes<T>(definitions)
-        }
     }
 
     readonly query = {

@@ -1,5 +1,6 @@
 import {
     buildRelationPlan,
+    collectUniqueKeys,
     type IncludeInput,
     type RelationPlanEntry
 } from 'atoma-core/relations'
@@ -44,28 +45,36 @@ async function prefetchPlanEntry<T extends Entity>(
 ): Promise<void> {
     if (signal.aborted) return
 
-    if (!entry.uniqueKeys.length) return
+    const relationType = entry.relation.type
+    const sourceKeySelector = relationType === 'belongsTo'
+        ? entry.relation.foreignKey
+        : (entry.relation.primaryKey || 'id')
+    const targetKeyField = relationType === 'belongsTo'
+        ? (entry.relation.primaryKey || 'id')
+        : entry.relation.foreignKey
+    const uniqueKeys = collectUniqueKeys(entry.items, sourceKeySelector)
+    if (!uniqueKeys.length) return
 
-    const store = resolveStore(entry.store)
+    const store = resolveStore(entry.relation.store)
     if (!store) {
-        console.warn(`[Atoma Relations] Store not found: "${entry.store}" in relation "${entry.relationName}"`)
+        console.warn(`[Atoma Relations] Store not found: "${entry.relation.store}" in relation "${entry.relationName}"`)
         return
     }
 
-    const shouldUseIdLookup = entry.relationType === 'belongsTo'
-        && entry.targetKeyField === 'id'
+    const shouldUseIdLookup = relationType === 'belongsTo'
+        && targetKeyField === 'id'
         && entry.query.filter === undefined
 
     if (shouldUseIdLookup && typeof store.getMany === 'function') {
         if (signal.aborted) return
-        await store.getMany(entry.uniqueKeys)
+        await store.getMany(uniqueKeys)
         return
     }
 
     const keyFilter: FilterExpr = {
         op: 'in',
-        field: entry.targetKeyField,
-        values: entry.uniqueKeys
+        field: targetKeyField,
+        values: uniqueKeys
     }
     const filter: FilterExpr = entry.query.filter
         ? { op: 'and', args: [entry.query.filter, keyFilter] }

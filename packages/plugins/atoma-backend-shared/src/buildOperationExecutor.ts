@@ -1,6 +1,5 @@
 import type { Entity } from 'atoma-types/core'
 import type { OperationClient } from 'atoma-types/client/ops'
-import { createCodedError, isCodedError } from 'atoma-shared'
 import {
     assertQueryResultData,
     assertWriteResultData,
@@ -12,7 +11,6 @@ import type {
     WriteEntry as ProtocolWriteEntry
 } from 'atoma-types/protocol'
 import type {
-    ExecutionError,
     ExecutionOptions,
     ExecutionSpec,
     ExecutionQueryOutput,
@@ -39,37 +37,18 @@ type WriteEntryEncoder = <T extends Entity>(args: {
     entries: ReadonlyArray<RuntimeWriteEntry>
 }) => ReadonlyArray<ProtocolWriteEntry>
 
-function createOperationError(args: {
-    code: 'E_OPERATION_RESULT_MISSING' | 'E_OPERATION_FAILED'
-    message: string
-    retryable?: boolean
-    details?: Readonly<Record<string, unknown>>
-    cause?: unknown
-}): ExecutionError {
-    return createCodedError({
-        code: args.code,
-        message: args.message,
-        retryable: args.retryable,
-        details: args.details,
-        cause: args.cause
-    }) as ExecutionError
+function createOperationError(message: string): Error {
+    return new Error(message)
 }
 
 function normalizeOperationError(args: {
     error: unknown
     fallbackMessage: string
-    details?: Readonly<Record<string, unknown>>
-}): ExecutionError {
-    if (isCodedError(args.error)) {
-        return args.error as ExecutionError
+}): Error {
+    if (args.error instanceof Error) {
+        return args.error
     }
-    return createOperationError({
-        code: 'E_OPERATION_FAILED',
-        message: args.fallbackMessage,
-        retryable: true,
-        details: args.details,
-        cause: args.error
-    })
+    return createOperationError(args.fallbackMessage)
 }
 
 function resolveWriteStatus(results: ReadonlyArray<WriteItemResult>): WriteOutput['status'] {
@@ -138,24 +117,11 @@ async function executeOperationQuery<T extends Entity>(args: {
 
         const result = envelope.results[0]
         if (!result) {
-            throw createOperationError({
-                code: 'E_OPERATION_RESULT_MISSING',
-                message: '[Atoma] operation.query: missing query result',
-                retryable: true
-            })
+            throw createOperationError('[Atoma] operation.query: missing query result')
         }
 
         if (!result.ok) {
-            throw createOperationError({
-                code: 'E_OPERATION_FAILED',
-                message: result.error.message || '[Atoma] operation.query failed',
-                retryable: result.error.retryable === true,
-                details: {
-                    errorCode: result.error.code,
-                    kind: result.error.kind
-                },
-                cause: result.error
-            })
+            throw createOperationError(result.error.message || '[Atoma] operation.query failed')
         }
 
         const parsed = assertQueryResultData(result.data)
@@ -167,10 +133,7 @@ async function executeOperationQuery<T extends Entity>(args: {
     } catch (error) {
         throw normalizeOperationError({
             error,
-            fallbackMessage: '[Atoma] operation.query failed',
-            details: {
-                storeName: String(request.handle.storeName)
-            }
+            fallbackMessage: `[Atoma] operation.query failed: ${request.handle.storeName}`
         })
     }
 }
@@ -206,12 +169,7 @@ async function executeOperationWrite<T extends Entity>(args: {
                     entries: group.entries.map((value) => {
                         const protocolEntry = protocolEntries[value.index]
                         if (!protocolEntry) {
-                            throw createOperationError({
-                                code: 'E_OPERATION_RESULT_MISSING',
-                                message: '[Atoma] operation.write: missing protocol write entry',
-                                retryable: false,
-                                details: { index: value.index }
-                            })
+                            throw createOperationError(`[Atoma] operation.write: missing protocol write entry: ${value.index}`)
                         }
                         return protocolEntry
                     })
@@ -231,11 +189,7 @@ async function executeOperationWrite<T extends Entity>(args: {
             const group = groups[index]
             const result = envelope.results[index]
             if (!result) {
-                throw createOperationError({
-                    code: 'E_OPERATION_RESULT_MISSING',
-                    message: '[Atoma] operation.write: missing write result',
-                    retryable: true
-                })
+                throw createOperationError('[Atoma] operation.write: missing write result')
             }
 
             if (!result.ok) {
@@ -259,12 +213,7 @@ async function executeOperationWrite<T extends Entity>(args: {
 
         for (let index = 0; index < orderedResults.length; index++) {
             if (orderedResults[index]) continue
-            throw createOperationError({
-                code: 'E_OPERATION_RESULT_MISSING',
-                message: '[Atoma] operation.write: missing write item result',
-                retryable: true,
-                details: { index }
-            })
+            throw createOperationError(`[Atoma] operation.write: missing write item result: ${index}`)
         }
 
         const results = orderedResults as WriteItemResult[]
@@ -275,10 +224,7 @@ async function executeOperationWrite<T extends Entity>(args: {
     } catch (error) {
         throw normalizeOperationError({
             error,
-            fallbackMessage: '[Atoma] operation.write failed',
-            details: {
-                id: request.context.id
-            }
+            fallbackMessage: `[Atoma] operation.write failed: ${request.context.id}`
         })
     }
 }

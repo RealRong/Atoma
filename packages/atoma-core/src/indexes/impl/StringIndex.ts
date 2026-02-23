@@ -2,7 +2,7 @@ import type { IndexDefinition } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { CandidateResult, IndexStats } from 'atoma-types/core'
 import { validateString } from '../internal/value'
-import type { IndexDriver } from '../types'
+import type { IndexCondition, IndexDriver } from '../types'
 
 export class StringIndex<T> implements IndexDriver<T> {
     readonly type = 'string'
@@ -36,38 +36,28 @@ export class StringIndex<T> implements IndexDriver<T> {
         this.valueMap.clear()
     }
 
-    queryCandidates(condition: unknown): CandidateResult {
-        if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
-            const conditionRecord = condition as { eq?: unknown; in?: unknown[] }
-            if (conditionRecord.eq !== undefined) {
-            if (typeof conditionRecord.eq !== 'string') return { kind: 'empty' }
-            const set = this.valueMap.get(conditionRecord.eq)
-            if (!set || set.size === 0) return { kind: 'empty' }
-            return { kind: 'candidates', ids: set, exactness: 'exact' }
-        }
-            if (conditionRecord.in !== undefined) {
-            const values = conditionRecord.in
-            if (!Array.isArray(values)) return { kind: 'unsupported' }
-            const strs = values.filter((value): value is string => typeof value === 'string')
-            if (strs.length === 0) return { kind: 'empty' }
-            const result = new Set<EntityId>()
-            strs.forEach(v => {
-                const set = this.valueMap.get(v)
-                if (set) set.forEach(id => result.add(id))
-            })
-            if (result.size === 0) return { kind: 'empty' }
-            return { kind: 'candidates', ids: result, exactness: 'exact' }
+    queryCandidates(condition: IndexCondition): CandidateResult {
+        switch (condition.op) {
+            case 'eq': {
+                if (typeof condition.value !== 'string') return { kind: 'empty' }
+                const set = this.valueMap.get(condition.value)
+                if (!set || set.size === 0) return { kind: 'empty' }
+                return { kind: 'candidates', ids: set, exactness: 'exact' }
             }
+            case 'in': {
+                const strs = condition.values.filter((value): value is string => typeof value === 'string')
+                if (strs.length === 0) return { kind: 'empty' }
+                const result = new Set<EntityId>()
+                strs.forEach(v => {
+                    const set = this.valueMap.get(v)
+                    if (set) set.forEach(id => result.add(id))
+                })
+                if (result.size === 0) return { kind: 'empty' }
+                return { kind: 'candidates', ids: result, exactness: 'exact' }
+            }
+            default:
+                return { kind: 'unsupported' }
         }
-
-        // Primitive equality
-        if (typeof condition === 'string') {
-            const set = this.valueMap.get(condition)
-            if (!set || set.size === 0) return { kind: 'empty' }
-            return { kind: 'candidates', ids: set, exactness: 'exact' }
-        }
-
-        return { kind: 'unsupported' }
     }
 
     getStats(): IndexStats {

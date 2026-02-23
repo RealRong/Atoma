@@ -2,60 +2,47 @@ import type { Entity, KeySelector } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { getValueByPath } from './path'
 
-const isEntityId = (value: unknown): value is EntityId => {
-    return typeof value === 'string'
-}
+export function extractKeyValue<T>(item: T, selector: KeySelector<T>): EntityId | EntityId[] | undefined {
+    if (typeof selector === 'function') {
+        const value = selector(item)
+        if (typeof value === 'string') return value
+        if (!Array.isArray(value)) return undefined
 
-const normalizeEntityIdArray = (value: unknown): EntityId[] | undefined => {
-    if (!Array.isArray(value)) return undefined
+        const ids = value.filter((entry): entry is EntityId => typeof entry === 'string')
+        return ids.length ? ids : undefined
+    }
 
-    const output: EntityId[] = []
-    value.forEach(entry => {
-        if (isEntityId(entry)) output.push(entry)
-    })
-
-    return output.length ? output : undefined
-}
-
-export function extractKeyValue<T>(item: T, selector: KeySelector<T>): EntityId | EntityId[] | undefined | null {
-    if (typeof selector === 'function') return selector(item)
     if (typeof selector !== 'string') return undefined
 
     const value = getValueByPath(item, selector)
-    if (value === null) return null
-    if (isEntityId(value)) return value
+    if (typeof value === 'string') return value
+    if (!Array.isArray(value)) return undefined
 
-    return normalizeEntityIdArray(value)
+    const ids = value.filter((entry): entry is EntityId => typeof entry === 'string')
+    return ids.length ? ids : undefined
 }
 
-export function pickFirstKey(value: EntityId | EntityId[] | undefined | null): EntityId | undefined {
-    if (value === undefined || value === null) return undefined
-    if (!Array.isArray(value)) return value
-
-    for (const entry of value) {
-        if (entry !== undefined && entry !== null) return entry
-    }
-
-    return undefined
+export function pickFirstKey(value: EntityId | EntityId[] | undefined): EntityId | undefined {
+    if (value === undefined) return undefined
+    return Array.isArray(value) ? value[0] : value
 }
 
 export function collectUniqueKeys<T extends Entity>(items: T[], selector: KeySelector<T>): EntityId[] {
     const output = new Set<EntityId>()
 
-    items.forEach(item => {
+    for (const item of items) {
         const keyValue = extractKeyValue(item, selector)
-        if (keyValue === undefined || keyValue === null) return
+        if (keyValue === undefined) continue
 
         if (Array.isArray(keyValue)) {
-            keyValue.forEach(key => {
-                if (key === undefined || key === null) return
+            for (const key of keyValue) {
                 output.add(key)
-            })
-            return
+            }
+            continue
         }
 
         output.add(keyValue)
-    })
+    }
 
     return Array.from(output)
 }

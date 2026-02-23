@@ -9,6 +9,5 @@ export {
     buildRelationPlan,
     collectPlanStoreTokens,
     type IncludeInput,
-    type RelationPlanEntry,
-    type StandardRelationConfig
+    type RelationPlanEntry
 } from './plan'

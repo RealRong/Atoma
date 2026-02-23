@@ -4,33 +4,22 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function normalizeLimit(value: unknown): number | undefined {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
-    return Math.max(0, Math.floor(value))
-}
-
-function normalizePrefetch(value: unknown): RelationPrefetchMode | undefined {
-    return value === 'on-mount' || value === 'on-change' || value === 'manual'
-        ? value
-        : undefined
-}
-
-function readQueryInput(value: unknown): unknown {
-    if (!isRecord(value)) return undefined
-    return 'query' in value ? value.query : value
-}
-
 function pickQuery(value: unknown): RelationQuery<unknown> | undefined {
-    const input = readQueryInput(value)
+    const input = isRecord(value) && 'query' in value
+        ? value.query
+        : value
     if (!isRecord(input)) return undefined
 
-    const output: RelationQuery<unknown> = {}
+    const query: RelationQuery<unknown> = {}
+    const normalizedLimit = typeof input.limit === 'number' && Number.isFinite(input.limit)
+        ? Math.max(0, Math.floor(input.limit))
+        : undefined
 
-    if ('filter' in input) output.filter = input.filter as RelationQuery<unknown>['filter']
-    if ('sort' in input) output.sort = input.sort as RelationQuery<unknown>['sort']
-    if ('limit' in input) output.limit = normalizeLimit(input.limit)
+    if ('filter' in input) query.filter = input.filter as RelationQuery<unknown>['filter']
+    if ('sort' in input) query.sort = input.sort as RelationQuery<unknown>['sort']
+    if ('limit' in input) query.limit = normalizedLimit
 
-    return Object.keys(output).length ? output : undefined
+    return Object.keys(query).length ? query : undefined
 }
 
 export type IncludeOptions = Readonly<{
@@ -42,7 +31,9 @@ export type IncludeOptions = Readonly<{
 export function pickIncludeOptions(value: unknown): IncludeOptions {
     if (!isRecord(value)) return {}
 
-    const prefetch = normalizePrefetch(value.prefetch)
+    const prefetch = value.prefetch === 'on-mount' || value.prefetch === 'on-change' || value.prefetch === 'manual'
+        ? value.prefetch as RelationPrefetchMode
+        : undefined
     const query = pickQuery(value)
 
     return {
@@ -56,30 +47,26 @@ export function mergeIncludeQuery(
     base?: RelationQuery<unknown>,
     override?: RelationQuery<unknown>
 ): RelationQuery<unknown> {
-    const baseQuery = pickQuery(base)
-    const overrideQuery = pickQuery(override)
-
-    if (!baseQuery && !overrideQuery) return {}
-
-    if (!baseQuery) {
+    if (!base && !override) return {}
+    if (!base) {
         return {
-            ...overrideQuery
+            ...override
         }
     }
 
-    if (!overrideQuery) {
+    if (!override) {
         return {
-            ...baseQuery
+            ...base
         }
     }
 
-    const filter: FilterExpr | undefined = baseQuery.filter && overrideQuery.filter
-        ? { op: 'and', args: [baseQuery.filter, overrideQuery.filter] }
-        : (overrideQuery.filter ?? baseQuery.filter)
+    const filter: FilterExpr | undefined = base.filter && override.filter
+        ? { op: 'and', args: [base.filter, override.filter] }
+        : (override.filter ?? base.filter)
 
     return {
         filter,
-        sort: overrideQuery.sort !== undefined ? overrideQuery.sort : baseQuery.sort,
-        limit: overrideQuery.limit !== undefined ? overrideQuery.limit : baseQuery.limit
+        sort: override.sort !== undefined ? override.sort : base.sort,
+        limit: override.limit !== undefined ? override.limit : base.limit
     }
 }

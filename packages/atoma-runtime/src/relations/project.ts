@@ -2,6 +2,8 @@ import type {
     Entity,
     FilterExpr,
     IndexQueryLike,
+    KeySelector,
+    RelationQuery,
     RelationMap,
     SortRule,
     StoreToken
@@ -18,6 +20,7 @@ import {
 } from 'atoma-core/relations'
 
 type RelationStoreStates = ReadonlyMap<StoreToken, StoreMap>
+type RelationType = RelationPlanEntry<Entity>['relation']['type']
 
 const DEFAULT_STABLE_SORT: SortRule[] = [{ field: 'id', dir: 'asc' }]
 
@@ -27,7 +30,7 @@ const createEqFilter = (field: string, value: EntityId): FilterExpr => ({
     value
 })
 
-const getDefaultRelationValue = (relationType: RelationPlanEntry<Entity>['relationType']): null | [] => {
+const getDefaultRelationValue = (relationType: RelationType): null | [] => {
     return relationType === 'hasMany' ? [] : null
 }
 
@@ -52,6 +55,84 @@ const resolveLookupMode = (
     if (!indexes) return 'scan'
     const probe = indexes.collectCandidates(createEqFilter(targetKeyField, key))
     return probe.kind === 'unsupported' ? 'scan' : 'index'
+}
+
+function buildTargetLookup(
+    map: ReadonlyMap<EntityId, Entity>,
+    indexes: IndexQueryLike<Entity> | null,
+    targetKeyField: string
+): (key: EntityId) => Entity[] {
+    let lookupMode: 'index' | 'scan' | undefined
+    let bucket: Map<EntityId, Entity[]> | undefined
+    const perKeyCache = new Map<EntityId, Entity[]>()
+
+    return (key: EntityId) => {
+        const cached = perKeyCache.get(key)
+        if (cached) return cached
+
+        if (!lookupMode) {
+            lookupMode = resolveLookupMode(indexes, targetKeyField, key)
+        }
+
+        if (lookupMode === 'index' && indexes) {
+            const res = indexes.collectCandidates(createEqFilter(targetKeyField, key))
+            if (res.kind !== 'candidates') {
+                perKeyCache.set(key, [])
+                return []
+            }
+
+            const output: Entity[] = []
+            for (const id of res.ids) {
+                const target = map.get(id)
+                if (target) output.push(target)
+            }
+            perKeyCache.set(key, output)
+            return output
+        }
+
+        if (!bucket) {
+            const next = new Map<EntityId, Entity[]>()
+            map.forEach(target => {
+                const targetKey = toEntityId(readField(target, targetKeyField))
+                if (!targetKey) return
+                const list = next.get(targetKey) || []
+                list.push(target)
+                next.set(targetKey, list)
+            })
+            bucket = next
+        }
+
+        const output = bucket.get(key) || []
+        perKeyCache.set(key, output)
+        return output
+    }
+}
+
+type ProjectContext<TSource extends Entity> = Readonly<{
+    items: TSource[]
+    relationName: string
+    relationType: RelationType
+    sourceKeySelector: KeySelector<TSource>
+    targetKeyField: string
+    query: RelationQuery<unknown>
+    store: StoreToken
+}>
+
+function buildProjectContext<TSource extends Entity>(entry: RelationPlanEntry<TSource>): ProjectContext<TSource> {
+    const relationType = entry.relation.type
+    return {
+        items: entry.items,
+        relationName: entry.relationName,
+        relationType,
+        sourceKeySelector: relationType === 'belongsTo'
+            ? entry.relation.foreignKey
+            : (entry.relation.primaryKey || 'id'),
+        targetKeyField: relationType === 'belongsTo'
+            ? (entry.relation.primaryKey || 'id')
+            : entry.relation.foreignKey,
+        query: entry.query,
+        store: entry.relation.store
+    }
 }
 
 const dedupeById = <T extends Entity>(items: T[]): T[] => {
@@ -90,150 +171,56 @@ function projectPlanned<TSource extends Entity>(
     entry: RelationPlanEntry<TSource>,
     storeStates: RelationStoreStates
 ) {
-    const items = entry.items
-    const runtime = storeStates.get(entry.store)
+    const context = buildProjectContext(entry)
+    const runtime = storeStates.get(context.store)
     const map = runtime?.map
     const indexes = runtime?.indexes ?? null
 
     if (!map) {
-        items.forEach(item => {
-            setRelationValue(item, entry.relationName, getDefaultRelationValue(entry.relationType))
+        context.items.forEach(item => {
+            setRelationValue(item, context.relationName, getDefaultRelationValue(context.relationType))
         })
         return
     }
 
-    if (entry.relationType === 'belongsTo') {
-        projectBelongsTo(items, entry, map, indexes)
+    if (context.relationType === 'belongsTo') {
+        projectBelongsTo(context, map, indexes)
         return
     }
 
-    projectHasManyOrHasOne(items, entry, map, indexes)
+    projectHasManyOrHasOne(context, map, indexes)
 }
 
 function projectBelongsTo<TSource extends Entity>(
-    items: TSource[],
-    entry: RelationPlanEntry<TSource>,
+    context: ProjectContext<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
     indexes: IndexQueryLike<Entity> | null
 ) {
-    if (entry.targetKeyField === 'id') {
-        items.forEach(item => {
-            const fk = pickFirstKey(extractKeyValue(item, entry.sourceKeySelector))
-            const target = fk !== undefined ? map.get(fk) : undefined
-            setRelationValue(item, entry.relationName, target ?? null)
-        })
-        return
-    }
-
-    let lookupMode: 'index' | 'scan' | undefined
-    const scannedIndex = new Map<EntityId, Entity>()
-    const pickedByKey = new Map<EntityId, Entity | null>()
-
-    const getTargetByKey = (key: EntityId): Entity | undefined => {
-        const cached = pickedByKey.get(key)
-        if (cached !== undefined) return cached ?? undefined
-
-        if (!lookupMode) {
-            lookupMode = resolveLookupMode(indexes, entry.targetKeyField, key)
+    const getTargetsByKey = context.targetKeyField === 'id'
+        ? (key: EntityId) => {
+            const direct = map.get(key)
+            return direct ? [direct] : []
         }
+        : buildTargetLookup(map, indexes, context.targetKeyField)
 
-        if (lookupMode === 'index' && indexes) {
-            const res = indexes.collectCandidates(createEqFilter(entry.targetKeyField, key))
-            if (res.kind !== 'candidates') {
-                pickedByKey.set(key, null)
-                return undefined
-            }
-
-            for (const id of res.ids) {
-                const target = map.get(id)
-                if (target) {
-                    pickedByKey.set(key, target)
-                    return target
-                }
-            }
-
-            pickedByKey.set(key, null)
-            return undefined
-        }
-
-        if (lookupMode !== 'scan') lookupMode = 'scan'
-        if (scannedIndex.size === 0) {
-            map.forEach(target => {
-                const targetKey = toEntityId(readField(target, entry.targetKeyField))
-                if (!targetKey) return
-                if (!scannedIndex.has(targetKey)) scannedIndex.set(targetKey, target)
-            })
-        }
-
-        const target = scannedIndex.get(key)
-        pickedByKey.set(key, target ?? null)
-        return target
-    }
-
-    items.forEach(item => {
-        const fk = pickFirstKey(extractKeyValue(item, entry.sourceKeySelector))
-        const target = fk !== undefined ? getTargetByKey(fk) : undefined
-        setRelationValue(item, entry.relationName, target ?? null)
+    context.items.forEach(item => {
+        const fk = pickFirstKey(extractKeyValue(item, context.sourceKeySelector))
+        const target = fk !== undefined ? getTargetsByKey(fk)[0] : undefined
+        setRelationValue(item, context.relationName, target ?? null)
     })
 }
 
 function projectHasManyOrHasOne<TSource extends Entity>(
-    items: TSource[],
-    entry: RelationPlanEntry<TSource>,
+    context: ProjectContext<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
     indexes: IndexQueryLike<Entity> | null
 ) {
-    const isHasOne = entry.relationType === 'hasOne'
-    const sortRules = entry.query.sort?.length
-        ? entry.query.sort
+    const isHasOne = context.relationType === 'hasOne'
+    const sortRules = context.query.sort?.length
+        ? context.query.sort
         : DEFAULT_STABLE_SORT
-
-    let bucket: Map<EntityId, Entity[]> | null = null
-    let keyLookupMode: 'index' | 'scan' | undefined
-    const perKeyCache = new Map<EntityId, Entity[]>()
+    const getTargetsByKey = buildTargetLookup(map, indexes, context.targetKeyField)
     const orderedCache = new Map<string, Entity[]>()
-
-    const getTargetsByKey = (key: EntityId): Entity[] => {
-        const cached = perKeyCache.get(key)
-        if (cached) return cached
-
-        if (!keyLookupMode) {
-            keyLookupMode = resolveLookupMode(indexes, entry.targetKeyField, key)
-        }
-
-        if (keyLookupMode === 'index' && indexes) {
-            const res = indexes.collectCandidates(createEqFilter(entry.targetKeyField, key))
-            if (res.kind !== 'candidates') {
-                perKeyCache.set(key, [])
-                return []
-            }
-
-            const output: Entity[] = []
-            for (const id of res.ids) {
-                const target = map.get(id)
-                if (target) output.push(target)
-            }
-            perKeyCache.set(key, output)
-            return output
-        }
-
-        if (keyLookupMode !== 'scan') keyLookupMode = 'scan'
-        if (!bucket) {
-            const next = new Map<EntityId, Entity[]>()
-            map.forEach(target => {
-                const targetKey = toEntityId(readField(target, entry.targetKeyField))
-                if (!targetKey) return
-                const list = next.get(targetKey) || []
-                list.push(target)
-                next.set(targetKey, list)
-            })
-            bucket = next
-        }
-
-        const output = bucket.get(key) || []
-        perKeyCache.set(key, output)
-        return output
-    }
 
     const getOrderedTargets = (targets: Entity[]): Entity[] => {
         const cacheKey = targets.map(target => target.id).sort().join('\u0000')
@@ -250,32 +237,31 @@ function projectHasManyOrHasOne<TSource extends Entity>(
         return ordered
     }
 
-    items.forEach(item => {
-        const keyValue = extractKeyValue(item, entry.sourceKeySelector)
-        if (keyValue === undefined || keyValue === null) {
-            setRelationValue(item, entry.relationName, isHasOne ? null : [])
+    context.items.forEach(item => {
+        const keyValue = extractKeyValue(item, context.sourceKeySelector)
+        if (keyValue === undefined) {
+            setRelationValue(item, context.relationName, isHasOne ? null : [])
             return
         }
 
         const keys = Array.isArray(keyValue) ? keyValue : [keyValue]
         const merged: Entity[] = []
         keys.forEach(key => {
-            if (key === undefined || key === null) return
             const list = getTargetsByKey(key)
             if (list.length) merged.push(...list)
         })
 
         const deduped = dedupeById(merged)
         if (deduped.length === 0) {
-            setRelationValue(item, entry.relationName, isHasOne ? null : [])
+            setRelationValue(item, context.relationName, isHasOne ? null : [])
             return
         }
 
         const ordered = getOrderedTargets(deduped)
-        const limit = isHasOne ? 1 : entry.query.limit
+        const limit = isHasOne ? 1 : context.query.limit
         const projected = limit === undefined ? ordered : ordered.slice(0, limit)
 
-        setRelationValue(item, entry.relationName, isHasOne
+        setRelationValue(item, context.relationName, isHasOne
             ? (projected[0] ?? null)
             : projected)
     })

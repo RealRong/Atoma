@@ -2,27 +2,9 @@ import type { IndexDefinition } from 'atoma-types/core'
 import type { CandidateResult, IndexStats } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { defaultTokenizer } from '../internal/tokenize'
-import type { IndexDriver } from '../types'
+import type { IndexCondition, IndexDriver } from '../types'
 import { intersectAll, levenshteinDistance } from '../internal/search'
 import { validateString } from '../internal/value'
-
-type TokenOperator = 'and' | 'or'
-
-type MatchSpec = {
-    q?: unknown
-    op?: TokenOperator
-    minTokenLength?: number
-    tokenizer?: (text: string) => string[]
-}
-
-type FuzzySpec = MatchSpec & {
-    distance?: 0 | 1 | 2
-}
-
-type TextCondition = {
-    match?: string | MatchSpec
-    fuzzy?: string | FuzzySpec
-}
 
 export class TextIndex<T> implements IndexDriver<T> {
     readonly type = 'text'
@@ -76,69 +58,18 @@ export class TextIndex<T> implements IndexDriver<T> {
         this.docTokens.clear()
     }
 
-    queryCandidates(condition: unknown): CandidateResult {
-        if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
-            return { kind: 'unsupported' }
+    queryCandidates(condition: IndexCondition): CandidateResult {
+        switch (condition.op) {
+            case 'match':
+                return this.queryTokens(condition.value.q, 0)
+            case 'fuzzy':
+                return this.queryTokens(
+                    condition.value.q,
+                    condition.value.distance ?? this.fuzzyDistance
+                )
+            default:
+                return { kind: 'unsupported' }
         }
-
-        const parsed = condition as TextCondition
-        if (parsed.match === undefined && parsed.fuzzy === undefined) {
-            return { kind: 'unsupported' }
-        }
-
-        const spec = parsed.match !== undefined ? parsed.match : parsed.fuzzy
-        const isFuzzy = parsed.fuzzy !== undefined
-        const resolved = typeof spec === 'string' ? { q: spec } : (spec || {})
-        const query = String(resolved.q ?? '')
-        const operator = resolved.op || 'and'
-        const distance: 0 | 1 | 2 = isFuzzy
-            ? ((resolved as FuzzySpec).distance ?? this.fuzzyDistance)
-            : 0
-        const minTokenLength = resolved.minTokenLength ?? this.minTokenLength
-        const tokenizer = resolved.tokenizer || this.tokenizer || defaultTokenizer
-
-        const tokens = tokenizer(query)
-            .filter((token: string) => token.length >= minTokenLength)
-            .map((token: string) => token.toLowerCase())
-        if (!tokens.length) return { kind: 'empty' }
-
-        const tokenSets: Set<EntityId>[] = []
-        const tokenUnions: Set<EntityId>[] = []
-
-        const lookupToken = (token: string): Set<EntityId> => {
-            const exact = this.invertedIndex.get(token)
-            if (exact) return new Set(exact)
-            if (!distance) return new Set()
-            const fuzzyMatches = new Set<EntityId>()
-            this.invertedIndex.forEach((set, indexedToken) => {
-                if (Math.abs(indexedToken.length - token.length) > distance) return
-                if (levenshteinDistance(token, indexedToken, distance) <= distance) {
-                    set.forEach(id => fuzzyMatches.add(id))
-                }
-            })
-            return fuzzyMatches
-        }
-
-        tokens.forEach((token: string) => {
-            const ids = lookupToken(token)
-            if (operator === 'and') {
-                tokenSets.push(ids)
-            } else {
-                tokenUnions.push(ids)
-            }
-        })
-
-        if (operator === 'and') {
-            if (tokenSets.some(set => set.size === 0)) return { kind: 'empty' }
-            const ids = intersectAll(tokenSets)
-            if (ids.size === 0) return { kind: 'empty' }
-            return { kind: 'candidates', ids, exactness: distance ? 'superset' : 'exact' }
-        }
-
-        const union = new Set<EntityId>()
-        tokenUnions.forEach(set => set.forEach(id => union.add(id)))
-        if (union.size === 0) return { kind: 'empty' }
-        return { kind: 'candidates', ids: union, exactness: distance ? 'superset' : 'exact' }
     }
 
     getStats(): IndexStats {
@@ -170,6 +101,37 @@ export class TextIndex<T> implements IndexDriver<T> {
 
     isDirty(): boolean {
         return false
+    }
+
+    private queryTokens(query: string, distance: 0 | 1 | 2): CandidateResult {
+        const tokens = this.tokenize(query)
+        if (!tokens.length) return { kind: 'empty' }
+
+        const tokenSets: Set<EntityId>[] = []
+        for (const token of tokens) {
+            const ids = this.lookupToken(token, distance)
+            if (ids.size === 0) return { kind: 'empty' }
+            tokenSets.push(ids)
+        }
+
+        const ids = intersectAll(tokenSets)
+        if (ids.size === 0) return { kind: 'empty' }
+        return { kind: 'candidates', ids, exactness: distance ? 'superset' : 'exact' }
+    }
+
+    private lookupToken(token: string, distance: 0 | 1 | 2): Set<EntityId> {
+        const exact = this.invertedIndex.get(token)
+        if (exact) return new Set(exact)
+        if (!distance) return new Set()
+
+        const fuzzyMatches = new Set<EntityId>()
+        this.invertedIndex.forEach((set, indexedToken) => {
+            if (Math.abs(indexedToken.length - token.length) > distance) return
+            if (levenshteinDistance(token, indexedToken, distance) <= distance) {
+                set.forEach(id => fuzzyMatches.add(id))
+            }
+        })
+        return fuzzyMatches
     }
 
     private tokenize(input: string): string[] {

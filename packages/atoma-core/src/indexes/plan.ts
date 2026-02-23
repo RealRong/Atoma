@@ -1,57 +1,18 @@
 import type { CandidateExactness, CandidateResult, FilterExpr } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { intersectAll } from './internal/search'
-import type { IndexDriver, IndexQueryPlan } from './types'
+import type {
+    IndexCondition,
+    IndexDriver,
+    IndexQueryPlan,
+    RangeCondition as IndexRangeCondition
+} from './types'
 
-type WhereCondition = {
-    eq?: unknown
-    in?: unknown[]
-    gt?: unknown
-    gte?: unknown
-    lt?: unknown
-    lte?: unknown
-    startsWith?: unknown
-    endsWith?: unknown
-    contains?: unknown
-    match?: { q: unknown }
-    fuzzy?: { q: unknown; distance?: unknown }
-}
-
-type WhereMap = Record<string, WhereCondition>
-
-const STRING_LIKE_KEYS: Array<keyof WhereCondition> = ['startsWith', 'endsWith', 'contains']
-const WHERE_CONDITION_KEYS: Array<keyof WhereCondition> = [
-    'eq',
-    'in',
-    'gt',
-    'gte',
-    'lt',
-    'lte',
-    'startsWith',
-    'endsWith',
-    'contains',
-    'match',
-    'fuzzy'
-]
-
-const WHERE_KEY_BY_OP = {
-    eq: 'eq',
-    in: 'in',
-    gt: 'gt',
-    gte: 'gte',
-    lt: 'lt',
-    lte: 'lte',
-    startsWith: 'startsWith',
-    endsWith: 'endsWith',
-    contains: 'contains'
-} as const
-
-type WhereSimpleOp = keyof typeof WHERE_KEY_BY_OP
-type WhereSimpleFilter = Extract<FilterExpr, { op: WhereSimpleOp }>
-
-function isWhereSimpleFilter(filter: FilterExpr): filter is WhereSimpleFilter {
-    return filter.op in WHERE_KEY_BY_OP
-}
+type WhereMap = Record<string, IndexCondition>
+type SingleCondition = Exclude<IndexCondition, IndexRangeCondition>
+type RangeBounds = Omit<IndexRangeCondition, 'op'>
+type LowerBound = { op: 'gt' | 'gte'; value: number }
+type UpperBound = { op: 'lt' | 'lte'; value: number }
 
 export function planCandidates<T>(args: {
     indexes: Map<string, IndexDriver<T>>
@@ -158,137 +119,129 @@ function collectWhereConditions(filter: FilterExpr, output: WhereMap): boolean {
     return true
 }
 
-function toFieldCondition(filter: FilterExpr): { field: string; condition: WhereCondition } | null {
-    if (isWhereSimpleFilter(filter)) {
-        const key = WHERE_KEY_BY_OP[filter.op]
-        return {
-            field: filter.field,
-            condition: {
-                [key]: filter.op === 'in' ? filter.values : filter.value
-            } as WhereCondition
-        }
+function toFieldCondition(filter: FilterExpr): { field: string; condition: IndexCondition } | null {
+    switch (filter.op) {
+        case 'eq':
+            return { field: filter.field, condition: { op: 'eq', value: filter.value } }
+        case 'in':
+            return { field: filter.field, condition: { op: 'in', values: filter.values } }
+        case 'gt':
+            return { field: filter.field, condition: { op: 'range', gt: filter.value } }
+        case 'gte':
+            return { field: filter.field, condition: { op: 'range', gte: filter.value } }
+        case 'lt':
+            return { field: filter.field, condition: { op: 'range', lt: filter.value } }
+        case 'lte':
+            return { field: filter.field, condition: { op: 'range', lte: filter.value } }
+        case 'startsWith':
+            return { field: filter.field, condition: { op: 'startsWith', value: filter.value } }
+        case 'endsWith':
+            return { field: filter.field, condition: { op: 'endsWith', value: filter.value } }
+        case 'contains':
+            return { field: filter.field, condition: { op: 'contains', value: filter.value } }
+        case 'text':
+            return {
+                field: filter.field,
+                condition: filter.mode === 'fuzzy'
+                    ? { op: 'fuzzy', value: { q: filter.query, distance: filter.distance } }
+                    : { op: 'match', value: { q: filter.query } }
+            }
+        default:
+            return null
     }
-
-    if (filter.op === 'text') {
-        return {
-            field: filter.field,
-            condition: filter.mode === 'fuzzy'
-                ? { fuzzy: { q: filter.query, distance: filter.distance } }
-                : { match: { q: filter.query } }
-        }
-    }
-
-    return null
 }
 
-function mergeFieldCondition(existing: WhereCondition | undefined, incoming: WhereCondition): WhereCondition | undefined {
+function mergeFieldCondition(existing: IndexCondition | undefined, incoming: IndexCondition): IndexCondition | undefined {
     if (!existing) return incoming
 
-    const merged: WhereCondition = { ...existing }
-
-    for (const key of WHERE_CONDITION_KEYS) {
-        const value = incoming[key]
-        if (value === undefined) continue
-        const current = merged[key]
-        if (current !== undefined) {
-            if (!Object.is(current, value)) return undefined
-            continue
-        }
-        ;(merged as Record<string, unknown>)[key] = value
-    }
-
-    const keys = Object.keys(merged)
-    if (keys.length <= 1) return merged
-
-    if (merged.eq !== undefined || merged.in !== undefined) return undefined
-
-    if (merged.match !== undefined || merged.fuzzy !== undefined) {
-        return keys.length === 1 ? merged : undefined
-    }
-
-    if (merged.startsWith !== undefined || merged.endsWith !== undefined || merged.contains !== undefined) {
-        return keys.every(key => STRING_LIKE_KEYS.includes(key as keyof WhereCondition)) && keys.length === 1
-            ? merged
+    if (existing.op === 'range' || incoming.op === 'range') {
+        return existing.op === 'range' && incoming.op === 'range'
+            ? mergeRangeCondition(existing, incoming)
             : undefined
     }
 
-    return normalizeRangeCondition(merged)
+    return mergeSingleCondition(existing, incoming)
 }
 
-function normalizeRangeCondition(condition: WhereCondition): WhereCondition | undefined {
-    const output: WhereCondition = { ...condition }
+function mergeSingleCondition(existing: SingleCondition, incoming: SingleCondition): SingleCondition | undefined {
+    switch (existing.op) {
+        case 'in':
+            return incoming.op === 'in' && Object.is(existing.values, incoming.values)
+                ? existing
+                : undefined
+        case 'eq':
+        case 'startsWith':
+        case 'endsWith':
+        case 'contains':
+        case 'match':
+        case 'fuzzy':
+            return incoming.op === existing.op && Object.is(existing.value, incoming.value)
+                ? existing
+                : undefined
+    }
+}
 
-    const lower = pickLowerBound(condition.gt, condition.gte)
-    if (!lower) return undefined
-    delete output.gt
-    delete output.gte
-    if (lower.op) output[lower.op] = lower.value
+function mergeRangeCondition(existing: IndexRangeCondition, incoming: IndexRangeCondition): IndexRangeCondition | undefined {
+    if (!canMergeRangeValue(existing.gt, incoming.gt)) return undefined
+    if (!canMergeRangeValue(existing.gte, incoming.gte)) return undefined
+    if (!canMergeRangeValue(existing.lt, incoming.lt)) return undefined
+    if (!canMergeRangeValue(existing.lte, incoming.lte)) return undefined
 
-    const upper = pickUpperBound(condition.lt, condition.lte)
-    if (!upper) return undefined
-    delete output.lt
-    delete output.lte
-    if (upper.op) output[upper.op] = upper.value
+    const normalized = normalizeRangeBounds({
+        gt: incoming.gt ?? existing.gt,
+        gte: incoming.gte ?? existing.gte,
+        lt: incoming.lt ?? existing.lt,
+        lte: incoming.lte ?? existing.lte
+    })
+    return normalized
+        ? { op: 'range', ...normalized }
+        : undefined
+}
 
-    if (lower.op && upper.op) {
-        const cmp = compareComparable(lower.value, upper.value)
-        if (cmp !== null && cmp > 0) {
-            return undefined
-        }
+function canMergeRangeValue(existing: number | undefined, incoming: number | undefined): boolean {
+    if (incoming === undefined || existing === undefined) return true
+    return Object.is(existing, incoming)
+}
+
+function normalizeRangeBounds(bounds: RangeBounds): RangeBounds | undefined {
+    const lower = pickLowerBound(bounds.gt, bounds.gte)
+    const upper = pickUpperBound(bounds.lt, bounds.lte)
+
+    if (lower && upper && lower.value > upper.value) {
+        return undefined
     }
 
-    return output
+    const output: RangeBounds = {}
+    if (lower) output[lower.op] = lower.value
+    if (upper) output[upper.op] = upper.value
+    return hasRangeBounds(output) ? output : undefined
 }
 
-function pickLowerBound(gt: unknown, gte: unknown): { op?: 'gt' | 'gte'; value?: unknown } | null {
-    if (gt === undefined && gte === undefined) return {}
-    if (gt === undefined) return { op: 'gte', value: gte }
+function hasRangeBounds(bounds: RangeBounds): boolean {
+    return bounds.gt !== undefined
+        || bounds.gte !== undefined
+        || bounds.lt !== undefined
+        || bounds.lte !== undefined
+}
+
+function pickLowerBound(gt: number | undefined, gte: number | undefined): LowerBound | undefined {
+    if (gt === undefined) {
+        return gte === undefined ? undefined : { op: 'gte', value: gte }
+    }
     if (gte === undefined) return { op: 'gt', value: gt }
-
-    const cmp = compareComparable(gt, gte)
-    if (cmp === null) return null
-    if (cmp > 0) return { op: 'gt', value: gt }
-    if (cmp < 0) return { op: 'gte', value: gte }
-    return { op: 'gt', value: gt }
+    return gt >= gte
+        ? { op: 'gt', value: gt }
+        : { op: 'gte', value: gte }
 }
 
-function pickUpperBound(lt: unknown, lte: unknown): { op?: 'lt' | 'lte'; value?: unknown } | null {
-    if (lt === undefined && lte === undefined) return {}
-    if (lt === undefined) return { op: 'lte', value: lte }
+function pickUpperBound(lt: number | undefined, lte: number | undefined): UpperBound | undefined {
+    if (lt === undefined) {
+        return lte === undefined ? undefined : { op: 'lte', value: lte }
+    }
     if (lte === undefined) return { op: 'lt', value: lt }
-
-    const cmp = compareComparable(lt, lte)
-    if (cmp === null) return null
-    if (cmp < 0) return { op: 'lt', value: lt }
-    if (cmp > 0) return { op: 'lte', value: lte }
-    return { op: 'lt', value: lt }
-}
-
-function compareComparable(left: unknown, right: unknown): number | null {
-    if (Object.is(left, right)) return 0
-    if (left === undefined || right === undefined) return null
-
-    if (typeof left === 'number' && typeof right === 'number') {
-        if (left > right) return 1
-        if (left < right) return -1
-        return 0
-    }
-
-    if (typeof left === 'string' && typeof right === 'string') {
-        if (left > right) return 1
-        if (left < right) return -1
-        return 0
-    }
-
-    if (left instanceof Date && right instanceof Date) {
-        const l = left.getTime()
-        const r = right.getTime()
-        if (l > r) return 1
-        if (l < r) return -1
-        return 0
-    }
-
-    return null
+    return lt <= lte
+        ? { op: 'lt', value: lt }
+        : { op: 'lte', value: lte }
 }
 
 function buildUnsupportedResult(

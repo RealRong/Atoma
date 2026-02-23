@@ -1,4 +1,5 @@
 import { createId as createEntityId } from 'atoma-shared'
+import { Indexes } from 'atoma-core/indexes'
 import type {
     Entity,
     Query,
@@ -53,7 +54,9 @@ export class Factory {
             ?? (() => createEntityId({ kind: 'entity', sortable: true, now: runtime.now }))
         const processor = (storeSchema.processor ?? this.processor) as StoreProcessor<T> | undefined
 
-        const indexes = runtime.engine.index.create<T>(storeSchema.indexes ?? null)
+        const indexes = storeSchema.indexes?.length
+            ? new Indexes<T>(storeSchema.indexes)
+            : null
 
         const state = new StoreState<T>({
             initial: new Map<EntityId, T>(),

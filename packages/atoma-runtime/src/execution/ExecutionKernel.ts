@@ -1,6 +1,7 @@
 import type { Entity } from 'atoma-types/core'
 import type {
     ExecutionKernel as ExecutionKernelType,
+    ExecutionPhase,
     ExecutionOptions,
     ExecutionRegistration,
     QueryRequest,
@@ -9,13 +10,6 @@ import type {
     WriteRequest,
     WriteOutput
 } from 'atoma-types/runtime'
-import {
-    createExecutionError,
-    normalizeExecutionError,
-    type CreateExecutionError
-} from './errors'
-
-type KernelPhase = 'query' | 'write'
 
 type RegisteredExecutor = Readonly<{
     token: symbol
@@ -24,8 +18,7 @@ type RegisteredExecutor = Readonly<{
 }>
 
 export class ExecutionKernel implements ExecutionKernelType {
-    private readonly slots: Partial<Record<KernelPhase, RegisteredExecutor>> = {}
-    private readonly createError: CreateExecutionError = createExecutionError
+    private readonly slots: Partial<Record<ExecutionPhase, RegisteredExecutor>> = {}
     private anonymousIdCounter = 0
 
     private static readonly DEFAULT_CONSISTENCY: WriteConsistency = {
@@ -33,23 +26,18 @@ export class ExecutionKernel implements ExecutionKernelType {
         commit: 'optimistic'
     }
 
-    private createAnonymousId = (phases: ReadonlyArray<KernelPhase>): string => {
+    private createAnonymousId = (phases: ReadonlyArray<ExecutionPhase>): string => {
         this.anonymousIdCounter += 1
-        return `anonymous-${phases.join('-') || 'executor'}-${this.anonymousIdCounter}`
+        return `anonymous-${phases.join('-')}-${this.anonymousIdCounter}`
     }
 
     register = (registration: ExecutionRegistration): (() => void) => {
-        const phases: KernelPhase[] = [
-            typeof registration.query === 'function' ? 'query' : undefined,
-            typeof registration.write === 'function' ? 'write' : undefined
-        ].filter((phase): phase is KernelPhase => phase !== undefined)
+        const phases: ExecutionPhase[] = []
+        if (typeof registration.query === 'function') phases.push('query')
+        if (typeof registration.write === 'function') phases.push('write')
         const id = String(registration.id ?? '').trim()
         if (!phases.length) {
-            throw this.createError({
-                code: 'E_EXECUTION_REGISTER_INVALID',
-                message: `[Atoma] execution.register: 至少实现 query/write 之一: ${id || '[anonymous]'}`,
-                retryable: false
-            })
+            throw new Error(`[Atoma] execution.register: 至少实现 query/write 之一: ${id || '[anonymous]'}`)
         }
         const normalized: ExecutionRegistration & { id: string } = {
             ...registration,
@@ -64,16 +52,7 @@ export class ExecutionKernel implements ExecutionKernelType {
         phases.forEach((phase) => {
             const current = this.slots[phase]
             if (!current) return
-            throw this.createError({
-                code: 'E_EXECUTION_CONFLICT',
-                message: `[Atoma] execution.register: ${phase} executor 冲突: ${current.id} <-> ${nextEntry.id}`,
-                retryable: false,
-                details: {
-                    phase,
-                    existing: current.id,
-                    incoming: nextEntry.id
-                }
-            })
+            throw new Error(`[Atoma] execution.register: ${phase} executor 冲突: ${current.id} <-> ${nextEntry.id}`)
         })
 
         phases.forEach((phase) => {
@@ -90,78 +69,46 @@ export class ExecutionKernel implements ExecutionKernelType {
     }
 
     getConsistency = (): WriteConsistency => {
-        const consistency = this.slots.write?.registration.consistency
-        return consistency
-            ? {
-                ...ExecutionKernel.DEFAULT_CONSISTENCY,
-                ...consistency
-            }
-            : ExecutionKernel.DEFAULT_CONSISTENCY
+        return {
+            ...ExecutionKernel.DEFAULT_CONSISTENCY,
+            ...this.slots.write?.registration.consistency
+        }
     }
 
-    hasExecutor = (phase: KernelPhase): boolean => {
+    hasExecutor = (phase: ExecutionPhase): boolean => {
         return this.slots[phase] !== undefined
     }
 
-    private resolveExecutor(phase: KernelPhase): RegisteredExecutor {
+    private resolveExecutor(phase: ExecutionPhase): RegisteredExecutor {
         const resolved = this.slots[phase]
         if (!resolved) {
-            throw this.createError({
-                code: 'E_EXECUTOR_MISSING',
-                message: `[Atoma] execution: 未注册 ${phase} executor`,
-                retryable: false,
-                details: { phase }
-            })
+            throw new Error(`[Atoma] execution: 未注册 ${phase} executor`)
         }
         return resolved
     }
 
     private executePhase = async <Request, Output>({
         phase,
+        executorId,
+        executor,
         request,
         options
     }: {
-        phase: KernelPhase
+        phase: ExecutionPhase
+        executorId: string
+        executor: (request: Request, options?: ExecutionOptions) => Promise<Output>
         request: Request
         options?: ExecutionOptions
     }): Promise<Output> => {
-        const resolved = this.resolveExecutor(phase)
-
         try {
-            const executor = phase === 'query'
-                ? resolved.registration.query as ((request: Request, options?: ExecutionOptions) => Promise<Output>) | undefined
-                : resolved.registration.write as ((request: Request, options?: ExecutionOptions) => Promise<Output>) | undefined
-            if (!executor) {
-                throw this.createError({
-                    code: phase === 'query'
-                        ? 'E_EXECUTOR_QUERY_UNIMPLEMENTED'
-                        : 'E_EXECUTOR_WRITE_UNIMPLEMENTED',
-                    message: phase === 'query'
-                        ? `[Atoma] execution.query: executor 未实现 query: ${resolved.id}`
-                        : `[Atoma] execution.write: executor 未实现 write: ${resolved.id}`,
-                    retryable: false,
-                    details: { executor: resolved.id, phase }
-                })
-            }
-
             return await executor(request, options)
         } catch (error) {
-            const normalizedError = normalizeExecutionError({
-                error,
-                fallbackCode: phase === 'query'
-                    ? 'E_EXECUTION_QUERY_FAILED'
-                    : 'E_EXECUTION_WRITE_FAILED',
-                fallbackMessage: phase === 'query'
-                    ? '[Atoma] execution.query failed'
-                    : '[Atoma] execution.write failed',
-                retryable: false,
-                details: {
-                    executor: resolved.id,
-                    phase
-                },
-                createError: this.createError
-            })
-            throw normalizedError
+            if (error instanceof Error) throw error
+            throw new Error(
+                phase === 'query'
+                    ? `[Atoma] execution.query failed: ${executorId}`
+                    : `[Atoma] execution.write failed: ${executorId}`
+            )
         }
     }
 
@@ -169,8 +116,15 @@ export class ExecutionKernel implements ExecutionKernelType {
         request: QueryRequest<T>,
         options?: ExecutionOptions
     ): Promise<ExecutionQueryOutput<T>> => {
+        const resolved = this.resolveExecutor('query')
+        const executor = resolved.registration.query
+        if (!executor) {
+            throw new Error(`[Atoma] execution.query: executor 未实现 query: ${resolved.id}`)
+        }
         return await this.executePhase({
             phase: 'query',
+            executorId: resolved.id,
+            executor,
             request,
             options
         })
@@ -180,8 +134,15 @@ export class ExecutionKernel implements ExecutionKernelType {
         request: WriteRequest<T>,
         options?: ExecutionOptions
     ): Promise<WriteOutput> => {
+        const resolved = this.resolveExecutor('write')
+        const executor = resolved.registration.write
+        if (!executor) {
+            throw new Error(`[Atoma] execution.write: executor 未实现 write: ${resolved.id}`)
+        }
         return await this.executePhase({
             phase: 'write',
+            executorId: resolved.id,
+            executor,
             request,
             options
         })
