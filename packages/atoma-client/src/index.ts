@@ -1,10 +1,9 @@
-import type { Entity, StoreProcessor } from 'atoma-types/core'
+import type { Entity } from 'atoma-types/core'
 import type {
     AtomaClient,
     AtomaSchema,
     CreateClientOptions,
 } from 'atoma-types/client'
-import type { Schema } from 'atoma-types/runtime'
 import { createId } from 'atoma-shared'
 import { Runtime } from 'atoma-runtime'
 import { PluginContext } from './plugins/PluginContext'
@@ -23,14 +22,9 @@ export function createClient<
         throw new Error('[Atoma] createClient: plugins 必须是数组')
     }
 
-    const runtimeStores = options.stores
     const runtime = new Runtime({
         id: createId(),
-        stores: {
-            schema: (runtimeStores?.schema ?? {}) as Schema,
-            createId: runtimeStores?.createId,
-            processor: runtimeStores?.processor as StoreProcessor<Entity> | undefined
-        }
+        stores: options.stores
     })
     const context = new PluginContext(runtime)
 

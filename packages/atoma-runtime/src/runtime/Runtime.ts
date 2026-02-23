@@ -3,8 +3,7 @@
  * - Owns all subsystems (execution, processor, stores).
  * - Exposes runtime.read/runtime.write flow entrypoints.
  */
-import type { Entity, StoreProcessor } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
+import type { Entity } from 'atoma-types/core'
 import type {
     Runtime as RuntimeType,
     Debug as DebugType,
@@ -12,7 +11,7 @@ import type {
     Engine as EngineType,
     StoreEventBus as StoreEventBusType,
     Read,
-    Schema,
+    StoresConfig,
     Processor as ProcessorType,
     Write,
     StoreCatalog
@@ -32,11 +31,7 @@ import { Debug } from './Debug'
 export interface RuntimeConfig {
     id: string
     now?: () => number
-    stores: Readonly<{
-        schema: Schema
-        createId?: () => EntityId
-        processor?: StoreProcessor<Entity>
-    }>
+    stores?: StoresConfig<Record<string, Entity>, object>
 }
 
 export class Runtime implements RuntimeType {

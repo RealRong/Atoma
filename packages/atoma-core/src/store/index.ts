@@ -6,4 +6,4 @@ export {
     upsertMany
 } from './mutation'
 export { writeback } from './writeback'
-export { toChange, invertChanges, mergeChanges, diffMaps } from './changes'
+export { toChange, invertChanges, mergeChanges } from './changes'

@@ -1,4 +1,4 @@
-import type { Entity, IndexQueryLike, PageInfo, Query } from 'atoma-types/core'
+import type { Entity, Indexes, PageInfo, Query } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import { matchesFilter } from './internal/filter'
 import { normalizeQuery } from './internal/normalize'
@@ -8,19 +8,17 @@ import { compareBy } from './internal/sort'
 export function runQuery<T extends Entity>(args: {
     snapshot: ReadonlyMap<EntityId, T>
     query: Query<T>
-    indexes: IndexQueryLike<T> | null
+    indexes: Indexes<T> | null
 }): { data: T[]; pageInfo?: PageInfo } {
     const { snapshot, query, indexes } = args
 
-    const candidateResult = indexes ? indexes.collectCandidates(query.filter) : { kind: 'unsupported' as const }
-    if (candidateResult.kind === 'empty') {
-        return { data: [] }
-    }
+    const hits = indexes ? indexes.query(query.filter) : { kind: 'scan' as const }
+    if (hits.kind === 'hits' && hits.ids.size === 0) return { data: [] }
 
-    const source = candidateResult.kind === 'candidates'
+    const source = hits.kind === 'hits'
         ? (() => {
             const output: T[] = []
-            for (const id of candidateResult.ids) {
+            for (const id of hits.ids) {
                 const item = snapshot.get(id)
                 if (item !== undefined) output.push(item)
             }

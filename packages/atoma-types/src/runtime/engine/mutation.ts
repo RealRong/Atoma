@@ -1,7 +1,7 @@
 import type {
     Entity,
     PartialWithId,
-    StoreDelta,
+    StoreChange,
     StoreWritebackEntry,
 } from '../../core'
 import type { EntityId } from '../../shared'
@@ -21,5 +21,8 @@ export type MutationEngine = Readonly<{
     writeback: <T extends Entity>(
         before: Map<EntityId, T>,
         entries: ReadonlyArray<StoreWritebackEntry<T>>
-    ) => StoreDelta<T> | null
+    ) => Readonly<{
+        after: Map<EntityId, T>
+        changes: ReadonlyArray<StoreChange<T>>
+    }>
 }>

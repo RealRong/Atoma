@@ -32,8 +32,7 @@ export function applyOptimistic<T extends Entity>({
     }
 
     const byIndex = request.prepared.map((item) => {
-        const delta = request.scope.handle.state.apply([item.optimistic])
-        return delta?.changes ?? []
+        return request.scope.handle.state.apply([item.optimistic])
     })
     return {
         byIndex,
@@ -67,7 +66,7 @@ export function applyLocalWrites<T extends Entity>({
     const { scope, prepared } = request
     const appliedChanges = optimisticChanges.length
         ? optimisticChanges
-        : (scope.handle.state.apply(prepared.map((item) => item.optimistic))?.changes ?? [])
+        : scope.handle.state.apply(prepared.map((item) => item.optimistic))
     const results = buildLocalWriteResult(prepared)
 
     return {

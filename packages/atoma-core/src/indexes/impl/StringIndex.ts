@@ -1,10 +1,10 @@
 import type { IndexDefinition } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CandidateResult, IndexStats } from 'atoma-types/core'
+import type { IndexStats } from 'atoma-types/core'
 import { validateString } from '../internal/value'
-import type { IndexCondition, IndexDriver } from '../types'
+import type { Condition, Index } from '../types'
 
-export class StringIndex<T> implements IndexDriver<T> {
+export class StringIndex<T> implements Index<T> {
     readonly type = 'string'
     readonly config: IndexDefinition<T>
 
@@ -36,27 +36,25 @@ export class StringIndex<T> implements IndexDriver<T> {
         this.valueMap.clear()
     }
 
-    queryCandidates(condition: IndexCondition): CandidateResult {
+    query(condition: Condition): ReadonlySet<EntityId> | null {
         switch (condition.op) {
             case 'eq': {
-                if (typeof condition.value !== 'string') return { kind: 'empty' }
+                if (typeof condition.value !== 'string') return new Set<EntityId>()
                 const set = this.valueMap.get(condition.value)
-                if (!set || set.size === 0) return { kind: 'empty' }
-                return { kind: 'candidates', ids: set, exactness: 'exact' }
+                return set ?? new Set<EntityId>()
             }
             case 'in': {
                 const strs = condition.values.filter((value): value is string => typeof value === 'string')
-                if (strs.length === 0) return { kind: 'empty' }
+                if (strs.length === 0) return new Set<EntityId>()
                 const result = new Set<EntityId>()
                 strs.forEach(v => {
                     const set = this.valueMap.get(v)
                     if (set) set.forEach(id => result.add(id))
                 })
-                if (result.size === 0) return { kind: 'empty' }
-                return { kind: 'candidates', ids: result, exactness: 'exact' }
+                return result
             }
             default:
-                return { kind: 'unsupported' }
+                return null
         }
     }
 

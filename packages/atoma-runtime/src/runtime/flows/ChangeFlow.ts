@@ -38,13 +38,13 @@ export class ChangeFlow {
             const replayChanges = direction === 'apply'
                 ? [...changes]
                 : invertChanges([...changes].reverse())
-            const delta = handle.state.apply(replayChanges)
+            const committedChanges = handle.state.apply(replayChanges)
 
             this.runtime.events.emit('changeCommitted', {
                 storeName,
                 context,
                 direction,
-                changes: delta?.changes ?? []
+                changes: committedChanges
             })
         } catch (error) {
             this.runtime.events.emit('changeFailed', {

@@ -1,18 +1,27 @@
 import type {
     Entity,
     StoreChange,
-    StoreDelta,
     StoreWritebackEntry,
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import { reuse } from './mutation'
 import { mergeChanges, toChange } from './changes'
 
+type WritebackResult<T extends Entity> = Readonly<{
+    after: Map<EntityId, T>
+    changes: ReadonlyArray<StoreChange<T>>
+}>
+
 export function writeback<T extends Entity>(
     before: Map<EntityId, T>,
     entries: ReadonlyArray<StoreWritebackEntry<T>>
-): StoreDelta<T> | null {
-    if (!entries.length) return null
+): WritebackResult<T> {
+    if (!entries.length) {
+        return {
+            after: before,
+            changes: []
+        }
+    }
 
     let after = before
     let writable = false
@@ -66,16 +75,8 @@ export function writeback<T extends Entity>(
     })
 
     const changes = mergeChanges(rawChanges)
-    if (!changes.length) return null
-    const changedIds = new Set<EntityId>()
-    changes.forEach(change => {
-        changedIds.add(change.id)
-    })
-
     return {
-        before,
         after,
-        changedIds,
         changes
     }
 }

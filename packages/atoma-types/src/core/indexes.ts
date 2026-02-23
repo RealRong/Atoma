@@ -1,6 +1,8 @@
 import type { EntityId } from '../shared'
+import type { Entity } from './entity'
 import type { FilterExpr } from './query'
 import type { IndexDefinition } from './store'
+import type { StoreChange } from './writeback'
 
 export type IndexStats = {
     totalDocs: number
@@ -12,21 +14,14 @@ export type IndexStats = {
     avgDocTokens?: number
 }
 
-export type CandidateExactness = 'exact' | 'superset'
-
-export type CandidateResult =
-    | { kind: 'unsupported' }
-    | { kind: 'empty' }
-    | { kind: 'candidates'; ids: Set<EntityId>; exactness: CandidateExactness }
+export type Hits =
+    | { kind: 'scan' }
+    | { kind: 'hits'; ids: ReadonlySet<EntityId> }
 
 export type IndexSnapshot<T> = { field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats
 
-export type IndexQueryLike<T> = Readonly<{
-    collectCandidates: (filter?: FilterExpr<T>) => CandidateResult
+export type Indexes<T extends Entity> = Readonly<{
+    query: (filter?: FilterExpr<T>) => Hits
+    apply: (changes: ReadonlyArray<StoreChange<T>>) => void
+    snapshot: () => IndexSnapshot<T>[]
 }>
-
-export type IndexSyncLike<T> = Readonly<{
-    applyChangedIds: (before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: Iterable<EntityId>) => void
-}>
-
-export type IndexesLike<T> = IndexQueryLike<T> & IndexSyncLike<T>

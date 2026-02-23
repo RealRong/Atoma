@@ -1,8 +1,8 @@
 import type { IndexDefinition } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import type { CandidateResult, IndexStats } from 'atoma-types/core'
+import type { IndexStats } from 'atoma-types/core'
 import { binarySearchPrefix, intersectAll } from '../internal/search'
-import type { IndexCondition, IndexDriver } from '../types'
+import type { Condition, Index } from '../types'
 
 const normalize = (value: unknown): string => {
     if (value === undefined || value === null) return ''
@@ -23,7 +23,7 @@ const buildNgrams = (value: string, n: number): string[] => {
     return Array.from(grams)
 }
 
-export class SubstringIndex<T> implements IndexDriver<T> {
+export class SubstringIndex<T> implements Index<T> {
     readonly type = 'substring'
     readonly config: IndexDefinition<T>
 
@@ -117,40 +117,37 @@ export class SubstringIndex<T> implements IndexDriver<T> {
         this.dirty = true
     }
 
-    queryCandidates(condition: IndexCondition): CandidateResult {
+    query(condition: Condition): ReadonlySet<EntityId> | null {
         switch (condition.op) {
             case 'startsWith': {
                 const prefix = normalize(condition.value)
-                if (!prefix) return { kind: 'unsupported' }
+                if (!prefix) return null
                 const result = this.prefixSearch(prefix)
-                if (result.size === 0) return { kind: 'empty' }
-                return { kind: 'candidates', ids: result, exactness: 'exact' }
+                return result
             }
             case 'endsWith': {
                 const suffix = normalize(condition.value)
-                if (!suffix) return { kind: 'unsupported' }
+                if (!suffix) return null
                 const result = this.suffixSearch(suffix)
-                if (result.size === 0) return { kind: 'empty' }
-                return { kind: 'candidates', ids: result, exactness: 'exact' }
+                return result
             }
             case 'contains': {
                 const needle = normalize(condition.value)
-                if (!needle) return { kind: 'unsupported' }
-                if (needle.length < this.ngramSize) return { kind: 'unsupported' }
+                if (!needle) return null
+                if (needle.length < this.ngramSize) return null
                 const grams = buildNgrams(needle, this.ngramSize)
-                if (!grams.length) return { kind: 'unsupported' }
+                if (!grams.length) return null
                 const sets: Set<EntityId>[] = []
                 for (const gram of grams) {
                     const ids = this.gramMap.get(gram)
-                    if (!ids || ids.size === 0) return { kind: 'empty' }
+                    if (!ids || ids.size === 0) return new Set<EntityId>()
                     sets.push(ids)
                 }
                 const result = intersectAll(sets)
-                if (result.size === 0) return { kind: 'empty' }
-                return { kind: 'candidates', ids: result, exactness: 'superset' }
+                return result
             }
             default:
-                return { kind: 'unsupported' }
+                return null
         }
     }
 

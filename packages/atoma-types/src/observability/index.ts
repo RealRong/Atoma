@@ -32,10 +32,8 @@ export type Explain = {
     opId?: string
     events?: DebugEvent[]
     index?: {
-        kind: 'unsupported' | 'empty' | 'candidates'
-        exactness?: 'exact' | 'superset'
-        candidates?: number
-        lastQueryPlan?: unknown
+        kind: 'scan' | 'hits'
+        hits?: number
     }
     finalize?: {
         inputCount: number
@@ -59,4 +57,3 @@ export type ObservabilityContext = {
 export type DebugEmitMeta = Partial<Pick<TraceContext, 'requestId' | 'opId'>> & {
     parentSpanId?: string
 }
-

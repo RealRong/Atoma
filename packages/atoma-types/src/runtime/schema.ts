@@ -2,8 +2,10 @@ import type {
     Entity,
     KeySelector,
     RelationIncludeOptions,
+    StoreProcessor,
     StoreConfig
 } from '../core'
+import type { EntityId } from '../shared'
 
 type BelongsToSchema<T extends Entity = Entity> = Readonly<{
     type: 'belongsTo'
@@ -42,3 +44,12 @@ export type StoreSchema<T extends Entity = Entity> = {
 export type Schema<
     Entities extends Record<string, Entity> = Record<string, Entity>
 > = Readonly<Partial<{ [Name in keyof Entities & string]: StoreSchema<Entities[Name]> }>>
+
+export type StoresConfig<
+    Entities extends Record<string, Entity> = Record<string, Entity>,
+    StoresSchema extends object = Schema<Entities>
+> = Readonly<{
+    schema?: StoresSchema
+    createId?: () => EntityId
+    processor?: StoreProcessor<Entity>
+}>

@@ -1,15 +1,14 @@
-import type { CandidateResult, FilterExpr, IndexDefinition, IndexStats } from 'atoma-types/core'
+import type { FilterExpr, Hits, IndexDefinition, IndexStats, StoreChange } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { NumberDateIndex } from './impl/NumberDateIndex'
 import { StringIndex } from './impl/StringIndex'
 import { SubstringIndex } from './impl/SubstringIndex'
 import { TextIndex } from './impl/TextIndex'
-import { planCandidates } from './plan'
-import type { IndexDriver, IndexQueryPlan } from './types'
+import { plan } from './internal/plan'
+import type { Index } from './types'
 
 export class Indexes<T extends { id: EntityId }> {
-    private readonly indexes = new Map<string, IndexDriver<T>>()
-    private lastQueryPlan: IndexQueryPlan | undefined
+    private readonly indexes = new Map<string, Index<T>>()
 
     constructor(definitions: Array<IndexDefinition<T>>) {
         const seen = new Set<string>()
@@ -44,13 +43,11 @@ export class Indexes<T extends { id: EntityId }> {
         })
     }
 
-    collectCandidates(filter?: FilterExpr<T>): CandidateResult {
-        const planned = planCandidates({ indexes: this.indexes, filter })
-        this.lastQueryPlan = planned.plan
-        return planned.result
+    query(filter?: FilterExpr<T>): Hits {
+        return plan({ indexes: this.indexes, filter })
     }
 
-    debugIndexSnapshots(): Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> {
+    snapshot(): Array<{ field: string; type: IndexDefinition<T>['type']; dirty: boolean } & IndexStats> {
         return Array.from(this.indexes, ([field, index]) => ({
             field,
             type: index.type,
@@ -59,21 +56,40 @@ export class Indexes<T extends { id: EntityId }> {
         }))
     }
 
-    debugLastQueryPlan() {
-        return this.lastQueryPlan
-    }
-
-    applyChangedIds(before: Map<EntityId, T>, after: Map<EntityId, T>, changedIds: Iterable<EntityId>) {
-        for (const id of changedIds) {
-            const prev = before.get(id)
-            const next = after.get(id)
+    apply(changes: ReadonlyArray<StoreChange<T>>) {
+        for (const change of changes) {
+            const prev = change.before
+            const next = change.after
             if (prev === next) continue
-            if (prev) this.removeItem(prev)
-            if (next) this.addItem(next)
+            if (!prev) {
+                if (next) this.add(next)
+                continue
+            }
+            if (!next) {
+                this.remove(prev)
+                continue
+            }
+            this.update(prev, next)
         }
     }
 
-    private addItem(item: T): void {
+    private update(previous: T, next: T): void {
+        const id = previous.id
+        this.indexes.forEach(index => {
+            const field = index.config.field
+            const previousValue = previous[field]
+            const nextValue = next[field]
+            if (previousValue === nextValue) return
+            if (previousValue !== undefined && previousValue !== null) {
+                index.remove(id, previousValue)
+            }
+            if (nextValue !== undefined && nextValue !== null) {
+                index.add(id, nextValue)
+            }
+        })
+    }
+
+    private add(item: T): void {
         const id = item.id
         this.indexes.forEach(index => {
             const value = item[index.config.field]
@@ -83,7 +99,7 @@ export class Indexes<T extends { id: EntityId }> {
         })
     }
 
-    private removeItem(item: T): void {
+    private remove(item: T): void {
         const id = item.id
         this.indexes.forEach(index => {
             const value = item[index.config.field]

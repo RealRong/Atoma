@@ -1,7 +1,7 @@
 import type {
     Entity,
     FilterExpr,
-    IndexQueryLike,
+    Indexes,
     KeySelector,
     RelationQuery,
     RelationMap,
@@ -48,18 +48,18 @@ const readField = (item: Entity, field: string): unknown => {
 }
 
 const resolveLookupMode = (
-    indexes: IndexQueryLike<Entity> | null,
+    indexes: Indexes<Entity> | null,
     targetKeyField: string,
     key: EntityId
 ): 'index' | 'scan' => {
     if (!indexes) return 'scan'
-    const probe = indexes.collectCandidates(createEqFilter(targetKeyField, key))
-    return probe.kind === 'unsupported' ? 'scan' : 'index'
+    const probe = indexes.query(createEqFilter(targetKeyField, key))
+    return probe.kind === 'scan' ? 'scan' : 'index'
 }
 
 function buildTargetLookup(
     map: ReadonlyMap<EntityId, Entity>,
-    indexes: IndexQueryLike<Entity> | null,
+    indexes: Indexes<Entity> | null,
     targetKeyField: string
 ): (key: EntityId) => Entity[] {
     let lookupMode: 'index' | 'scan' | undefined
@@ -75,19 +75,18 @@ function buildTargetLookup(
         }
 
         if (lookupMode === 'index' && indexes) {
-            const res = indexes.collectCandidates(createEqFilter(targetKeyField, key))
-            if (res.kind !== 'candidates') {
-                perKeyCache.set(key, [])
-                return []
+            const res = indexes.query(createEqFilter(targetKeyField, key))
+            if (res.kind === 'scan') {
+                lookupMode = 'scan'
+            } else {
+                const output: Entity[] = []
+                for (const id of res.ids) {
+                    const target = map.get(id)
+                    if (target) output.push(target)
+                }
+                perKeyCache.set(key, output)
+                return output
             }
-
-            const output: Entity[] = []
-            for (const id of res.ids) {
-                const target = map.get(id)
-                if (target) output.push(target)
-            }
-            perKeyCache.set(key, output)
-            return output
         }
 
         if (!bucket) {
@@ -194,7 +193,7 @@ function projectPlanned<TSource extends Entity>(
 function projectBelongsTo<TSource extends Entity>(
     context: ProjectContext<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
-    indexes: IndexQueryLike<Entity> | null
+    indexes: Indexes<Entity> | null
 ) {
     const getTargetsByKey = context.targetKeyField === 'id'
         ? (key: EntityId) => {
@@ -213,7 +212,7 @@ function projectBelongsTo<TSource extends Entity>(
 function projectHasManyOrHasOne<TSource extends Entity>(
     context: ProjectContext<TSource>,
     map: ReadonlyMap<EntityId, Entity>,
-    indexes: IndexQueryLike<Entity> | null
+    indexes: Indexes<Entity> | null
 ) {
     const isHasOne = context.relationType === 'hasOne'
     const sortRules = context.query.sort?.length

@@ -1,12 +1,12 @@
 import type { IndexDefinition } from 'atoma-types/core'
-import type { CandidateResult, IndexStats } from 'atoma-types/core'
+import type { IndexStats } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { defaultTokenizer } from '../internal/tokenize'
-import type { IndexCondition, IndexDriver } from '../types'
+import type { Condition, Index } from '../types'
 import { intersectAll, levenshteinDistance } from '../internal/search'
 import { validateString } from '../internal/value'
 
-export class TextIndex<T> implements IndexDriver<T> {
+export class TextIndex<T> implements Index<T> {
     readonly type = 'text'
     readonly config: IndexDefinition<T>
 
@@ -58,7 +58,7 @@ export class TextIndex<T> implements IndexDriver<T> {
         this.docTokens.clear()
     }
 
-    queryCandidates(condition: IndexCondition): CandidateResult {
+    query(condition: Condition): ReadonlySet<EntityId> | null {
         switch (condition.op) {
             case 'match':
                 return this.queryTokens(condition.value.q, 0)
@@ -68,7 +68,7 @@ export class TextIndex<T> implements IndexDriver<T> {
                     condition.value.distance ?? this.fuzzyDistance
                 )
             default:
-                return { kind: 'unsupported' }
+                return null
         }
     }
 
@@ -103,20 +103,19 @@ export class TextIndex<T> implements IndexDriver<T> {
         return false
     }
 
-    private queryTokens(query: string, distance: 0 | 1 | 2): CandidateResult {
+    private queryTokens(query: string, distance: 0 | 1 | 2): ReadonlySet<EntityId> {
         const tokens = this.tokenize(query)
-        if (!tokens.length) return { kind: 'empty' }
+        if (!tokens.length) return new Set<EntityId>()
 
         const tokenSets: Set<EntityId>[] = []
         for (const token of tokens) {
             const ids = this.lookupToken(token, distance)
-            if (ids.size === 0) return { kind: 'empty' }
+            if (ids.size === 0) return new Set<EntityId>()
             tokenSets.push(ids)
         }
 
         const ids = intersectAll(tokenSets)
-        if (ids.size === 0) return { kind: 'empty' }
-        return { kind: 'candidates', ids, exactness: distance ? 'superset' : 'exact' }
+        return ids
     }
 
     private lookupToken(token: string, distance: 0 | 1 | 2): Set<EntityId> {

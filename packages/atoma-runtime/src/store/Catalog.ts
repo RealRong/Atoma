@@ -4,14 +4,12 @@ import type {
     QueryResult,
     Store,
     StoreChange,
-    StoreProcessor,
-    StoreDelta,
     StoreOperationOptions,
     StoreToken,
     StoreWritebackEntry,
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, Schema, StoreHandle, StoreCatalog, StoreSession } from 'atoma-types/runtime'
+import type { Runtime, Schema, StoresConfig, StoreHandle, StoreCatalog, StoreSession } from 'atoma-types/runtime'
 import { Factory } from './Factory'
 import { ChangeFlow } from '../runtime/flows/ChangeFlow'
 
@@ -26,26 +24,18 @@ export class Catalog implements StoreCatalog {
     private readonly factory: Factory
     private readonly change: ChangeFlow
     private readonly runtime: Runtime
-    private readonly deps: {
-        schema: Schema
-        createId?: () => EntityId
-        processor?: StoreProcessor<Entity>
-    }
+    private readonly deps: StoresConfig<Record<string, Entity>, object>
 
     constructor(
         runtime: Runtime,
-        deps: {
-            schema: Schema
-            createId?: () => EntityId
-            processor?: StoreProcessor<Entity>
-        }
+        deps: StoresConfig<Record<string, Entity>, object> = {}
     ) {
         this.runtime = runtime
         this.deps = deps
         this.change = new ChangeFlow(this.runtime)
         this.factory = new Factory({
             runtime: this.runtime,
-            schema: this.deps.schema,
+            schema: (this.deps.schema as Schema | undefined) ?? {},
             createId: this.deps.createId,
             processor: this.deps.processor
         })
@@ -85,7 +75,7 @@ export class Catalog implements StoreCatalog {
                 const context = options?.context
                     ? this.runtime.engine.action.createContext(options.context)
                     : undefined
-                if (!entries.length) return null
+                if (!entries.length) return []
 
                 const normalized = await Promise.all(entries.map(async (entry) => {
                     if (entry.action === 'delete') return entry
@@ -95,9 +85,9 @@ export class Catalog implements StoreCatalog {
                         : undefined
                 }))
                 const appliedEntries = normalized.filter((entry): entry is StoreWritebackEntry<Entity> => entry !== undefined)
-                if (!appliedEntries.length) return null
+                if (!appliedEntries.length) return []
 
-                return handle.state.writeback(appliedEntries) as StoreDelta<Entity> | null
+                return handle.state.writeback(appliedEntries)
             }
         }
 

@@ -1,16 +1,12 @@
-import type { Entity, StoreProcessor } from '../core'
-import type { EntityId } from '../shared'
+import type { Entity } from '../core'
 import type { AtomaSchema } from './schema'
 import type { ClientPlugin } from './plugins'
+import type { StoresConfig } from '../runtime'
 
 export type CreateClientStoresOptions<
     Entities extends Record<string, Entity>,
     Schema extends AtomaSchema<Entities>
-> = Readonly<{
-    schema?: Schema
-    createId?: () => EntityId
-    processor?: StoreProcessor<Entity>
-}>
+> = StoresConfig<Entities, Schema>
 
 export type CreateClientOptions<
     Entities extends Record<string, Entity>,

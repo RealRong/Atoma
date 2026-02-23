@@ -76,12 +76,9 @@ export type {
 
 export type {
     IndexStats,
-    CandidateExactness,
-    CandidateResult,
+    Hits,
     IndexSnapshot,
-    IndexQueryLike,
-    IndexSyncLike,
-    IndexesLike,
+    Indexes,
 } from './indexes'
 
 export type {
@@ -91,5 +88,4 @@ export type {
     StoreDeleteChange,
     StoreChange,
     ChangeDirection,
-    StoreDelta,
 } from './writeback'

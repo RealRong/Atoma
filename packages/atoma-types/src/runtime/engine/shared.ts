@@ -1,4 +1,4 @@
-import type { Entity, IndexQueryLike, RelationIncludeInput } from '../../core'
+import type { Entity, Indexes, RelationIncludeInput } from '../../core'
 import type { EntityId } from '../../shared'
 
 export type RelationInclude = RelationIncludeInput<Record<string, unknown>> | undefined
@@ -11,5 +11,5 @@ export type RelationPrefetchOptions = {
 
 export type StoreMap<T extends Entity = Entity> = {
     map: ReadonlyMap<EntityId, T>
-    indexes: IndexQueryLike<T> | null
+    indexes: Indexes<T> | null
 }

@@ -13,8 +13,8 @@ import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime } from 'atoma-types/runtime'
 import type { Schema, StoreSchema, StoreHandle } from 'atoma-types/runtime'
+import { compile } from '../relations/compile'
 import { StoreState } from './State'
-import { compileRelations } from './compileRelations'
 
 type BuildResult<T extends Entity = Entity> = Readonly<{
     handle: StoreHandle<T>
@@ -75,7 +75,7 @@ export class Factory {
             let cachedRelations: RelationMap<T> | undefined
             handle.relations = () => {
                 if (cachedRelations === undefined) {
-                    cachedRelations = compileRelations(storeSchema.relations, name)
+                    cachedRelations = compile(storeSchema.relations, name)
                 }
                 return cachedRelations
             }

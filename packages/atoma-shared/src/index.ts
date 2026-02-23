@@ -12,3 +12,6 @@ export { resolveFiniteVersion, resolvePositiveVersion, requireBaseVersion } from
 export { z, formatZodErrorMessage, parseOrThrow } from './zod'
 
 export { stableStringify } from './stableStringify'
+
+export { encodeCursorToken, decodeCursorToken } from './cursor'
+export type { CursorPayload, CursorSortRule } from './cursor'

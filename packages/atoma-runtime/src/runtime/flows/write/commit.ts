@@ -46,7 +46,7 @@ function reconcileWriteResult<T extends Entity>({
         item
     }))
     const transactionChanges = entries.length
-        ? (scope.handle.state.writeback(entries)?.changes ?? [])
+        ? scope.handle.state.writeback(entries)
         : []
 
     const retainedOptimistic: StoreChange<T>[] = []

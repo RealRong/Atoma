@@ -15,7 +15,7 @@ export type {
     Debug
 } from './debug'
 export type { StoreState } from './store/state'
-export type { Schema, StoreSchema } from './schema'
+export type { Schema, StoreSchema, StoresConfig } from './schema'
 export type {
     StoreEventName,
     StoreEventListener,

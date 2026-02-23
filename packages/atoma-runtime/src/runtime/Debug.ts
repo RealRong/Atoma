@@ -1,14 +1,5 @@
 import type { Entity, StoreToken } from 'atoma-types/core'
-import type {
-    Runtime,
-    Debug as DebugType,
-    IndexDebugSnapshot,
-} from 'atoma-types/runtime'
-
-type IndexDebugLike<T extends Entity = Entity> = {
-    debugIndexSnapshots?: () => IndexDebugSnapshot<T>['indexes']
-    debugLastQueryPlan?: () => unknown
-}
+import type { Runtime, Debug as DebugType } from 'atoma-types/runtime'
 
 function estimateSampleSize(sample: unknown[]): number {
     try {
@@ -49,20 +40,13 @@ export class Debug implements DebugType {
         const name = String(storeName)
 
         try {
-            const indexes = this.runtime.stores.inspect<T>(name).indexes as IndexDebugLike<T> | null
-            if (!indexes || typeof indexes.debugIndexSnapshots !== 'function') {
-                return undefined
-            }
-
-            const snapshots = indexes.debugIndexSnapshots()
-            const lastQuery = typeof indexes.debugLastQueryPlan === 'function'
-                ? indexes.debugLastQueryPlan()
-                : undefined
+            const indexes = this.runtime.stores.inspect<T>(name).indexes
+            if (!indexes) return undefined
+            const snapshots = indexes.snapshot()
 
             return {
                 name,
                 indexes: snapshots,
-                ...(lastQuery ? { lastQuery } : {}),
                 timestamp: this.runtime.now()
             }
         } catch {

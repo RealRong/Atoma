@@ -1,4 +1,4 @@
-import type { Entity, IndexesLike, StoreChange, StoreDelta, StoreWritebackEntry } from 'atoma-types/core'
+import type { Entity, Indexes, StoreChange, StoreWritebackEntry } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Engine, StoreState as StoreStateType } from 'atoma-types/runtime'
 import { mergeChanges, toChange } from 'atoma-core/store'
@@ -7,7 +7,7 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
     private current: ReadonlyMap<EntityId, T>
     private listeners = new Set<() => void>()
     private readonly engine: Engine
-    readonly indexes: IndexesLike<T> | null
+    readonly indexes: Indexes<T> | null
 
     constructor({
         initial,
@@ -15,7 +15,7 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
         engine
     }: {
         initial?: ReadonlyMap<EntityId, T>
-        indexes?: IndexesLike<T> | null
+        indexes?: Indexes<T> | null
         engine: Engine
     }) {
         this.current = initial ?? new Map<EntityId, T>()
@@ -43,34 +43,29 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
     }
 
     private commit = (
-        before: Map<EntityId, T>,
         after: Map<EntityId, T>,
         changes: ReadonlyArray<StoreChange<T>>
-    ): StoreDelta<T> | null => {
-        if (before === after || !changes.length) return null
-        const changedIds = new Set<EntityId>()
-        changes.forEach((change) => {
-            changedIds.add(change.id)
-        })
-        if (!changedIds.size) return null
-
-        const delta: StoreDelta<T> = {
-            before,
-            after,
-            changedIds,
-            changes
-        }
-        this.indexes?.applyChangedIds(before, after, changedIds)
+    ): ReadonlyArray<StoreChange<T>> => {
+        if (!changes.length) return []
+        this.indexes?.apply(changes)
         this.current = after
         this.notifyListeners()
-        return delta
+        return changes
     }
 
-    apply = (changes: ReadonlyArray<StoreChange<T>>): StoreDelta<T> | null => {
-        if (!changes.length) return null
+    apply = (changes: ReadonlyArray<StoreChange<T>>): ReadonlyArray<StoreChange<T>> => {
+        if (!changes.length) return []
 
         const before = this.current as Map<EntityId, T>
-        const after = new Map(before)
+        let after = before
+        let writable = false
+        const ensureWritable = (): Map<EntityId, T> => {
+            if (!writable) {
+                after = new Map(before)
+                writable = true
+            }
+            return after
+        }
         const normalized: StoreChange<T>[] = []
 
         mergeChanges(changes).forEach((change) => {
@@ -79,7 +74,7 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
             const target = change.after
             if (target === undefined) {
                 if (previous === undefined) return
-                after.delete(id)
+                ensureWritable().delete(id)
                 normalized.push(toChange({
                     id,
                     before: previous
@@ -89,7 +84,7 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
             const preserved = this.engine.mutation.reuse(previous, target)
             if (previous === preserved) return
 
-            after.set(id, preserved)
+            ensureWritable().set(id, preserved)
             if (previous === undefined) {
                 normalized.push(toChange({
                     id,
@@ -104,18 +99,13 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
             }))
         })
 
-        return this.commit(before, after, normalized)
+        return this.commit(after, normalized)
     }
 
-    writeback = (entries: ReadonlyArray<StoreWritebackEntry<T>>): StoreDelta<T> | null => {
+    writeback = (entries: ReadonlyArray<StoreWritebackEntry<T>>): ReadonlyArray<StoreChange<T>> => {
         const before = this.current as Map<EntityId, T>
         const result = this.engine.mutation.writeback(before, entries)
-        if (!result) return null
 
-        return this.commit(
-            result.before,
-            result.after,
-            result.changes
-        )
+        return this.commit(result.after, result.changes)
     }
 }

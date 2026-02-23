@@ -11,7 +11,6 @@ export type StoreDebugSnapshot = Readonly<{
 export type IndexDebugSnapshot<T extends Entity = Entity> = Readonly<{
     name: string
     indexes: IndexSnapshot<T>[]
-    lastQuery?: unknown
     timestamp: number
 }>
 

@@ -1,5 +1,6 @@
+import { decodeCursorToken } from 'atoma-shared'
 import type { FilterExpr, PageSpec, Query, ResourceToken, SortRule } from 'atoma-types/protocol'
-import { assertFiniteNumber, invalid, isObject, isPlainObject, makeValidationDetails, requireArray, requireObject, requireString } from './common'
+import { assertFiniteNumber, invalid, isObject, isPlainObject, makeValidationDetails, requireArray, requireObject } from './common'
 
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0
@@ -31,28 +32,7 @@ function assertCursorToken(value: unknown, detailsFor: ReturnType<typeof makeVal
     if (decoded.sort.length && decoded.values.length < decoded.sort.length) {
         throw invalid('INVALID_CURSOR', 'Invalid cursor', detailsFor(field))
     }
-    decoded.sort.forEach((r: any) => { void assertSortRule(r, detailsFor) })
-}
-
-function decodeCursorToken(token: string): { v: number; sort: SortRule[]; values: unknown[] } | null {
-    try {
-        const json = base64UrlDecode(token)
-        const parsed = JSON.parse(json) as any
-        if (!parsed || typeof parsed !== 'object') return null
-        return parsed
-    } catch {
-        return null
-    }
-}
-
-function base64UrlDecode(input: string): string {
-    const padded = input.replace(/-/g, '+').replace(/_/g, '/')
-    const padLen = (4 - (padded.length % 4)) % 4
-    const base64 = padded + '='.repeat(padLen)
-    if (typeof Buffer !== 'undefined') {
-        return Buffer.from(base64, 'base64').toString('utf8')
-    }
-    return decodeURIComponent(escape(atob(base64)))
+    decoded.sort.forEach(rule => { void assertSortRule(rule, detailsFor) })
 }
 
 function assertPageSpec(value: unknown, detailsFor: ReturnType<typeof makeValidationDetails>): PageSpec {

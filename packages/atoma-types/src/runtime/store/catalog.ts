@@ -4,7 +4,6 @@ import type {
     QueryResult,
     Store,
     StoreChange,
-    StoreDelta,
     StoreOperationOptions,
     StoreToken,
     StoreWritebackEntry,
@@ -20,7 +19,7 @@ export type StoreSession<T extends Entity = Entity> = Readonly<{
     writeback: (
         entries: ReadonlyArray<StoreWritebackEntry<T>>,
         options?: StoreOperationOptions
-    ) => Promise<StoreDelta<T> | null>
+    ) => Promise<ReadonlyArray<StoreChange<T>>>
 }>
 
 export type StoreCatalog = Readonly<{

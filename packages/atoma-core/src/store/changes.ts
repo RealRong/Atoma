@@ -63,35 +63,3 @@ export function mergeChanges<T extends Entity>(...groups: ReadonlyArray<Readonly
     })
     return changes
 }
-
-export function diffMaps<T extends Entity>(
-    before: ReadonlyMap<EntityId, T>,
-    after: ReadonlyMap<EntityId, T>
-): Readonly<{
-    changedIds: ReadonlySet<EntityId>
-    changes: ReadonlyArray<StoreChange<T>>
-}> {
-    const changes: StoreChange<T>[] = []
-    const changedIds = new Set<EntityId>()
-
-    before.forEach((beforeValue, id) => {
-        if (!after.has(id)) {
-            changedIds.add(id)
-            changes.push(toChange({ id, before: beforeValue }))
-            return
-        }
-
-        const afterValue = after.get(id) as T
-        if (beforeValue === afterValue) return
-        changedIds.add(id)
-        changes.push(toChange({ id, before: beforeValue, after: afterValue }))
-    })
-
-    after.forEach((afterValue, id) => {
-        if (before.has(id)) return
-        changedIds.add(id)
-        changes.push(toChange({ id, after: afterValue }))
-    })
-
-    return { changedIds, changes }
-}

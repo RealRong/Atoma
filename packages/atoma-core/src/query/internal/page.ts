@@ -1,5 +1,5 @@
+import { decodeCursorToken, encodeCursorToken } from 'atoma-shared'
 import type { PageInfo, PageSpec, SortRule } from 'atoma-types/core'
-import { decodeCursorToken, encodeCursorToken } from './cursorCodec'
 import { compareItemToValues, getSortValues, isSameSortRules } from './sort'
 
 type PageResult<T> = {

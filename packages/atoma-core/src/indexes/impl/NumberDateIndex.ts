@@ -2,10 +2,10 @@ import type { IndexDefinition } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import { binarySearchLeft, binarySearchRight } from '../internal/search'
 import { normalizeNumber } from '../internal/value'
-import type { CandidateResult, IndexStats } from 'atoma-types/core'
-import type { IndexCondition, IndexDriver, RangeCondition } from '../types'
+import type { IndexStats } from 'atoma-types/core'
+import type { Condition, Index, RangeCondition } from '../types'
 
-export class NumberDateIndex<T> implements IndexDriver<T> {
+export class NumberDateIndex<T> implements Index<T> {
     readonly type: 'number' | 'date'
     readonly config: IndexDefinition<T> & { type: 'number' | 'date' }
 
@@ -46,16 +46,15 @@ export class NumberDateIndex<T> implements IndexDriver<T> {
         this.dirty = true
     }
 
-    queryCandidates(condition: IndexCondition): CandidateResult {
+    query(condition: Condition): ReadonlySet<EntityId> | null {
         switch (condition.op) {
             case 'eq':
                 try {
                     const num = normalizeNumber(condition.value, this.config.field, this.type, 'eq')
                     const set = this.valueMap.get(num)
-                    if (!set || set.size === 0) return { kind: 'empty' }
-                    return { kind: 'candidates', ids: set, exactness: 'exact' }
+                    return set ?? new Set<EntityId>()
                 } catch {
-                    return { kind: 'empty' }
+                    return new Set<EntityId>()
                 }
             case 'in': {
                 const result = new Set<EntityId>()
@@ -68,16 +67,13 @@ export class NumberDateIndex<T> implements IndexDriver<T> {
                         // ignore invalid
                     }
                 })
-                if (result.size === 0) return { kind: 'empty' }
-                return { kind: 'candidates', ids: result, exactness: 'exact' }
+                return result
             }
             case 'range': {
-                const result = this.queryRange(condition)
-                if (result.size === 0) return { kind: 'empty' }
-                return { kind: 'candidates', ids: result, exactness: 'exact' }
+                return this.queryRange(condition)
             }
             default:
-                return { kind: 'unsupported' }
+                return null
         }
     }
 
