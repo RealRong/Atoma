@@ -10,15 +10,12 @@ import type {
 
 export type ExecutionPhase = 'query' | 'write'
 
-export type ExecutionSpec = Readonly<{
+export type ExecutionRegistration = Readonly<{
+    id?: string
     query?: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<ExecutionQueryOutput<T>>
     write?: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput>
     consistency?: Partial<WriteConsistency>
 }>
-
-export type ExecutionRegistration = Readonly<{
-    id?: string
-} & ExecutionSpec>
 
 export type ExecutionKernel = Readonly<{
     register: (registration: ExecutionRegistration) => () => void

@@ -2,7 +2,6 @@ export type { Runtime } from './runtime'
 export type {
     ExecutionKernel,
     ExecutionRegistration,
-    ExecutionSpec,
     ExecutionPhase
 } from './execution'
 export type { Read } from './read'

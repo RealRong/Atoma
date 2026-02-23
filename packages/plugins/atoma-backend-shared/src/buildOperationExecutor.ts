@@ -12,7 +12,7 @@ import type {
 } from 'atoma-types/protocol'
 import type {
     ExecutionOptions,
-    ExecutionSpec,
+    ExecutionRegistration,
     ExecutionQueryOutput,
     QueryRequest,
     WriteEntry as RuntimeWriteEntry,
@@ -233,7 +233,7 @@ export function buildOperationExecutor(args: {
     runtime: OperationRuntime
     operationClient: OperationClient
     writeEntryEncoder?: WriteEntryEncoder
-}): ExecutionSpec {
+}): ExecutionRegistration {
     return {
         query: async <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions): Promise<ExecutionQueryOutput<T>> => {
             return await executeOperationQuery({
