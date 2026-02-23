@@ -1,5 +1,6 @@
 import type {
     Entity,
+    StoreChange,
     WriteManyResult
 } from 'atoma-types/core'
 import type {
@@ -7,18 +8,23 @@ import type {
     WriteEventSource,
     WriteStatus
 } from 'atoma-types/runtime'
-import { commitWrites } from './commit'
-import { prepare } from './prepare'
 import type {
     IntentCommand,
-    PreparedWrites,
     WriteScope
 } from './contracts'
+import {
+    build,
+    commit,
+    createContext,
+    hydrate,
+    preflight,
+    reconcileEmit
+} from './pipeline'
 
 export type OrchestrateWriteResult<T extends Entity> = Readonly<{
-    prepared: PreparedWrites<T>
     status: WriteStatus
     results: WriteManyResult<T | void>
+    changes: ReadonlyArray<StoreChange<T>>
 }>
 
 export async function orchestrateWrite<T extends Entity>({
@@ -34,14 +40,26 @@ export async function orchestrateWrite<T extends Entity>({
 }): Promise<OrchestrateWriteResult<T>> {
     if (!intents.length) {
         return {
-            prepared: [],
             status: 'confirmed',
-            results: []
+            results: [],
+            changes: []
         }
     }
 
-    const prepared = await prepare(runtime, scope, intents)
-    const writeEntries = prepared.map((item) => item.entry)
+    const ctx = createContext({
+        runtime,
+        scope
+    })
+    preflight(ctx, intents)
+    await hydrate(ctx)
+    await build(ctx)
+
+    const writeEntries = ctx.rows.map((row, index) => {
+        if (!row.entry) {
+            throw new Error(`[Atoma] write: missing write entry at index=${index}`)
+        }
+        return row.entry
+    })
     const { handle, context } = scope
     runtime.events.emit('writeStart', {
         storeName: handle.storeName,
@@ -51,15 +69,13 @@ export async function orchestrateWrite<T extends Entity>({
     })
 
     try {
-        const commitResult = await commitWrites<T>({
-            runtime,
-            scope,
-            prepared
-        })
-        const singleResult = prepared.length === 1
-            ? commitResult.results[0]
+        await commit(ctx)
+        await reconcileEmit(ctx)
+
+        const singleResult = ctx.rows.length === 1
+            ? ctx.results[0]
             : undefined
-        if (prepared.length === 1) {
+        if (ctx.rows.length === 1) {
             if (!singleResult) {
                 throw new Error('[Atoma] write: missing write result at index=0')
             }
@@ -72,15 +88,15 @@ export async function orchestrateWrite<T extends Entity>({
             storeName: handle.storeName,
             context,
             writeEntries,
-            status: commitResult.status,
-            results: commitResult.results,
+            status: ctx.status,
+            results: ctx.results,
             ...(singleResult?.ok ? { result: singleResult.value } : {}),
-            changes: commitResult.changes
+            changes: ctx.changes
         })
         return {
-            prepared,
-            status: commitResult.status,
-            results: commitResult.results
+            status: ctx.status,
+            results: ctx.results,
+            changes: ctx.changes
         }
     } catch (error) {
         runtime.events.emit('writeFailed', {
