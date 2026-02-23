@@ -31,6 +31,7 @@ import { Debug } from './Debug'
  */
 export interface RuntimeConfig {
     id: string
+    now?: () => number
     stores: Readonly<{
         schema: Schema
         createId?: () => EntityId
@@ -52,8 +53,8 @@ export class Runtime implements RuntimeType {
 
     constructor(config: RuntimeConfig) {
         this.id = String(config.id)
-        this.now = () => Date.now()
-        this.engine = new Engine()
+        this.now = config.now ?? (() => Date.now())
+        this.engine = new Engine({ now: this.now })
         this.processor = new Processor(this)
         this.execution = new ExecutionKernel()
         this.events = new EventBus()

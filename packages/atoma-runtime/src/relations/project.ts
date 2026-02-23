@@ -6,17 +6,18 @@ import type {
     SortRule,
     StoreToken
 } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
-import { runQuery } from '../query'
-import { extractKeyValue, pickFirstKey } from './key'
-import { buildProjectPlan, type IncludeInput, type ProjectPlanEntry } from './plan'
+import type { EntityId } from 'atoma-types/shared'
+import type { StoreMap } from 'atoma-types/runtime'
+import { runQuery } from 'atoma-core/query'
+import {
+    buildProjectPlan,
+    extractKeyValue,
+    pickFirstKey,
+    type IncludeInput,
+    type ProjectPlanEntry
+} from 'atoma-core/relations'
 
-export type RelationStoreState = {
-    map: ReadonlyMap<EntityId, Entity>
-    indexes: IndexQueryLike<Entity> | null
-}
-
-export type RelationStoreStates = ReadonlyMap<StoreToken, RelationStoreState>
+type RelationStoreStates = ReadonlyMap<StoreToken, StoreMap>
 
 const DEFAULT_STABLE_SORT: SortRule[] = [{ field: 'id', dir: 'asc' }]
 

@@ -1,7 +1,7 @@
-import type { Entity, IndexQueryLike, Query } from '../../core'
+import type { Entity, IndexQueryLike, RelationIncludeInput } from '../../core'
 import type { EntityId } from '../../shared'
 
-export type RelationInclude = Record<string, boolean | Query<unknown>> | undefined
+export type RelationInclude = RelationIncludeInput<Record<string, unknown>> | undefined
 
 export type RelationPrefetchOptions = {
     onError?: 'skip' | 'throw' | 'partial'

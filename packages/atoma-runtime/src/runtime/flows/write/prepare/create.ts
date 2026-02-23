@@ -1,8 +1,21 @@
 import type { Entity, ActionContext, PartialWithId } from 'atoma-types/core'
+import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, StoreHandle } from 'atoma-types/runtime'
 import { toChange } from 'atoma-core/store'
 import type { WriteScope, IntentCommandByAction, PreparedWrite } from '../contracts'
 import { requireOutbound, createMeta, requireProcessed } from './utils'
+
+function ensureCreateItemId<T extends Entity>(handle: StoreHandle<T>, item: Partial<T>): PartialWithId<T> {
+    const base = item as Partial<T> & { id?: EntityId }
+    const id = (typeof base.id === 'string' && base.id.length > 0)
+        ? base.id
+        : handle.id()
+
+    return {
+        ...item,
+        id
+    } as PartialWithId<T>
+}
 
 async function prepareCreateInput<T extends Entity>(
     runtime: Runtime,
@@ -10,7 +23,7 @@ async function prepareCreateInput<T extends Entity>(
     item: Partial<T>,
     context?: ActionContext
 ): Promise<PartialWithId<T>> {
-    const initialized = runtime.engine.mutation.create<T>(item, handle.config.createId)
+    const initialized = ensureCreateItemId(handle, item)
     const processed = await runtime.processor.inbound(handle, initialized as T, context)
     return requireProcessed(processed as PartialWithId<T> | undefined, 'prepareCreateInput')
 }

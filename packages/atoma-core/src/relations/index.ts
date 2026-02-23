@@ -1,5 +1,6 @@
 export { belongsTo, hasMany, hasOne, variants } from './builders'
 export { compileRelationsMap } from './compile'
+export { extractKeyValue, pickFirstKey, collectUniqueKeys } from './key'
 export {
     buildPrefetchPlan,
     buildProjectPlan,
@@ -9,4 +10,3 @@ export {
     type ProjectPlanEntry,
     type StandardRelationConfig
 } from './plan'
-export { projectRelationsBatch, type RelationStoreState, type RelationStoreStates } from './project'

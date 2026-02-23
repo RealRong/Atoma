@@ -63,10 +63,8 @@ export class Factory {
         const handle: StoreHandle<T> = {
             state,
             storeName: name,
-            config: {
-                createId: createIdFn,
-                processor
-            }
+            id: createIdFn,
+            processor
         }
 
         if (storeSchema.relations) {

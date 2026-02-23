@@ -21,7 +21,7 @@ export class Processor {
         data: T,
         context?: ActionContext
     ): Promise<T | undefined> {
-        const processor = handle.config.processor as StoreProcessor<T> | undefined
+        const processor = handle.processor as StoreProcessor<T> | undefined
         if (!processor) return data
 
         const processorContext: ProcessorContext = {

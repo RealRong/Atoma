@@ -2,6 +2,7 @@ import type {
     Entity,
     KeySelector,
     Query,
+    RelationIncludeInput,
     RelationConfig,
     RelationMap,
     SortRule,
@@ -12,7 +13,7 @@ import type { EntityId } from 'atoma-types/protocol'
 import { mergeIncludeQuery, pickIncludeQuery, resolveLimit } from './include'
 import { collectUniqueKeys } from './key'
 
-export type IncludeInput = Record<string, boolean | Query<unknown>> | undefined
+export type IncludeInput = RelationIncludeInput<Record<string, unknown>> | undefined
 
 export type StandardRelationConfig<T extends Entity> = Exclude<RelationConfig<T, Entity>, VariantsConfig<T>>
 
@@ -41,11 +42,11 @@ export type ProjectPlanEntry<T extends Entity> = Readonly<{
 }>
 
 function getRelationOptions<T extends Entity>(relation: StandardRelationConfig<T>): Query<unknown> | undefined {
-    return (relation as { options?: Query<unknown> }).options
+    return pickIncludeQuery((relation as { options?: unknown }).options)
 }
 
-function getIncludeQuery(includeValue: boolean | Query<unknown>): Query<unknown> | undefined {
-    return typeof includeValue === 'object'
+function getIncludeQuery(includeValue: unknown): Query<unknown> | undefined {
+    return typeof includeValue === 'object' && includeValue !== null
         ? pickIncludeQuery(includeValue)
         : undefined
 }
@@ -79,7 +80,7 @@ export function collectRelationStoreTokens<T extends Entity>(
 
 type PlannableRelation<T extends Entity> = Readonly<{
     relationName: string
-    includeValue: boolean | Query<unknown>
+    includeValue: unknown
     relation: StandardRelationConfig<T>
     items: T[]
 }>

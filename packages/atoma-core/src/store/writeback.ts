@@ -40,8 +40,6 @@ export function writeback<T extends Entity>(
     }
 
     entries.forEach((entry) => {
-        if (!entry) return
-
         if (entry.action === 'delete') {
             const id = entry.id
             if (!after.has(id)) return
@@ -49,11 +47,8 @@ export function writeback<T extends Entity>(
             return
         }
 
-        if (entry.action !== 'upsert') return
         const item = entry.item
-        if (!item) return
         const id = item.id
-        if (id === undefined || id === null) return
 
         const existing = after.get(id)
         const next = existing

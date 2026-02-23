@@ -1,51 +1,13 @@
 import type { PartialWithId } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 
-type EntityWithOptionalTimestamps = {
-    createdAt?: unknown
-}
-
-type MutationTimeOptions = {
-    now?: () => number
-}
-
 const toObjectRecord = (value: unknown): Record<string, unknown> | null => {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
     return value as Record<string, unknown>
 }
 
-export function create<T>(
-    obj: Partial<T>,
-    createId?: () => EntityId,
-    options?: MutationTimeOptions
-): PartialWithId<T> {
-    const nowMs = (options?.now ?? Date.now)()
-    const base = obj as Partial<T> & { id?: EntityId }
-    const hasId = typeof base.id === 'string' && base.id.length > 0
-
-    if (!hasId && typeof createId !== 'function') {
-        throw new Error('[Atoma] create: id missing and createId is required')
-    }
-
-    return {
-        ...obj,
-        id: hasId ? base.id : createId!(),
-        updatedAt: nowMs,
-        createdAt: nowMs
-    } as PartialWithId<T>
-}
-
-export function merge<T>(
-    base: PartialWithId<T>,
-    patch: PartialWithId<T>,
-    options?: MutationTimeOptions
-): PartialWithId<T> {
-    const nowMs = (options?.now ?? Date.now)()
-    const createdAt = (base as EntityWithOptionalTimestamps).createdAt
-
+export function merge<T>(base: PartialWithId<T>, patch: PartialWithId<T>): PartialWithId<T> {
     return Object.assign({}, base, patch, {
-        updatedAt: nowMs,
-        createdAt: typeof createdAt === 'number' ? createdAt : nowMs,
         id: patch.id
     }) as PartialWithId<T>
 }
