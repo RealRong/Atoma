@@ -3,7 +3,6 @@ import type {
     Query as StoreQuery,
     QueryOneResult,
     QueryResult,
-    StoreWritebackEntry,
     StoreReadOptions
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
@@ -69,28 +68,8 @@ export class ReadFlow implements Read {
         return Array.isArray(output.data) ? output.data : []
     }
 
-    private writebackArray = async <T extends Entity>(handle: StoreHandle<T>, input: unknown[]): Promise<T[]> => {
-        const output: T[] = []
-        for (const item of input) {
-            const processed = await this.runtime.processor.writeback(handle, item as T)
-            if (processed !== undefined) output.push(processed)
-        }
-        return output
-    }
-
-    private applyStoreWriteback = <T extends Entity>({
-        handle,
-        entries
-    }: {
-        handle: StoreHandle<T>
-        entries: ReadonlyArray<StoreWritebackEntry<T>>
-    }): ReadonlyMap<EntityId, T> => {
-        if (!entries.length) {
-            return handle.state.snapshot() as ReadonlyMap<EntityId, T>
-        }
-
-        handle.state.writeback(entries)
-        return handle.state.snapshot() as ReadonlyMap<EntityId, T>
+    private resolveFromSnapshot = <T extends Entity>(items: ReadonlyArray<T>, snapshot: ReadonlyMap<EntityId, T>): T[] => {
+        return items.map((item) => snapshot.get(item.id) ?? item)
     }
 
     query = async <T extends Entity>(
@@ -109,18 +88,15 @@ export class ReadFlow implements Read {
                         return this.toQueryResult(this.getOutputData(output) as T[], output.pageInfo)
                     }
 
-                    const remote = await this.writebackArray(handle, this.getOutputData(output))
-                    const snapshot = this.applyStoreWriteback({
-                        handle,
-                        entries: remote.map((item) => ({
-                            action: 'upsert' as const,
-                            item
-                        }))
-                    })
-                    return this.toQueryResult(
-                        remote.map((item) => snapshot.get(item.id) ?? item),
-                        output.pageInfo
+                    const { items } = await this.runtime.stores.use<T>(handle.storeName).reconcile(
+                        {
+                            mode: 'upsert',
+                            items: this.getOutputData(output)
+                        },
+                        options?.signal ? { signal: options.signal } : undefined
                     )
+                    const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, T>
+                    return this.toQueryResult(this.resolveFromSnapshot(items, snapshot), output.pageInfo)
                 }
             })
         } catch (error) {
@@ -143,46 +119,25 @@ export class ReadFlow implements Read {
 
     list = async <T extends Entity>(handle: StoreHandle<T>, options?: StoreReadOptions): Promise<T[]> => {
         const result = await this.trackRead({
-                handle,
-                query: {},
-                run: async () => {
-                    const existingMap = handle.state.snapshot() as Map<EntityId, T>
-                    const output = await this.executeQuery(handle, {}, options)
+            handle,
+            query: {},
+            run: async () => {
+                const output = await this.executeQuery(handle, {}, options)
 
                 if (output.source === 'local') {
                     return this.toQueryResult(this.getOutputData(output) as T[], output.pageInfo)
                 }
 
-                const remote = await this.writebackArray(handle, this.getOutputData(output))
-                const incomingIds = new Set<EntityId>()
-
-                remote.forEach((item) => {
-                    incomingIds.add(item.id)
-                })
-
-                const toRemove: EntityId[] = []
-                existingMap.forEach((_value, id) => {
-                    if (!incomingIds.has(id)) toRemove.push(id)
-                })
-
-                const snapshot = this.applyStoreWriteback({
-                    handle,
-                    entries: [
-                        ...toRemove.map((id) => ({
-                            action: 'delete' as const,
-                            id
-                        })),
-                        ...remote.map((item) => ({
-                            action: 'upsert' as const,
-                            item
-                        }))
-                    ]
-                })
-
-                return this.toQueryResult(
-                    remote.map((item) => snapshot.get(item.id) ?? item),
-                    output.pageInfo
+                const { items } = await this.runtime.stores.use<T>(handle.storeName).reconcile(
+                    {
+                        mode: 'replace',
+                        items: this.getOutputData(output)
+                    },
+                    options?.signal ? { signal: options.signal } : undefined
                 )
+                const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, T>
+
+                return this.toQueryResult(this.resolveFromSnapshot(items, snapshot), output.pageInfo)
             }
         })
         return result.data
@@ -212,26 +167,13 @@ export class ReadFlow implements Read {
             handle,
             query,
             run: async () => {
-                const output = await this.executeQuery(handle, query, options)
-
-                const resolvedById = new Map<EntityId, T>()
-                if (output.source === 'local') {
-                    ;(this.getOutputData(output) as T[]).forEach((item) => {
-                        resolvedById.set(item.id, item)
-                    })
-                } else {
-                    const remote = await this.writebackArray(handle, this.getOutputData(output))
-                    const snapshot = this.applyStoreWriteback({
-                        handle,
-                        entries: remote.map((item) => ({
-                            action: 'upsert' as const,
-                            item
-                        }))
-                    })
-                    remote.forEach((item) => {
-                        resolvedById.set(item.id, snapshot.get(item.id) ?? item)
-                    })
-                }
+                const resolvedById = await this.runtime.stores.use<T>(handle.storeName).hydrate(
+                    queryIds,
+                    {
+                        signal: options?.signal,
+                        mode: 'refresh'
+                    }
+                )
 
                 return this.toQueryResult(
                     ids

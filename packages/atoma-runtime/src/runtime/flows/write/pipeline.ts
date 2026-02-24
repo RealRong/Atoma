@@ -3,7 +3,6 @@ import { createIdempotencyKey, ensureWriteItemMeta } from 'atoma-shared'
 import type {
     Entity,
     PartialWithId,
-    Query,
     StoreChange,
     WriteManyItemErr,
     WriteManyResult
@@ -256,35 +255,14 @@ export async function hydrate<T extends Entity>(ctx: WriteCtx<T>) {
         throw new Error(`[Atoma] write: 缓存缺失且未安装远端 query 执行器（id=${String(id)}）`)
     }
 
-    const missingIds = Array.from(missing)
-    const query = {
-        filter: {
-            op: 'in',
-            field: 'id',
-            values: missingIds
-        }
-    } as Query<T>
-
-    const remote = await runtime.execution.query(
+    const fetched = await runtime.stores.use<T>(scope.handle.storeName).hydrate(
+        Array.from(missing),
         {
-            handle: scope.handle,
-            query
-        },
-        scope.signal ? { signal: scope.signal } : undefined
-    )
-
-    const fetched = new Map<string, T>()
-    for (const item of remote.data) {
-        if (!item || typeof item !== 'object') continue
-        const candidate = item as T
-        const id = (candidate as { id?: unknown }).id
-        if (typeof id !== 'string' || !missing.has(id)) continue
-
-        const processed = await runtime.processor.writeback(scope.handle, candidate, scope.context)
-        if (processed) {
-            fetched.set(id, processed as T)
+            signal: scope.signal,
+            context: scope.context,
+            mode: 'missing'
         }
-    }
+    )
 
     rows.forEach(row => {
         const intent = row.intent
@@ -525,7 +503,11 @@ export async function reconcileEmit<T extends Entity>(ctx: WriteCtx<T>) {
     const results: WriteManyResult<T | void> = new Array(rows.length)
     const retainedOptimistic: StoreChange<T>[] = []
     const rollbackChanges: StoreChange<T>[] = []
-    const upserts: T[] = []
+    const pendingReconcile: Array<{
+        rowIndex: number
+        inputIndex: number
+    }> = []
+    const reconcileItems: unknown[] = []
 
     for (const [index, row] of rows.entries()) {
         const entry = ensureEntry(row, index)
@@ -544,11 +526,11 @@ export async function reconcileEmit<T extends Entity>(ctx: WriteCtx<T>) {
 
         let value: T | void = ensureOutput(row, index)
         if (shouldApplyReturnedData(entry) && remoteResult.data && typeof remoteResult.data === 'object') {
-            const normalized = await runtime.processor.writeback(scope.handle, remoteResult.data as T, scope.context)
-            if (normalized) {
-                value = normalized
-                upserts.push(normalized)
-            }
+            pendingReconcile.push({
+                rowIndex: index,
+                inputIndex: reconcileItems.length
+            })
+            reconcileItems.push(remoteResult.data)
         }
 
         results[index] = {
@@ -565,16 +547,32 @@ export async function reconcileEmit<T extends Entity>(ctx: WriteCtx<T>) {
         scope.handle.state.apply(invertChanges(rollbackChanges))
     }
 
-    const transactionChanges = upserts.length
-        ? scope.handle.state.writeback(upserts.map((item) => ({
-            action: 'upsert' as const,
-            item
-        })))
-        : []
+    const reconcile = reconcileItems.length
+        ? await runtime.stores.use<T>(scope.handle.storeName).reconcile(
+            {
+                mode: 'upsert',
+                items: reconcileItems
+            },
+            {
+                context: scope.context
+            }
+        )
+        : {
+            changes: [],
+            items: [],
+            results: []
+        }
+    pendingReconcile.forEach(({ rowIndex, inputIndex }) => {
+        const normalized = reconcile.results[inputIndex]
+        if (normalized === undefined) return
+        const current = results[rowIndex]
+        if (!current || !current.ok) return
+        current.value = normalized
+    })
 
     ctx.results = results
-    ctx.changes = mergeChanges(retainedOptimistic, transactionChanges)
-    if (!optimistic && ctx.status === 'confirmed' && !upserts.length) {
+    ctx.changes = mergeChanges(retainedOptimistic, reconcile.changes)
+    if (!optimistic && ctx.status === 'confirmed' && !reconcile.changes.length) {
         ctx.changes = []
     }
 }

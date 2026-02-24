@@ -17,7 +17,7 @@ export type ExecutionRegistration = Readonly<{
     consistency?: Partial<WriteConsistency>
 }>
 
-export type ExecutionKernel = Readonly<{
+export type Execution = Readonly<{
     register: (registration: ExecutionRegistration) => () => void
     getConsistency: () => WriteConsistency
     hasExecutor: (phase: ExecutionPhase) => boolean

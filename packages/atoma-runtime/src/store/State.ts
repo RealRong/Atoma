@@ -102,10 +102,42 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
         return this.commit(after, normalized)
     }
 
-    writeback = (entries: ReadonlyArray<StoreWritebackEntry<T>>): ReadonlyArray<StoreChange<T>> => {
+    private writebackEntries = (entries: ReadonlyArray<StoreWritebackEntry<T>>): ReadonlyArray<StoreChange<T>> => {
         const before = this.current as Map<EntityId, T>
         const result = this.engine.mutation.writeback(before, entries)
 
         return this.commit(result.after, result.changes)
+    }
+
+    upsert = (items: ReadonlyArray<T>): ReadonlyArray<StoreChange<T>> => {
+        if (!items.length) return []
+        return this.writebackEntries(items.map((item) => ({
+            action: 'upsert' as const,
+            item
+        })))
+    }
+
+    replace = (items: ReadonlyArray<T>): ReadonlyArray<StoreChange<T>> => {
+        const snapshot = this.current as ReadonlyMap<EntityId, T>
+        const incomingIds = new Set<EntityId>()
+        items.forEach((item) => {
+            incomingIds.add(item.id)
+        })
+
+        const entries: StoreWritebackEntry<T>[] = []
+        snapshot.forEach((_value, id) => {
+            if (!incomingIds.has(id)) {
+                entries.push({
+                    action: 'delete',
+                    id
+                })
+            }
+        })
+
+        entries.push(...items.map((item) => ({
+            action: 'upsert' as const,
+            item
+        })))
+        return this.writebackEntries(entries)
     }
 }

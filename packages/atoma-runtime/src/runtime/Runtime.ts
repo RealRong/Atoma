@@ -7,7 +7,7 @@ import type { Entity } from 'atoma-types/core'
 import type {
     Runtime as RuntimeType,
     Debug as DebugType,
-    ExecutionKernel as ExecutionKernelType,
+    Execution as ExecutionType,
     Engine as EngineType,
     StoreEventBus as StoreEventBusType,
     Read,
@@ -19,7 +19,7 @@ import type {
 import { Processor } from './Processor'
 import { Catalog } from '../store/Catalog'
 import { EventBus } from '../store/EventBus'
-import { ExecutionKernel } from '../execution/ExecutionKernel'
+import { Execution } from '../execution'
 import { ReadFlow } from './flows/ReadFlow'
 import { WriteFlow } from './flows/WriteFlow'
 import { Engine } from '../engine'
@@ -37,7 +37,7 @@ export interface RuntimeConfig {
 export class Runtime implements RuntimeType {
     readonly id: string
     readonly now: () => number
-    readonly execution: ExecutionKernelType
+    readonly execution: ExecutionType
     readonly processor: ProcessorType
     readonly stores: StoreCatalog
     readonly read: Read
@@ -51,7 +51,7 @@ export class Runtime implements RuntimeType {
         this.now = config.now ?? (() => Date.now())
         this.engine = new Engine({ now: this.now })
         this.processor = new Processor(this)
-        this.execution = new ExecutionKernel()
+        this.execution = new Execution()
         this.events = new EventBus()
         this.stores = new Catalog(this, config.stores)
         this.debug = new Debug(this)

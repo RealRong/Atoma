@@ -9,8 +9,8 @@ import { projectRelationsBatch } from '../relations/project'
 export class Engine implements EngineType {
     private readonly now: () => number
 
-    constructor(args?: { now?: () => number }) {
-        this.now = args?.now ?? Date.now
+    constructor({ now }: { now?: () => number }) {
+        this.now = now ?? Date.now
     }
 
     readonly query = {

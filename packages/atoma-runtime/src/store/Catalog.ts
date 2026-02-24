@@ -5,8 +5,7 @@ import type {
     Store,
     StoreChange,
     StoreOperationOptions,
-    StoreToken,
-    StoreWritebackEntry,
+    StoreToken
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { Runtime, Schema, StoresConfig, StoreHandle, StoreCatalog, StoreSession } from 'atoma-types/runtime'
@@ -48,6 +47,62 @@ export class Catalog implements StoreCatalog {
         const built = this.factory.build(name)
         const handle = built.handle as StoreHandle<Entity>
         const api = built.api as Store<Entity>
+        const createContext = (options?: StoreOperationOptions) => {
+            return options?.context
+                ? this.runtime.engine.action.createContext(options.context)
+                : undefined
+        }
+        const reconcile = async (
+            mode: 'upsert' | 'replace',
+            items: ReadonlyArray<unknown>,
+            options?: StoreOperationOptions
+        ) => {
+            const context = createContext(options)
+            const results = await Promise.all(items.map(async (item): Promise<Entity | undefined> => {
+                if (!item || typeof item !== 'object') return undefined
+                return await this.runtime.processor.writeback(handle, item as Entity, context)
+            }))
+            const normalized = results.filter((item): item is Entity => item !== undefined)
+            const changes = mode === 'replace'
+                ? handle.state.replace(normalized)
+                : handle.state.upsert(normalized)
+            return {
+                changes,
+                items: normalized,
+                results
+            } as const
+        }
+        const remove = (ids: ReadonlyArray<EntityId>) => {
+            const queryIds = ids.length > 1
+                ? Array.from(new Set(ids))
+                : [...ids]
+            if (!queryIds.length) {
+                return {
+                    changes: [],
+                    items: [],
+                    results: []
+                } as const
+            }
+            const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, Entity>
+            const deletes: StoreChange<Entity>[] = []
+            queryIds.forEach((id) => {
+                const before = snapshot.get(id)
+                if (before !== undefined) {
+                    deletes.push({
+                        id,
+                        before
+                    })
+                }
+            })
+            const changes = deletes.length
+                ? handle.state.apply(deletes)
+                : []
+            return {
+                changes,
+                items: [],
+                results: []
+            } as const
+        }
         const session: StoreSession<Entity> = {
             name,
             query: (query: Query<Entity>) => {
@@ -68,26 +123,61 @@ export class Catalog implements StoreCatalog {
             ) => {
                 await this.change.revert(handle, changes, options)
             },
-            writeback: async (
-                entries: ReadonlyArray<StoreWritebackEntry<Entity>>,
-                options?: StoreOperationOptions
+            reconcile: async (input, options?: StoreOperationOptions) => {
+                if (input.mode === 'remove') {
+                    return remove(Array.isArray(input.ids) ? input.ids : [])
+                }
+                return await reconcile(
+                    input.mode,
+                    Array.isArray(input.items) ? input.items : [],
+                    options
+                )
+            },
+            hydrate: async (
+                ids: ReadonlyArray<EntityId>,
+                options?: StoreOperationOptions & Readonly<{ mode?: 'refresh' | 'missing' }>
             ) => {
-                const context = options?.context
-                    ? this.runtime.engine.action.createContext(options.context)
-                    : undefined
-                if (!entries.length) return []
+                const queryIds = ids.length > 1
+                    ? Array.from(new Set(ids))
+                    : [...ids]
+                if (!queryIds.length) return new Map<EntityId, Entity>()
 
-                const normalized = await Promise.all(entries.map(async (entry) => {
-                    if (entry.action === 'delete') return entry
-                    const processed = await this.runtime.processor.writeback(handle, entry.item, context)
-                    return processed
-                        ? { action: 'upsert', item: processed } as const
-                        : undefined
-                }))
-                const appliedEntries = normalized.filter((entry): entry is StoreWritebackEntry<Entity> => entry !== undefined)
-                if (!appliedEntries.length) return []
+                const mode = options?.mode ?? 'refresh'
+                const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, Entity>
+                const fetchIds = mode === 'missing'
+                    ? queryIds.filter((id) => !snapshot.has(id))
+                    : queryIds
 
-                return handle.state.writeback(appliedEntries)
+                if (fetchIds.length && this.runtime.execution.hasExecutor('query')) {
+                    const output = await this.runtime.execution.query(
+                        {
+                            handle,
+                            query: {
+                                filter: {
+                                    op: 'in',
+                                    field: 'id',
+                                    values: fetchIds
+                                }
+                            } as Query<Entity>
+                        },
+                        options?.signal ? { signal: options.signal } : undefined
+                    )
+                    await reconcile(
+                        'upsert',
+                        Array.isArray(output.data) ? output.data : [],
+                        options
+                    )
+                }
+
+                const resolved = new Map<EntityId, Entity>()
+                const next = handle.state.snapshot() as ReadonlyMap<EntityId, Entity>
+                queryIds.forEach((id) => {
+                    const item = next.get(id)
+                    if (item !== undefined) {
+                        resolved.set(id, item)
+                    }
+                })
+                return resolved
             }
         }
 

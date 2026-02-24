@@ -3,7 +3,7 @@ import type { Debug } from './debug'
 import type { StoreEventBus } from './store/events'
 import type { Read } from './read'
 import type { StoreCatalog } from './store/catalog'
-import type { ExecutionKernel } from './execution'
+import type { Execution } from './execution'
 import type { Processor } from './processor'
 import type { Write } from './write'
 
@@ -12,7 +12,7 @@ export type Runtime = Readonly<{
     now: () => number
     stores: StoreCatalog
     events: StoreEventBus
-    execution: ExecutionKernel
+    execution: Execution
     read: Read
     write: Write
     processor: Processor

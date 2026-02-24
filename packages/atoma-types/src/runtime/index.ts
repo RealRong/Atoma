@@ -1,13 +1,20 @@
 export type { Runtime } from './runtime'
 export type {
-    ExecutionKernel,
+    Execution,
     ExecutionRegistration,
     ExecutionPhase
 } from './execution'
 export type { Read } from './read'
 export type { Processor } from './processor'
 export type { Write } from './write'
-export type { StoreCatalog, StoreSession } from './store/catalog'
+export type {
+    StoreCatalog,
+    StoreSession,
+    StoreReconcileMode,
+    StoreHydrateMode,
+    StoreReconcileInput,
+    StoreReconcileResult
+} from './store/catalog'
 export type { StoreHandle } from './store/handle'
 export type {
     StoreDebugSnapshot,
