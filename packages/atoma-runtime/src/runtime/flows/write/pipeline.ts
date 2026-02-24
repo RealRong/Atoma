@@ -451,9 +451,11 @@ export async function commit<T extends Entity>(ctx: WriteCtx<T>) {
     const optimistic = consistency.commit === 'optimistic'
 
     if (optimistic) {
+        const single: StoreChange<T>[] = []
         rows.forEach((row, index) => {
             const change = ensureChange(row, index)
-            row.optimistic = scope.handle.state.apply([change])
+            single[0] = change
+            row.optimistic = scope.handle.state.apply(single)
         })
     }
 
@@ -495,7 +497,7 @@ export async function reconcileEmit<T extends Entity>(ctx: WriteCtx<T>) {
             ok: true,
             value: ensureOutput(row, index)
         }))
-        ctx.changes = mergeChanges(localChanges)
+        ctx.changes = localChanges
         ctx.status = 'confirmed'
         return
     }

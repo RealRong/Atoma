@@ -68,10 +68,6 @@ export class ReadFlow implements Read {
         return Array.isArray(output.data) ? output.data : []
     }
 
-    private resolveFromSnapshot = <T extends Entity>(items: ReadonlyArray<T>, snapshot: ReadonlyMap<EntityId, T>): T[] => {
-        return items.map((item) => snapshot.get(item.id) ?? item)
-    }
-
     query = async <T extends Entity>(
         handle: StoreHandle<T>,
         input: StoreQuery<T>,
@@ -95,8 +91,7 @@ export class ReadFlow implements Read {
                         },
                         options?.signal ? { signal: options.signal } : undefined
                     )
-                    const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, T>
-                    return this.toQueryResult(this.resolveFromSnapshot(items, snapshot), output.pageInfo)
+                    return this.toQueryResult(items as T[], output.pageInfo)
                 }
             })
         } catch (error) {
@@ -135,9 +130,7 @@ export class ReadFlow implements Read {
                     },
                     options?.signal ? { signal: options.signal } : undefined
                 )
-                const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, T>
-
-                return this.toQueryResult(this.resolveFromSnapshot(items, snapshot), output.pageInfo)
+                return this.toQueryResult(items as T[], output.pageInfo)
             }
         })
         return result.data
@@ -174,12 +167,15 @@ export class ReadFlow implements Read {
                         mode: 'refresh'
                     }
                 )
+                const data: T[] = []
+                ids.forEach((id) => {
+                    const item = resolvedById.get(id)
+                    if (item !== undefined) {
+                        data.push(item)
+                    }
+                })
 
-                return this.toQueryResult(
-                    ids
-                        .map((id) => resolvedById.get(id))
-                        .filter((item): item is T => item !== undefined)
-                )
+                return this.toQueryResult(data)
             }
         })
 

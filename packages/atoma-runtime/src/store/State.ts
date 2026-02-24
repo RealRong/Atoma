@@ -55,6 +55,9 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
 
     apply = (changes: ReadonlyArray<StoreChange<T>>): ReadonlyArray<StoreChange<T>> => {
         if (!changes.length) return []
+        const source = changes.length === 1
+            ? changes
+            : mergeChanges(changes)
 
         const before = this.current as Map<EntityId, T>
         let after = before
@@ -68,7 +71,7 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
         }
         const normalized: StoreChange<T>[] = []
 
-        mergeChanges(changes).forEach((change) => {
+        source.forEach((change) => {
             const id = change.id
             const previous = before.get(id)
             const target = change.after
@@ -118,26 +121,64 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
     }
 
     replace = (items: ReadonlyArray<T>): ReadonlyArray<StoreChange<T>> => {
-        const snapshot = this.current as ReadonlyMap<EntityId, T>
+        const before = this.current as Map<EntityId, T>
         const incomingIds = new Set<EntityId>()
         items.forEach((item) => {
             incomingIds.add(item.id)
         })
 
-        const entries: StoreWritebackEntry<T>[] = []
-        snapshot.forEach((_value, id) => {
-            if (!incomingIds.has(id)) {
-                entries.push({
-                    action: 'delete',
-                    id
-                })
+        let after = before
+        let writable = false
+        const ensureWritable = (): Map<EntityId, T> => {
+            if (!writable) {
+                after = new Map(before)
+                writable = true
             }
+            return after
+        }
+
+        const order: EntityId[] = []
+        const merged = new Map<EntityId, { before?: T; after?: T }>()
+        const record = (id: EntityId, current: T | undefined, next: T | undefined) => {
+            const existing = merged.get(id)
+            if (!existing) {
+                order.push(id)
+                merged.set(id, { before: current, after: next })
+                return
+            }
+            existing.after = next
+        }
+
+        before.forEach((current, id) => {
+            if (incomingIds.has(id)) return
+            ensureWritable().delete(id)
+            record(id, current, undefined)
         })
 
-        entries.push(...items.map((item) => ({
-            action: 'upsert' as const,
-            item
-        })))
-        return this.writebackEntries(entries)
+        items.forEach((item) => {
+            const id = item.id
+            const current = after.get(id)
+            const hasCurrent = current !== undefined || after.has(id)
+            const next = hasCurrent
+                ? this.engine.mutation.reuse(current, item)
+                : item
+            if (hasCurrent && current === next) return
+            ensureWritable().set(id, next)
+            record(id, current, next)
+        })
+
+        if (!order.length) return []
+        const changes: StoreChange<T>[] = []
+        order.forEach((id) => {
+            const change = merged.get(id)
+            if (!change) return
+            if (change.before === undefined && change.after === undefined) return
+            changes.push(toChange({
+                id,
+                before: change.before,
+                after: change.after
+            }))
+        })
+        return this.commit(after, changes)
     }
 }

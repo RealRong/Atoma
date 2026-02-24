@@ -18,6 +18,11 @@ type CatalogEntry = Readonly<{
     session: StoreSession<Entity>
 }>
 
+const EMPTY_ENTITY_CHANGES: ReadonlyArray<StoreChange<Entity>> = []
+const EMPTY_ENTITIES: ReadonlyArray<Entity> = []
+const EMPTY_RESULTS: ReadonlyArray<Entity | undefined> = []
+const RECONCILE_WRITEBACK_CONCURRENCY = 32
+
 export class Catalog implements StoreCatalog {
     private readonly entries = new Map<string, CatalogEntry>()
     private readonly factory: Factory
@@ -40,13 +45,13 @@ export class Catalog implements StoreCatalog {
         })
     }
 
-    private ensureEntry = (name: StoreToken): CatalogEntry => {
-        const existing = this.entries.get(name)
-        if (existing) return existing
-
-        const built = this.factory.build(name)
-        const handle = built.handle as StoreHandle<Entity>
-        const api = built.api as Store<Entity>
+    private createSession = ({
+        name,
+        handle
+    }: {
+        name: StoreToken
+        handle: StoreHandle<Entity>
+    }): StoreSession<Entity> => {
         const createContext = (options?: StoreOperationOptions) => {
             return options?.context
                 ? this.runtime.engine.action.createContext(options.context)
@@ -57,53 +62,66 @@ export class Catalog implements StoreCatalog {
             items: ReadonlyArray<unknown>,
             options?: StoreOperationOptions
         ) => {
+            if (!items.length) {
+                return {
+                    changes: mode === 'replace'
+                        ? handle.state.replace(EMPTY_ENTITIES)
+                        : EMPTY_ENTITY_CHANGES,
+                    items: EMPTY_ENTITIES,
+                    results: EMPTY_RESULTS
+                } as const
+            }
+
             const context = createContext(options)
-            const results = await Promise.all(items.map(async (item): Promise<Entity | undefined> => {
-                if (!item || typeof item !== 'object') return undefined
-                return await this.runtime.processor.writeback(handle, item as Entity, context)
-            }))
+            const results: Array<Entity | undefined> = new Array(items.length)
+            let cursor = 0
+            const consume = async () => {
+                while (true) {
+                    const index = cursor
+                    cursor += 1
+                    if (index >= items.length) return
+                    const item = items[index]
+                    if (!item || typeof item !== 'object') {
+                        results[index] = undefined
+                        continue
+                    }
+                    results[index] = await this.runtime.processor.writeback(handle, item as Entity, context)
+                }
+            }
+
+            const workers: Array<Promise<void>> = []
+            const workerCount = Math.min(RECONCILE_WRITEBACK_CONCURRENCY, items.length)
+            for (let index = 0; index < workerCount; index += 1) {
+                workers.push(consume())
+            }
+            await Promise.all(workers)
+
             const normalized = results.filter((item): item is Entity => item !== undefined)
             const changes = mode === 'replace'
                 ? handle.state.replace(normalized)
                 : handle.state.upsert(normalized)
+            const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, Entity>
             return {
                 changes,
-                items: normalized,
+                items: normalized.map((item) => snapshot.get(item.id) ?? item),
                 results
             } as const
         }
         const remove = (ids: ReadonlyArray<EntityId>) => {
-            const queryIds = ids.length > 1
-                ? Array.from(new Set(ids))
-                : [...ids]
-            if (!queryIds.length) {
-                return {
-                    changes: [],
-                    items: [],
-                    results: []
-                } as const
-            }
             const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, Entity>
-            const deletes: StoreChange<Entity>[] = []
-            queryIds.forEach((id) => {
-                const before = snapshot.get(id)
-                if (before !== undefined) {
-                    deletes.push({
-                        id,
-                        before
-                    })
-                }
-            })
-            const changes = deletes.length
-                ? handle.state.apply(deletes)
-                : []
-            return {
-                changes,
-                items: [],
-                results: []
-            } as const
+            const changes = (ids.length > 1 ? Array.from(new Set(ids)) : ids)
+                .map((id): StoreChange<Entity> | undefined => {
+                    const before = snapshot.get(id)
+                    return before === undefined
+                        ? undefined
+                        : { id, before }
+                })
+                .filter((change): change is StoreChange<Entity> => change !== undefined)
+            return changes.length
+                ? handle.state.apply(changes)
+                : EMPTY_ENTITY_CHANGES
         }
-        const session: StoreSession<Entity> = {
+        return {
             name,
             query: (query: Query<Entity>) => {
                 return this.runtime.engine.query.evaluate({
@@ -125,7 +143,11 @@ export class Catalog implements StoreCatalog {
             },
             reconcile: async (input, options?: StoreOperationOptions) => {
                 if (input.mode === 'remove') {
-                    return remove(Array.isArray(input.ids) ? input.ids : [])
+                    return {
+                        changes: remove(Array.isArray(input.ids) ? input.ids : []),
+                        items: EMPTY_ENTITIES,
+                        results: EMPTY_RESULTS
+                    } as const
                 }
                 return await reconcile(
                     input.mode,
@@ -139,10 +161,39 @@ export class Catalog implements StoreCatalog {
             ) => {
                 const queryIds = ids.length > 1
                     ? Array.from(new Set(ids))
-                    : [...ids]
+                    : ids
                 if (!queryIds.length) return new Map<EntityId, Entity>()
 
                 const mode = options?.mode ?? 'refresh'
+                if (queryIds.length === 1) {
+                    const id = queryIds[0]
+                    const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, Entity>
+                    if (!(mode === 'missing' && snapshot.has(id)) && this.runtime.execution.hasExecutor('query')) {
+                        const output = await this.runtime.execution.query(
+                            {
+                                handle,
+                                query: {
+                                    filter: {
+                                        op: 'in',
+                                        field: 'id',
+                                        values: [id]
+                                    }
+                                } as Query<Entity>
+                            },
+                            options?.signal ? { signal: options.signal } : undefined
+                        )
+                        await reconcile(
+                            'upsert',
+                            Array.isArray(output.data) ? output.data : [],
+                            options
+                        )
+                    }
+                    const next = (handle.state.snapshot() as ReadonlyMap<EntityId, Entity>).get(id)
+                    return next === undefined
+                        ? new Map<EntityId, Entity>()
+                        : new Map<EntityId, Entity>([[id, next]])
+                }
+
                 const snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, Entity>
                 const fetchIds = mode === 'missing'
                     ? queryIds.filter((id) => !snapshot.has(id))
@@ -180,6 +231,16 @@ export class Catalog implements StoreCatalog {
                 return resolved
             }
         }
+    }
+
+    private ensureEntry = (name: StoreToken): CatalogEntry => {
+        const existing = this.entries.get(name)
+        if (existing) return existing
+
+        const built = this.factory.build(name)
+        const handle = built.handle as StoreHandle<Entity>
+        const api = built.api as Store<Entity>
+        const session = this.createSession({ name, handle })
 
         const entry: CatalogEntry = {
             handle,
