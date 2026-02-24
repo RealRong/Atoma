@@ -69,8 +69,7 @@ export async function orchestrateWrite<T extends Entity>({
     })
 
     try {
-        await commit(ctx)
-        await reconcileEmit(ctx)
+        await reconcileEmit(ctx, await commit(ctx))
 
         const singleResult = ctx.rows.length === 1
             ? ctx.results[0]

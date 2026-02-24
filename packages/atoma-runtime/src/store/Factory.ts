@@ -60,8 +60,7 @@ export class Factory {
 
         const state = new StoreState<T>({
             initial: new Map<EntityId, T>(),
-            indexes,
-            engine: runtime.engine
+            indexes
         })
 
         const handle: StoreHandle<T> = {

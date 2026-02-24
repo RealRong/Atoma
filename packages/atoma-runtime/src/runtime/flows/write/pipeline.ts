@@ -20,18 +20,18 @@ import type {
 
 export type Row<T extends Entity> = {
     intent: IntentCommand<T>
+    intentId?: string
     base?: T
     change?: StoreChange<T>
-    output?: T
     entry?: WriteEntry
-    remoteResult?: WriteItemResult
-    optimistic?: ReadonlyArray<StoreChange<T>>
+    optimistic?: StoreChange<T>
 }
 
 export type WriteCtx<T extends Entity> = {
     runtime: Runtime
     scope: WriteScope<T>
     rows: Row<T>[]
+    optimisticChanges: ReadonlyArray<StoreChange<T>>
     status: WriteOutput['status']
     results: WriteManyResult<T | void>
     changes: ReadonlyArray<StoreChange<T>>
@@ -64,10 +64,11 @@ function ensureChange<T extends Entity>(row: Row<T>, index: number): StoreChange
 
 function ensureOutput<T extends Entity>(row: Row<T>, index: number): T | void {
     if (row.intent.action === 'delete') return
-    if (row.output === undefined) {
+    const change = ensureChange(row, index)
+    if (change.after === undefined) {
         throw new Error(`[Atoma] write: missing output at index=${index}`)
     }
-    return row.output
+    return change.after
 }
 
 function shouldApplyReturnedData(entry: WriteEntry): boolean {
@@ -200,6 +201,7 @@ export function createContext<T extends Entity>(args: {
     return {
         ...args,
         rows: [],
+        optimisticChanges: [],
         status: 'confirmed',
         results: [],
         changes: []
@@ -219,7 +221,8 @@ export function preflight<T extends Entity>(ctx: WriteCtx<T>, intents: ReadonlyA
             seenIds.add(id)
         }
         rows.push({
-            intent
+            intent,
+            intentId: id
         })
     })
 
@@ -280,33 +283,40 @@ export async function hydrate<T extends Entity>(ctx: WriteCtx<T>) {
 export async function build<T extends Entity>(ctx: WriteCtx<T>) {
     const { runtime, scope, rows } = ctx
     const snapshot = scope.handle.state.snapshot()
+    const hasRemoteWrite = runtime.execution.hasExecutor('write')
 
     for (const [index, row] of rows.entries()) {
         const intent = row.intent
-        const meta = createMeta(runtime.now)
 
         switch (intent.action) {
             case 'create': {
                 const initialized = ensureCreateItemId(scope, intent.item)
                 const inbound = await runtime.processor.inbound(scope.handle, initialized, scope.context)
                 const prepared = requireProcessed(inbound as T | undefined, 'buildCreate')
-                const outbound = await requireOutbound({ runtime, scope, value: prepared })
+                const outbound = hasRemoteWrite
+                    ? await requireOutbound({ runtime, scope, value: prepared })
+                    : prepared
                 const id = prepared.id
                 const current = snapshot.get(id)
+                const meta = hasRemoteWrite ? createMeta(runtime.now) : undefined
 
                 row.change = toChange({
                     id,
                     before: current,
                     after: prepared
                 })
-                row.output = prepared
                 row.entry = {
                     action: 'create',
-                    item: {
-                        id,
-                        value: outbound,
-                        meta
-                    }
+                    item: meta
+                        ? {
+                            id,
+                            value: outbound,
+                            meta
+                        }
+                        : {
+                            id,
+                            value: outbound
+                        }
                 }
                 break
             }
@@ -323,22 +333,29 @@ export async function build<T extends Entity>(ctx: WriteCtx<T>) {
                     patch: next,
                     tag: 'buildUpdate'
                 })
-                const outbound = await requireOutbound({ runtime, scope, value: prepared })
+                const outbound = hasRemoteWrite
+                    ? await requireOutbound({ runtime, scope, value: prepared })
+                    : prepared
                 const current = snapshot.get(intent.id)
+                const meta = hasRemoteWrite ? createMeta(runtime.now) : undefined
 
                 row.change = toChange({
                     id: intent.id,
                     before: current,
                     after: prepared
                 })
-                row.output = prepared
                 row.entry = {
                     action: 'update',
-                    item: {
-                        id: intent.id,
-                        value: outbound,
-                        meta
-                    }
+                    item: meta
+                        ? {
+                            id: intent.id,
+                            value: outbound,
+                            meta
+                        }
+                        : {
+                            id: intent.id,
+                            value: outbound
+                        }
                 }
                 break
             }
@@ -364,26 +381,33 @@ export async function build<T extends Entity>(ctx: WriteCtx<T>) {
                         ) as T | undefined,
                         'buildUpsert'
                     )
-                const outbound = await requireOutbound({
-                    runtime,
-                    scope,
-                    value: prepared
-                })
+                const outbound = hasRemoteWrite
+                    ? await requireOutbound({
+                        runtime,
+                        scope,
+                        value: prepared
+                    })
+                    : prepared
                 const conflict = intent.options?.conflict ?? 'cas'
+                const meta = hasRemoteWrite ? createMeta(runtime.now) : undefined
 
                 row.change = toChange({
                     id: intent.item.id,
                     before: current,
                     after: prepared
                 })
-                row.output = prepared
                 row.entry = {
                     action: 'upsert',
-                    item: {
-                        id: intent.item.id,
-                        value: outbound,
-                        meta
-                    },
+                    item: meta
+                        ? {
+                            id: intent.item.id,
+                            value: outbound,
+                            meta
+                        }
+                        : {
+                            id: intent.item.id,
+                            value: outbound
+                        },
                     options: {
                         upsert: {
                             conflict,
@@ -401,16 +425,21 @@ export async function build<T extends Entity>(ctx: WriteCtx<T>) {
                 }
 
                 if (intent.options?.force) {
+                    const meta = hasRemoteWrite ? createMeta(runtime.now) : undefined
                     row.change = toChange({
                         id: intent.id,
                         before: current ?? base
                     })
                     row.entry = {
                         action: 'delete',
-                        item: {
-                            id: intent.id,
-                            meta
-                        }
+                        item: meta
+                            ? {
+                                id: intent.id,
+                                meta
+                            }
+                            : {
+                                id: intent.id
+                            }
                     }
                     break
                 }
@@ -420,11 +449,14 @@ export async function build<T extends Entity>(ctx: WriteCtx<T>) {
                     deleted: true,
                     deletedAt: runtime.now()
                 } as unknown as T
-                const outbound = await requireOutbound({
-                    runtime,
-                    scope,
-                    value: after
-                })
+                const outbound = hasRemoteWrite
+                    ? await requireOutbound({
+                        runtime,
+                        scope,
+                        value: after
+                    })
+                    : after
+                const meta = hasRemoteWrite ? createMeta(runtime.now) : undefined
 
                 row.change = toChange({
                     id: intent.id,
@@ -433,11 +465,16 @@ export async function build<T extends Entity>(ctx: WriteCtx<T>) {
                 })
                 row.entry = {
                     action: 'update',
-                    item: {
-                        id: intent.id,
-                        value: outbound,
-                        meta
-                    }
+                    item: meta
+                        ? {
+                            id: intent.id,
+                            value: outbound,
+                            meta
+                        }
+                        : {
+                            id: intent.id,
+                            value: outbound
+                        }
                 }
                 break
             }
@@ -451,17 +488,49 @@ export async function commit<T extends Entity>(ctx: WriteCtx<T>) {
     const optimistic = consistency.commit === 'optimistic'
 
     if (optimistic) {
-        const single: StoreChange<T>[] = []
-        rows.forEach((row, index) => {
-            const change = ensureChange(row, index)
-            single[0] = change
-            row.optimistic = scope.handle.state.apply(single)
-        })
+        const allChanges = rows.map((row, index) => ensureChange(row, index))
+        const needDuplicateCheck = rows.some((row) => row.intentId === undefined)
+        const hasDuplicateId = needDuplicateCheck
+            ? (() => {
+                const seenIds = new Set<string>()
+                return allChanges.some((change) => {
+                    const id = String(change.id)
+                    if (seenIds.has(id)) return true
+                    seenIds.add(id)
+                    return false
+                })
+            })()
+            : false
+
+        if (!hasDuplicateId) {
+            const applied = scope.handle.state.apply(allChanges)
+            const byId = new Map<string, StoreChange<T>>()
+            applied.forEach((change) => {
+                byId.set(String(change.id), change)
+            })
+            rows.forEach((row, index) => {
+                row.optimistic = byId.get(String(allChanges[index].id))
+            })
+            ctx.optimisticChanges = applied
+        } else {
+            const single: StoreChange<T>[] = []
+            const optimisticChanges: StoreChange<T>[] = []
+            rows.forEach((row, index) => {
+                const change = ensureChange(row, index)
+                single[0] = change
+                const applied = scope.handle.state.apply(single)[0]
+                row.optimistic = applied
+                if (applied) {
+                    optimisticChanges.push(applied)
+                }
+            })
+            ctx.optimisticChanges = mergeChanges(optimisticChanges)
+        }
     }
 
     if (!runtime.execution.hasExecutor('write')) {
         ctx.status = 'confirmed'
-        return
+        return undefined
     }
 
     const entries = rows.map((row, index) => ensureEntry(row, index))
@@ -474,30 +543,28 @@ export async function commit<T extends Entity>(ctx: WriteCtx<T>) {
         scope.signal ? { signal: scope.signal } : undefined
     )
     ensureWriteResultStatus(writeResult, entries.length)
-
-    rows.forEach((row, index) => {
-        row.remoteResult = writeResult.results[index]
-    })
     ctx.status = writeResult.status
+    return writeResult.results
 }
 
-export async function reconcileEmit<T extends Entity>(ctx: WriteCtx<T>) {
+export async function reconcileEmit<T extends Entity>(
+    ctx: WriteCtx<T>,
+    remoteResults?: ReadonlyArray<WriteItemResult>
+) {
     const { runtime, scope, rows } = ctx
     const consistency = runtime.execution.getConsistency()
     const optimistic = consistency.commit === 'optimistic'
-    const hasRemote = runtime.execution.hasExecutor('write')
+    const hasRemote = remoteResults !== undefined
 
     if (!hasRemote) {
-        const localChanges = optimistic
-            ? mergeChanges(...rows.map(row => row.optimistic ?? []))
-            : scope.handle.state.apply(rows.map((row, index) => ensureChange(row, index)))
-
         ctx.results = rows.map((row, index) => ({
             index,
             ok: true,
             value: ensureOutput(row, index)
         }))
-        ctx.changes = localChanges
+        ctx.changes = optimistic
+            ? ctx.optimisticChanges
+            : scope.handle.state.apply(rows.map((row, index) => ensureChange(row, index)))
         ctx.status = 'confirmed'
         return
     }
@@ -505,33 +572,27 @@ export async function reconcileEmit<T extends Entity>(ctx: WriteCtx<T>) {
     const results: WriteManyResult<T | void> = new Array(rows.length)
     const retainedOptimistic: StoreChange<T>[] = []
     const rollbackChanges: StoreChange<T>[] = []
-    const pendingReconcile: Array<{
-        rowIndex: number
-        inputIndex: number
-    }> = []
+    const reconcileRows: number[] = []
     const reconcileItems: unknown[] = []
 
     for (const [index, row] of rows.entries()) {
         const entry = ensureEntry(row, index)
-        const remoteResult = row.remoteResult
+        const remoteResult = remoteResults[index]
         if (!remoteResult) {
             throw new Error(`[Atoma] execution.write missing write item result at index=${index}`)
         }
 
         if (!remoteResult.ok) {
             results[index] = toWriteManyError(entry, remoteResult, index)
-            if (row.optimistic?.length) {
-                rollbackChanges.push(...row.optimistic)
+            if (row.optimistic) {
+                rollbackChanges.push(row.optimistic)
             }
             continue
         }
 
         let value: T | void = ensureOutput(row, index)
         if (shouldApplyReturnedData(entry) && remoteResult.data && typeof remoteResult.data === 'object') {
-            pendingReconcile.push({
-                rowIndex: index,
-                inputIndex: reconcileItems.length
-            })
+            reconcileRows.push(index)
             reconcileItems.push(remoteResult.data)
         }
 
@@ -540,8 +601,8 @@ export async function reconcileEmit<T extends Entity>(ctx: WriteCtx<T>) {
             ok: true,
             value
         } as Extract<WriteManyResult<T | void>[0], { ok: true }>
-        if (row.optimistic?.length) {
-            retainedOptimistic.push(...row.optimistic)
+        if (row.optimistic) {
+            retainedOptimistic.push(row.optimistic)
         }
     }
 
@@ -564,16 +625,23 @@ export async function reconcileEmit<T extends Entity>(ctx: WriteCtx<T>) {
             items: [],
             results: []
         }
-    pendingReconcile.forEach(({ rowIndex, inputIndex }) => {
-        const normalized = reconcile.results[inputIndex]
-        if (normalized === undefined) return
+    for (let index = 0; index < reconcileRows.length; index += 1) {
+        const normalized = reconcile.results[index]
+        if (normalized === undefined) continue
+        const rowIndex = reconcileRows[index]
         const current = results[rowIndex]
-        if (!current || !current.ok) return
+        if (!current || !current.ok) continue
         current.value = normalized
-    })
+    }
 
     ctx.results = results
-    ctx.changes = mergeChanges(retainedOptimistic, reconcile.changes)
+    if (!retainedOptimistic.length) {
+        ctx.changes = reconcile.changes
+    } else if (!reconcile.changes.length) {
+        ctx.changes = mergeChanges(retainedOptimistic)
+    } else {
+        ctx.changes = mergeChanges(retainedOptimistic, reconcile.changes)
+    }
     if (!optimistic && ctx.status === 'confirmed' && !reconcile.changes.length) {
         ctx.changes = []
     }

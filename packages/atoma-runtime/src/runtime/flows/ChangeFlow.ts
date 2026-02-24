@@ -1,4 +1,4 @@
-import { invertChanges } from 'atoma-core/store'
+import { revertChanges } from 'atoma-core/store'
 import type {
     Entity,
     StoreChange,
@@ -36,8 +36,8 @@ export class ChangeFlow {
 
         try {
             const replayChanges = direction === 'apply'
-                ? [...changes]
-                : invertChanges([...changes].reverse())
+                ? changes
+                : revertChanges(changes)
             const committedChanges = handle.state.apply(replayChanges)
 
             this.runtime.events.emit('changeCommitted', {

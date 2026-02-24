@@ -14,11 +14,16 @@ export function toChange<T extends Entity>({
         throw new Error(`[Atoma] toChange: missing before/after (id=${String(id)})`)
     }
 
-    return {
-        id,
-        ...(before !== undefined ? { before } : {}),
-        ...(after !== undefined ? { after } : {})
-    } as StoreChange<T>
+    if (before === undefined) {
+        if (after === undefined) {
+            throw new Error(`[Atoma] toChange: missing after (id=${String(id)})`)
+        }
+        return { id, after }
+    }
+    if (after === undefined) {
+        return { id, before }
+    }
+    return { id, before, after }
 }
 
 export function invertChanges<T extends Entity>(changes: ReadonlyArray<StoreChange<T>>): StoreChange<T>[] {
@@ -29,37 +34,101 @@ export function invertChanges<T extends Entity>(changes: ReadonlyArray<StoreChan
     }))
 }
 
-export function mergeChanges<T extends Entity>(...groups: ReadonlyArray<ReadonlyArray<StoreChange<T>>>): StoreChange<T>[] {
-    const order: EntityId[] = []
-    const merged = new Map<EntityId, { before?: T; after?: T }>()
+export function revertChanges<T extends Entity>(changes: ReadonlyArray<StoreChange<T>>): StoreChange<T>[] {
+    const reverted: StoreChange<T>[] = new Array(changes.length)
+    for (let source = changes.length - 1, target = 0; source >= 0; source -= 1, target += 1) {
+        const change = changes[source]
+        reverted[target] = toChange({
+            id: change.id,
+            before: change.after,
+            after: change.before
+        })
+    }
+    return reverted
+}
 
-    groups.forEach((group) => {
-        group.forEach((change) => {
-            const id = change.id
-            const current = merged.get(id)
-            if (!current) {
-                order.push(id)
-                merged.set(id, {
-                    before: change.before,
-                    after: change.after
-                })
-                return
+export function mergeChanges<T extends Entity>(...groups: ReadonlyArray<ReadonlyArray<StoreChange<T>>>): ReadonlyArray<StoreChange<T>> {
+    if (!groups.length) return []
+    let totalLength = 0
+    for (const group of groups) {
+        totalLength += group.length
+    }
+    if (!totalLength) return []
+    if (totalLength === 1) {
+        for (const group of groups) {
+            if (group.length === 1) return [group[0]]
+        }
+    }
+
+    const flattened: StoreChange<T>[] = new Array(totalLength)
+    const seenIds = new Set<EntityId>()
+    let flattenedCursor = 0
+    let mergedCursor = 0
+    let order: EntityId[] | undefined
+    let merged: Map<EntityId, { before?: T; after?: T }> | undefined
+    const mergeOne = (
+        map: Map<EntityId, { before?: T; after?: T }>,
+        ids: EntityId[],
+        change: StoreChange<T>
+    ) => {
+        const current = map.get(change.id)
+        if (!current) {
+            ids.push(change.id)
+            map.set(change.id, {
+                before: change.before,
+                after: change.after
+            })
+            return
+        }
+        current.after = change.after
+    }
+
+    for (const group of groups) {
+        for (const change of group) {
+            if (merged) {
+                if (order) {
+                    mergeOne(merged, order, change)
+                }
+                continue
             }
 
-            current.after = change.after
-        })
-    })
+            flattened[flattenedCursor] = change
+            flattenedCursor += 1
+            const id = change.id
+            if (!seenIds.has(id)) {
+                seenIds.add(id)
+                continue
+            }
 
-    const changes: StoreChange<T>[] = []
-    order.forEach((id) => {
+            order = []
+            merged = new Map<EntityId, { before?: T; after?: T }>()
+            while (mergedCursor < flattenedCursor) {
+                const seeded = flattened[mergedCursor]
+                if (seeded) {
+                    mergeOne(merged, order, seeded)
+                }
+                mergedCursor += 1
+            }
+        }
+    }
+
+    if (!merged) return flattened
+    if (!order?.length) return []
+
+    const changes: StoreChange<T>[] = new Array(order.length)
+    let cursor = 0
+    for (const id of order) {
         const change = merged.get(id)
-        if (!change) return
-        if (change.before === undefined && change.after === undefined) return
-        changes.push(toChange({
+        if (!change) continue
+        if (change.before === undefined && change.after === undefined) continue
+        changes[cursor] = toChange({
             id,
             before: change.before,
             after: change.after
-        }))
-    })
-    return changes
+        })
+        cursor += 1
+    }
+    return cursor === changes.length
+        ? changes
+        : changes.slice(0, cursor)
 }
