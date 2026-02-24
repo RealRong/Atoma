@@ -85,11 +85,13 @@ export function applyChanges<T extends Entity>({
 export function upsertChanges<T extends Entity>({
     before,
     items,
-    reuse
+    reuse,
+    assumeUnique = false
 }: {
     before: Map<EntityId, T>
     items: ReadonlyArray<T>
     reuse: Reuse<T>
+    assumeUnique?: boolean
 }): StateChangesResult<T> {
     if (!items.length) {
         return {
@@ -109,94 +111,69 @@ export function upsertChanges<T extends Entity>({
     }
 
     const rawChanges: StoreChange<T>[] = []
-    const seenIds = items.length > 1 ? new Set<EntityId>() : null
-    let hasDuplicateId = false
+    let seenIds = !assumeUnique && items.length > 1
+        ? new Set<EntityId>()
+        : null
+    let order: EntityId[] | undefined
+    let merged: Map<EntityId, { before?: T; after?: T }> | undefined
+    const mergeOne = (
+        map: Map<EntityId, { before?: T; after?: T }>,
+        ids: EntityId[],
+        { id, before: previous, after: next }: StoreChange<T>
+    ) => {
+        const current = map.get(id)
+        if (!current) {
+            ids.push(id)
+            map.set(id, {
+                before: previous,
+                after: next
+            })
+            return
+        }
+        current.after = next
+    }
 
     for (const item of items) {
         const id = item.id
-        if (seenIds) {
+        if (seenIds !== null) {
             if (seenIds.has(id)) {
-                hasDuplicateId = true
+                const initialOrder: EntityId[] = []
+                const initialMerged = new Map<EntityId, { before?: T; after?: T }>()
+                order = initialOrder
+                merged = initialMerged
+                rawChanges.forEach((change) => {
+                    mergeOne(initialMerged, initialOrder, change)
+                })
+                seenIds = null
             } else {
                 seenIds.add(id)
             }
         }
 
         const current = after.get(id)
-        const hasCurrent = current !== undefined || after.has(id)
-        const next = hasCurrent
-            ? reuse(current, item)
-            : item
-        if (hasCurrent && current === next) continue
+        const next = current === undefined
+            ? item
+            : reuse(current, item)
+        if (current === next) continue
         ensureWritable().set(id, next)
-        rawChanges.push(toChange({
+        const change = toChange({
             id,
             before: current,
             after: next
-        }))
-    }
-
-    return {
-        after,
-        changes: hasDuplicateId
-            ? mergeChanges(rawChanges)
-            : rawChanges
-    }
-}
-
-export function replaceChanges<T extends Entity>({
-    before,
-    items,
-    reuse
-}: {
-    before: Map<EntityId, T>
-    items: ReadonlyArray<T>
-    reuse: Reuse<T>
-}): StateChangesResult<T> {
-    const incomingIds = new Set<EntityId>()
-    items.forEach((item) => {
-        incomingIds.add(item.id)
-    })
-
-    let after = before
-    let writable = false
-    const ensureWritable = (): Map<EntityId, T> => {
-        if (!writable) {
-            after = new Map(before)
-            writable = true
+        })
+        if (merged && order) {
+            mergeOne(merged, order, change)
+            continue
         }
-        return after
+        rawChanges.push(change)
     }
 
-    const order: EntityId[] = []
-    const merged = new Map<EntityId, { before?: T; after?: T }>()
-    const record = (id: EntityId, current: T | undefined, next: T | undefined) => {
-        const existing = merged.get(id)
-        if (!existing) {
-            order.push(id)
-            merged.set(id, { before: current, after: next })
-            return
+    if (!merged || !order) {
+        return {
+            after,
+            changes: rawChanges
         }
-        existing.after = next
     }
-
-    before.forEach((current, id) => {
-        if (incomingIds.has(id)) return
-        ensureWritable().delete(id)
-        record(id, current, undefined)
-    })
-
-    items.forEach((item) => {
-        const id = item.id
-        const current = after.get(id)
-        const hasCurrent = current !== undefined || after.has(id)
-        const next = hasCurrent
-            ? reuse(current, item)
-            : item
-        if (hasCurrent && current === next) return
-        ensureWritable().set(id, next)
-        record(id, current, next)
-    })
 
     if (!order.length) {
         return {
@@ -223,5 +200,84 @@ export function replaceChanges<T extends Entity>({
         changes: cursor === changes.length
             ? changes
             : changes.slice(0, cursor)
+    }
+}
+
+export function replaceChanges<T extends Entity>({
+    before,
+    items,
+    reuse
+}: {
+    before: Map<EntityId, T>
+    items: ReadonlyArray<T>
+    reuse: Reuse<T>
+}): StateChangesResult<T> {
+    const incomingOrder: EntityId[] = []
+    const incoming = new Map<EntityId, { before?: T; after: T; dirty: boolean }>()
+    for (const item of items) {
+        const id = item.id
+        const existing = incoming.get(id)
+        if (!existing) {
+            const current = before.get(id)
+            const next = current === undefined
+                ? item
+                : reuse(current, item)
+            incomingOrder.push(id)
+            incoming.set(id, {
+                before: current,
+                after: next,
+                dirty: current !== next
+            })
+            continue
+        }
+        const next = reuse(existing.after, item)
+        if (existing.after !== next) {
+            existing.dirty = true
+        }
+        existing.after = next
+    }
+
+    let after = before
+    let writable = false
+    const ensureWritable = (): Map<EntityId, T> => {
+        if (!writable) {
+            after = new Map(before)
+            writable = true
+        }
+        return after
+    }
+
+    const rawChanges: StoreChange<T>[] = []
+
+    before.forEach((current, id) => {
+        if (incoming.has(id)) return
+        ensureWritable().delete(id)
+        rawChanges.push(toChange({
+            id,
+            before: current
+        }))
+    })
+
+    incomingOrder.forEach((id) => {
+        const current = incoming.get(id)
+        if (!current?.dirty) return
+        ensureWritable().set(id, current.after)
+        rawChanges.push(toChange({
+            id,
+            before: current.before,
+            after: current.after
+        }))
+    })
+
+    if (!rawChanges.length) {
+        return {
+            after: before,
+            changes: []
+        }
+    }
+
+    return {
+        after,
+        changes: rawChanges
     }
 }
