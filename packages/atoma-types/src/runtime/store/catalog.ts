@@ -58,6 +58,7 @@ export type StoreSession<T extends Entity = Entity> = Readonly<{
 export type StoreCatalog = Readonly<{
     ensure: <T extends Entity = Entity>(name: StoreToken) => Store<T>
     use: <T extends Entity = Entity>(name: StoreToken) => StoreSession<T>
+    peek: <T extends Entity = Entity>(name: StoreToken, id: EntityId) => T | undefined
     snapshot: <T extends Entity = Entity>(name: StoreToken) => StoreSnapshot<T>
     list: () => StoreToken[]
 }>

@@ -283,6 +283,12 @@ export class Catalog implements StoreCatalog {
         return this.ensureEntry(name).session as unknown as StoreSession<T>
     }
 
+    peek = <T extends Entity = Entity>(name: StoreToken, id: EntityId): T | undefined => {
+        const entry = this.ensureEntry(name)
+        const store = entry.handle.state.snapshot() as ReadonlyMap<EntityId, T>
+        return store.get(id)
+    }
+
     snapshot = <T extends Entity = Entity>(name: StoreToken): StoreSnapshot<T> => {
         const entry = this.ensureEntry(name)
         const handle = entry.handle

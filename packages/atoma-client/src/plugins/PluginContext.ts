@@ -1,7 +1,6 @@
 import type {
     PluginContext as PluginContextType,
 } from 'atoma-types/client/plugins'
-import type { Entity, Query } from 'atoma-types/core'
 import type { Runtime } from 'atoma-runtime'
 import { ServiceRegistry } from './ServiceRegistry'
 
@@ -25,16 +24,7 @@ export class PluginContext implements PluginContextType {
             stores: {
                 list: runtime.stores.list,
                 use: runtime.stores.use,
-                peek: <T extends Entity = Entity>(storeName: string, id: string) => {
-                    const data = runtime.stores.use<T>(storeName).query({
-                        filter: {
-                            op: 'eq',
-                            field: 'id',
-                            value: id
-                        }
-                    } as Query<T>).data[0]
-                    return data === undefined ? undefined : data
-                },
+                peek: runtime.stores.peek,
                 snapshot: runtime.stores.snapshot
             },
             action: {
