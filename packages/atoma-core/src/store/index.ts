@@ -5,6 +5,6 @@ export {
     reuse,
     upsertMany
 } from './mutation'
-export { applyChanges, upsertChanges, replaceChanges } from './state'
+export { apply, upsert, replace } from './state'
 export { writeback } from './writeback'
 export { toChange, invertChanges, revertChanges, mergeChanges } from './changes'

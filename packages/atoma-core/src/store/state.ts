@@ -9,7 +9,7 @@ export type StateChangesResult<T extends Entity> = Readonly<{
     changes: ReadonlyArray<StoreChange<T>>
 }>
 
-export function applyChanges<T extends Entity>({
+export function apply<T extends Entity>({
     before,
     changes,
     reuse
@@ -82,7 +82,7 @@ export function applyChanges<T extends Entity>({
     }
 }
 
-export function upsertChanges<T extends Entity>({
+export function upsert<T extends Entity>({
     before,
     items,
     reuse,
@@ -203,7 +203,7 @@ export function upsertChanges<T extends Entity>({
     }
 }
 
-export function replaceChanges<T extends Entity>({
+export function replace<T extends Entity>({
     before,
     items,
     reuse
