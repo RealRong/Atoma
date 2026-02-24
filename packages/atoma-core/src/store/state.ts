@@ -8,6 +8,12 @@ type StateChangesResult<T extends Entity> = Readonly<{
     changes: ReadonlyArray<StoreChange<T>>
 }>
 
+type StepChangesResult<T extends Entity> = Readonly<{
+    after: Map<EntityId, T>
+    changes: ReadonlyArray<StoreChange<T>>
+    steps: ReadonlyArray<StoreChange<T> | undefined>
+}>
+
 export function apply<T extends Entity>({
     before,
     changes
@@ -76,6 +82,119 @@ export function apply<T extends Entity>({
     return {
         after,
         changes: normalized
+    }
+}
+
+export function applySteps<T extends Entity>({
+    before,
+    changes
+}: {
+    before: Map<EntityId, T>
+    changes: ReadonlyArray<StoreChange<T>>
+}): StepChangesResult<T> {
+    if (!changes.length) {
+        return {
+            after: before,
+            changes: [],
+            steps: []
+        }
+    }
+
+    let after = before
+    let writable = false
+    const ensureWritable = (): Map<EntityId, T> => {
+        if (!writable) {
+            after = new Map(before)
+            writable = true
+        }
+        return after
+    }
+
+    const steps: Array<StoreChange<T> | undefined> = new Array(changes.length)
+    const order: EntityId[] = []
+    const merged = new Map<EntityId, { before?: T; after?: T }>()
+    const record = (id: EntityId, previous: T | undefined, next: T | undefined) => {
+        const current = merged.get(id)
+        if (!current) {
+            order.push(id)
+            merged.set(id, {
+                before: previous,
+                after: next
+            })
+            return
+        }
+        current.after = next
+    }
+
+    for (let index = 0; index < changes.length; index += 1) {
+        const change = changes[index]
+        if (!change) continue
+        const id = change.id
+        const previous = after.get(id)
+        const target = change.after
+        if (target === undefined) {
+            if (previous === undefined) {
+                steps[index] = undefined
+                continue
+            }
+            ensureWritable().delete(id)
+            const applied = toChange({
+                id,
+                before: previous
+            })
+            steps[index] = applied
+            record(id, previous, undefined)
+            continue
+        }
+
+        const preserved = reuse(previous, target)
+        if (previous === preserved) {
+            steps[index] = undefined
+            continue
+        }
+        ensureWritable().set(id, preserved)
+        const applied = previous === undefined
+            ? toChange({
+                id,
+                after: preserved
+            })
+            : toChange({
+                id,
+                before: previous,
+                after: preserved
+            })
+        steps[index] = applied
+        record(id, previous, preserved)
+    }
+
+    if (!order.length) {
+        return {
+            after: before,
+            changes: [],
+            steps
+        }
+    }
+
+    const resolved: StoreChange<T>[] = new Array(order.length)
+    let cursor = 0
+    order.forEach((id) => {
+        const change = merged.get(id)
+        if (!change) return
+        if (change.before === undefined && change.after === undefined) return
+        resolved[cursor] = toChange({
+            id,
+            before: change.before,
+            after: change.after
+        })
+        cursor += 1
+    })
+
+    return {
+        after,
+        changes: cursor === resolved.length
+            ? resolved
+            : resolved.slice(0, cursor),
+        steps
     }
 }
 

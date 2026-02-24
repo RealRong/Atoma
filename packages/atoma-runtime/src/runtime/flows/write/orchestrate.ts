@@ -12,14 +12,12 @@ import type {
     IntentCommand,
     WriteScope
 } from './contracts'
-import {
-    build,
-    commit,
-    createContext,
-    hydrate,
-    preflight,
-    reconcile
-} from './pipeline'
+import { createContext } from './context'
+import { build } from './stages/build'
+import { commit } from './stages/commit'
+import { hydrate } from './stages/hydrate'
+import { preflight } from './stages/preflight'
+import { reconcile } from './stages/reconcile'
 
 export type OrchestrateWriteResult<T extends Entity> = Readonly<{
     status: WriteStatus
