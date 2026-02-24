@@ -11,15 +11,32 @@ import type {
     WriteOutput
 } from 'atoma-types/runtime'
 
-type RegisteredExecutor = Readonly<{
+type QueryExecutor = <T extends Entity>(
+    request: QueryRequest<T>,
+    options?: ExecutionOptions
+) => Promise<ExecutionQueryOutput<T>>
+
+type WriteExecutor = <T extends Entity>(
+    request: WriteRequest<T>,
+    options?: ExecutionOptions
+) => Promise<WriteOutput>
+
+type QuerySlot = Readonly<{
+    owner: symbol
     id: string
-    query?: <T extends Entity>(request: QueryRequest<T>, options?: ExecutionOptions) => Promise<ExecutionQueryOutput<T>>
-    write?: <T extends Entity>(request: WriteRequest<T>, options?: ExecutionOptions) => Promise<WriteOutput>
+    run: QueryExecutor
+}>
+
+type WriteSlot = Readonly<{
+    owner: symbol
+    id: string
+    run: WriteExecutor
     consistency?: Partial<WriteConsistency>
 }>
 
 export class Execution implements ExecutionType {
-    private readonly slots: Partial<Record<ExecutionPhase, RegisteredExecutor>> = {}
+    private querySlot: QuerySlot | undefined
+    private writeSlot: WriteSlot | undefined
 
     private static readonly DEFAULT_CONSISTENCY: WriteConsistency = {
         base: 'fetch',
@@ -27,53 +44,70 @@ export class Execution implements ExecutionType {
     }
 
     register = (registration: ExecutionRegistration): (() => void) => {
-        const hasQuery = typeof registration.query === 'function'
-        const hasWrite = typeof registration.write === 'function'
+        const query = registration.query
+        const write = registration.write
         const id = String(registration.id ?? '').trim()
-        if (!hasQuery && !hasWrite) {
+        if (!query && !write) {
             throw new Error(`[Atoma] execution.register: 至少实现 query/write 之一: ${id || '[anonymous]'}`)
         }
-        const nextEntry: RegisteredExecutor = {
-            id: id || '[anonymous]',
-            ...(hasQuery ? { query: registration.query } : {}),
-            ...(hasWrite ? { write: registration.write } : {}),
-            ...(registration.consistency ? { consistency: registration.consistency } : {})
+        const resolvedId = id || '[anonymous]'
+
+        if (query && this.querySlot) {
+            throw new Error(`[Atoma] execution.register: query executor 冲突: ${this.querySlot.id} <-> ${resolvedId}`)
+        }
+        if (write && this.writeSlot) {
+            throw new Error(`[Atoma] execution.register: write executor 冲突: ${this.writeSlot.id} <-> ${resolvedId}`)
         }
 
-        if (hasQuery && this.slots.query) {
-            throw new Error(`[Atoma] execution.register: query executor 冲突: ${this.slots.query.id} <-> ${nextEntry.id}`)
+        const owner = Symbol('execution.register')
+        if (query) {
+            this.querySlot = {
+                owner,
+                id: resolvedId,
+                run: query
+            }
         }
-        if (hasWrite && this.slots.write) {
-            throw new Error(`[Atoma] execution.register: write executor 冲突: ${this.slots.write.id} <-> ${nextEntry.id}`)
+        if (write) {
+            this.writeSlot = {
+                owner,
+                id: resolvedId,
+                run: write,
+                ...(registration.consistency ? { consistency: registration.consistency } : {})
+            }
         }
-
-        if (hasQuery) this.slots.query = nextEntry
-        if (hasWrite) this.slots.write = nextEntry
 
         return () => {
-            if (hasQuery && this.slots.query === nextEntry) delete this.slots.query
-            if (hasWrite && this.slots.write === nextEntry) delete this.slots.write
+            if (this.querySlot?.owner === owner) {
+                this.querySlot = undefined
+            }
+            if (this.writeSlot?.owner === owner) {
+                this.writeSlot = undefined
+            }
         }
     }
 
     getConsistency = (): WriteConsistency => {
         return {
             ...Execution.DEFAULT_CONSISTENCY,
-            ...this.slots.write?.consistency
+            ...this.writeSlot?.consistency
         }
     }
 
     hasExecutor = (phase: ExecutionPhase): boolean => {
-        return this.slots[phase] !== undefined
+        return phase === 'query'
+            ? this.querySlot !== undefined
+            : this.writeSlot !== undefined
     }
 
     query = async <T extends Entity>(
         request: QueryRequest<T>,
         options?: ExecutionOptions
     ): Promise<ExecutionQueryOutput<T>> => {
-        const resolved = this.slots.query
-        const executor = resolved?.query
-        if (!executor) throw new Error('[Atoma] execution.query: 未注册 query executor')
+        const resolved = this.querySlot
+        const executor = resolved?.run
+        if (!executor) {
+            throw new Error('[Atoma] execution.query: 未注册 query executor')
+        }
         try {
             return await executor(request, options)
         } catch (error) {
@@ -86,9 +120,11 @@ export class Execution implements ExecutionType {
         request: WriteRequest<T>,
         options?: ExecutionOptions
     ): Promise<WriteOutput> => {
-        const resolved = this.slots.write
-        const executor = resolved?.write
-        if (!executor) throw new Error('[Atoma] execution.write: 未注册 write executor')
+        const resolved = this.writeSlot
+        const executor = resolved?.run
+        if (!executor) {
+            throw new Error('[Atoma] execution.write: 未注册 write executor')
+        }
         try {
             return await executor(request, options)
         } catch (error) {

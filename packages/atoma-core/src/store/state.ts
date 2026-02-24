@@ -1,22 +1,19 @@
 import type { Entity, StoreChange } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import { mergeChanges, toChange } from './changes'
+import { reuse } from './mutation'
 
-type Reuse<T extends Entity> = (existing: T | undefined, incoming: T) => T
-
-export type StateChangesResult<T extends Entity> = Readonly<{
+type StateChangesResult<T extends Entity> = Readonly<{
     after: Map<EntityId, T>
     changes: ReadonlyArray<StoreChange<T>>
 }>
 
 export function apply<T extends Entity>({
     before,
-    changes,
-    reuse
+    changes
 }: {
     before: Map<EntityId, T>
     changes: ReadonlyArray<StoreChange<T>>
-    reuse: Reuse<T>
 }): StateChangesResult<T> {
     if (!changes.length) {
         return {
@@ -85,12 +82,10 @@ export function apply<T extends Entity>({
 export function upsert<T extends Entity>({
     before,
     items,
-    reuse,
     assumeUnique = false
 }: {
     before: Map<EntityId, T>
     items: ReadonlyArray<T>
-    reuse: Reuse<T>
     assumeUnique?: boolean
 }): StateChangesResult<T> {
     if (!items.length) {
@@ -205,12 +200,10 @@ export function upsert<T extends Entity>({
 
 export function replace<T extends Entity>({
     before,
-    items,
-    reuse
+    items
 }: {
     before: Map<EntityId, T>
     items: ReadonlyArray<T>
-    reuse: Reuse<T>
 }): StateChangesResult<T> {
     const incomingOrder: EntityId[] = []
     const incoming = new Map<EntityId, { before?: T; after: T; dirty: boolean }>()

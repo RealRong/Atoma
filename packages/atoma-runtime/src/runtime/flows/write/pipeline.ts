@@ -547,7 +547,7 @@ export async function commit<T extends Entity>(ctx: WriteCtx<T>) {
     return writeResult.results
 }
 
-export async function reconcileEmit<T extends Entity>(
+export async function reconcile<T extends Entity>(
     ctx: WriteCtx<T>,
     remoteResults?: ReadonlyArray<WriteItemResult>
 ) {

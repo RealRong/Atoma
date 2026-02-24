@@ -2,10 +2,9 @@ import type { Entity, Indexes, StoreChange } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { StoreState as StoreStateType } from 'atoma-types/runtime'
 import {
-    apply as applyState,
-    replace as replaceState,
-    upsert as upsertState,
-    reuse as reuseEntity
+    apply,
+    replace,
+    upsert
 } from 'atoma-core/store'
 
 export class StoreState<T extends Entity = Entity> implements StoreStateType<T> {
@@ -62,30 +61,27 @@ export class StoreState<T extends Entity = Entity> implements StoreStateType<T> 
 
     apply = (changes: ReadonlyArray<StoreChange<T>>): ReadonlyArray<StoreChange<T>> => {
         const before = this.current as Map<EntityId, T>
-        const result = applyState({
+        const result = apply({
             before,
-            changes,
-            reuse: reuseEntity
+            changes
         })
         return this.commit(result.after, result.changes)
     }
 
     upsert = (items: ReadonlyArray<T>): ReadonlyArray<StoreChange<T>> => {
         const before = this.current as Map<EntityId, T>
-        const result = upsertState({
+        const result = upsert({
             before,
-            items,
-            reuse: reuseEntity
+            items
         })
         return this.commit(result.after, result.changes)
     }
 
     replace = (items: ReadonlyArray<T>): ReadonlyArray<StoreChange<T>> => {
         const before = this.current as Map<EntityId, T>
-        const result = replaceState({
+        const result = replace({
             before,
-            items,
-            reuse: reuseEntity
+            items
         })
         return this.commit(result.after, result.changes)
     }

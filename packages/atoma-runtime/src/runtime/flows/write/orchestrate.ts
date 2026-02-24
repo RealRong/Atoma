@@ -18,7 +18,7 @@ import {
     createContext,
     hydrate,
     preflight,
-    reconcileEmit
+    reconcile
 } from './pipeline'
 
 export type OrchestrateWriteResult<T extends Entity> = Readonly<{
@@ -69,7 +69,7 @@ export async function orchestrateWrite<T extends Entity>({
     })
 
     try {
-        await reconcileEmit(ctx, await commit(ctx))
+        await reconcile(ctx, await commit(ctx))
 
         const singleResult = ctx.rows.length === 1
             ? ctx.results[0]
