@@ -1,5 +1,6 @@
 import type {
     Entity,
+    IndexSnapshot,
     Query,
     QueryResult,
     Store,
@@ -8,7 +9,6 @@ import type {
     StoreToken
 } from '../../core'
 import type { EntityId } from '../../shared'
-import type { StoreState } from './state'
 
 export type StoreReconcileMode = 'upsert' | 'replace' | 'remove'
 export type StoreHydrateMode = 'refresh' | 'missing'
@@ -29,6 +29,17 @@ export type StoreReconcileResult<T extends Entity = Entity> = Readonly<{
     results: ReadonlyArray<T | undefined>
 }>
 
+export type StoreSnapshot<T extends Entity = Entity> = Readonly<{
+    store: Readonly<{
+        name: string
+        count: number
+        approxSize: number
+        sample: unknown[]
+    }>
+    indexes: IndexSnapshot<T>[]
+    timestamp: number
+}>
+
 export type StoreSession<T extends Entity = Entity> = Readonly<{
     name: StoreToken
     query: (query: Query<T>) => QueryResult<T>
@@ -47,9 +58,6 @@ export type StoreSession<T extends Entity = Entity> = Readonly<{
 export type StoreCatalog = Readonly<{
     ensure: <T extends Entity = Entity>(name: StoreToken) => Store<T>
     use: <T extends Entity = Entity>(name: StoreToken) => StoreSession<T>
-    inspect: <T extends Entity = Entity>(name: StoreToken) => Readonly<{
-        snapshot: ReadonlyMap<EntityId, T>
-        indexes: StoreState<T>['indexes']
-    }>
+    snapshot: <T extends Entity = Entity>(name: StoreToken) => StoreSnapshot<T>
     list: () => StoreToken[]
 }>

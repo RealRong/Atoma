@@ -1,5 +1,6 @@
 import type {
     Entity,
+    IndexSnapshot,
     Query,
     QueryResult,
     Store,
@@ -8,7 +9,15 @@ import type {
     StoreToken
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, Schema, StoresConfig, StoreHandle, StoreCatalog, StoreSession } from 'atoma-types/runtime'
+import type {
+    Runtime,
+    Schema,
+    StoresConfig,
+    StoreHandle,
+    StoreCatalog,
+    StoreSession,
+    StoreSnapshot
+} from 'atoma-types/runtime'
 import { Factory } from './Factory'
 import { ChangeFlow } from '../runtime/flows/ChangeFlow'
 
@@ -22,6 +31,15 @@ const EMPTY_ENTITY_CHANGES: ReadonlyArray<StoreChange<Entity>> = []
 const EMPTY_ENTITIES: ReadonlyArray<Entity> = []
 const EMPTY_RESULTS: ReadonlyArray<Entity | undefined> = []
 const RECONCILE_WRITEBACK_CONCURRENCY = 32
+
+function estimateSampleSize(sample: unknown[]): number {
+    try {
+        const text = JSON.stringify(sample)
+        return text ? text.length * 2 : 0
+    } catch {
+        return 0
+    }
+}
 
 export class Catalog implements StoreCatalog {
     private readonly entries = new Map<string, CatalogEntry>()
@@ -265,15 +283,20 @@ export class Catalog implements StoreCatalog {
         return this.ensureEntry(name).session as unknown as StoreSession<T>
     }
 
-    inspect = <T extends Entity = Entity>(name: StoreToken): Readonly<{
-        snapshot: ReadonlyMap<EntityId, T>
-        indexes: StoreHandle<T>['state']['indexes']
-    }> => {
+    snapshot = <T extends Entity = Entity>(name: StoreToken): StoreSnapshot<T> => {
         const entry = this.ensureEntry(name)
         const handle = entry.handle
+        const store = handle.state.snapshot() as ReadonlyMap<EntityId, T>
+        const sample = Array.from(store.values()).slice(0, 5)
         return {
-            snapshot: handle.state.snapshot() as ReadonlyMap<EntityId, T>,
-            indexes: handle.state.indexes
+            store: {
+                name: String(name),
+                count: store.size,
+                approxSize: estimateSampleSize(sample),
+                sample
+            },
+            indexes: (handle.state.indexes?.snapshot() ?? []) as IndexSnapshot<T>[],
+            timestamp: this.runtime.now()
         }
     }
 

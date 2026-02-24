@@ -1,6 +1,6 @@
-import { useRef, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { Entity, Store } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { EntityId } from 'atoma-types/shared'
 import { getStoreBindings } from 'atoma-types/internal'
 import { createBatchedSubscribe } from './batchedSubscribe'
 
@@ -11,8 +11,14 @@ export function useStoreSnapshot<T extends Entity, Relations = {}>(
     tag: string
 ): StoreSnapshot<T> {
     const source = getStoreBindings(store, tag).source
-    const getSnapshot = () => source.getSnapshot() as StoreSnapshot<T>
-    const subscribe = createBatchedSubscribe((listener: () => void) => source.subscribe(listener))
+    const getSnapshot = useCallback(
+        () => source.getSnapshot() as StoreSnapshot<T>,
+        [source]
+    )
+    const subscribe = useMemo(
+        () => createBatchedSubscribe((listener: () => void) => source.subscribe(listener)),
+        [source]
+    )
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
@@ -31,7 +37,7 @@ export function useStoreSelector<T extends Entity, Relations = {}, Selected = un
 
     const source = getStoreBindings(store, tag).source
 
-    const getSnapshot = () => {
+    const getSnapshot = useCallback(() => {
         const snapshot = source.getSnapshot() as StoreSnapshot<T>
         const cached = cacheRef.current
         if (cached && cached.store === store && cached.snapshot === snapshot) {
@@ -46,8 +52,11 @@ export function useStoreSelector<T extends Entity, Relations = {}, Selected = un
 
         cacheRef.current = { store, snapshot, selection: next }
         return next
-    }
+    }, [source, store])
 
-    const subscribe = createBatchedSubscribe((listener: () => void) => source.subscribe(listener))
+    const subscribe = useMemo(
+        () => createBatchedSubscribe((listener: () => void) => source.subscribe(listener)),
+        [source]
+    )
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

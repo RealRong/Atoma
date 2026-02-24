@@ -110,13 +110,23 @@ export class Factory {
     }
 
     private createBindings = <T extends Entity>(storeName: string, handle: StoreHandle<T>): StoreBindings<T> => {
+        let snapshot = handle.state.snapshot() as ReadonlyMap<EntityId, T>
+        let version = 0
+        const currentSnapshot = () => {
+            const next = handle.state.snapshot() as ReadonlyMap<EntityId, T>
+            if (next !== snapshot) {
+                snapshot = next
+                version += 1
+            }
+            return snapshot
+        }
         const source = {
-            getSnapshot: () => handle.state.snapshot() as ReadonlyMap<EntityId, T>,
+            getSnapshot: currentSnapshot,
             subscribe: (listener: () => void) => handle.state.subscribe(listener)
         }
         const state = () => {
             return {
-                map: handle.state.snapshot() as ReadonlyMap<EntityId, T>,
+                map: currentSnapshot(),
                 indexes: handle.state.indexes
             }
         }
@@ -129,7 +139,11 @@ export class Factory {
 
         return {
             name: storeName,
-            scope: this.runtime as unknown as object,
+            runtime: this.runtime as object,
+            version: () => {
+                currentSnapshot()
+                return version
+            },
             source,
             state,
             query,

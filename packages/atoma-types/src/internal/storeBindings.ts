@@ -11,7 +11,8 @@ export type StoreSource<T extends Entity> = Readonly<{
 
 export type StoreBindings<T extends Entity = Entity, Relations = {}> = Readonly<{
     name: string
-    scope: object
+    runtime: object
+    version: () => number
     source: StoreSource<T>
     state: () => StoreMap<T>
     query: (query: Query<T>) => QueryResult<T>

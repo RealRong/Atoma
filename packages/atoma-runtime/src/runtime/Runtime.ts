@@ -6,7 +6,6 @@
 import type { Entity } from 'atoma-types/core'
 import type {
     Runtime as RuntimeType,
-    Debug as DebugType,
     Execution as ExecutionType,
     Engine as EngineType,
     StoreEventBus as StoreEventBusType,
@@ -23,7 +22,6 @@ import { Execution } from '../execution'
 import { ReadFlow } from './flows/ReadFlow'
 import { WriteFlow } from './flows/WriteFlow'
 import { Engine } from '../engine'
-import { Debug } from './Debug'
 
 /**
  * Configuration for creating a Runtime.
@@ -44,7 +42,6 @@ export class Runtime implements RuntimeType {
     readonly write: Write
     readonly events: StoreEventBusType
     readonly engine: EngineType
-    readonly debug: DebugType
 
     constructor(config: RuntimeConfig) {
         this.id = String(config.id)
@@ -54,7 +51,6 @@ export class Runtime implements RuntimeType {
         this.execution = new Execution()
         this.events = new EventBus()
         this.stores = new Catalog(this, config.stores)
-        this.debug = new Debug(this)
         this.read = new ReadFlow(this)
         this.write = new WriteFlow(this)
     }

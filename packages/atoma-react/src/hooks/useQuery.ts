@@ -2,159 +2,187 @@ import { useMemo } from 'react'
 import type { Entity, Store, PageInfo, Query, RelationIncludeInput, WithRelations } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useRelations } from './useRelations'
-import { useStoreQuery } from './useStoreQuery'
+import { useStoreQuery, useStoreQueryIds } from './useStoreQuery'
 import { useRemoteQuery } from './useRemoteQuery'
 import { evaluateFetchPolicyRuntime, resolveRemoteEnabled, type FetchPolicy } from './internal/fetchPolicy'
 
-type UseQueryResultMode = 'entities' | 'ids'
-
-type UseQueryStatus = {
+type UseQueryStatus = Readonly<{
     loading: boolean
     isFetching: boolean
     isStale: boolean
     error?: Error
     pageInfo?: PageInfo
-}
+}>
 
-type UseQueryEntitiesResult<
+export type UseQueryResult<
     T extends Entity,
     Relations = {},
     Include extends RelationIncludeInput<Relations> = {}
-> = UseQueryStatus & {
+> = UseQueryStatus & Readonly<{
     data: keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]
     refetch: () => Promise<T[]>
     fetchMore: (options: Query<T>) => Promise<T[]>
-}
+}>
 
-type UseQueryIdsResult<T extends Entity> = UseQueryStatus & {
+export type UseQueryIdsResult<T extends Entity> = UseQueryStatus & Readonly<{
     data: Array<T['id']>
     refetch: () => Promise<Array<T['id']>>
     fetchMore: (options: Query<T>) => Promise<Array<T['id']>>
-}
+}>
 
 type UseQueryOptions<T extends Entity, Relations, Include extends RelationIncludeInput<Relations>> =
     & Query<T>
     & {
         include?: RelationIncludeInput<Relations> & Include
         fetchPolicy?: FetchPolicy
-        result?: UseQueryResultMode
     }
 
-const stripRuntimeOptions = <T extends Entity, Relations, Include extends RelationIncludeInput<Relations>>(
+type UseQueryIdsOptions<T extends Entity> =
+    & Query<T>
+    & {
+        fetchPolicy?: FetchPolicy
+    }
+
+function stripQueryOptions<T extends Entity, Relations, Include extends RelationIncludeInput<Relations>>(
     options?: UseQueryOptions<T, Relations, Include>
-): Query<T> | undefined => {
+): Query<T> | undefined {
     if (!options) return undefined
-    const { fetchPolicy: _fetchPolicy, result: _result, include: _include, ...rest } = options
-    return rest
+    const { fetchPolicy: _fetchPolicy, include: _include, ...query } = options
+    return query
+}
+
+function buildStatus(args: {
+    fetchPolicy: FetchPolicy
+    hasData: boolean
+    isFetching: boolean
+    error?: Error
+    pageInfo?: PageInfo
+}): UseQueryStatus {
+    const { loading, isStale } = evaluateFetchPolicyRuntime({
+        fetchPolicy: args.fetchPolicy,
+        hasData: args.hasData,
+        isFetching: args.isFetching
+    })
+    return {
+        loading,
+        isFetching: args.isFetching,
+        isStale,
+        error: args.error,
+        pageInfo: args.pageInfo
+    }
 }
 
 export function useQuery<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
     store: Store<T, Relations>,
-    options?: UseQueryOptions<T, Relations, Include> & { result?: 'entities' }
-): UseQueryEntitiesResult<T, Relations, Include>
-
-export function useQuery<T extends Entity, Relations = {}>(
-    store: Store<T, Relations>,
-    options: UseQueryOptions<T, Relations, any> & { include?: never; result: 'ids' }
-): UseQueryIdsResult<T>
-
-export function useQuery<T extends Entity, Relations = {}, const Include extends RelationIncludeInput<Relations> = {}>(
-    store: Store<T, Relations>,
     options?: UseQueryOptions<T, Relations, Include>
-): UseQueryEntitiesResult<T, Relations, Include> | UseQueryIdsResult<T> {
-    const fetchPolicy: FetchPolicy = options?.fetchPolicy || 'cache-and-network'
-    const resultMode: UseQueryResultMode = options?.result ?? 'entities'
+): UseQueryResult<T, Relations, Include> {
+    const fetchPolicy: FetchPolicy = options?.fetchPolicy ?? 'cache-and-network'
+    const query = useMemo(() => stripQueryOptions(options), [options])
 
-    const optionsForStoreQuery = useMemo(() => stripRuntimeOptions(options), [options])
-
-    const localEntities = useStoreQuery(store, optionsForStoreQuery)
-    const localIds = useStoreQuery(store, {
-        ...(optionsForStoreQuery ?? {}),
-        result: 'ids' as const
-    })
-
+    const localData = useStoreQuery(store, query)
     const remoteEnabled = resolveRemoteEnabled(fetchPolicy)
-
-    const optionsForRemote = useMemo(() => stripRuntimeOptions(options), [options])
-
     const remote = useRemoteQuery<T, Relations>({
         store,
-        options: optionsForRemote,
+        options: query,
         enabled: remoteEnabled
     })
 
-    const data = (() => {
-        if (resultMode === 'ids') {
-            return localIds
-        }
-        return localEntities
-    })()
-
-    const hasData = data.length > 0
-    const isFetching = remoteEnabled ? remote.isFetching : false
-    const fetchPolicyRuntime = evaluateFetchPolicyRuntime({
+    const status = buildStatus({
         fetchPolicy,
-        hasData,
-        isFetching
+        hasData: localData.length > 0,
+        isFetching: remoteEnabled ? remote.isFetching : false,
+        error: remote.error,
+        pageInfo: remote.pageInfo
     })
-    const loading = fetchPolicyRuntime.loading
-    const isStale = fetchPolicyRuntime.isStale
-
-    const pageInfo = remote.pageInfo
-    const error = remote.error
 
     const refetch = () => {
         if (!remoteEnabled) {
-            return Promise.resolve(data as any)
+            return Promise.resolve(localData)
         }
-        return remote.refetch().then(res => {
-            if (resultMode === 'ids') return res.map(i => i.id) as any
-            return res as any
-        })
+        return remote.refetch()
     }
 
     const fetchMore = (moreOptions: Query<T>) => {
         if (!remoteEnabled) {
-            return Promise.resolve([] as any)
+            return Promise.resolve([])
         }
-        return remote.fetchMore(moreOptions as any).then(res => {
-            if (resultMode === 'ids') return res.map(i => i.id) as any
-            return res as any
-        })
-    }
-
-    if (resultMode === 'ids') {
-        return {
-            data: data as Array<T['id']>,
-            loading,
-            isFetching,
-            isStale,
-            error,
-            pageInfo,
-            refetch,
-            fetchMore
-        } satisfies UseQueryIdsResult<T>
+        return remote.fetchMore(moreOptions)
     }
 
     const bindings = getStoreBindings(store, 'useQuery')
     const relations = bindings.relations?.()
-    const effectiveInclude = options?.include ?? ({} as Include)
+    const include = options?.include
+    if (!include || !relations) {
+        return {
+            ...status,
+            data: localData as keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[],
+            refetch,
+            fetchMore
+        }
+    }
 
-    const relationsResult = useRelations<T, Relations, Include>(
-        data as unknown as T[],
-        effectiveInclude,
+    const relationResult = useRelations<T, Relations, Include>(
+        localData,
+        include,
         relations,
-        (name) => bindings.useStore(name)
+        bindings.useStore
     )
 
     return {
-        data: relationsResult.data as unknown as (keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[]),
-        loading: loading || relationsResult.loading,
-        isFetching,
-        isStale,
-        error: relationsResult.error ?? error,
-        pageInfo,
+        ...status,
+        loading: status.loading || relationResult.loading,
+        error: relationResult.error ?? status.error,
+        data: relationResult.data as keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[],
         refetch,
         fetchMore
-    } satisfies UseQueryEntitiesResult<T, Relations, Include>
+    }
+}
+
+export function useQueryIds<T extends Entity, Relations = {}>(
+    store: Store<T, Relations>,
+    options?: UseQueryIdsOptions<T>
+): UseQueryIdsResult<T> {
+    const fetchPolicy: FetchPolicy = options?.fetchPolicy ?? 'cache-and-network'
+    const query = useMemo(() => {
+        if (!options) return undefined
+        const { fetchPolicy: _fetchPolicy, ...rest } = options
+        return rest as Query<T>
+    }, [options])
+
+    const localData = useStoreQueryIds(store, query)
+    const remoteEnabled = resolveRemoteEnabled(fetchPolicy)
+    const remote = useRemoteQuery<T, Relations>({
+        store,
+        options: query,
+        enabled: remoteEnabled
+    })
+
+    const status = buildStatus({
+        fetchPolicy,
+        hasData: localData.length > 0,
+        isFetching: remoteEnabled ? remote.isFetching : false,
+        error: remote.error,
+        pageInfo: remote.pageInfo
+    })
+
+    const refetch = async () => {
+        if (!remoteEnabled) {
+            return localData
+        }
+        return (await remote.refetch()).map((item) => item.id)
+    }
+
+    const fetchMore = async (moreOptions: Query<T>) => {
+        if (!remoteEnabled) {
+            return []
+        }
+        return (await remote.fetchMore(moreOptions)).map((item) => item.id)
+    }
+
+    return {
+        ...status,
+        data: localData,
+        refetch,
+        fetchMore
+    }
 }

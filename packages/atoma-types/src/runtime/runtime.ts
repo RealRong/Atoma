@@ -1,5 +1,4 @@
 import type { Engine } from './engine/api'
-import type { Debug } from './debug'
 import type { StoreEventBus } from './store/events'
 import type { Read } from './read'
 import type { StoreCatalog } from './store/catalog'
@@ -17,5 +16,4 @@ export type Runtime = Readonly<{
     write: Write
     processor: Processor
     engine: Engine
-    debug: Debug
 }>

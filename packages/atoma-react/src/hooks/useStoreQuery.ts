@@ -4,46 +4,31 @@ import type { Entity, Store, Query as StoreQuery } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useStoreSnapshot } from './internal/useStoreSelector'
 
-type UseStoreQueryResultMode = 'entities' | 'ids'
-
-type UseStoreQueryOptions<T extends Entity> =
-    & StoreQuery<T>
-    & { result?: UseStoreQueryResultMode }
-
-type StoreQueryResult<T extends Entity> = {
+type StoreQueryResult<T extends Entity> = Readonly<{
     ids: Array<T['id']>
     data: T[]
-}
+}>
 
-function stripResult<T extends Entity>(options?: UseStoreQueryOptions<T>): StoreQuery<T> | undefined {
-    if (!options) return undefined
-    const { result: _result, ...rest } = options
-    return rest
-}
-
-function useStoreQueryInternal<T extends Entity, Relations = {}>(
+function useStoreQueryResult<T extends Entity, Relations = {}>(
     store: Store<T, Relations>,
-    options?: UseStoreQueryOptions<T>
+    query?: StoreQuery<T>
 ): StoreQueryResult<T> {
     const map = useStoreSnapshot(store, 'useStoreQuery')
     const bindings = getStoreBindings(store, 'useStoreQuery')
-
-    const query = stripResult(options)
     const queryKey = useMemo(() => stableStringify(query), [query])
 
     return useMemo(() => {
-        const source = Array.from(map.values()) as T[]
         if (!query) {
+            const data = Array.from(map.values()) as T[]
             return {
-                ids: source.map(item => item.id) as Array<T['id']>,
-                data: source
+                ids: data.map((item) => item.id),
+                data
             }
         }
-        const result = bindings.query(query)
 
-        const data = result.data as T[]
+        const data = bindings.query(query).data as T[]
         return {
-            ids: data.map(item => item.id) as Array<T['id']>,
+            ids: data.map((item) => item.id),
             data
         }
     }, [bindings, map, queryKey])
@@ -51,21 +36,14 @@ function useStoreQueryInternal<T extends Entity, Relations = {}>(
 
 export function useStoreQuery<T extends Entity, Relations = {}>(
     store: Store<T, Relations>,
-    options: UseStoreQueryOptions<T> & { result: 'ids' }
-): Array<T['id']>
-
-export function useStoreQuery<T extends Entity, Relations = {}>(
-    store: Store<T, Relations>,
-    options?: UseStoreQueryOptions<T>
-): T[]
-
-export function useStoreQuery<T extends Entity, Relations = {}>(
-    store: Store<T, Relations>,
-    options?: UseStoreQueryOptions<T>
+    query?: StoreQuery<T>
 ): T[] {
-    const resultMode: UseStoreQueryResultMode = options?.result ?? 'entities'
-    const result = useStoreQueryInternal(store, options)
-    return resultMode === 'ids'
-        ? result.ids as unknown as T[]
-        : result.data
+    return useStoreQueryResult(store, query).data
+}
+
+export function useStoreQueryIds<T extends Entity, Relations = {}>(
+    store: Store<T, Relations>,
+    query?: StoreQuery<T>
+): Array<T['id']> {
+    return useStoreQueryResult(store, query).ids
 }

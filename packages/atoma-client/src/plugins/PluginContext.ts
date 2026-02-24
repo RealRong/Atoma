@@ -1,7 +1,7 @@
 import type {
     PluginContext as PluginContextType,
 } from 'atoma-types/client/plugins'
-import type { Entity } from 'atoma-types/core'
+import type { Entity, Query } from 'atoma-types/core'
 import type { Runtime } from 'atoma-runtime'
 import { ServiceRegistry } from './ServiceRegistry'
 
@@ -26,9 +26,16 @@ export class PluginContext implements PluginContextType {
                 list: runtime.stores.list,
                 use: runtime.stores.use,
                 peek: <T extends Entity = Entity>(storeName: string, id: string) => {
-                    const { snapshot } = runtime.stores.inspect<T>(storeName)
-                    return snapshot.get(id)
-                }
+                    const data = runtime.stores.use<T>(storeName).query({
+                        filter: {
+                            op: 'eq',
+                            field: 'id',
+                            value: id
+                        }
+                    } as Query<T>).data[0]
+                    return data === undefined ? undefined : data
+                },
+                snapshot: runtime.stores.snapshot
             },
             action: {
                 createContext: runtime.engine.action.createContext
@@ -36,11 +43,7 @@ export class PluginContext implements PluginContextType {
             execution: {
                 register: runtime.execution.register,
                 hasExecutor: runtime.execution.hasExecutor
-            },
-            snapshot: {
-                store: runtime.debug.snapshotStore,
-                indexes: runtime.debug.snapshotIndexes
-            },
+            }
         }
         this.events = {
             on: runtime.events.on,

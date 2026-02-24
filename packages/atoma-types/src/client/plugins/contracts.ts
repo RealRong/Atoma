@@ -29,6 +29,7 @@ export type PluginRuntime = Readonly<{
         list: () => StoreToken[]
         use: <T extends Entity = Entity>(storeName: StoreToken) => StoreSession<T>
         peek: <T extends Entity = Entity>(storeName: StoreToken, id: EntityId) => T | undefined
+        snapshot: Runtime['stores']['snapshot']
     }>
     action: Readonly<{
         createContext: (context?: Partial<ActionContext>) => ActionContext
@@ -36,10 +37,6 @@ export type PluginRuntime = Readonly<{
     execution: Readonly<{
         register: Runtime['execution']['register']
         hasExecutor: Runtime['execution']['hasExecutor']
-    }>
-    snapshot: Readonly<{
-        store: Runtime['debug']['snapshotStore']
-        indexes: Runtime['debug']['snapshotIndexes']
     }>
 }>
 

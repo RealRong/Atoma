@@ -10,17 +10,13 @@ export type { Write } from './write'
 export type {
     StoreCatalog,
     StoreSession,
+    StoreSnapshot,
     StoreReconcileMode,
     StoreHydrateMode,
     StoreReconcileInput,
     StoreReconcileResult
 } from './store/catalog'
 export type { StoreHandle } from './store/handle'
-export type {
-    StoreDebugSnapshot,
-    IndexDebugSnapshot,
-    Debug
-} from './debug'
 export type { StoreState } from './store/state'
 export type { Schema, StoreSchema, StoresConfig } from './schema'
 export type {

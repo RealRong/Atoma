@@ -1,5 +1,5 @@
 export { useOne } from './useValue'
 export { useAll } from './useAll'
-export { useQuery } from './useQuery'
+export { useQuery, useQueryIds } from './useQuery'
 export { useMany } from './useMultiple'
 export { useLocalQuery } from './useLocalQuery'

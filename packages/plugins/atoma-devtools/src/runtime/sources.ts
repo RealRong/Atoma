@@ -53,9 +53,11 @@ function snapshotStores({
     const limit = resolveLimit(query)
     const snapshots: unknown[] = []
     for (const storeName of resolveStoreNames({ ctx, query })) {
-        const snapshot = ctx.runtime.snapshot.store(storeName)
-        if (!snapshot) continue
-        snapshots.push(snapshot)
+        const snapshot = ctx.runtime.stores.snapshot(storeName)
+        snapshots.push({
+            ...snapshot.store,
+            timestamp: snapshot.timestamp
+        })
         if (snapshots.length >= limit) break
     }
     return snapshots
@@ -71,9 +73,12 @@ function snapshotIndexes({
     const limit = resolveLimit(query)
     const snapshots: unknown[] = []
     for (const storeName of resolveStoreNames({ ctx, query })) {
-        const snapshot = ctx.runtime.snapshot.indexes(storeName)
-        if (!snapshot) continue
-        snapshots.push(snapshot)
+        const snapshot = ctx.runtime.stores.snapshot(storeName)
+        snapshots.push({
+            name: snapshot.store.name,
+            indexes: snapshot.indexes,
+            timestamp: snapshot.timestamp
+        })
         if (snapshots.length >= limit) break
     }
     return snapshots

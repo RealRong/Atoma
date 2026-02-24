@@ -25,7 +25,7 @@ export function useAll<T extends Entity, Relations = {}, const Include extends R
         memoedArr,
         options.include,
         relations,
-        (name) => bindings.useStore(name)
+        bindings.useStore
     )
     return relationsResult.data as unknown as Result
 }
