@@ -1,5 +1,5 @@
-import type { RemoteOp, RemoteOpKind, QueryOp, WriteOp, ChangesPullOp, Meta } from 'atoma-types/protocol'
-import { assertFiniteNumber, assertNonEmptyString, invalid, isObject, makeValidationDetails, requireObject, requireString, readString } from './common'
+import type { RemoteOp, RemoteOpKind, QueryOp, WriteOp, Meta } from 'atoma-types/protocol'
+import { invalid, isObject, makeValidationDetails, requireObject, requireString, readString } from './common'
 import { assertOpMeta } from './meta'
 import { assertQuery } from './query'
 import { assertWriteEntries } from './write'
@@ -20,7 +20,7 @@ function assertOpBase(obj: JsonObject): OpBase {
         details: detailsForOp('opId')
     })
     const kind = readString(obj, 'kind') as RemoteOpKind | undefined
-    if (kind !== 'query' && kind !== 'write' && kind !== 'changes.pull') {
+    if (kind !== 'query' && kind !== 'write') {
         throw invalid('INVALID_REQUEST', 'Missing kind', detailsForOp('kind', { opId }))
     }
     const meta = assertOpMeta((obj as any).meta)
@@ -74,35 +74,6 @@ function assertWriteOp(obj: JsonObject, base: OpBase): WriteOp {
     }
 }
 
-function assertChangesPullOp(obj: JsonObject, base: OpBase): ChangesPullOp {
-    const detailsForPull = makeValidationDetails('pull', { opId: base.opId })
-    const pullObj = requireObject((obj as any).pull, {
-        code: 'INVALID_REQUEST',
-        message: 'Missing pull',
-        details: detailsForPull()
-    })
-    const cursor = (pullObj as any).cursor
-    const limit = (pullObj as any).limit
-    assertNonEmptyString(cursor, { code: 'INVALID_REQUEST', message: 'Missing pull.cursor', details: detailsForPull('cursor') })
-    assertFiniteNumber(limit, { code: 'INVALID_REQUEST', message: 'Missing pull.limit', details: detailsForPull('limit') })
-
-    const resourcesRaw = (pullObj as any).resources
-    const resources = Array.isArray(resourcesRaw)
-        ? resourcesRaw.filter((r: any) => typeof r === 'string' && r)
-        : undefined
-
-    return {
-        opId: base.opId,
-        kind: 'changes.pull',
-        ...(base.meta ? { meta: base.meta } : {}),
-        pull: {
-            cursor: cursor as string,
-            limit: limit as number,
-            ...(resources?.length ? { resources } : {})
-        }
-    }
-}
-
 export function assertRemoteOp(value: unknown): RemoteOp {
     if (!isObject(value)) throw invalid('INVALID_REQUEST', 'Invalid op', { kind: 'validation', part: 'op' })
 
@@ -113,7 +84,5 @@ export function assertRemoteOp(value: unknown): RemoteOp {
             return assertQueryOp(value, base)
         case 'write':
             return assertWriteOp(value, base)
-        case 'changes.pull':
-            return assertChangesPullOp(value, base)
     }
 }

@@ -14,3 +14,6 @@ export type {
 
 export type { ServiceToken, ServiceRegistry } from './services'
 export { createServiceToken } from './services'
+
+export type { SyncStream, SyncTransport } from './sync'
+export { SYNC_TRANSPORT_TOKEN } from './sync'

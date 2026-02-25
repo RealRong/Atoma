@@ -1,7 +1,9 @@
 import { HttpOperationClient } from 'atoma-backend-http'
 import { buildOperationExecutor } from 'atoma-backend-shared'
 import { OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN } from 'atoma-types/client/ops'
+import { SYNC_TRANSPORT_TOKEN } from 'atoma-types/client/sync'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
+import { createSyncTransport } from './sync/createSyncTransport'
 import type { AtomaServerBackendPluginOptions } from './types'
 import { createWriteCoordinator } from './write/createWriteCoordinator'
 
@@ -28,7 +30,7 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
 
     return {
         id: `atoma-server:${normalizedOptions.baseURL}`,
-        provides: [OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN],
+        provides: [OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN, SYNC_TRANSPORT_TOKEN],
         setup: (ctx) => {
             const operationClient = new HttpOperationClient({
                 baseURL: normalizedOptions.baseURL,
@@ -43,10 +45,16 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
                 },
                 batch: normalizedOptions.batch
             })
+            const syncTransport = createSyncTransport({
+                baseURL: normalizedOptions.baseURL,
+                headers: normalizedOptions.headers,
+                fetchFn: normalizedOptions.fetchFn
+            })
 
             const writeCoordinator = createWriteCoordinator(ctx.runtime)
             const unregisterService = ctx.services.register(OPERATION_CLIENT_TOKEN, operationClient)
             const unregisterWriteCoordinator = ctx.services.register(WRITE_COORDINATOR_TOKEN, writeCoordinator)
+            const unregisterSyncTransport = ctx.services.register(SYNC_TRANSPORT_TOKEN, syncTransport)
             let unregisterExecution: (() => void) | undefined
 
             try {
@@ -66,6 +74,7 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
                     })
                 })
             } catch (error) {
+                safeDispose(unregisterSyncTransport)
                 safeDispose(unregisterWriteCoordinator)
                 safeDispose(unregisterService)
                 throw error
@@ -74,6 +83,7 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
             return {
                 dispose: () => {
                     safeDispose(unregisterExecution)
+                    safeDispose(unregisterSyncTransport)
                     safeDispose(unregisterWriteCoordinator)
                     safeDispose(unregisterService)
                 }

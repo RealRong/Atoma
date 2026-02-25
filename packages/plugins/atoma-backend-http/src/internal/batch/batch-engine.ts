@@ -606,7 +606,7 @@ export class BatchEngine {
             this.validateWriteBatchSize(writeOp)
             return this.writeLane.enqueue(writeOp)
         }
-        return Promise.reject(new Error(`[BatchEngine] Unsupported op kind: ${op.kind}`))
+        return Promise.reject(new Error('[BatchEngine] Unsupported op kind'))
     }
 
     async enqueueOperations(ops: RemoteOp[]): Promise<RemoteOpResult[]> {

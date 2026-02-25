@@ -2,8 +2,7 @@ export {
     buildRequestMeta,
     withTraceMeta,
     buildWriteOp,
-    buildQueryOp,
-    buildChangesPullOp
+    buildQueryOp
 } from './ops/build'
 
 export { ensureWriteItemMeta, newWriteItemMeta } from './ops/meta'
@@ -50,7 +49,9 @@ export {
 
 export {
     HTTP_PATH_OPS,
-    HTTP_PATH_SYNC_SUBSCRIBE
+    HTTP_PATH_SYNC_RXDB_PULL,
+    HTTP_PATH_SYNC_RXDB_PUSH,
+    HTTP_PATH_SYNC_RXDB_STREAM
 } from './transport/http'
 
 export {

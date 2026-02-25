@@ -5,7 +5,7 @@ export type {
     AtomaServerHookArgs,
     AtomaServerPlugins,
     AtomaOpsPlugin,
-    AtomaSubscribePlugin,
+    AtomaRoutePlugin,
     AtomaOpPlugin,
     AtomaOpPluginContext,
     AtomaOpPluginResult,

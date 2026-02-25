@@ -1,23 +1,34 @@
-import type { SyncBackoffConfig, SyncEvent, SyncMode, SyncPhase, SyncRetryConfig } from 'atoma-types/sync'
+import type { SyncEvent, SyncMode, SyncPhase, SyncStatus } from 'atoma-types/sync'
+
+export type SyncResourceConfig = Readonly<{
+    resource: string
+    storeName?: string
+    collectionName?: string
+    schema?: Record<string, unknown>
+}>
 
 export type SyncPluginOptions = Readonly<{
+    resources: ReadonlyArray<string | SyncResourceConfig>
     mode?: SyncMode
-    resources?: string[]
 
-    pull?: Readonly<{ intervalMs?: number }>
-    push?: Readonly<{ maxItems?: number }>
-    subscribe?: boolean | Readonly<{ reconnectDelayMs?: number }>
+    live?: boolean
+    waitForLeadership?: boolean
+    retryTimeMs?: number
 
-    policy?: Readonly<{
-        retry?: SyncRetryConfig
-        backoff?: SyncBackoffConfig
+    pull?: Readonly<{
+        batchSize?: number
+    }>
+    push?: Readonly<{
+        batchSize?: number
+    }>
+    stream?: Readonly<{
+        enabled?: boolean
+        pollIntervalMs?: number
+        reconnectDelayMs?: number
     }>
 
-    now?: () => number
     onError?: (error: Error, context: { phase: SyncPhase }) => void
     onEvent?: (event: SyncEvent) => void
-    /** Optional client namespace override for outbox keys. */
-    clientKey?: string
 }>
 
 export type SyncExtension = Readonly<{
@@ -25,7 +36,7 @@ export type SyncExtension = Readonly<{
         start: (mode?: SyncMode) => void
         stop: () => void
         dispose: () => void
-        status: () => { started: boolean; configured: boolean }
+        status: () => SyncStatus
         pull: () => Promise<void>
         push: () => Promise<void>
         devtools: { snapshot: () => any; subscribe: (fn: (e: any) => void) => () => void }

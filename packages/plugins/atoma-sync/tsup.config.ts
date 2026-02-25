@@ -49,5 +49,8 @@ export default defineConfig({
         'atoma-shared',
         'atoma-observability',
         'atoma-types',
+        'rxdb',
+        'rxdb/plugins/replication',
+        'rxdb/plugins/storage-memory',
     ]
 })

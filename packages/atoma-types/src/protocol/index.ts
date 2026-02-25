@@ -22,7 +22,6 @@ export type {
     WriteEntryDelete,
     WriteEntryUpsert,
     WriteEntry,
-    ChangesPullOp,
     RemoteOpResult,
     RemoteOpsRequest,
     RemoteOpsResponseData,

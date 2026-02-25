@@ -2,7 +2,6 @@ import { runQuery } from 'atoma-core/query'
 import type { Entity, Query as CoreQuery } from 'atoma-types/core'
 import type { ExecuteOperationsInput, ExecuteOperationsOutput, OperationClient } from 'atoma-types/client/ops'
 import type {
-    ChangeBatch,
     RemoteOp,
     RemoteOpResult,
     Query,
@@ -134,15 +133,6 @@ export class StorageOperationClient implements OperationClient {
                     return { opId, ok: false, error: standardError({ code: 'INVALID_REQUEST', message: 'Missing write.entries', kind: 'validation' }) }
                 }
                 const data = await this.executeWrite(resource, entries)
-                return { opId, ok: true, data }
-            }
-
-            if (op.kind === 'changes.pull') {
-                const cursor = (op as any).pull?.cursor
-                const data: ChangeBatch = {
-                    nextCursor: typeof cursor === 'string' ? cursor : '0',
-                    changes: []
-                }
                 return { opId, ok: true, data }
             }
 

@@ -11,6 +11,7 @@ export default defineConfig({
         'client/plugins': 'src/client/plugins/index.ts',
         'client/services': 'src/client/services.ts',
         'client/ops': 'src/client/ops.ts',
+        'client/sync': 'src/client/sync.ts',
         'client/relations': 'src/client/relations.ts',
         'client/schema': 'src/client/schema.ts',
         protocol: 'src/protocol/index.ts',

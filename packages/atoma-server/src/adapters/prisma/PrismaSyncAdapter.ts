@@ -136,26 +136,24 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
         }
     }
 
-    async getLatestCursor(): Promise<number> {
-        const model = this.changes(this.client)
-        if (!model?.findFirst) return 0
+    async pullChangesByResource(args: {
+        resource: string
+        cursor: number
+        limit: number
+    }): Promise<AtomaChange[]> {
+        const resource = String(args.resource ?? '').trim()
+        if (!resource) return []
+        const cursor = Math.max(0, Math.floor(args.cursor))
+        const limit = Math.max(1, Math.floor(args.limit))
 
-        const row = await model.findFirst({
-            orderBy: { cursor: 'desc' },
-            select: { cursor: true }
-        })
-
-        const n = Number((row as any)?.cursor ?? 0)
-        if (!Number.isFinite(n) || n <= 0) return 0
-        return Math.floor(n)
-    }
-
-    async pullChanges(cursor: number, limit: number): Promise<AtomaChange[]> {
         const model = this.changes(this.client)
         if (!model?.findMany) return []
 
         const rows = await model.findMany({
-            where: { cursor: { gt: cursor } },
+            where: {
+                resource,
+                cursor: { gt: cursor }
+            },
             orderBy: { cursor: 'asc' },
             take: limit
         })
@@ -170,13 +168,53 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
         }))
     }
 
-    async waitForChanges(cursor: number, timeoutMs: number): Promise<AtomaChange[]> {
-        const deadline = Date.now() + Math.max(0, timeoutMs)
+    async waitForResourceChanges(args: {
+        resources?: string[]
+        afterCursorByResource?: Record<string, number>
+        timeoutMs: number
+    }): Promise<Array<{ resource: string; cursor: number }>> {
+        const allowList = (args.resources ?? [])
+            .map(value => String(value ?? '').trim())
+            .filter(Boolean)
+        const allow = allowList.length ? new Set(allowList) : null
+        const byResource = args.afterCursorByResource ?? {}
+        const deadline = Date.now() + Math.max(0, args.timeoutMs)
+
         while (Date.now() < deadline) {
-            const changes = await this.pullChanges(cursor, 200)
-            if (changes.length) return changes
+            const model = this.changes(this.client)
+            if (!model?.findMany) return []
+
+            const rows = await model.findMany({
+                where: allowList.length
+                    ? { resource: { in: allowList } }
+                    : undefined,
+                orderBy: { cursor: 'desc' },
+                take: allowList.length
+                    ? Math.max(allowList.length * 4, 50)
+                    : 200
+            })
+
+            const seen = new Set<string>()
+            const changed: Array<{ resource: string; cursor: number }> = []
+            for (const row of rows) {
+                const resource = String((row as any)?.resource ?? '').trim()
+                if (!resource || seen.has(resource)) continue
+                seen.add(resource)
+                if (allow && !allow.has(resource)) continue
+
+                const cursor = Number((row as any)?.cursor)
+                if (!Number.isFinite(cursor) || cursor <= 0) continue
+
+                const knownCursor = Math.max(0, Math.floor(Number(byResource[resource] ?? 0)))
+                if (cursor <= knownCursor) continue
+
+                changed.push({ resource, cursor: Math.floor(cursor) })
+            }
+
+            if (changed.length) return changed
             await new Promise(r => setTimeout(r, 250))
         }
+
         return []
     }
 }

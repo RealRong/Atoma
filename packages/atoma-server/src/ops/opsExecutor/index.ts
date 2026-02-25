@@ -1,15 +1,14 @@
-import { byteLengthUtf8, throwError, toStandardError } from '../../error'
+import { byteLengthUtf8, throwError } from '../../error'
 import type { AtomaOpPlugin, AtomaOpPluginContext, AtomaOpPluginResult, AtomaServerConfig, AtomaServerRoute } from '../../config'
 import type { ServerRuntime } from '../../runtime/createRuntime'
 import { composeEnvelopeOk, withErrorTrace, createErrorFromCode } from 'atoma-types/protocol-tools'
 import type {
-    ChangesPullOp,
     RemoteOpResult,
     QueryOp,
     WriteOp
 } from 'atoma-types/protocol'
 import type { IOrmAdapter } from '../../adapters/ports'
-import { clampQueryLimit, ensureProtocolVersion, normalizeRemoteOpsRequest, parseCursor } from './normalize'
+import { clampQueryLimit, ensureProtocolVersion, normalizeRemoteOpsRequest } from './normalize'
 import { executeQueryOps } from './query'
 import { executeWriteOps } from './write'
 
@@ -171,62 +170,10 @@ export function createOpsExecutor<Ctx>(args: {
                 resultsByOpId
             })
 
-            const pullOps = ops.filter((o): o is ChangesPullOp => o.kind === 'changes.pull')
-            if (pullOps.length) {
-                if (!args.config.adapter.sync) {
-                    throwError('INVALID_REQUEST', 'Sync adapter is required for changes.pull', { kind: 'validation' })
-                }
-            }
-
-            for (const op of pullOps) {
-                const opTrace = traceMetaForOpId(op.opId)
-                const pluginResult = await runOpPlugins({
-                    opId: op.opId,
-                    kind: 'changes.pull',
-                    op,
-                    route,
-                    runtime: pluginRuntime
-                }, async () => {
-                    try {
-                        const cursor = parseCursor(op.pull.cursor)
-                        const maxLimit = args.config.sync?.pull?.maxLimit ?? args.config.limits?.syncPull?.maxLimit ?? 200
-                        const limit = Math.min(Math.max(1, Math.floor(op.pull.limit)), maxLimit)
-
-                        const raw = await args.config.adapter.sync!.pullChanges(cursor, limit)
-                        const nextCursor = raw.length ? raw[raw.length - 1].cursor : cursor
-                        return {
-                            ok: true,
-                            data: {
-                                nextCursor: String(nextCursor),
-                                changes: raw.map((c: any) => ({
-                                    resource: c.resource,
-                                    id: c.id,
-                                    kind: c.kind,
-                                    version: c.serverVersion,
-                                    changedAtMs: c.changedAt
-                                }))
-                            }
-                        }
-                    } catch (err) {
-                        return { ok: false, error: err }
-                    }
-                })
-
-                if (pluginResult.ok) {
-                    resultsByOpId.set(op.opId, { opId: op.opId, ok: true, data: pluginResult.data })
-                    continue
-                }
-
-                const standard = withErrorTrace(
-                    toStandardError(pluginResult.error, 'SYNC_PULL_FAILED'),
-                    opTrace
-                )
-                resultsByOpId.set(op.opId, { opId: op.opId, ok: false, error: standard })
-            }
-
             const results: RemoteOpResult[] = ops.map((op) => {
                 const res = resultsByOpId.get(op.opId)
                 if (res) return res
+
                 return {
                     opId: op.opId,
                     ok: false,

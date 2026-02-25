@@ -24,6 +24,9 @@
             "atoma-types/client": [
                 "src/client/index.ts"
             ],
+            "atoma-types/client/sync": [
+                "src/client/sync.ts"
+            ],
             "atoma-types/protocol": [
                 "src/protocol/index.ts"
             ],

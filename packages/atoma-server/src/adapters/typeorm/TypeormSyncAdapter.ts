@@ -157,19 +157,16 @@ export class AtomaTypeormSyncAdapter implements ISyncAdapter {
         return { ...change, cursor }
     }
 
-    async getLatestCursor(): Promise<number> {
-        const row = await this.executor
-            .createQueryBuilder()
-            .select('MAX(c.cursor)', 'cursor')
-            .from(this.changesTable, 'c')
-            .getRawOne()
+    async pullChangesByResource(args: {
+        resource: string
+        cursor: number
+        limit: number
+    }): Promise<AtomaChange[]> {
+        const resource = String(args.resource ?? '').trim()
+        if (!resource) return []
+        const cursor = Math.max(0, Math.floor(args.cursor))
+        const limit = Math.max(1, Math.floor(args.limit))
 
-        const n = Number((row as any)?.cursor ?? 0)
-        if (!Number.isFinite(n) || n <= 0) return 0
-        return Math.floor(n)
-    }
-
-    async pullChanges(cursor: number, limit: number): Promise<AtomaChange[]> {
         const rows = await this.executor
             .createQueryBuilder()
             .select([
@@ -182,6 +179,7 @@ export class AtomaTypeormSyncAdapter implements ISyncAdapter {
             ])
             .from(this.changesTable, 'c')
             .where('c.cursor > :cursor', { cursor })
+            .andWhere('c.resource = :resource', { resource })
             .orderBy('c.cursor', 'ASC')
             .limit(limit)
             .getRawMany()
@@ -196,13 +194,45 @@ export class AtomaTypeormSyncAdapter implements ISyncAdapter {
         }))
     }
 
-    async waitForChanges(cursor: number, timeoutMs: number): Promise<AtomaChange[]> {
-        const deadline = Date.now() + Math.max(0, timeoutMs)
+    async waitForResourceChanges(args: {
+        resources?: string[]
+        afterCursorByResource?: Record<string, number>
+        timeoutMs: number
+    }): Promise<Array<{ resource: string; cursor: number }>> {
+        const allowList = (args.resources ?? [])
+            .map(value => String(value ?? '').trim())
+            .filter(Boolean)
+        const allow = allowList.length ? new Set(allowList) : null
+        const byResource = args.afterCursorByResource ?? {}
+        const deadline = Date.now() + Math.max(0, args.timeoutMs)
+
         while (Date.now() < deadline) {
-            const changes = await this.pullChanges(cursor, 200)
-            if (changes.length) return changes
+            const rows = await this.executor
+                .createQueryBuilder()
+                .select([
+                    'c.resource as resource',
+                    'MAX(c.cursor) as cursor'
+                ])
+                .from(this.changesTable, 'c')
+                .groupBy('c.resource')
+                .getRawMany()
+
+            const changed: Array<{ resource: string; cursor: number }> = []
+            for (const row of rows) {
+                const resource = String((row as any)?.resource ?? '').trim()
+                if (!resource) continue
+                if (allow && !allow.has(resource)) continue
+                const cursor = Number((row as any)?.cursor)
+                if (!Number.isFinite(cursor) || cursor <= 0) continue
+                const knownCursor = Math.max(0, Math.floor(Number(byResource[resource] ?? 0)))
+                if (cursor <= knownCursor) continue
+                changed.push({ resource, cursor: Math.floor(cursor) })
+            }
+
+            if (changed.length) return changed
             await new Promise(r => setTimeout(r, 250))
         }
+
         return []
     }
 }

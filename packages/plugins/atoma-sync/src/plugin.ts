@@ -1,192 +1,259 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import type { CommandResult, Source, StreamEvent } from 'atoma-types/devtools'
-import { HUB_TOKEN } from 'atoma-types/devtools'
-import type { SyncClient, SyncMode, SyncPhase, SyncRuntimeConfig } from 'atoma-types/sync'
-import { SyncEngine } from '#sync/engine/sync-engine'
-import { createStores } from '#sync/storage'
-import { WritebackApplier } from '#sync/applier/writeback-applier'
+import { SYNC_TRANSPORT_TOKEN } from 'atoma-types/client/sync'
+import type { StoreChange } from 'atoma-types/core'
+import type { SyncEvent, SyncMode, SyncPhase, SyncStatus } from 'atoma-types/sync'
+import { registerSyncSource } from './devtools/source'
 import { SyncDevtools } from '#sync/devtools/sync-devtools'
-import { SyncWrites } from '#sync/persistence/SyncWrites'
-import { SYNC_SUBSCRIBE_TRANSPORT_TOKEN, SYNC_TRANSPORT_TOKEN } from '#sync/services'
-import { getOrCreateGlobalReplicaId } from '#sync/internal/replica-id'
+import { toLocalSyncDocs } from './mapping/document'
+import { normalizeResources } from './mapping/resources'
+import {
+    buildReplications,
+    disposeReplications,
+    pauseStates,
+    startStates,
+    waitReplicationsInSync
+} from './replication/runtime'
+import type { ReadyRuntime, ResourceStateMap } from './runtime/contracts'
+import { createReadyRuntime } from './rxdb/database'
 import type { SyncExtension, SyncPluginOptions } from './types'
+import { toError } from './utils/common'
 
-export function syncPlugin(opts: SyncPluginOptions = {}): ClientPlugin<SyncExtension> {
+export function syncPlugin(options: SyncPluginOptions): ClientPlugin<SyncExtension> {
     return {
         id: 'sync',
-        setup: (ctx: PluginContext) => setupSyncPlugin(ctx, opts)
+        requires: [SYNC_TRANSPORT_TOKEN],
+        setup: (ctx: PluginContext) => setupSyncPlugin(ctx, options)
     }
 }
 
-function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extension: SyncExtension; dispose: () => void } {
-    const now = opts.now ?? (() => Date.now())
-    const modeDefault: SyncMode = opts.mode ?? 'full'
-    const resources = opts.resources
-
-    const runtime = ctx.runtime
-
-    const replicaId = getOrCreateGlobalReplicaId({ now })
-    const clientKey = String(opts.clientKey ?? runtime.id ?? 'default').trim() || 'default'
-    const namespace = `${clientKey}:${replicaId}`
-    const keyOutbox = `atoma-sync:${namespace}:outbox`
-    const keyCursor = `atoma-sync:${namespace}:cursor`
-    const keyLock = `atoma-sync:${namespace}:lock`
-
-    const stores = createStores({
-        outboxKey: keyOutbox,
-        cursorKey: keyCursor,
-        now
-    })
-
+function setupSyncPlugin(
+    ctx: PluginContext,
+    options: SyncPluginOptions
+): { extension: SyncExtension; dispose: () => void } {
+    const now = () => Date.now()
     const devtools = new SyncDevtools({ now })
-    const resolveDriver = () => {
-        const driver = ctx.services.resolve(SYNC_TRANSPORT_TOKEN)
-        if (!driver) {
-            throw new Error('[Sync] sync.transport missing (register via plugin)')
+    const syncTransport = ctx.services.resolve(SYNC_TRANSPORT_TOKEN)
+    if (!syncTransport) {
+        throw new Error('[Sync] sync.transport missing: mount atomaServerBackendPlugin first')
+    }
+
+    const emitEvent = (event: SyncEvent) => {
+        devtools.onEvent(event)
+        options.onEvent?.(event)
+    }
+
+    const reportError = (error: unknown, phase: SyncPhase) => {
+        const normalized = toError(error, `[Sync] ${phase} failed`)
+        devtools.onError(normalized, { phase })
+        options.onError?.(normalized, { phase })
+        emitEvent({
+            type: 'sync.error',
+            phase,
+            message: normalized.message
+        })
+    }
+
+    const resources = normalizeResources(options.resources)
+    const pullBatchSize = Math.max(1, Math.floor(options.pull?.batchSize ?? 200))
+    const pushBatchSize = Math.max(1, Math.floor(options.push?.batchSize ?? 100))
+    const live = options.live !== false
+    const waitForLeadership = options.waitForLeadership === true
+    const retryTimeMs = Math.max(200, Math.floor(options.retryTimeMs ?? 5000))
+    const streamEnabled = options.stream?.enabled !== false
+    const streamPollIntervalMs = Math.max(1000, Math.floor(options.stream?.pollIntervalMs ?? 5000))
+    const streamReconnectDelayMs = Math.max(200, Math.floor(options.stream?.reconnectDelayMs ?? 1500))
+
+    let mode: SyncMode = options.mode ?? 'full'
+    let configured = true
+    let started = false
+    let readyPromise: Promise<ReadyRuntime> | null = null
+    let rebuildingPromise: Promise<void> | null = null
+    let states: ResourceStateMap = new Map()
+    let disposed = false
+    let remoteApplyQueue: Promise<void> = Promise.resolve()
+
+    const ensureReady = async (): Promise<ReadyRuntime> => {
+        if (readyPromise) return await readyPromise
+
+        readyPromise = createReadyRuntime({
+            clientId: ctx.clientId,
+            resources
+        })
+
+        try {
+            return await readyPromise
+        } catch (error) {
+            configured = false
+            reportError(error, 'lifecycle')
+            throw error
         }
-        return driver
     }
 
-    const resolveSubscribeDriver = () => ctx.services.resolve(SYNC_SUBSCRIBE_TRANSPORT_TOKEN)
-
-    const onEvent = (e: any) => {
-        devtools.onEvent(e)
-        opts.onEvent?.(e)
-    }
-
-    const onError = (error: Error, context: { phase: SyncPhase }) => {
-        devtools.onError(error, context)
-        opts.onError?.(error, context)
-    }
-
-    const applier = new WritebackApplier({
-        runtime
-    })
-
-    const engineConfigForMode = (m: SyncMode): SyncRuntimeConfig => {
-        const transport = resolveDriver()
-        const subscribeTransport = resolveSubscribeDriver()
-
-        const pullEnabled = m === 'pull-only' || m === 'pull+subscribe' || m === 'full'
-        const subscribeEnabled = m === 'subscribe-only' || m === 'pull+subscribe' || m === 'full'
-        const pushEnabled = m === 'push-only' || m === 'full'
-        const subscribeEnabledByUser = opts.subscribe !== false
-
-        const pullIntervalMs = Math.max(0, Math.floor(opts.pull?.intervalMs ?? 10_000))
-        const pullLimit = 200
-        const debounceMs = 300
-
-        const maxItems = Math.max(1, Math.floor(opts.push?.maxItems ?? 50))
-        const returning = false
-
-        const reconnectDelayMs = Math.max(200, Math.floor(
-            (typeof opts.subscribe === 'object' && opts.subscribe ? opts.subscribe.reconnectDelayMs : undefined) ?? 1000
-        ))
-
-        const retry = opts.policy?.retry ?? {}
-        const backoff = opts.policy?.backoff ?? {}
-
-        if (subscribeEnabled && subscribeEnabledByUser && !subscribeTransport) {
-            throw new Error('[Sync] sync.subscribe transport missing (register via plugin)')
+    const rebuildReplications = async (targetMode: SyncMode): Promise<void> => {
+        if (rebuildingPromise) {
+            await rebuildingPromise
+            if (mode === targetMode) return
         }
 
-        return {
-            transport,
-            applier,
-            outbox: stores.outbox,
-            cursor: stores.cursor,
+        rebuildingPromise = (async () => {
+            const runtime = await ensureReady()
+            await disposeReplications(states)
+            states = new Map()
+            mode = targetMode
 
-            push: {
-                enabled: pushEnabled,
-                maxItems,
-                returning,
-                retry,
-                backoff
-            },
-
-            pull: {
-                enabled: pullEnabled,
-                limit: pullLimit,
-                debounceMs,
-                ...(resources?.length ? { resources } : {}),
-                periodic: {
-                    intervalMs: pullIntervalMs,
-                    retry,
-                    backoff
+            const nextStates = await buildReplications({
+                ctx,
+                runtime,
+                mode,
+                options: {
+                    pullBatchSize,
+                    pushBatchSize,
+                    live,
+                    waitForLeadership,
+                    retryTimeMs,
+                    streamEnabled,
+                    streamPollIntervalMs,
+                    streamReconnectDelayMs,
+                    transport: syncTransport
+                },
+                emitEvent,
+                reportError,
+                queueRemoteApply: (task) => {
+                    remoteApplyQueue = remoteApplyQueue
+                        .then(task)
+                        .catch((error) => {
+                            reportError(error, 'bridge')
+                        })
+                    return remoteApplyQueue
                 }
-            },
+            })
 
-            subscribe: {
-                enabled: Boolean(subscribeTransport) && subscribeEnabled && subscribeEnabledByUser,
-                reconnectDelayMs,
-                retry,
-                backoff
-            },
+            states = nextStates
 
-            lock: {
-                key: keyLock,
-                backoff
-            },
+            if (started) {
+                await startStates(states)
+            }
+        })()
 
-            now,
-            onEvent,
-            onError,
-            ...(subscribeTransport ? { subscribeTransport } : {})
+        try {
+            await rebuildingPromise
+        } finally {
+            rebuildingPromise = null
         }
     }
 
-    let currentMode: SyncMode = modeDefault
-    let engine: SyncClient | null = null
-
-    const isConfigured = (m: SyncMode) => {
-        const driver = ctx.services.resolve(SYNC_TRANSPORT_TOKEN)
-        if (!driver) return false
-        const subscribeEnabled = m === 'subscribe-only' || m === 'pull+subscribe' || m === 'full'
-        const subscribeEnabledByUser = opts.subscribe !== false
-        if (subscribeEnabled && subscribeEnabledByUser && !ctx.services.resolve(SYNC_SUBSCRIBE_TRANSPORT_TOKEN)) {
-            return false
+    const ensureRunning = async (targetMode: SyncMode): Promise<void> => {
+        if (disposed) return
+        if (states.size === 0 || mode !== targetMode) {
+            await rebuildReplications(targetMode)
         }
-        return true
+        if (started) return
+
+        started = true
+        emitEvent({ type: 'sync.lifecycle.started' })
+
+        try {
+            await startStates(states)
+        } catch (error) {
+            started = false
+            reportError(error, 'lifecycle')
+            throw error
+        }
     }
 
-    const ensureEngine = (m: SyncMode) => {
-        if (engine && currentMode === m) return engine
-        engine?.dispose()
-        currentMode = m
-        engine = new SyncEngine(engineConfigForMode(m))
-        return engine
+    const stopRunning = async (): Promise<void> => {
+        if (!started) return
+        started = false
+        await pauseStates(states)
+        emitEvent({ type: 'sync.lifecycle.stopped' })
     }
 
-    const syncWrites = new SyncWrites({
-        events: ctx.events,
-        outbox: stores.outbox,
-        resources: opts.resources,
-        onEvent,
-        onError
+    const onWriteCommitted = ctx.events.on('writeCommitted', (event) => {
+        if (disposed) return
+        if (String(event.context?.origin ?? '') === 'sync') return
+
+        const applyLocal = async () => {
+            const runtime = await ensureReady()
+            const target = runtime.resourceByStoreName.get(String(event.storeName))
+            if (!target) return
+
+            const collection = runtime.collectionByResource.get(target.resource)
+            if (!collection) return
+
+            const changes = Array.isArray(event.changes)
+                ? event.changes as ReadonlyArray<StoreChange<any>>
+                : []
+            if (!changes.length) return
+
+            const docs = toLocalSyncDocs({
+                changes,
+                resource: target.resource,
+                clientId: ctx.clientId,
+                now
+            })
+            if (!docs.length) return
+
+            const result = await collection.bulkUpsert(docs)
+            if (result.error.length) {
+                const first = result.error[0]
+                throw first instanceof Error
+                    ? first
+                    : new Error('[Sync] Failed to persist local write into RxDB collection')
+            }
+
+            emitEvent({
+                type: 'sync.bridge.localWrite',
+                resource: target.resource,
+                count: docs.length
+            })
+        }
+
+        void applyLocal().catch((error) => {
+            reportError(error, 'bridge')
+        })
     })
 
     const sync = {
-        start: (m?: SyncMode) => {
-            const selected = m ?? modeDefault
-            ensureEngine(selected).start()
+        start: (nextMode?: SyncMode) => {
+            const selectedMode = nextMode ?? mode
+            void ensureRunning(selectedMode).catch((error) => {
+                reportError(error, 'lifecycle')
+            })
         },
         stop: () => {
-            engine?.stop()
+            void stopRunning().catch((error) => {
+                reportError(error, 'lifecycle')
+            })
         },
         dispose: () => {
-            engine?.dispose()
-            engine = null
+            void disposeInternal()
         },
-        status: () => {
-            return { started: devtools.getStarted(), configured: isConfigured(currentMode) }
+        status: (): SyncStatus => {
+            return {
+                started,
+                configured,
+                active: started
+            }
         },
         pull: async () => {
-            const e = ensureEngine(currentMode)
-            await e.pull()
+            await ensureRunning(mode)
+            const pullStates = Array.from(states.values()).filter(state => state.pullEnabled)
+            if (!pullStates.length) return
+
+            pullStates.forEach((state) => {
+                state.replication.reSync()
+            })
+            await waitReplicationsInSync(pullStates)
         },
         push: async () => {
-            const e = ensureEngine(currentMode)
-            await e.push()
+            await ensureRunning(mode)
+            const pushStates = Array.from(states.values()).filter(state => state.pushEnabled)
+            if (!pushStates.length) return
+
+            pushStates.forEach((state) => {
+                state.replication.reSync()
+            })
+            await waitReplicationsInSync(pushStates)
         },
         devtools: {
             snapshot: devtools.snapshot,
@@ -196,116 +263,38 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
 
     const extension: SyncExtension = { sync }
 
-    const hub = ctx.services.resolve(HUB_TOKEN)
-    const sourceId = `sync.${runtime.id}`
-    let revision = 0
-    const source: Source = {
-        spec: {
-            id: sourceId,
-            clientId: runtime.id,
-            namespace: 'sync',
-            title: 'Sync',
-            priority: 40,
-            panels: [
-                { id: 'sync', title: 'Sync', order: 40, renderer: 'stats' },
-                { id: 'timeline', title: 'Timeline', order: 80, renderer: 'timeline' },
-                { id: 'raw', title: 'Raw', order: 999, renderer: 'raw' }
-            ],
-            capability: {
-                snapshot: true,
-                stream: true,
-                command: true
-            },
-            tags: ['plugin'],
-            commands: [
-                { name: 'sync.start', title: 'Start', argsJson: '{"mode":"full"}' },
-                { name: 'sync.stop', title: 'Stop' },
-                { name: 'sync.pull', title: 'Pull' },
-                { name: 'sync.push', title: 'Push' }
-            ]
-        },
-        snapshot: () => {
-            const base = devtools.snapshot()
-            return {
-                version: 1,
-                sourceId,
-                clientId: runtime.id,
-                panelId: 'sync',
-                revision,
-                timestamp: now(),
-                data: {
-                    ...base,
-                    status: {
-                        configured: isConfigured(currentMode),
-                        started: base.status?.started ?? devtools.getStarted()
-                    }
-                }
-            }
-        },
-        subscribe: (emit) => {
-            return devtools.subscribe((event: any) => {
-                revision += 1
-                const timestamp = now()
-                const changedEvent: StreamEvent = {
-                    version: 1,
-                    sourceId,
-                    clientId: runtime.id,
-                    panelId: 'sync',
-                    type: 'data:changed',
-                    revision,
-                    timestamp
-                }
-                const timelineEvent: StreamEvent = {
-                    version: 1,
-                    sourceId,
-                    clientId: runtime.id,
-                    panelId: 'timeline',
-                    type: 'timeline:event',
-                    revision,
-                    timestamp,
-                    payload: event
-                }
-                emit(changedEvent)
-                emit(timelineEvent)
-            })
-        },
-        invoke: async (command): Promise<CommandResult> => {
-            try {
-                if (command.name === 'sync.start') {
-                    const mode = typeof command.args?.mode === 'string' ? command.args.mode as SyncMode : undefined
-                    sync.start(mode)
-                    return { ok: true }
-                }
-                if (command.name === 'sync.stop') {
-                    sync.stop()
-                    return { ok: true }
-                }
-                if (command.name === 'sync.pull') {
-                    await sync.pull()
-                    return { ok: true }
-                }
-                if (command.name === 'sync.push') {
-                    await sync.push()
-                    return { ok: true }
-                }
-                return { ok: false, message: `unknown command: ${command.name}` }
-            } catch (error) {
-                const message = error instanceof Error
-                    ? (error.message || 'Unknown error')
-                    : String(error ?? 'Unknown error')
-                return { ok: false, message }
-            }
-        }
-    }
-    const unregisterSource = hub?.register(source)
+    const unregisterSource = registerSyncSource({
+        ctx,
+        now,
+        devtools,
+        sync
+    })
 
-    const dispose = () => {
+    const disposeInternal = async () => {
+        if (disposed) return
+        disposed = true
+
         try {
-            engine?.dispose()
+            await stopRunning()
         } catch {
             // ignore
         }
-        engine = null
+
+        try {
+            await disposeReplications(states)
+            states = new Map()
+        } catch {
+            // ignore
+        }
+
+        try {
+            const ready = readyPromise
+                ? await readyPromise.catch(() => null)
+                : null
+            await ready?.database.close()
+        } catch {
+            // ignore
+        }
 
         try {
             unregisterSource?.()
@@ -313,8 +302,17 @@ function setupSyncPlugin(ctx: PluginContext, opts: SyncPluginOptions): { extensi
             // ignore
         }
 
-        syncWrites.dispose()
+        try {
+            onWriteCommitted()
+        } catch {
+            // ignore
+        }
     }
 
-    return { extension, dispose }
+    return {
+        extension,
+        dispose: () => {
+            void disposeInternal()
+        }
+    }
 }

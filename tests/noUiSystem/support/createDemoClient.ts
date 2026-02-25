@@ -1,8 +1,8 @@
 import { createClient } from 'atoma-client'
 import { memoryBackendPlugin } from 'atoma-backend-memory'
-import { httpBackendPlugin } from 'atoma-backend-http'
+import { atomaServerBackendPlugin } from 'atoma-backend-atoma-server'
 import { historyPlugin } from 'atoma-history'
-import { syncOperationDriverPlugin, syncPlugin, type SyncExtension } from 'atoma-sync'
+import { syncPlugin, type SyncExtension } from 'atoma-sync'
 import type { AtomaClient, AtomaHistory } from 'atoma-types/client'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
 import type { SyncEvent, SyncMode, SyncPhase } from 'atoma-types/sync'
@@ -17,9 +17,7 @@ type BaseClientOptions = Readonly<{
     enableHistory?: boolean
     enableSync?: boolean
     syncMode?: SyncMode
-    subscribe?: boolean
     syncResources?: string[]
-    syncClientKey?: string
     onSyncEvent?: (event: SyncEvent) => void
     onSyncError?: (error: Error, context: { phase: SyncPhase }) => void
 }>
@@ -40,7 +38,7 @@ export function createHttpDemoClient(options: BaseClientOptions & {
     disableBatch?: boolean
 }): DemoClient {
     const plugins: ClientPlugin[] = [
-        httpBackendPlugin({
+        atomaServerBackendPlugin({
             baseURL: options.baseURL,
             fetchFn: options.fetchFn,
             batch: options.disableBatch === false ? undefined : { enabled: false }
@@ -56,12 +54,9 @@ function mountOptionalPlugins(plugins: ClientPlugin[], options: BaseClientOption
     }
 
     if (options.enableSync) {
-        plugins.push(syncOperationDriverPlugin())
         plugins.push(syncPlugin({
             mode: options.syncMode ?? 'full',
-            subscribe: options.subscribe ?? false,
-            resources: options.syncResources,
-            clientKey: options.syncClientKey,
+            resources: options.syncResources ?? ['users', 'posts', 'comments'],
             onEvent: options.onSyncEvent,
             onError: options.onSyncError
         }))

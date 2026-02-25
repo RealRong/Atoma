@@ -100,7 +100,17 @@ export interface ISyncAdapter {
     getIdempotency: (key: string, tx?: SyncTransactionContext) => Promise<IdempotencyResult>
     putIdempotency: (key: string, value: { status: number; body: unknown }, ttlMs?: number, tx?: SyncTransactionContext) => Promise<void>
     appendChange: (change: Omit<AtomaChange, 'cursor'>, tx?: SyncTransactionContext) => Promise<AtomaChange>
-    getLatestCursor: () => Promise<number>
-    pullChanges: (cursor: number, limit: number) => Promise<AtomaChange[]>
-    waitForChanges: (cursor: number, timeoutMs: number) => Promise<AtomaChange[]>
+    pullChangesByResource: (args: {
+        resource: string
+        cursor: number
+        limit: number
+    }) => Promise<AtomaChange[]>
+    waitForResourceChanges: (args: {
+        resources?: string[]
+        afterCursorByResource?: Record<string, number>
+        timeoutMs: number
+    }) => Promise<Array<{
+        resource: string
+        cursor: number
+    }>>
 }

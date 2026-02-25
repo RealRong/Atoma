@@ -4,7 +4,9 @@ import type { IOrmAdapter, ISyncAdapter } from './adapters/ports'
 
 export type AtomaServerRoute =
     | { kind: 'ops' }
-    | { kind: 'subscribe' }
+    | { kind: 'sync-rxdb-pull' }
+    | { kind: 'sync-rxdb-push' }
+    | { kind: 'sync-rxdb-stream' }
 
 export type AtomaServerHookArgs<Ctx> = {
     route: AtomaServerRoute
@@ -42,7 +44,7 @@ export type AtomaOpsPluginContext<Ctx> = {
     runtime: AtomaServerPluginRuntime<Ctx>
 }
 
-export type AtomaSubscribePluginContext<Ctx> = {
+export type AtomaRoutePluginContext<Ctx> = {
     request: Request
     route: AtomaServerRoute
     runtime: AtomaServerPluginRuntime<Ctx>
@@ -50,7 +52,7 @@ export type AtomaSubscribePluginContext<Ctx> = {
 
 export type AtomaOpPluginContext<Ctx> = {
     opId: string
-    kind: 'query' | 'write' | 'changes.pull'
+    kind: 'query' | 'write'
     resource?: string
     op: unknown
     route: AtomaServerRoute
@@ -58,12 +60,14 @@ export type AtomaOpPluginContext<Ctx> = {
 }
 
 export type AtomaOpsPlugin<Ctx> = (ctx: AtomaOpsPluginContext<Ctx>, next: () => Promise<Response>) => Promise<Response>
-export type AtomaSubscribePlugin<Ctx> = (ctx: AtomaSubscribePluginContext<Ctx>, next: () => Promise<Response>) => Promise<Response>
+export type AtomaRoutePlugin<Ctx> = (ctx: AtomaRoutePluginContext<Ctx>, next: () => Promise<Response>) => Promise<Response>
 export type AtomaOpPlugin<Ctx> = (ctx: AtomaOpPluginContext<Ctx>, next: () => Promise<AtomaOpPluginResult>) => Promise<AtomaOpPluginResult>
 
 export type AtomaServerPlugins<Ctx> = {
     ops?: AtomaOpsPlugin<Ctx>[]
-    subscribe?: AtomaSubscribePlugin<Ctx>[]
+    syncRxdbPull?: AtomaRoutePlugin<Ctx>[]
+    syncRxdbPush?: AtomaRoutePlugin<Ctx>[]
+    syncRxdbStream?: AtomaRoutePlugin<Ctx>[]
     op?: AtomaOpPlugin<Ctx>[]
 }
 
@@ -101,15 +105,15 @@ export type AtomaServerConfig<Ctx = unknown> = {
             changes?: string
             idempotency?: string
         }
+        pull?: {
+            defaultBatchSize?: number
+            maxBatchSize?: number
+        }
         push?: {
-            maxOps?: number
+            maxBatchSize?: number
             idempotencyTtlMs?: number
         }
-        pull?: {
-            defaultLimit?: number
-            maxLimit?: number
-        }
-        subscribe?: {
+        stream?: {
             heartbeatMs?: number
             retryMs?: number
             maxHoldMs?: number
@@ -127,8 +131,6 @@ export type AtomaServerConfig<Ctx = unknown> = {
             maxBatchSize?: number
             maxPayloadBytes?: number
         }
-        syncPush?: { maxOps?: number }
-        syncPull?: { maxLimit?: number }
     }
 
     observability?: {

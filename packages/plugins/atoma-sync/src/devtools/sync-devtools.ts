@@ -1,4 +1,4 @@
-import type { SyncEvent, SyncOutboxStats, SyncPhase } from 'atoma-types/sync'
+import type { SyncEvent, SyncPhase } from 'atoma-types/sync'
 
 type DevtoolsSubscriber = (e: any) => void
 
@@ -7,23 +7,19 @@ export class SyncDevtools {
 
     private lastEventAt: number | undefined
     private lastError: string | undefined
-    private lastOutboxStats: SyncOutboxStats | undefined
+    private readonly resourceStats = new Map<string, {
+        sent: number
+        received: number
+        conflicts: number
+        lastCursor?: number
+    }>()
     private started = false
 
     constructor(private readonly deps: { now: () => number }) {}
 
     onEvent = (e: SyncEvent) => {
         this.lastEventAt = this.deps.now()
-        if ((e as any)?.type === 'outbox:queue') this.lastOutboxStats = (e as any).stats
-        if ((e as any)?.type === 'outbox:queue_full') this.lastOutboxStats = (e as any).stats
-        if ((e as any)?.type === 'outbox:enqueue_failed') {
-            const payload = e as Extract<SyncEvent, { type: 'outbox:enqueue_failed' }>
-            this.lastError = payload.error?.message
-                ? `[outbox] ${payload.error.message}`
-                : '[outbox] enqueue failed'
-        }
-        if ((e as any)?.type === 'lifecycle:started') this.started = true
-        if ((e as any)?.type === 'lifecycle:stopped') this.started = false
+        this.trackEvent(e)
 
         this.emit({ type: String((e as any)?.type ?? 'event'), payload: e })
     }
@@ -37,7 +33,10 @@ export class SyncDevtools {
 
     snapshot = () => ({
         status: { configured: true, started: this.started },
-        ...(this.lastOutboxStats ? { queue: { pending: this.lastOutboxStats.pending, inFlight: this.lastOutboxStats.inFlight, total: this.lastOutboxStats.total } } : {}),
+        resources: Array.from(this.resourceStats.entries()).map(([resource, stats]) => ({
+            resource,
+            ...stats
+        })),
         lastEventAt: this.lastEventAt,
         lastError: this.lastError
     })
@@ -58,4 +57,50 @@ export class SyncDevtools {
             }
         }
     }
+
+    private trackEvent(e: SyncEvent) {
+        if (e.type === 'sync.lifecycle.started') {
+            this.started = true
+            return
+        }
+        if (e.type === 'sync.lifecycle.stopped') {
+            this.started = false
+            return
+        }
+        if (e.type === 'sync.error') {
+            this.lastError = e.message
+            return
+        }
+
+        const resource = resolveResourceFromEvent(e)
+        if (!resource) return
+
+        const current = this.resourceStats.get(resource) ?? {
+            sent: 0,
+            received: 0,
+            conflicts: 0
+        }
+        if (e.type === 'sync.push.batch') {
+            current.sent += Math.max(0, Math.floor(e.size))
+        } else if (e.type === 'sync.pull.batch') {
+            current.received += Math.max(0, Math.floor(e.size))
+            current.lastCursor = Math.max(0, Math.floor(e.cursor))
+        } else if (e.type === 'sync.conflict.detected') {
+            current.conflicts += Math.max(0, Math.floor(e.count))
+        } else if (e.type === 'sync.stream.notify' && typeof e.cursor === 'number') {
+            current.lastCursor = Math.max(0, Math.floor(e.cursor))
+        } else if (e.type === 'sync.bridge.localWrite') {
+            current.sent += Math.max(0, Math.floor(e.count))
+        } else if (e.type === 'sync.bridge.remoteWriteback') {
+            current.received += Math.max(0, Math.floor(e.upserts + e.removes))
+        }
+        this.resourceStats.set(resource, current)
+    }
+}
+
+function resolveResourceFromEvent(e: SyncEvent): string | undefined {
+    if ('resource' in e && typeof (e as any).resource === 'string') {
+        return (e as any).resource
+    }
+    return undefined
 }

@@ -7,7 +7,12 @@ import type { AddressInfo } from 'node:net'
 import { DataSource, EntitySchema } from 'typeorm'
 import { createAtomaHandlers } from 'atoma-server'
 import { createTypeormServerAdapter } from 'atoma-server/adapters/typeorm'
-import { HTTP_PATH_OPS, HTTP_PATH_SYNC_SUBSCRIBE } from 'atoma-types/protocol-tools'
+import {
+    HTTP_PATH_OPS,
+    HTTP_PATH_SYNC_RXDB_PULL,
+    HTTP_PATH_SYNC_RXDB_PUSH,
+    HTTP_PATH_SYNC_RXDB_STREAM
+} from 'atoma-types/protocol-tools'
 
 export type DemoServerMode = 'in-process' | 'tcp'
 
@@ -57,7 +62,9 @@ export async function createSqliteDemoServer(options: Readonly<{
     const dispatch = async (request: Request): Promise<Response> => {
         const pathname = new URL(request.url).pathname
         if (pathname === HTTP_PATH_OPS) return await handlers.ops(request)
-        if (pathname === HTTP_PATH_SYNC_SUBSCRIBE) return await handlers.subscribe(request)
+        if (pathname === HTTP_PATH_SYNC_RXDB_PULL) return await handlers.syncRxdbPull(request)
+        if (pathname === HTTP_PATH_SYNC_RXDB_PUSH) return await handlers.syncRxdbPush(request)
+        if (pathname === HTTP_PATH_SYNC_RXDB_STREAM) return await handlers.syncRxdbStream(request)
         return new Response(JSON.stringify({ error: 'Not found' }), {
             status: 404,
             headers: { 'content-type': 'application/json; charset=utf-8' }

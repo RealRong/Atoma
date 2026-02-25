@@ -1,10 +1,19 @@
-import type { AtomaServerConfig, AtomaServerRoute, AtomaOpsPlugin, AtomaSubscribePlugin } from './config'
+import type {
+    AtomaServerConfig,
+    AtomaServerRoute,
+    AtomaOpsPlugin,
+    AtomaRoutePlugin
+} from './config'
 import type { HandleResult } from './runtime/http'
 import { createRuntimeFactory } from './runtime/createRuntime'
 import { createTopLevelErrorFormatter } from './runtime/errors'
 import { readJsonBodyWithLimit } from './runtime/http'
 import { createOpsExecutor } from './ops/opsExecutor'
-import { createSubscribeExecutor } from './ops/subscribeExecutor'
+import {
+    createSyncRxdbPullExecutor,
+    createSyncRxdbPushExecutor,
+    createSyncRxdbStreamExecutor
+} from './sync-rxdb'
 import { parseOrThrow, z } from 'atoma-shared'
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
@@ -171,7 +180,15 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
         syncEnabled,
         opPlugins: config.plugins?.op
     })
-    const subscribeExecutor = createSubscribeExecutor({
+    const syncPullExecutor = createSyncRxdbPullExecutor({
+        config,
+        readBodyJson
+    })
+    const syncPushExecutor = createSyncRxdbPushExecutor({
+        config,
+        readBodyJson
+    })
+    const syncStreamExecutor = createSyncRxdbStreamExecutor({
         config
     })
 
@@ -182,7 +199,7 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
         pathname: string
         initialTraceId?: string
         initialRequestId?: string
-        plugins?: Array<AtomaOpsPlugin<Ctx> | AtomaSubscribePlugin<Ctx>>
+        plugins?: Array<AtomaOpsPlugin<Ctx> | AtomaRoutePlugin<Ctx>>
         run: (runtime: any) => Promise<Response>
     }): Promise<Response> => {
         let runtime: any
@@ -268,38 +285,81 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
                 }
             })
         },
-        subscribe: async (request: Request): Promise<Response> => {
+        syncRxdbPull: async (request: Request): Promise<Response> => {
             const urlObj = new URL(request.url)
             const pathname = urlObj.pathname
             const method = request.method.toUpperCase()
 
-            const initialTraceId = (() => {
-                const q = urlObj.searchParams.get('traceId')
-                if (typeof q === 'string' && q) return q
-                return undefined
-            })()
-            const initialRequestId = (() => {
-                const q = urlObj.searchParams.get('requestId')
-                if (typeof q === 'string' && q) return q
-                return undefined
-            })()
+            const initialTraceId = resolveQueryValue(urlObj, 'traceId')
+            const initialRequestId = resolveQueryValue(urlObj, 'requestId')
 
             return runWithRuntime({
                 request,
-                route: { kind: 'subscribe' },
+                route: { kind: 'sync-rxdb-pull' },
                 method,
                 pathname,
                 initialTraceId,
                 initialRequestId,
-                plugins: config.plugins?.subscribe,
+                plugins: config.plugins?.syncRxdbPull,
                 run: async (runtime) => {
                     const incoming = toIncoming(request)
-                    const result = await subscribeExecutor.subscribe({
+                    const result = await syncPullExecutor.handle({
+                        incoming,
+                        method,
+                        runtime
+                    })
+                    return handleResultToResponse(result)
+                }
+            })
+        },
+        syncRxdbPush: async (request: Request): Promise<Response> => {
+            const urlObj = new URL(request.url)
+            const pathname = urlObj.pathname
+            const method = request.method.toUpperCase()
+            const initialTraceId = resolveQueryValue(urlObj, 'traceId')
+            const initialRequestId = resolveQueryValue(urlObj, 'requestId')
+
+            return runWithRuntime({
+                request,
+                route: { kind: 'sync-rxdb-push' },
+                method,
+                pathname,
+                initialTraceId,
+                initialRequestId,
+                plugins: config.plugins?.syncRxdbPush,
+                run: async (runtime) => {
+                    const incoming = toIncoming(request)
+                    const result = await syncPushExecutor.handle({
+                        incoming,
+                        method,
+                        runtime
+                    })
+                    return handleResultToResponse(result)
+                }
+            })
+        },
+        syncRxdbStream: async (request: Request): Promise<Response> => {
+            const urlObj = new URL(request.url)
+            const pathname = urlObj.pathname
+            const method = request.method.toUpperCase()
+            const initialTraceId = resolveQueryValue(urlObj, 'traceId')
+            const initialRequestId = resolveQueryValue(urlObj, 'requestId')
+
+            return runWithRuntime({
+                request,
+                route: { kind: 'sync-rxdb-stream' },
+                method,
+                pathname,
+                initialTraceId,
+                initialRequestId,
+                plugins: config.plugins?.syncRxdbStream,
+                run: async (runtime) => {
+                    const incoming = toIncoming(request)
+                    const result = await syncStreamExecutor.handle({
                         incoming,
                         urlObj,
                         method,
-                        pathname,
-                        route: { kind: 'subscribe' },
+                        route: { kind: 'sync-rxdb-stream' },
                         runtime
                     })
                     return handleResultToResponse(result)
@@ -307,4 +367,11 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
             })
         }
     }
+}
+
+function resolveQueryValue(urlObj: URL, key: string): string | undefined {
+    const value = urlObj.searchParams.get(key)
+    if (typeof value !== 'string') return undefined
+    const normalized = value.trim()
+    return normalized ? normalized : undefined
 }

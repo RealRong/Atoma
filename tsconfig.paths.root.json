@@ -96,6 +96,9 @@
             "atoma-types/client/ops": [
                 "packages/atoma-types/src/client/ops.ts"
             ],
+            "atoma-types/client/sync": [
+                "packages/atoma-types/src/client/sync.ts"
+            ],
             "atoma-types/client/relations": [
                 "packages/atoma-types/src/client/relations.ts"
             ],

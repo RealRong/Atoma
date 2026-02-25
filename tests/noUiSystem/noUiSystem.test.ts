@@ -126,8 +126,7 @@ describe.sequential('Demo No-UI Integration System', () => {
             enableHistory: false,
             enableSync: true,
             syncMode: 'pull-only',
-            subscribe: false,
-            syncClientKey: `reader-${Date.now()}`,
+            syncResources: ['users'],
             onSyncEvent: (event) => {
                 syncEvents.push(event.type)
             },
@@ -153,7 +152,6 @@ describe.sequential('Demo No-UI Integration System', () => {
         await reader.sync?.pull()
 
         expect(syncErrors).toHaveLength(0)
-        expect(syncEvents.includes('pull:start')).toBe(true)
-        expect(syncEvents.includes('pull:idle')).toBe(true)
+        expect(syncEvents.includes('sync.pull.batch')).toBe(true)
     })
 })

@@ -1,9 +1,9 @@
 import type { PageInfo, Query } from './query'
-import type { Cursor, EntityId, ResourceToken, Version } from './scalars'
+import type { EntityId, ResourceToken, Version } from './scalars'
 import type { Meta } from './meta'
 import type { StandardError } from './error'
 
-export type RemoteOpKind = 'query' | 'write' | 'changes.pull'
+export type RemoteOpKind = 'query' | 'write'
 
 export type RemoteOpBase = {
     opId: string
@@ -106,16 +106,7 @@ export type WriteOp = RemoteOpBase & {
     }
 }
 
-export type ChangesPullOp = RemoteOpBase & {
-    kind: 'changes.pull'
-    pull: {
-        cursor: Cursor
-        limit: number
-        resources?: ResourceToken[]
-    }
-}
-
-export type RemoteOp = QueryOp | WriteOp | ChangesPullOp
+export type RemoteOp = QueryOp | WriteOp
 
 export type ResultOk<T> = {
     opId: string
