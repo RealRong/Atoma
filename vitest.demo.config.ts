@@ -34,8 +34,8 @@ export default defineConfig({
             { find: /^atoma-server$/, replacement: resolvePath('packages/atoma-server/src/index.ts') },
             { find: /^atoma-server\/(.*)$/, replacement: resolvePath('packages/atoma-server/src/$1') },
 
-            // Force TypeORM to resolve from demo/server workspace so sqlite3 peer is available.
-            { find: /^typeorm$/, replacement: resolvePath('demo/server/node_modules/typeorm/index.js') },
+            // Resolve TypeORM from workspace root.
+            { find: /^typeorm$/, replacement: resolvePath('node_modules/typeorm/index.js') },
         ]
     },
     test: {

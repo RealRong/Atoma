@@ -10,7 +10,7 @@ echo "[demo-no-ui] bench time per case (ms): ${BENCH_TIME}"
 ATOMA_DEMO_SERVER_MODE="${MODE}" \
 pnpm vitest run \
     --config vitest.demo.config.ts \
-    tests/test.ts
+    tests/scenarios
 
 ATOMA_DEMO_SERVER_MODE="${MODE}" \
 ATOMA_DEMO_BENCH_TIME_MS="${BENCH_TIME}" \

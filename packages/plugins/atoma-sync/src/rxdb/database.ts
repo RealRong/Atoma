@@ -16,8 +16,7 @@ export async function createReadyRuntime(args: {
     const database = await createRxDatabase<DatabaseCollections>({
         name: dbName,
         storage: getRxStorageMemory(),
-        multiInstance: false,
-        ignoreDuplicate: true
+        multiInstance: false
     })
 
     const collectionCreators: Record<string, { schema: RxJsonSchema<SyncDoc> }> = {}
