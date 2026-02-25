@@ -4,8 +4,7 @@ import type {
     Entity,
     RelationConfig,
     RelationIncludeInput,
-    RelationPrefetchMode,
-    StoreToken
+    RelationPrefetchMode
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 
@@ -93,10 +92,9 @@ export function filterStableItemsForRelation<T extends Entity, TSource extends E
     relationConfig: RelationConfig<TSource, Entity>
     mode: PrefetchMode
     newIds: Set<EntityId>
-    force?: boolean
 }): T[] {
-    const { items, relationConfig, mode, newIds, force } = args
-    if (force || relationConfig?.type !== 'hasMany') {
+    const { items, relationConfig, mode, newIds } = args
+    if (relationConfig?.type !== 'hasMany') {
         return items
     }
 
@@ -128,10 +126,4 @@ export function collectCurrentAndNewIds<T extends Entity>(
     })
 
     return { currentIds, newIds }
-}
-
-export function normalizeStoreName(store: unknown, fallback: StoreToken): string {
-    if (!isRecord(store)) return String(fallback ?? '')
-    const name = store.name
-    return String(name ?? fallback ?? '')
 }

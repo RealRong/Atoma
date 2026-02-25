@@ -42,15 +42,7 @@ export interface UseRelationsResult<T extends Entity> {
     data: T[]
     loading: boolean
     error?: Error
-    refetch: () => Promise<T[]>
 }
-
-export function useRelations<T extends Entity, Relations>(
-    items: T[],
-    include: undefined,
-    relations: Relations | undefined,
-    resolveStore?: (name: StoreToken) => RelationStore | undefined
-): UseRelationsResult<T>
 
 export function useRelations<T extends Entity, Relations, const Include extends RelationIncludeInput<Relations>>(
     items: T[],
@@ -320,7 +312,6 @@ export function useRelations<T extends Entity>(
     const buildPrefetchJobs = (args: {
         relation: RelationEngine
         newIds: Set<EntityId>
-        force?: boolean
     }): {
         tasks: Array<Promise<void>>
         markDone: string[]
@@ -338,14 +329,13 @@ export function useRelations<T extends Entity>(
             if (!relationConfig) return
 
             const mode = resolvePrefetchMode(relationConfig, value, name)
-            if (!args.force && mode === 'manual') return
+            if (mode === 'manual') return
 
             const doneKey = buildPrefetchDoneKey({
                 includeKey,
                 relationName: name
             })
-            const shouldPrefetch = args.force
-                || mode === 'on-change'
+            const shouldPrefetch = mode === 'on-change'
                 || (!prefetchDoneRef.current.has(doneKey) && stableItems.length > 0)
             if (!shouldPrefetch) return
 
@@ -353,8 +343,7 @@ export function useRelations<T extends Entity>(
                 items: stableItems,
                 relationConfig,
                 mode,
-                newIds: args.newIds,
-                force: args.force
+                newIds: args.newIds
             })
             if (!relationItems.length) {
                 if (mode === 'on-mount' && stableItems.length > 0) markDone.push(doneKey)
@@ -382,7 +371,7 @@ export function useRelations<T extends Entity>(
         return projected
     }
 
-    const prefetchAndProject = async (options?: { cancelled?: () => boolean; force?: boolean }): Promise<T[]> => {
+    const prefetchAndProject = async (options?: { cancelled?: () => boolean }): Promise<T[]> => {
         const { currentIds, newIds } = collectCurrentAndNewIds(stableItems, prevIdsRef.current)
         const isCancelled = () => options?.cancelled?.() === true
 
@@ -415,8 +404,7 @@ export function useRelations<T extends Entity>(
             const { tasks, markDone } = relation
                 ? buildPrefetchJobs({
                     relation,
-                    newIds,
-                    force: options?.force
+                    newIds
                 })
                 : { tasks: [], markDone: [] }
 
@@ -479,6 +467,5 @@ export function useRelations<T extends Entity>(
         data: state.data,
         loading: state.loading,
         error: state.error,
-        refetch: () => prefetchAndProject({ force: true })
     }
 }
