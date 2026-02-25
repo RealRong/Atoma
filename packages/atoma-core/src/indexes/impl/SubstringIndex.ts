@@ -1,13 +1,9 @@
 import type { IndexDefinition } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
 import type { IndexStats } from 'atoma-types/core'
-import { binarySearchPrefix, intersectAll } from '../internal/search'
+import { binarySearchPrefix, intersectAll } from '../../shared/search'
+import { lower } from '../../shared/text'
 import type { Condition, Index } from '../types'
-
-const normalize = (value: unknown): string => {
-    if (value === undefined || value === null) return ''
-    return String(value).toLowerCase()
-}
 
 const reverseString = (value: string): string => {
     return value.split('').reverse().join('')
@@ -46,7 +42,7 @@ export class SubstringIndex<T> implements Index<T> {
     }
 
     add(id: EntityId, value: unknown): void {
-        const str = normalize(value)
+        const str = lower(value)
         this.docValue.set(id, str)
 
         // value -> ids
@@ -120,19 +116,19 @@ export class SubstringIndex<T> implements Index<T> {
     query(condition: Condition): ReadonlySet<EntityId> | null {
         switch (condition.op) {
             case 'startsWith': {
-                const prefix = normalize(condition.value)
+                const prefix = lower(condition.value)
                 if (!prefix) return null
                 const result = this.prefixSearch(prefix)
                 return result
             }
             case 'endsWith': {
-                const suffix = normalize(condition.value)
+                const suffix = lower(condition.value)
                 if (!suffix) return null
                 const result = this.suffixSearch(suffix)
                 return result
             }
             case 'contains': {
-                const needle = normalize(condition.value)
+                const needle = lower(condition.value)
                 if (!needle) return null
                 if (needle.length < this.ngramSize) return null
                 const grams = buildNgrams(needle, this.ngramSize)

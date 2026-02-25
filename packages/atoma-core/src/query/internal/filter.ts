@@ -1,29 +1,14 @@
 import type { FilterExpr } from 'atoma-types/core'
 import type { FuzzyDefaults, MatchDefaults } from './types'
-import { defaultTokenizer, levenshteinDistance } from './text'
-
-const normalizeString = (value: unknown) => {
-    if (value === undefined || value === null) return ''
-    return String(value).toLowerCase()
-}
-
-const readField = <T extends object>(item: T, field: string): unknown => {
-    return (item as Record<string, unknown>)[field]
-}
-
-const tokenize = (input: unknown, tokenizer?: (text: string) => string[], minTokenLength = 3): string[] => {
-    const text = normalizeString(input)
-    if (!text) return []
-
-    const tk = tokenizer || defaultTokenizer
-    return tk(text).filter((token: string) => token.length >= minTokenLength)
-}
+import { read } from '../../shared/field'
+import { defaultTokenizer, levenshteinDistance, lower, tokenize } from '../../shared/text'
 
 const matchesMatch = (fieldValue: unknown, query: string, defaults?: MatchDefaults): boolean => {
     const operator = defaults?.op || 'and'
     const minTokenLength = defaults?.minTokenLength ?? 3
-    const docTokens = tokenize(fieldValue, defaults?.tokenizer, minTokenLength)
-    const queryTokens = tokenize(query, defaults?.tokenizer, minTokenLength)
+    const tk = defaults?.tokenizer ?? defaultTokenizer
+    const docTokens = tokenize(fieldValue, tk, minTokenLength)
+    const queryTokens = tokenize(query, tk, minTokenLength)
     if (!queryTokens.length || !docTokens.length) return false
 
     const docSet = new Set(docTokens)
@@ -35,8 +20,9 @@ const matchesFuzzy = (fieldValue: unknown, query: string, defaults?: FuzzyDefaul
     const operator = defaults?.op || 'and'
     const distance: 0 | 1 | 2 = distanceOverride ?? defaults?.distance ?? 1
     const minTokenLength = defaults?.minTokenLength ?? 3
-    const docTokens = tokenize(fieldValue, defaults?.tokenizer, minTokenLength)
-    const queryTokens = tokenize(query, defaults?.tokenizer, minTokenLength)
+    const tk = defaults?.tokenizer ?? defaultTokenizer
+    const docTokens = tokenize(fieldValue, tk, minTokenLength)
+    const queryTokens = tokenize(query, tk, minTokenLength)
     if (!queryTokens.length || !docTokens.length) return false
 
     const fuzzyHas = (needle: string): boolean => {
@@ -71,41 +57,41 @@ export function matchesFilter<T extends object>(
                 ? !matchesFilter(item, filter.arg)
                 : true
         case 'eq':
-            return readField(item, filter.field) === filter.value
+            return read(item, filter.field) === filter.value
         case 'in': {
             const values = filter.values
             return Array.isArray(values)
-                ? values.some(value => readField(item, filter.field) === value)
+                ? values.some(value => read(item, filter.field) === value)
                 : false
         }
         case 'gt':
-            return (readField(item, filter.field) as number) > filter.value
+            return (read(item, filter.field) as number) > filter.value
         case 'gte':
-            return (readField(item, filter.field) as number) >= filter.value
+            return (read(item, filter.field) as number) >= filter.value
         case 'lt':
-            return (readField(item, filter.field) as number) < filter.value
+            return (read(item, filter.field) as number) < filter.value
         case 'lte':
-            return (readField(item, filter.field) as number) <= filter.value
+            return (read(item, filter.field) as number) <= filter.value
         case 'startsWith': {
-            const haystack = normalizeString(readField(item, filter.field))
-            return haystack.startsWith(normalizeString(filter.value))
+            const haystack = lower(read(item, filter.field))
+            return haystack.startsWith(lower(filter.value))
         }
         case 'endsWith': {
-            const haystack = normalizeString(readField(item, filter.field))
-            return haystack.endsWith(normalizeString(filter.value))
+            const haystack = lower(read(item, filter.field))
+            return haystack.endsWith(lower(filter.value))
         }
         case 'contains': {
-            const haystack = normalizeString(readField(item, filter.field))
-            return haystack.includes(normalizeString(filter.value))
+            const haystack = lower(read(item, filter.field))
+            return haystack.includes(lower(filter.value))
         }
         case 'isNull':
-            return readField(item, filter.field) === null
+            return read(item, filter.field) === null
         case 'exists': {
-            const value = readField(item, filter.field)
+            const value = read(item, filter.field)
             return value !== undefined && value !== null
         }
         case 'text': {
-            const fieldValue = readField(item, filter.field)
+            const fieldValue = read(item, filter.field)
             if (filter.mode === 'fuzzy') {
                 return matchesFuzzy(fieldValue, filter.query, undefined, filter.distance)
             }

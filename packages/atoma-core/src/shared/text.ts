@@ -18,23 +18,36 @@ type IntlWithSegmenter = typeof Intl & {
 const intlWithSegmenter: IntlWithSegmenter = Intl as IntlWithSegmenter
 let cachedSegmenter: IntlSegmenter | null = null
 
+export const lower = (value: unknown): string => {
+    if (value === undefined || value === null) return ''
+    return String(value).toLowerCase()
+}
+
 export const defaultTokenizer = (text: string): string[] => {
     if (typeof intlWithSegmenter.Segmenter === 'function') {
         if (!cachedSegmenter) {
             cachedSegmenter = new intlWithSegmenter.Segmenter(undefined, { granularity: 'word' })
         }
-
         return Array.from(cachedSegmenter.segment(text))
             .filter(seg => seg.isWordLike)
             .map(seg => seg.segment.toLowerCase())
             .filter(token => token.length > 0 && token.length <= 32)
     }
-
     return String(text)
         .toLowerCase()
         .split(/[^a-zA-Z0-9\u4e00-\u9fa5]+/)
         .filter(Boolean)
         .filter(token => token.length <= 32)
+}
+
+export const tokenize = (
+    input: unknown,
+    tk: (text: string) => string[] = defaultTokenizer,
+    minTokenLength = 1
+): string[] => {
+    const text = lower(input)
+    if (!text) return []
+    return tk(text).filter((token) => token.length >= minTokenLength)
 }
 
 export const levenshteinDistance = (a: string, b: string, maxDistance?: number): number => {
@@ -49,7 +62,6 @@ export const levenshteinDistance = (a: string, b: string, maxDistance?: number):
         if (maxDistance !== undefined) return n > maxDistance ? maxDistance + 1 : n
         return n
     }
-
     if (n === 0) {
         if (maxDistance !== undefined) return m > maxDistance ? maxDistance + 1 : m
         return m
@@ -65,7 +77,6 @@ export const levenshteinDistance = (a: string, b: string, maxDistance?: number):
 
     if (maxDistance === undefined) {
         for (let j = 0; j <= n; j++) prev[j] = j
-
         for (let i = 1; i <= m; i++) {
             curr[0] = i
             const leftChar = left.charCodeAt(i - 1)
@@ -80,7 +91,6 @@ export const levenshteinDistance = (a: string, b: string, maxDistance?: number):
             prev = curr
             curr = tmp
         }
-
         return prev[n]
     }
 
@@ -109,9 +119,9 @@ export const levenshteinDistance = (a: string, b: string, maxDistance?: number):
             const del = prev[j] + 1
             const ins = curr[j - 1] + 1
             const sub = prev[j - 1] + cost
-            const v = del < ins ? (del < sub ? del : sub) : ins < sub ? ins : sub
-            curr[j] = v
-            if (v < rowMin) rowMin = v
+            const value = del < ins ? (del < sub ? del : sub) : ins < sub ? ins : sub
+            curr[j] = value
+            if (value < rowMin) rowMin = value
         }
 
         if (rowMin > limit) return big

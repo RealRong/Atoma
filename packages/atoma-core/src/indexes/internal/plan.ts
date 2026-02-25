@@ -1,6 +1,6 @@
 import type { FilterExpr, Hits } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { intersectAll } from './search'
+import { intersectAll } from '../../shared/search'
 import { mergeRange } from './range'
 import type {
     Condition,

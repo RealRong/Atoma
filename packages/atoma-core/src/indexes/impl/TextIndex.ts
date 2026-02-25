@@ -1,9 +1,9 @@
 import type { IndexDefinition } from 'atoma-types/core'
 import type { IndexStats } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/protocol'
-import { defaultTokenizer } from '../internal/tokenize'
+import { defaultTokenizer, levenshteinDistance, tokenize } from '../../shared/text'
+import { intersectAll } from '../../shared/search'
 import type { Condition, Index } from '../types'
-import { intersectAll, levenshteinDistance } from '../internal/search'
 import { validateString } from '../internal/value'
 
 export class TextIndex<T> implements Index<T> {
@@ -134,6 +134,6 @@ export class TextIndex<T> implements Index<T> {
     }
 
     private tokenize(input: string): string[] {
-        return this.tokenizer(input.toLowerCase()).filter(token => token.length >= this.minTokenLength)
+        return tokenize(input, this.tokenizer, this.minTokenLength)
     }
 }
