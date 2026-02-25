@@ -17,6 +17,14 @@ export type HistoryApplyArgs = Readonly<{
 export type HistoryApply = (args: HistoryApplyArgs) => Promise<void>
 
 type ContextBuilder = (context?: Partial<ActionContext>) => ActionContext
+type HistoryStack = 'undo' | 'redo'
+type ReplayPlan = Readonly<{
+    from: HistoryStack
+    onSuccess: HistoryStack
+    onError: HistoryStack
+    mode: HistoryApplyArgs['mode']
+    reverse: boolean
+}>
 
 export class HistoryManager {
     private readonly history: InMemoryHistory
@@ -49,70 +57,103 @@ export class HistoryManager {
 
     beginAction(args: { scope: string; label?: string; origin?: ActionContext['origin'] }): ActionContext {
         return this.createContext({
-            scope: String(args.scope || 'default'),
+            scope: this.toScope(args.scope),
             origin: args.origin ?? 'user',
             label: args.label
         })
     }
 
     async undo(args: { scope: string; apply: HistoryApply }): Promise<boolean> {
-        const action = this.history.popUndo(args.scope)
-        if (!action) return false
-
-        const context = this.createContext({
-            scope: String(args.scope || 'default'),
-            origin: 'history',
-            label: action.label
-        })
-
-        try {
-            for (let i = action.changes.length - 1; i >= 0; i--) {
-                const change = action.changes[i]
-                await args.apply({
-                    storeName: change.storeName,
-                    changes: change.changes,
-                    mode: 'revert',
-                    context
-                })
+        return this.replay({
+            scope: args.scope,
+            apply: args.apply,
+            plan: {
+                from: 'undo',
+                onSuccess: 'redo',
+                onError: 'undo',
+                mode: 'revert',
+                reverse: true
             }
-            this.history.pushRedo(args.scope, action)
-            return true
-        } catch (e) {
-            this.history.pushUndo(args.scope, action)
-            throw e
-        }
+        })
     }
 
     async redo(args: { scope: string; apply: HistoryApply }): Promise<boolean> {
-        const action = this.history.popRedo(args.scope)
-        if (!action) return false
-
-        const context = this.createContext({
-            scope: String(args.scope || 'default'),
-            origin: 'history',
-            label: action.label
-        })
-
-        try {
-            for (let i = 0; i < action.changes.length; i++) {
-                const change = action.changes[i]
-                await args.apply({
-                    storeName: change.storeName,
-                    changes: change.changes,
-                    mode: 'apply',
-                    context
-                })
+        return this.replay({
+            scope: args.scope,
+            apply: args.apply,
+            plan: {
+                from: 'redo',
+                onSuccess: 'undo',
+                onError: 'redo',
+                mode: 'apply',
+                reverse: false
             }
-            this.history.pushUndo(args.scope, action)
-            return true
-        } catch (e) {
-            this.history.pushRedo(args.scope, action)
-            throw e
-        }
+        })
     }
 
     clear(scope: string) {
         this.history.clear(scope)
+    }
+
+    private toScope(scope: string): string {
+        return String(scope || 'default')
+    }
+
+    private pop(scope: string, stack: HistoryStack): ActionRecord | undefined {
+        return stack === 'undo'
+            ? this.history.popUndo(scope)
+            : this.history.popRedo(scope)
+    }
+
+    private push(scope: string, stack: HistoryStack, action: ActionRecord) {
+        if (stack === 'undo') {
+            this.history.pushUndo(scope, action)
+            return
+        }
+        this.history.pushRedo(scope, action)
+    }
+
+    private async replay(args: {
+        scope: string
+        apply: HistoryApply
+        plan: ReplayPlan
+    }): Promise<boolean> {
+        const action = this.pop(args.scope, args.plan.from)
+        if (!action) return false
+
+        const context = this.createContext({
+            scope: this.toScope(args.scope),
+            origin: 'history',
+            label: action.label
+        })
+
+        try {
+            if (args.plan.reverse) {
+                for (let i = action.changes.length - 1; i >= 0; i--) {
+                    const change = action.changes[i]
+                    await args.apply({
+                        storeName: change.storeName,
+                        changes: change.changes,
+                        mode: args.plan.mode,
+                        context
+                    })
+                }
+            } else {
+                for (const change of action.changes) {
+                    await args.apply({
+                        storeName: change.storeName,
+                        changes: change.changes,
+                        mode: args.plan.mode,
+                        context
+                    })
+                }
+            }
+            this.push(args.scope, args.plan.onSuccess, action)
+            return true
+        } catch (error) {
+            this.push(args.scope, args.plan.onError, action)
+            throw error
+        }
     }
 }
 

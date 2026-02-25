@@ -6,6 +6,11 @@ import { HUB_TOKEN } from 'atoma-types/devtools'
 import { HistoryManager } from './history-manager'
 
 const toScope = (scope?: string) => String(scope ?? 'default')
+const toCommandScope = (scope: unknown): string | undefined => {
+    return typeof scope === 'string' ? scope : undefined
+}
+type HistoryOperation = 'undo' | 'redo'
+type HistoryCommandName = 'history.undo' | 'history.redo' | 'history.clear'
 
 const buildSnapshot = (manager: HistoryManager) => {
     return {
@@ -67,20 +72,11 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                 )
             }
 
-            const runUndo = async (scope?: string): Promise<boolean> => {
-                const ok = await manager.undo({
-                    scope: toScope(scope),
-                    apply
-                })
-                if (ok) emitChanged()
-                return ok
-            }
-
-            const runRedo = async (scope?: string): Promise<boolean> => {
-                const ok = await manager.redo({
-                    scope: toScope(scope),
-                    apply
-                })
+            const runOperation = async (operation: HistoryOperation, scope?: string): Promise<boolean> => {
+                const targetScope = toScope(scope)
+                const ok = operation === 'undo'
+                    ? await manager.undo({ scope: targetScope, apply })
+                    : await manager.redo({ scope: targetScope, apply })
                 if (ok) emitChanged()
                 return ok
             }
@@ -88,6 +84,15 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
             const runClear = (scope?: string): void => {
                 manager.clear(toScope(scope))
                 emitChanged()
+            }
+
+            const commandHandlers: Record<HistoryCommandName, (scope?: string) => Promise<CommandResult>> = {
+                'history.undo': async (scope) => ({ ok: await runOperation('undo', scope) }),
+                'history.redo': async (scope) => ({ ok: await runOperation('redo', scope) }),
+                'history.clear': async (scope) => {
+                    runClear(scope)
+                    return { ok: true }
+                }
             }
 
             const recordChanges = (args: {
@@ -163,26 +168,9 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                 },
                 invoke: async (command): Promise<CommandResult> => {
                     try {
-                        if (command.name === 'history.undo') {
-                            const scope = typeof command.args?.scope === 'string'
-                                ? command.args.scope
-                                : undefined
-                            const ok = await runUndo(scope)
-                            return { ok }
-                        }
-                        if (command.name === 'history.redo') {
-                            const scope = typeof command.args?.scope === 'string'
-                                ? command.args.scope
-                                : undefined
-                            const ok = await runRedo(scope)
-                            return { ok }
-                        }
-                        if (command.name === 'history.clear') {
-                            const scope = typeof command.args?.scope === 'string'
-                                ? command.args.scope
-                                : undefined
-                            runClear(scope)
-                            return { ok: true }
+                        const handler = commandHandlers[command.name as HistoryCommandName]
+                        if (handler) {
+                            return await handler(toCommandScope(command.args?.scope))
                         }
                         return { ok: false, message: `unknown command: ${command.name}` }
                     } catch (error) {
@@ -199,12 +187,8 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                 canUndo: (scope) => manager.canUndo(toScope(scope)),
                 canRedo: (scope) => manager.canRedo(toScope(scope)),
                 clear: (scope) => runClear(scope),
-                undo: async (args) => {
-                    return await runUndo(args?.scope)
-                },
-                redo: async (args) => {
-                    return await runRedo(args?.scope)
-                }
+                undo: (args) => runOperation('undo', args?.scope),
+                redo: (args) => runOperation('redo', args?.scope)
             }
 
             return {

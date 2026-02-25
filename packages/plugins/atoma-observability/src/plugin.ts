@@ -13,6 +13,7 @@ type WriteContextEntry = {
 type TraceRecord = {
     storeName: string
     event: DebugEvent
+    searchText: string
 }
 
 const MAX_TRACE_EVENTS = 1000
@@ -36,6 +37,10 @@ const resolveFilterValue = (query: SnapshotQuery | undefined, key: string): stri
     if (typeof value !== 'string') return undefined
     const normalized = value.trim()
     return normalized || undefined
+}
+
+const resolveErrorMessage = (error: unknown): string => {
+    return error instanceof Error ? error.message : String(error)
 }
 
 export function observabilityPlugin(options: ObservabilityPluginOptions = {}): ClientPlugin<ObservabilityExtension> {
@@ -79,6 +84,53 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 }
             }
 
+            const emitPanelEvent = ({
+                panelId,
+                type,
+                revision,
+                timestamp,
+                payload
+            }: {
+                panelId?: StreamEvent['panelId']
+                type: StreamEvent['type']
+                revision?: number
+                timestamp: number
+                payload?: unknown
+            }) => {
+                emit({
+                    version: 1,
+                    sourceId,
+                    clientId: _ctx.clientId,
+                    panelId,
+                    type,
+                    revision,
+                    timestamp,
+                    ...(payload === undefined ? {} : { payload })
+                })
+            }
+
+            const emitWriteLifecycle = ({
+                storeName,
+                context,
+                type,
+                payload,
+                releaseAfter = false
+            }: {
+                storeName: string
+                context: { id: string }
+                type: 'write:start' | 'write:finish' | 'write:failed' | 'change:start' | 'change:finish' | 'change:failed'
+                payload: Record<string, unknown>
+                releaseAfter?: boolean
+            }) => {
+                const entry = getWriteContext(storeName, context.id)
+                entry.ctx.emit(`${prefix}:${type}`, {
+                    storeName: entry.storeName,
+                    id: context.id,
+                    ...payload
+                })
+                if (releaseAfter) releaseWriteContext(context.id)
+            }
+
             const pushTraceEvent = ({
                 storeName,
                 event
@@ -86,9 +138,17 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 storeName: string
                 event: DebugEvent
             }) => {
+                let searchText = ''
+                try {
+                    const serialized = JSON.stringify({ storeName, event })
+                    searchText = typeof serialized === 'string' ? serialized.toLowerCase() : ''
+                } catch {
+                    searchText = ''
+                }
                 traceRecords.push({
                     storeName,
-                    event
+                    event,
+                    searchText
                 })
                 if (traceRecords.length > MAX_TRACE_EVENTS) {
                     traceRecords.splice(0, traceRecords.length - MAX_TRACE_EVENTS)
@@ -97,19 +157,13 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                 revision += 1
                 const timestamp = _ctx.runtime.now()
 
-                emit({
-                    version: 1,
-                    sourceId,
-                    clientId: _ctx.clientId,
+                emitPanelEvent({
                     panelId: 'trace',
                     type: 'data:changed',
                     revision,
                     timestamp
                 })
-                emit({
-                    version: 1,
-                    sourceId,
-                    clientId: _ctx.clientId,
+                emitPanelEvent({
                     panelId: 'timeline',
                     type: 'timeline:event',
                     revision,
@@ -148,26 +202,30 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                     const eventType = resolveFilterValue(query, 'type')
                     const scope = resolveFilterValue(query, 'scope')
                     const search = typeof query?.search === 'string' ? query.search.trim().toLowerCase() : ''
-
-                    const filtered = traceRecords
-                        .slice()
-                        .reverse()
-                        .filter((record) => {
-                            if (storeName && record.storeName !== storeName) return false
-                            if (traceId && record.event.traceId !== traceId) return false
-                            if (requestId && record.event.requestId !== requestId) return false
-                            if (eventType && record.event.type !== eventType) return false
-                            if (scope && record.event.scope !== scope) return false
-                            if (search) {
-                                const text = JSON.stringify(record).toLowerCase()
-                                if (!text.includes(search)) return false
-                            }
-                            return true
-                        })
-
                     const cursor = parseCursor(query?.cursor)
                     const limit = resolveLimit(query)
-                    const sliced = filtered.slice(cursor, cursor + limit)
+                    const nextCursor = cursor + limit
+                    const items: Array<{
+                        storeName: string
+                    } & DebugEvent> = []
+                    let matchedCount = 0
+
+                    for (let index = traceRecords.length - 1; index >= 0; index -= 1) {
+                        const record = traceRecords[index]
+                        if (storeName && record.storeName !== storeName) continue
+                        if (traceId && record.event.traceId !== traceId) continue
+                        if (requestId && record.event.requestId !== requestId) continue
+                        if (eventType && record.event.type !== eventType) continue
+                        if (scope && record.event.scope !== scope) continue
+                        if (search && !record.searchText.includes(search)) continue
+                        if (matchedCount >= cursor && matchedCount < nextCursor) {
+                            items.push({
+                                storeName: record.storeName,
+                                ...record.event
+                            })
+                        }
+                        matchedCount += 1
+                    }
 
                     return {
                         version: 1,
@@ -177,15 +235,12 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
                         revision,
                         timestamp: _ctx.runtime.now(),
                         data: {
-                            items: sliced.map((record) => ({
-                                storeName: record.storeName,
-                                ...record.event
-                            }))
+                            items
                         },
                         page: {
                             cursor: String(cursor),
-                            nextCursor: cursor + limit < filtered.length ? String(cursor + limit) : undefined,
-                            totalApprox: filtered.length
+                            nextCursor: nextCursor < matchedCount ? String(nextCursor) : undefined,
+                            totalApprox: matchedCount
                         }
                     }
                 },
@@ -230,68 +285,80 @@ export function observabilityPlugin(options: ObservabilityPluginOptions = {}): C
             }))
             stopEvents.push(_ctx.events.on('writeStart', (args) => {
                 const { storeName, context } = args
-                const entry = getWriteContext(String(storeName), context.id)
-                entry.ctx.emit(`${prefix}:write:start`, {
-                    storeName: entry.storeName,
-                    id: context.id,
-                    origin: context.origin,
-                    scope: context.scope,
-                    entryCount: Array.isArray(args.writeEntries) ? args.writeEntries.length : 0
+                emitWriteLifecycle({
+                    storeName: String(storeName),
+                    context,
+                    type: 'write:start',
+                    payload: {
+                        origin: context.origin,
+                        scope: context.scope,
+                        entryCount: Array.isArray(args.writeEntries) ? args.writeEntries.length : 0
+                    }
                 })
             }))
             stopEvents.push(_ctx.events.on('writeCommitted', (args) => {
                 const { storeName, context } = args
-                const entry = getWriteContext(String(storeName), context.id)
-                entry.ctx.emit(`${prefix}:write:finish`, {
-                    storeName: entry.storeName,
-                    id: context.id,
-                    changeCount: Array.isArray(args.changes) ? args.changes.length : 0
+                emitWriteLifecycle({
+                    storeName: String(storeName),
+                    context,
+                    type: 'write:finish',
+                    payload: {
+                        changeCount: Array.isArray(args.changes) ? args.changes.length : 0
+                    },
+                    releaseAfter: true
                 })
-                releaseWriteContext(context.id)
             }))
             stopEvents.push(_ctx.events.on('writeFailed', (args) => {
                 const { storeName, context, error } = args
-                const entry = getWriteContext(String(storeName), context.id)
-                entry.ctx.emit(`${prefix}:write:failed`, {
-                    storeName: entry.storeName,
-                    id: context.id,
-                    message: error instanceof Error ? error.message : String(error)
+                emitWriteLifecycle({
+                    storeName: String(storeName),
+                    context,
+                    type: 'write:failed',
+                    payload: {
+                        message: resolveErrorMessage(error)
+                    },
+                    releaseAfter: true
                 })
-                releaseWriteContext(context.id)
             }))
             stopEvents.push(_ctx.events.on('changeStart', (args) => {
                 const { storeName, context, direction } = args
-                const entry = getWriteContext(String(storeName), context.id)
-                entry.ctx.emit(`${prefix}:change:start`, {
-                    storeName: entry.storeName,
-                    id: context.id,
-                    origin: context.origin,
-                    scope: context.scope,
-                    direction,
-                    changeCount: Array.isArray(args.changes) ? args.changes.length : 0
+                emitWriteLifecycle({
+                    storeName: String(storeName),
+                    context,
+                    type: 'change:start',
+                    payload: {
+                        origin: context.origin,
+                        scope: context.scope,
+                        direction,
+                        changeCount: Array.isArray(args.changes) ? args.changes.length : 0
+                    }
                 })
             }))
             stopEvents.push(_ctx.events.on('changeCommitted', (args) => {
                 const { storeName, context, direction } = args
-                const entry = getWriteContext(String(storeName), context.id)
-                entry.ctx.emit(`${prefix}:change:finish`, {
-                    storeName: entry.storeName,
-                    id: context.id,
-                    direction,
-                    changeCount: Array.isArray(args.changes) ? args.changes.length : 0
+                emitWriteLifecycle({
+                    storeName: String(storeName),
+                    context,
+                    type: 'change:finish',
+                    payload: {
+                        direction,
+                        changeCount: Array.isArray(args.changes) ? args.changes.length : 0
+                    },
+                    releaseAfter: true
                 })
-                releaseWriteContext(context.id)
             }))
             stopEvents.push(_ctx.events.on('changeFailed', (args) => {
                 const { storeName, context, direction, error } = args
-                const entry = getWriteContext(String(storeName), context.id)
-                entry.ctx.emit(`${prefix}:change:failed`, {
-                    storeName: entry.storeName,
-                    id: context.id,
-                    direction,
-                    message: error instanceof Error ? error.message : String(error)
+                emitWriteLifecycle({
+                    storeName: String(storeName),
+                    context,
+                    type: 'change:failed',
+                    payload: {
+                        direction,
+                        message: resolveErrorMessage(error)
+                    },
+                    releaseAfter: true
                 })
-                releaseWriteContext(context.id)
             }))
 
             return {
