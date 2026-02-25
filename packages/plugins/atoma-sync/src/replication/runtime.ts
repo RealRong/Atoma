@@ -3,11 +3,7 @@ import type { SyncTransport } from 'atoma-types/client/sync'
 import type { SyncCheckpoint, SyncEvent, SyncMode, SyncPhase } from 'atoma-types/sync'
 import { replicateRxCollection } from 'rxdb/plugins/replication'
 import { applyRemoteDocument } from '../bridge/remoteApply'
-import {
-    sanitizeIncomingDocument,
-    sanitizeOutgoingDocument,
-    toReplicationDocument
-} from '../mapping/document'
+import { documentCodec } from '../mapping/document'
 import type { ReadyRuntime, ResourceReplication, ResourceStateMap, SyncDoc } from '../runtime/contracts'
 import { wait } from '../utils/common'
 
@@ -67,7 +63,7 @@ export async function buildReplications(args: {
                             })
 
                             return {
-                                documents: response.documents.map((item) => toReplicationDocument(item)),
+                                documents: response.documents.map((item) => documentCodec.fromPullPayload(item)),
                                 checkpoint: response.checkpoint
                             }
                         }
@@ -82,9 +78,9 @@ export async function buildReplications(args: {
                             const response = await args.options.transport.push({
                                 resource: resource.resource,
                                 rows: rows.map((row) => ({
-                                    newDocumentState: sanitizeOutgoingDocument(row.newDocumentState),
+                                    newDocumentState: documentCodec.toPushPayload(row.newDocumentState),
                                     assumedMasterState: row.assumedMasterState
-                                        ? sanitizeOutgoingDocument(row.assumedMasterState)
+                                        ? documentCodec.toPushPayload(row.assumedMasterState)
                                         : null
                                 }))
                             })
@@ -103,7 +99,7 @@ export async function buildReplications(args: {
                                 })
                             }
 
-                            return response.conflicts.map((item) => toReplicationDocument(item))
+                            return response.conflicts.map((item) => documentCodec.fromPullPayload(item))
                         }
                     }
                 }
@@ -119,7 +115,7 @@ export async function buildReplications(args: {
         subscriptions.push(
             replication.received$.subscribe((doc) => {
                 void args.queueRemoteApply(async () => {
-                    const incoming = sanitizeIncomingDocument(doc)
+                    const incoming = documentCodec.fromPullPayload(doc)
                     await applyRemoteDocument({
                         ctx: args.ctx,
                         runtime: args.runtime,

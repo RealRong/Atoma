@@ -1,7 +1,7 @@
 import type { PluginContext } from 'atoma-types/client/plugins'
 import type { StoreChange } from 'atoma-types/core'
 import type { SyncEvent, SyncPhase } from 'atoma-types/sync'
-import { toLocalSyncDocs } from '../mapping/document'
+import { documentCodec } from '../mapping/document'
 import type { ReadyRuntime } from '../runtime/contracts'
 
 type WriteCommittedEvent = Readonly<{
@@ -66,7 +66,7 @@ export class LocalBridge {
             : []
         if (!changes.length) return
 
-        const docs = toLocalSyncDocs({
+        const docs = documentCodec.fromLocalChanges({
             changes,
             resource: target.resource,
             clientId: this.args.ctx.clientId,

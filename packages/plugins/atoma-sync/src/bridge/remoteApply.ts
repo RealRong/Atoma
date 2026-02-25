@@ -1,6 +1,6 @@
 import type { PluginContext } from 'atoma-types/client/plugins'
 import type { SyncEvent } from 'atoma-types/sync'
-import { toEntity } from '../mapping/document'
+import { documentCodec } from '../mapping/document'
 import type { ReadyRuntime, SyncDoc, SyncResourceRuntime } from '../runtime/contracts'
 import { readVersion } from '../utils/common'
 
@@ -52,7 +52,7 @@ export async function applyRemoteDocument(args: {
     await session.reconcile(
         {
             mode: 'upsert',
-            items: [toEntity(args.document)]
+            items: [documentCodec.toRuntimeEntity(args.document)]
         },
         {
             context: {
