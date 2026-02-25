@@ -12,7 +12,6 @@ export class PluginContext implements PluginContextType {
 
     constructor(runtime: Runtime) {
         const services = new ServiceRegistry()
-
         this.clientId = runtime.id
         this.services = {
             register: services.register,
