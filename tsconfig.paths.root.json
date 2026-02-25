@@ -105,6 +105,9 @@
             "atoma-types/client/schema": [
                 "packages/atoma-types/src/client/schema.ts"
             ],
+            "atoma-types/history": [
+                "packages/atoma-types/src/history/index.ts"
+            ],
             "atoma-types/core": [
                 "packages/atoma-types/src/core/index.ts"
             ],

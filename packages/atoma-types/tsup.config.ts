@@ -14,6 +14,7 @@ export default defineConfig({
         'client/sync': 'src/client/sync.ts',
         'client/relations': 'src/client/relations.ts',
         'client/schema': 'src/client/schema.ts',
+        history: 'src/history/index.ts',
         protocol: 'src/protocol/index.ts',
         protocolTools: 'src/protocol-tools/index.ts',
         observability: 'src/observability/index.ts',

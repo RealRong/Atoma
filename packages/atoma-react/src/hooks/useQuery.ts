@@ -24,22 +24,10 @@ export type UseQueryResult<
     fetchMore: (options: Query<T>) => Promise<T[]>
 }>
 
-export type UseQueryIdsResult<T extends Entity> = UseQueryStatus & Readonly<{
-    data: Array<T['id']>
-    refetch: () => Promise<Array<T['id']>>
-    fetchMore: (options: Query<T>) => Promise<Array<T['id']>>
-}>
-
 type UseQueryOptions<T extends Entity, Relations, Include extends RelationIncludeInput<Relations>> =
     & Query<T>
     & {
         include?: RelationIncludeInput<Relations> & Include
-        fetchPolicy?: FetchPolicy
-    }
-
-type UseQueryIdsOptions<T extends Entity> =
-    & Query<T>
-    & {
         fetchPolicy?: FetchPolicy
     }
 
@@ -133,55 +121,6 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
         loading: status.loading || relationResult.loading,
         error: relationResult.error ?? status.error,
         data: relationResult.data as keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[],
-        refetch,
-        fetchMore
-    }
-}
-
-export function useQueryIds<T extends Entity, Relations = {}>(
-    store: Store<T, Relations>,
-    options?: UseQueryIdsOptions<T>
-): UseQueryIdsResult<T> {
-    const fetchPolicy: FetchPolicy = options?.fetchPolicy ?? 'cache-and-network'
-    const query = useMemo(() => {
-        if (!options) return undefined
-        const { fetchPolicy: _fetchPolicy, ...rest } = options
-        return rest as Query<T>
-    }, [options])
-
-    const localData = useStoreQueryIds(store, query)
-    const remoteEnabled = resolveRemoteEnabled(fetchPolicy)
-    const remote = useRemoteQuery<T, Relations>({
-        store,
-        options: query,
-        enabled: remoteEnabled
-    })
-
-    const status = buildStatus({
-        fetchPolicy,
-        hasData: localData.length > 0,
-        isFetching: remoteEnabled ? remote.isFetching : false,
-        error: remote.error,
-        pageInfo: remote.pageInfo
-    })
-
-    const refetch = async () => {
-        if (!remoteEnabled) {
-            return localData
-        }
-        return (await remote.refetch()).map((item) => item.id)
-    }
-
-    const fetchMore = async (moreOptions: Query<T>) => {
-        if (!remoteEnabled) {
-            return []
-        }
-        return (await remote.fetchMore(moreOptions)).map((item) => item.id)
-    }
-
-    return {
-        ...status,
-        data: localData,
         refetch,
         fetchMore
     }

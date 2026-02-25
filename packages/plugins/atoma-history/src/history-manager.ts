@@ -1,20 +1,12 @@
-import type { Entity, ActionContext, StoreChange } from 'atoma-types/core'
-import type { ActionRecord, ChangeRecord, UndoStack } from './types'
-
-export type HistoryRecordArgs = Readonly<{
-    storeName: string
-    changes: ReadonlyArray<StoreChange<Entity>>
-    context: ActionContext
-}>
-
-export type HistoryApplyArgs = Readonly<{
-    storeName: string
-    changes: ReadonlyArray<StoreChange<Entity>>
-    mode: 'apply' | 'revert'
-    context: ActionContext
-}>
-
-export type HistoryApply = (args: HistoryApplyArgs) => Promise<void>
+import type { ActionContext } from 'atoma-types/core'
+import type {
+    ActionRecord,
+    ChangeRecord,
+    HistoryApply,
+    HistoryApplyArgs,
+    HistoryRecordArgs,
+    UndoStack
+} from 'atoma-types/history'
 
 type ContextBuilder = (context?: Partial<ActionContext>) => ActionContext
 type HistoryStack = 'undo' | 'redo'

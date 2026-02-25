@@ -64,6 +64,11 @@
             "import": "./dist/client/schema.js",
             "source": "./src/client/schema.ts"
         },
+        "./history": {
+            "types": "./dist/history/index.d.ts",
+            "import": "./dist/history.js",
+            "source": "./src/history/index.ts"
+        },
         "./protocol": {
             "types": "./dist/protocol/index.d.ts",
             "import": "./dist/protocol.js",

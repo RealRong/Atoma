@@ -2,7 +2,5 @@ export {
     useOne,
     useAll,
     useQuery,
-    useQueryIds,
-    useMany,
-    useLocalQuery
+    useMany
 } from './hooks'
