@@ -302,105 +302,139 @@ export function useRelations<T extends Entity>(
         snapshotNamesRef.current = snapshotNames
     }
 
+    const settleStableItems = (args: {
+        currentIds: Set<EntityId>
+        error?: Error
+        clearSnapshot?: boolean
+    }): T[] => {
+        if (args.clearSnapshot) clearSnapshot()
+        setState({
+            data: stableItems,
+            loading: false,
+            error: args.error
+        })
+        prevIdsRef.current = args.currentIds
+        return stableItems
+    }
+
+    const buildPrefetchJobs = (args: {
+        relation: RelationEngine
+        newIds: Set<EntityId>
+        force?: boolean
+    }): {
+        tasks: Array<Promise<void>>
+        markDone: string[]
+    } => {
+        const tasks: Array<Promise<void>> = []
+        const markDone: string[] = []
+        const entries = (effectiveInclude && typeof effectiveInclude === 'object')
+            ? Object.entries(effectiveInclude)
+            : []
+
+        entries.forEach(([name, value]) => {
+            if (value === false || value === undefined || value === null) return
+
+            const relationConfig = relationMap?.[name]
+            if (!relationConfig) return
+
+            const mode = resolvePrefetchMode(relationConfig, value, name)
+            if (!args.force && mode === 'manual') return
+
+            const doneKey = buildPrefetchDoneKey({
+                includeKey,
+                relationName: name
+            })
+            const shouldPrefetch = args.force
+                || mode === 'on-change'
+                || (!prefetchDoneRef.current.has(doneKey) && stableItems.length > 0)
+            if (!shouldPrefetch) return
+
+            const relationItems = filterStableItemsForRelation({
+                items: stableItems,
+                relationConfig,
+                mode,
+                newIds: args.newIds,
+                force: args.force
+            })
+            if (!relationItems.length) {
+                if (mode === 'on-mount' && stableItems.length > 0) markDone.push(doneKey)
+                return
+            }
+
+            tasks.push(args.relation.prefetch(
+                relationItems,
+                { [name]: value } as RelationInclude,
+                relationMap,
+                resolveStoreForPrefetch,
+                DEFAULT_PREFETCH_OPTIONS
+            ))
+            if (mode === 'on-mount') markDone.push(doneKey)
+        })
+
+        return { tasks, markDone }
+    }
+
+    const commitProjectedItems = (currentIds: Set<EntityId>): T[] => {
+        prevIdsRef.current = currentIds
+        buildSnapshot(stableItems)
+        const projected = project(stableItems)
+        patchState({ data: projected })
+        return projected
+    }
+
     const prefetchAndProject = async (options?: { cancelled?: () => boolean; force?: boolean }): Promise<T[]> => {
-        const previousIds = prevIdsRef.current
-        const { currentIds, newIds } = collectCurrentAndNewIds(stableItems, previousIds)
+        const { currentIds, newIds } = collectCurrentAndNewIds(stableItems, prevIdsRef.current)
+        const isCancelled = () => options?.cancelled?.() === true
 
         if (!effectiveInclude || !relations || stableItems.length === 0) {
-            clearSnapshot()
-            setState({ data: stableItems, loading: false, error: undefined })
-            prevIdsRef.current = currentIds
-            return stableItems
+            return settleStableItems({
+                currentIds,
+                clearSnapshot: true
+            })
         }
 
         if (!resolveStoreRef.current) {
-            const error = new Error('[Atoma] useRelations: 缺少 resolveStore（StoreToken -> Store），无法解析 include 关系')
-            setState({ data: stableItems, loading: false, error })
-            prevIdsRef.current = currentIds
-            return stableItems
+            return settleStableItems({
+                currentIds,
+                error: new Error('[Atoma] useRelations: 缺少 resolveStore（StoreToken -> Store），无法解析 include 关系')
+            })
         }
 
         const relation = relationPlans.effectiveEntries.length
             ? resolveRelation(relationPlans.effectiveTokens)
             : undefined
         if (relationPlans.effectiveEntries.length && !relation) {
-            const error = new Error('[Atoma] useRelations: store 缺少 Relation 绑定，无法执行关系预取/投影')
-            setState({ data: stableItems, loading: false, error })
-            prevIdsRef.current = currentIds
-            return stableItems
+            return settleStableItems({
+                currentIds,
+                error: new Error('[Atoma] useRelations: store 缺少 Relation 绑定，无法执行关系预取/投影')
+            })
         }
 
         patchState({ loading: true, error: undefined })
         try {
-            const tasks: Array<Promise<void>> = []
-            const markDone: string[] = []
-
-            if (relation) {
-                const entries = (effectiveInclude && typeof effectiveInclude === 'object')
-                    ? Object.entries(effectiveInclude)
-                    : []
-
-                entries.forEach(([name, value]) => {
-                    if (value === false || value === undefined || value === null) return
-
-                    const relationConfig = relationMap?.[name]
-                    if (!relationConfig) return
-
-                    const mode = resolvePrefetchMode(relationConfig, value, name)
-                    if (!options?.force && mode === 'manual') return
-
-                    const doneKey = buildPrefetchDoneKey({
-                        includeKey,
-                        relationName: name
-                    })
-                    const shouldPrefetch = options?.force
-                        || mode === 'on-change'
-                        || (!prefetchDoneRef.current.has(doneKey) && stableItems.length > 0)
-                    if (!shouldPrefetch) return
-
-                    const relationItems = filterStableItemsForRelation({
-                        items: stableItems,
-                        relationConfig,
-                        mode,
-                        newIds,
-                        force: options?.force
-                    })
-                    if (!relationItems.length) {
-                        if (mode === 'on-mount' && stableItems.length > 0) markDone.push(doneKey)
-                        return
-                    }
-
-                    tasks.push(relation.prefetch(
-                        relationItems,
-                        { [name]: value } as RelationInclude,
-                        relationMap,
-                        resolveStoreForPrefetch,
-                        DEFAULT_PREFETCH_OPTIONS
-                    ))
-                    if (mode === 'on-mount') markDone.push(doneKey)
+            const { tasks, markDone } = relation
+                ? buildPrefetchJobs({
+                    relation,
+                    newIds,
+                    force: options?.force
                 })
-            }
+                : { tasks: [], markDone: [] }
 
             await Promise.all(tasks)
-            if (options?.cancelled?.()) return stableItems
+            if (isCancelled()) return stableItems
             markDone.forEach((key) => prefetchDoneRef.current.add(key))
         } catch (error) {
-            if (options?.cancelled?.()) return stableItems
+            if (isCancelled()) return stableItems
             const normalizedError = error instanceof Error ? error : new Error(String(error))
             patchState({ error: normalizedError })
         } finally {
-            if (!options?.cancelled?.()) {
+            if (!isCancelled()) {
                 patchState({ loading: false })
             }
         }
 
-        if (options?.cancelled?.()) return stableItems
-
-        prevIdsRef.current = currentIds
-        buildSnapshot(stableItems)
-        const projected = project(stableItems)
-        patchState({ data: projected })
-        return projected
+        if (isCancelled()) return stableItems
+        return commitProjectedItems(currentIds)
     }
 
     useEffect(() => {
