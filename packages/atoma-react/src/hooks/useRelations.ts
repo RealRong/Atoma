@@ -16,23 +16,18 @@ import type { EntityId } from 'atoma-types/shared'
 import { getStoreBindings } from 'atoma-types/internal'
 import { useShallowStableArray } from './useShallowStableArray'
 import { createBatchedSubscribe } from './internal/batchedSubscribe'
+import { dedupeTask } from './internal/remoteQueryCache'
 import {
     buildPrefetchDoneKey,
     collectCurrentAndNewIds,
     filterStableItemsForRelation,
     getEntityId,
     normalizeInclude,
-    normalizeStoreName,
     resolvePrefetchMode
 } from './internal/relationInclude'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 const PREFETCH_DEDUP_TTL_MS = 300
-
-type PrefetchEntry = Readonly<{
-    promise: Promise<unknown>
-    doneAt: number
-}>
 
 type StoreStatesCacheEntry = Readonly<{
     includeKey: string
@@ -84,38 +79,9 @@ export function useRelations<T extends Entity>(
         relationRef.current = undefined
     }, [relations])
 
-    const prefetchCacheRef = useRef<Map<string, PrefetchEntry>>(new Map())
     const prefetchStoreCacheRef = useRef<WeakMap<object, RelationStore>>(new WeakMap())
     const prevIdsRef = useRef<Set<EntityId>>(new Set())
     const prefetchDoneRef = useRef<Set<string>>(new Set())
-
-    const dedupePrefetch = useCallback(<Result,>(key: string, task: () => Promise<Result>): Promise<Result> => {
-        const now = Date.now()
-        const existing = prefetchCacheRef.current.get(key)
-        if (existing) {
-            if (existing.doneAt === 0) return existing.promise as Promise<Result>
-            if (now - existing.doneAt < PREFETCH_DEDUP_TTL_MS) return existing.promise as Promise<Result>
-        }
-
-        const promise = Promise.resolve().then(task)
-        prefetchCacheRef.current.set(key, {
-            promise,
-            doneAt: 0
-        })
-
-        promise
-            .then(() => {
-                prefetchCacheRef.current.set(key, {
-                    promise,
-                    doneAt: Date.now()
-                })
-            })
-            .catch(() => {
-                prefetchCacheRef.current.delete(key)
-            })
-
-        return promise
-    }, [])
 
     const resolveStoreStable = useCallback((name: StoreToken): RelationStore | undefined => {
         return resolveStoreRef.current?.(name)
@@ -128,7 +94,9 @@ export function useRelations<T extends Entity>(
         const cached = prefetchStoreCacheRef.current.get(store as object)
         if (cached) return cached
 
-        const storeName = normalizeStoreName(store, name)
+        const bindings = getStoreBindings(store, 'useRelations')
+        const storeName = bindings.name
+        const runtime = bindings.runtime as object
         const query = store.query.bind(store)
         const getMany = store.getMany.bind(store)
 
@@ -136,20 +104,30 @@ export function useRelations<T extends Entity>(
             ...store,
             query: (queryInput: Query<Entity>) => {
                 const key = `rel:query:${storeName}:${stableStringify(queryInput)}`
-                return dedupePrefetch(key, () => Promise.resolve(query(queryInput)))
+                return dedupeTask({
+                    runtime,
+                    key,
+                    dedupeTtlMs: PREFETCH_DEDUP_TTL_MS,
+                    task: () => Promise.resolve(query(queryInput))
+                })
             },
             getMany: (ids: EntityId[], options?: StoreReadOptions) => {
                 const normalizedIds = Array.isArray(ids)
                     ? [...new Set(ids.map(String))].sort()
                     : []
                 const key = `rel:getMany:${storeName}:${stableStringify(normalizedIds)}`
-                return dedupePrefetch(key, () => Promise.resolve(getMany(ids, options)))
+                return dedupeTask({
+                    runtime,
+                    key,
+                    dedupeTtlMs: PREFETCH_DEDUP_TTL_MS,
+                    task: () => Promise.resolve(getMany(ids, options))
+                })
             }
         }
 
         prefetchStoreCacheRef.current.set(store as object, wrapped)
         return wrapped
-    }, [dedupePrefetch, resolveStoreStable])
+    }, [resolveStoreStable])
 
     const resolveRelation = useCallback((tokens: readonly StoreToken[]): RelationEngine | undefined => {
         if (relationRef.current) return relationRef.current
