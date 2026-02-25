@@ -22,9 +22,10 @@ The plugin registers `ctx.events.on(...)` listeners and listens to:
 - `storeCreated`
 - `readStart/readFinish`
 - `writeStart/writeCommitted/writeFailed`
+- `changeStart/changeCommitted/changeFailed`
 
 It then uses `StoreObservability` to emit debug events (default prefix: `obs:*`).
-When `injectTraceMeta` is enabled (default), the plugin also writes `traceId/requestId` into `op.meta` for ops it can associate with a trace.
+The plugin ships with a devtools trace exporter and optional `pino` + OTLP HTTP exporters.
 
 ## Usage (client)
 
@@ -36,7 +37,14 @@ import { observabilityPlugin } from 'atoma-observability'
 const client = createClient({
     plugins: [
         memoryBackendPlugin(),
-        observabilityPlugin({ injectTraceMeta: true })
+        observabilityPlugin({
+            eventPrefix: 'obs',
+            pino: { enabled: true, level: 'info' },
+            otlp: {
+                enabled: true,
+                endpoint: 'http://localhost:4318/v1/traces'
+            }
+        })
     ]
 })
 
@@ -51,7 +59,6 @@ client.observe.registerStore({
 
 - `query.explain` is no longer part of core APIs. If you want explain-like artifacts, implement them at the plugin layer (e.g. buffer events per trace and build a summary).
 - The plugin’s default trace id uses `id` for writes and a per-query context for reads. You can always create custom contexts via the plugin extension.
-- If the server doesn’t consume `op.meta.traceId/requestId`, this still works for client-side correlation and future server upgrades.
 - For best results, call `observe.registerStore(...)` before issuing reads/writes for that store.
 
 ## Further reading

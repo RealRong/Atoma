@@ -1,7 +1,9 @@
-import type { DebugConfig, DebugEvent, ObservabilityContext, DebugEmitMeta } from 'atoma-types/observability'
-import { isSampled } from '../sampling'
+import { SpanKind, SpanStatusCode } from '@opentelemetry/api'
+import QuickLRU from 'quick-lru'
+import type { DebugConfig, DebugEmitMeta, DebugEvent, ObservabilityContext } from 'atoma-types/observability'
 import { createId, requestId } from '../trace'
 import type { ObservabilityCreateContextArgs, ObservabilityRuntimeApi, ObservabilityRuntimeCreateArgs } from './types'
+import { createRuntimeTelemetry } from './runtimeFactory'
 
 type TraceSlot = {
     eventSeq: number
@@ -29,7 +31,7 @@ const summarizeValue = (value: unknown): unknown => {
     if (t === 'bigint' || t === 'function' || t === 'symbol') return { type: t }
     if (Array.isArray(value)) return { type: 'array', length: value.length }
     if (value && t === 'object') {
-        const keys = Object.keys(value as any)
+        const keys = Object.keys(value as Record<string, unknown>)
         return { type: 'object', keyCount: keys.length, keys: keys.slice(0, 20) }
     }
     return { type: 'unknown' }
@@ -45,14 +47,20 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
 
     private readonly debug: DebugConfig | undefined
     private readonly onEvent: ((e: DebugEvent) => void) | undefined
-    private readonly maxTraces: number
-    private readonly traces = new Map<string, TraceSlot>()
+    private readonly traceSlots: QuickLRU<string, TraceSlot>
+    private readonly telemetry: ReturnType<typeof createRuntimeTelemetry>
 
     constructor(args: ObservabilityRuntimeCreateArgs) {
         this.scope = args.scope
         this.debug = args.debug
         this.onEvent = args.onEvent
-        this.maxTraces = Math.max(1, Math.floor(args.maxTraces ?? 1024))
+
+        const maxTraces = Math.max(1, Math.floor(args.maxTraces ?? 1024))
+        this.traceSlots = new QuickLRU({ maxSize: maxTraces })
+        this.telemetry = createRuntimeTelemetry({
+            scope: args.scope,
+            sampleRate: args.debug?.sample
+        })
     }
 
     requestId(traceId: string): string {
@@ -66,9 +74,8 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
         const provided = typeof args?.traceId === 'string' && args.traceId ? args.traceId : undefined
         const explain = args?.explain === true
 
-        const debug = this.debug
-        const debugEnabled = Boolean(debug?.enabled && this.onEvent)
-        const sample = typeof debug?.sample === 'number' ? debug.sample : 0
+        const debugEnabled = Boolean(this.debug?.enabled && this.onEvent)
+        const sample = typeof this.debug?.sample === 'number' ? this.debug.sample : 0
 
         const shouldAllocateTraceId = Boolean(
             provided ||
@@ -79,7 +86,7 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
         const traceId = provided || (shouldAllocateTraceId ? createId() : undefined)
         if (!traceId) return NOOP_CONTEXT
 
-        const active = Boolean(debugEnabled && isSampled(traceId, sample))
+        const active = Boolean(debugEnabled && this.telemetry.shouldSample(traceId, 'atoma-observability'))
         const slot = this.getTraceSlot(traceId)
 
         if (active) {
@@ -96,21 +103,14 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
     }
 
     private getTraceSlot(traceId: string): TraceSlot {
-        const existing = this.traces.get(traceId)
-        if (existing) {
-            this.traces.delete(traceId)
-            this.traces.set(traceId, existing)
-            return existing
+        const existing = this.traceSlots.get(traceId)
+        if (existing) return existing
+
+        const next: TraceSlot = {
+            eventSeq: 0,
+            requestSeq: 0
         }
-
-        const next: TraceSlot = { eventSeq: 0, requestSeq: 0 }
-        this.traces.set(traceId, next)
-
-        if (this.traces.size > this.maxTraces) {
-            const first = this.traces.keys().next().value
-            if (typeof first === 'string') this.traces.delete(first)
-        }
-
+        this.traceSlots.set(traceId, next)
         return next
     }
 
@@ -124,38 +124,46 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
         const { traceId, active } = args
 
         if (!active) {
-            const ctx: ObservabilityContext = {
+            const context: ObservabilityContext = {
                 active: false,
                 traceId,
                 requestId: () => this.requestId(traceId),
                 emit: NOOP_EMIT,
-                with: () => ctx
+                with: () => context
             }
-            return ctx
+            return context
         }
 
         const createWithDefaultMeta = (defaultMeta?: DebugEmitMeta): ObservabilityContext => {
-            const emit: ObservabilityContext['emit'] = (type, data, meta) => {
-                this.emitEvent({ traceId, type, data, defaultMeta, meta })
+            const emit: ObservabilityContext['emit'] = (type, payload, meta) => {
+                this.emitEvent({
+                    traceId,
+                    type,
+                    payload,
+                    defaultMeta,
+                    meta
+                })
             }
 
-            const ctx: ObservabilityContext = {
+            const context: ObservabilityContext = {
                 active: true,
                 traceId,
                 requestId: () => this.requestId(traceId),
                 emit,
                 with: (nextMeta) => {
-                    if (!hasAnyMeta(nextMeta)) return ctx
+                    if (!hasAnyMeta(nextMeta)) return context
+
                     const merged: DebugEmitMeta = {
                         requestId: nextMeta.requestId ?? defaultMeta?.requestId,
                         opId: nextMeta.opId ?? defaultMeta?.opId,
                         parentSpanId: nextMeta.parentSpanId ?? defaultMeta?.parentSpanId
                     }
+
                     return createWithDefaultMeta(merged)
                 }
             }
 
-            return ctx
+            return context
         }
 
         return createWithDefaultMeta(undefined)
@@ -164,13 +172,11 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
     private emitEvent(args: {
         traceId: string
         type: string
-        data: unknown
+        payload: unknown
         defaultMeta: DebugEmitMeta | undefined
         meta: DebugEmitMeta | undefined
     }) {
-        const debug = this.debug
-        const sink = this.onEvent
-        if (!debug?.enabled || !sink) return
+        if (!this.debug?.enabled || !this.onEvent) return
 
         const traceId = args.traceId
         const type = args.type
@@ -181,12 +187,33 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
         const parentSpanId = args.meta?.parentSpanId ?? args.defaultMeta?.parentSpanId
 
         const safePayload = (() => {
-            const redacted = debug.redact ? debug.redact(args.data) : args.data
-            if (debug.payload) return redacted
+            const redacted = this.debug?.redact ? this.debug.redact(args.payload) : args.payload
+            if (this.debug?.payload) return redacted
             return summarizeValue(redacted)
         })()
 
-        const e: DebugEvent = {
+        const attributes: Record<string, string | number | boolean> = {
+            'atoma.scope': this.scope,
+            'atoma.sequence': sequence,
+            'atoma.trace_id': traceId,
+            'atoma.type': type
+        }
+
+        if (requestId) attributes['atoma.request_id'] = requestId
+        if (opId) attributes['atoma.op_id'] = opId
+
+        const span = this.telemetry.tracer.startSpan(type, {
+            kind: SpanKind.INTERNAL,
+            attributes
+        }, this.telemetry.parentContext({
+            traceId,
+            parentSpanId,
+            sampled: true
+        }))
+        span.setStatus({ code: SpanStatusCode.OK })
+        span.end()
+
+        const event: DebugEvent = {
             schemaVersion: 1,
             type,
             traceId,
@@ -195,13 +222,13 @@ export class ObservabilityRuntime implements ObservabilityRuntimeApi {
             sequence,
             timestamp: new Date().toISOString(),
             scope: this.scope,
-            spanId: `s_${sequence}`,
+            spanId: span.spanContext().spanId,
             parentSpanId,
             payload: safePayload
         }
 
         try {
-            sink(e)
+            this.onEvent(event)
         } catch {
             // ignore
         }

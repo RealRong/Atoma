@@ -1,14 +1,16 @@
 import type { Command, CommandResult, CommandSpec } from 'atoma-types/devtools'
 import type { HistoryApply } from 'atoma-types/history'
-import type { HistoryManager } from '../history-manager'
+import type { HistoryManager } from '../manager'
 
-type HistoryOperation = 'undo' | 'redo'
-type HistoryCommandName = 'history.undo' | 'history.redo' | 'history.clear'
+type HistoryOperation = (args: {
+    scope: string
+    apply: HistoryApply
+}) => Promise<boolean>
 
 const toScope = (scope?: string) => String(scope ?? 'default')
-const toCommandScope = (scope: unknown): string | undefined => {
-    return typeof scope === 'string' ? scope : undefined
-}
+const toCommandScope = (command: Command): string | undefined => (
+    typeof command.args?.scope === 'string' ? command.args.scope : undefined
+)
 
 const toErrorMessage = (error: unknown): string => {
     return error instanceof Error
@@ -31,47 +33,58 @@ export type HistoryCommands = Readonly<{
     invoke: (command: Command) => Promise<CommandResult>
 }>
 
-export function createCommands(args: {
+export function createCommands({
+    manager,
+    apply,
+    emitChanged
+}: {
     manager: HistoryManager
     apply: HistoryApply
     emitChanged: () => void
 }): HistoryCommands {
     const runOperation = async (operation: HistoryOperation, scope?: string): Promise<boolean> => {
-        const targetScope = toScope(scope)
-        const ok = operation === 'undo'
-            ? await args.manager.undo({ scope: targetScope, apply: args.apply })
-            : await args.manager.redo({ scope: targetScope, apply: args.apply })
-        if (ok) args.emitChanged()
+        const ok = await operation({
+            scope: toScope(scope),
+            apply
+        })
+        if (ok) emitChanged()
         return ok
     }
 
-    const clear = (scope?: string) => {
-        args.manager.clear(toScope(scope))
-        args.emitChanged()
-    }
+    const undo = (scope?: string) => runOperation(
+        (replayArgs) => manager.undo(replayArgs),
+        scope
+    )
+    const redo = (scope?: string) => runOperation(
+        (replayArgs) => manager.redo(replayArgs),
+        scope
+    )
 
-    const commandHandlers: Record<HistoryCommandName, (scope?: string) => Promise<CommandResult>> = {
-        'history.undo': async (scope) => ({ ok: await runOperation('undo', scope) }),
-        'history.redo': async (scope) => ({ ok: await runOperation('redo', scope) }),
-        'history.clear': async (scope) => {
-            clear(scope)
-            return { ok: true }
-        }
+    const clear = (scope?: string): void => {
+        manager.clear(toScope(scope))
+        emitChanged()
     }
 
     return {
-        canUndo: (scope) => args.manager.canUndo(toScope(scope)),
-        canRedo: (scope) => args.manager.canRedo(toScope(scope)),
+        canUndo: (scope) => manager.canUndo(toScope(scope)),
+        canRedo: (scope) => manager.canRedo(toScope(scope)),
         clear,
-        undo: (scope) => runOperation('undo', scope),
-        redo: (scope) => runOperation('redo', scope),
+        undo,
+        redo,
         invoke: async (command): Promise<CommandResult> => {
             try {
-                const handler = commandHandlers[command.name as HistoryCommandName]
-                if (handler) {
-                    return await handler(toCommandScope(command.args?.scope))
+                const scope = toCommandScope(command)
+                switch (command.name) {
+                    case 'history.undo':
+                        return { ok: await undo(scope) }
+                    case 'history.redo':
+                        return { ok: await redo(scope) }
+                    case 'history.clear':
+                        clear(scope)
+                        return { ok: true }
+                    default:
+                        return { ok: false, message: `unknown command: ${command.name}` }
                 }
-                return { ok: false, message: `unknown command: ${command.name}` }
             } catch (error) {
                 return { ok: false, message: toErrorMessage(error) }
             }

@@ -1,6 +1,6 @@
 import type { PluginEvents } from 'atoma-types/client/plugins'
 import type { ActionContext, Entity, StoreChange } from 'atoma-types/core'
-import type { HistoryManager } from '../history-manager'
+import type { HistoryManager } from '../manager'
 
 type RecordArgs = Readonly<{
     storeName: string

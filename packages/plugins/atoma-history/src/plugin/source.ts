@@ -1,5 +1,5 @@
 import type { CommandSpec, Source, StreamEvent } from 'atoma-types/devtools'
-import type { HistoryManager } from '../history-manager'
+import type { HistoryManager } from '../manager'
 
 type SourceRuntime = Readonly<{
     spec: Source['spec']
