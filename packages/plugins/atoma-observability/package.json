@@ -11,11 +11,6 @@
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js",
             "source": "./src/index.ts"
-        },
-        "./runtime": {
-            "types": "./dist/runtime.d.ts",
-            "import": "./dist/runtime.js",
-            "source": "./src/runtime.ts"
         }
     },
     "imports": {

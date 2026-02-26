@@ -8,12 +8,6 @@
 import { observabilityPlugin } from 'atoma-observability'
 ```
 
-## 运行时子入口（仅高级场景）
-
-```ts
-import { ObservabilityRuntime } from 'atoma-observability/runtime'
-```
-
 ## 插件行为
 
 - 监听 `storeCreated` 并自动准备 store runtime

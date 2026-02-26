@@ -13,10 +13,12 @@ export type ChangeDirection =
 
 export type StoreEventPayloadMap<T extends Entity = Entity> = Readonly<{
     readStart: Readonly<{
+        id: string
         storeName: StoreToken
         query: Query<T>
     }>
     readFinish: Readonly<{
+        id: string
         storeName: StoreToken
         query: Query<T>
         result: QueryResult<T>

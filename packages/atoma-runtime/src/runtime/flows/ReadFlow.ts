@@ -6,7 +6,7 @@ import type {
     StoreReadOptions
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
-import { toErrorWithFallback as toError } from 'atoma-shared'
+import { createId, toErrorWithFallback as toError } from 'atoma-shared'
 import type { ExecutionQueryOutput, Runtime, Read, StoreHandle } from 'atoma-types/runtime'
 
 export class ReadFlow implements Read {
@@ -26,13 +26,19 @@ export class ReadFlow implements Read {
         run: () => Promise<QueryResult<T>>
     }): Promise<QueryResult<T>> => {
         const startedAt = this.runtime.now()
+        const id = createId({
+            kind: 'request',
+            now: this.runtime.now
+        })
         const storeName = handle.storeName
         this.runtime.events.emit('readStart', {
+            id,
             storeName,
             query
         })
         const result = await run()
         this.runtime.events.emit('readFinish', {
+            id,
             storeName,
             query,
             result,

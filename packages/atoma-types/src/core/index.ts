@@ -29,13 +29,6 @@ export type {
 } from './processor'
 
 export type {
-    DebugConfig,
-    DebugEvent,
-    Explain,
-    ObservabilityContext,
-} from './observability'
-
-export type {
     RelationType,
     RelationPrefetchMode,
     RelationQuery,

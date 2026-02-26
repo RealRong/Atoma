@@ -8,12 +8,6 @@ This package intentionally keeps the root API minimal and exposes `observability
 import { observabilityPlugin } from 'atoma-observability'
 ```
 
-## Runtime subpath (advanced)
-
-```ts
-import { ObservabilityRuntime } from 'atoma-observability/runtime'
-```
-
 ## Plugin behavior
 
 - listens to `storeCreated` and auto-prepares store runtime

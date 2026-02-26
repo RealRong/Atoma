@@ -1,9 +1,3 @@
-export type TraceContext = {
-    traceId: string
-    requestId?: string
-    opId?: string
-}
-
 export type DebugConfig = {
     enabled?: boolean
     sample?: number
@@ -25,35 +19,23 @@ export type DebugEvent = {
     payload?: unknown
 }
 
-export type Explain = {
-    schemaVersion: 1
-    traceId: string
-    requestId?: string
-    opId?: string
-    events?: DebugEvent[]
-    index?: {
-        kind: 'scan' | 'hits'
-        hits?: number
-    }
-    finalize?: {
-        inputCount: number
-        outputCount: number
-        paramsSummary?: unknown
-    }
-    cacheWrite?: { writeToCache: boolean; reason?: 'skipStore' | 'sparseFields' | 'other' }
-    dataSource?: { requestId?: string; opId?: string; durationMs?: number; ok?: boolean; status?: number }
-    errors?: Array<{ kind: string; code: string; message: string; traceId?: string; requestId?: string; opId?: string }>
-    dataSourceRemoteExplain?: unknown
-}
+export type PluginOptions = Readonly<{
+    maxTraceEvents?: number
+    maxRuntimeTraces?: number
+    debug?: DebugConfig
+    debugSink?: (event: DebugEvent, storeName: string) => void
+}>
 
-export type ObservabilityContext = {
+export type Context = {
     active: boolean
     traceId?: string
     requestId: () => string
     emit: (type: string, payload?: unknown, meta?: DebugEmitMeta) => void
-    with: (meta: DebugEmitMeta) => ObservabilityContext
+    with: (meta: DebugEmitMeta) => Context
 }
 
-export type DebugEmitMeta = Partial<Pick<TraceContext, 'requestId' | 'opId'>> & {
+export type DebugEmitMeta = {
+    requestId?: string
+    opId?: string
     parentSpanId?: string
 }
