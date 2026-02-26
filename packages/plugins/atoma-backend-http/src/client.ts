@@ -1,5 +1,5 @@
-import { assertOutgoingRemoteOps, HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
-import type { Meta, RemoteOpsResponseData } from 'atoma-types/protocol'
+import { HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
+import type { RemoteOpsResponseData } from 'atoma-types/protocol'
 import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-types/client/ops'
 import { BatchEngine } from './batch'
 import { createTransport } from './transport'
@@ -85,22 +85,12 @@ export class HttpOperationClient {
         }
     }
 
-    private normalizeRequestMeta(meta: Meta): Meta {
-        const clientTimeMs = (typeof meta.clientTimeMs === 'number' && Number.isFinite(meta.clientTimeMs))
-            ? meta.clientTimeMs
-            : Date.now()
-        return {
-            ...meta,
-            clientTimeMs
-        }
-    }
-
     /**
      * Execute operations. Automatically uses BatchEngine if enabled.
      */
     async executeOperations(input: ExecuteOperationsInput): Promise<ExecuteOperationsOutput> {
         if (this.batchEngine) {
-            const results = await this.batchEngine.enqueueOperations(input.ops)
+            const results = await this.batchEngine.enqueueOperations(input)
             return {
                 results,
                 status: 200
@@ -118,13 +108,11 @@ export class HttpOperationClient {
      * Used internally by BatchEngine.
      */
     private async executeOperationsDirectly({ ops, meta, signal }: ExecuteOperationsInput): Promise<ExecuteOperationsOutput> {
-        const requestMeta = this.normalizeRequestMeta(meta)
-        assertOutgoingRemoteOps({ ops, meta: requestMeta })
         const res = await this.transport.executeOperations({
             baseURL: this.baseURL,
             endpointPath: this.operationsPath,
             ops,
-            meta: requestMeta,
+            meta,
             signal
         })
 

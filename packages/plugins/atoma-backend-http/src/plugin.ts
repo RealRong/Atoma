@@ -1,5 +1,6 @@
 import { HttpOperationClient } from './client'
 import { buildOperationExecutor } from 'atoma-backend-shared'
+import { safeDispose } from 'atoma-shared'
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
 import type { BackendPluginOptions } from './types'
@@ -48,31 +49,15 @@ export function backendPlugin(options: BackendPluginOptions): ClientPlugin {
                     })
                 })
             } catch (error) {
-                try {
-                    unregisterService()
-                } catch {
-                    // ignore
-                }
+                safeDispose(unregisterService)
                 throw error
             }
 
             return {
                 dispose: () => {
-                    try {
-                        unregisterExecution?.()
-                    } catch {
-                        // ignore
-                    }
-                    try {
-                        unregisterService()
-                    } catch {
-                        // ignore
-                    }
-                    try {
-                        operationClient.dispose()
-                    } catch {
-                        // ignore
-                    }
+                    safeDispose(unregisterExecution)
+                    safeDispose(unregisterService)
+                    safeDispose(() => operationClient.dispose())
                 }
             }
         }

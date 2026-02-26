@@ -26,7 +26,7 @@ type EventSourceCtor = new (url: string) => EventSourceLike
 export function createSyncTransport(
     options: Pick<AtomaServerBackendPluginOptions, 'baseURL' | 'fetchFn' | 'headers'>
 ): SyncTransport {
-    const baseURL = normalizeBaseURL(options.baseURL)
+    const baseURL = options.baseURL
     const fetchFn = resolveFetch(options.fetchFn)
 
     return {
@@ -93,7 +93,7 @@ async function postJson(args: {
     headers?: AtomaServerBackendPluginOptions['headers']
 }): Promise<unknown> {
     const response = await args.fetchFn(
-        new URL(args.path, args.baseURL).toString(),
+        joinUrl(args.baseURL, args.path),
         {
             method: 'POST',
             headers: {
@@ -188,7 +188,7 @@ function createStream(args: {
             return
         }
 
-        const url = new URL(HTTP_PATH_SYNC_RXDB_STREAM, args.baseURL)
+        const url = new URL(joinUrl(args.baseURL, HTTP_PATH_SYNC_RXDB_STREAM))
         url.searchParams.set('resource', args.resource)
 
         try {
@@ -244,14 +244,16 @@ function createStream(args: {
     }
 }
 
-function normalizeBaseURL(value: string): string {
-    const normalized = String(value ?? '').trim()
-    if (!normalized) {
-        throw new Error('[Sync] baseURL is required')
-    }
-    return normalized.endsWith('/')
-        ? normalized
-        : `${normalized}/`
+function joinUrl(base: string, path: string): string {
+    if (!base) return path
+    if (!path) return base
+
+    const hasTrailing = base.endsWith('/')
+    const hasLeading = path.startsWith('/')
+
+    if (hasTrailing && hasLeading) return `${base}${path.slice(1)}`
+    if (!hasTrailing && !hasLeading) return `${base}/${path}`
+    return `${base}${path}`
 }
 
 function resolveFetch(

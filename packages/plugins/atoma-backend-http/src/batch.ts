@@ -11,6 +11,8 @@ type Deferred<T> = {
 
 type OperationTask = {
     op: RemoteOp
+    meta: Meta
+    signal?: AbortSignal
     deferred: Deferred<RemoteOpResult>
 }
 
@@ -58,6 +60,21 @@ function createAbortController(): AbortController | undefined {
     return new AbortController()
 }
 
+function bindAbortSignal(signal: AbortSignal, controller: AbortController): () => void {
+    if (signal.aborted) {
+        controller.abort()
+        return () => {}
+    }
+
+    const onAbort = () => {
+        controller.abort()
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    return () => {
+        signal.removeEventListener('abort', onAbort)
+    }
+}
+
 function mapResults(results: unknown): Map<string, RemoteOpResult> {
     const byOpId = new Map<string, RemoteOpResult>()
     if (!Array.isArray(results)) return byOpId
@@ -85,7 +102,18 @@ function missingResult(opId: string): RemoteOpResult {
 }
 
 function takeBatch(queue: OperationTask[], maxOpsPerRequest: number): OperationTask[] {
-    const count = Math.min(queue.length, maxOpsPerRequest)
+    if (!queue.length) return []
+
+    const first = queue[0]
+    let count = 1
+    while (
+        count < queue.length
+        && count < maxOpsPerRequest
+        && queue[count].meta === first.meta
+        && queue[count].signal === first.signal
+    ) {
+        count += 1
+    }
     return queue.splice(0, count)
 }
 
@@ -137,25 +165,33 @@ export class BatchEngine {
         }
     }
 
-    enqueueOp(op: RemoteOp): Promise<RemoteOpResult> {
-        if (!op || typeof op !== 'object') {
+    enqueueOp(args: {
+        op: RemoteOp
+        meta: Meta
+        signal?: AbortSignal
+    }): Promise<RemoteOpResult> {
+        if (!args.op || typeof args.op !== 'object') {
             return Promise.reject(new Error('[BatchEngine] Invalid op'))
         }
 
-        if (op.kind === 'query') {
+        if (args.op.kind === 'query') {
             return this.enqueueToLane({
                 lane: this.lanes.query,
-                op,
+                op: args.op,
+                meta: args.meta,
+                signal: args.signal,
                 maxQueueLength: this.queryMaxQueueLength,
                 overflowStrategy: this.queryOverflowStrategy
             })
         }
 
-        if (op.kind === 'write') {
-            this.validateWriteBatchSize(op)
+        if (args.op.kind === 'write') {
+            this.validateWriteBatchSize(args.op)
             return this.enqueueToLane({
                 lane: this.lanes.write,
-                op,
+                op: args.op,
+                meta: args.meta,
+                signal: args.signal,
                 maxQueueLength: this.writeMaxQueueLength
             })
         }
@@ -163,8 +199,12 @@ export class BatchEngine {
         return Promise.reject(new Error('[BatchEngine] Unsupported op kind'))
     }
 
-    async enqueueOperations(ops: RemoteOp[]): Promise<RemoteOpResult[]> {
-        return Promise.all(ops.map((op) => this.enqueueOp(op)))
+    async enqueueOperations(input: ExecuteOperationsInput): Promise<RemoteOpResult[]> {
+        return Promise.all(input.ops.map((op) => this.enqueueOp({
+            op,
+            meta: input.meta,
+            signal: input.signal
+        })))
     }
 
     dispose(): void {
@@ -189,6 +229,8 @@ export class BatchEngine {
     private enqueueToLane(args: {
         lane: LaneState
         op: RemoteOp
+        meta: Meta
+        signal?: AbortSignal
         maxQueueLength: number
         overflowStrategy?: 'reject_new' | 'drop_old_queries'
     }): Promise<RemoteOpResult> {
@@ -198,7 +240,7 @@ export class BatchEngine {
                 return
             }
 
-            const { lane, maxQueueLength, op, overflowStrategy } = args
+            const { lane, maxQueueLength, op, meta, signal, overflowStrategy } = args
             if (maxQueueLength !== Infinity && lane.queue.length >= maxQueueLength) {
                 if (overflowStrategy === 'drop_old_queries') {
                     while (lane.queue.length >= maxQueueLength) {
@@ -211,7 +253,7 @@ export class BatchEngine {
                 }
             }
 
-            lane.queue.push({ op, deferred: { resolve, reject } })
+            lane.queue.push({ op, meta, signal, deferred: { resolve, reject } })
             this.scheduleFlush(lane)
         })
     }
@@ -261,19 +303,21 @@ export class BatchEngine {
             return
         }
 
+        const context = batch[0]
+        if (!context) return
+
         const controller = createAbortController()
+        const releaseAbortBinding = controller && context.signal
+            ? bindAbortSignal(context.signal, controller)
+            : undefined
         if (controller) lane.controllers.add(controller)
         batch.forEach((task) => lane.inFlightTasks.add(task))
 
         try {
-            const meta: Meta = {
-                v: 1
-            }
-
             const output = await this.executeFn({
                 ops: batch.map((task) => task.op),
-                meta,
-                signal: controller?.signal
+                meta: context.meta,
+                signal: controller?.signal ?? context.signal
             })
 
             const resultMap = mapResults(output.results)
@@ -289,6 +333,7 @@ export class BatchEngine {
             const reason = this.disposed ? this.disposedError : error
             batch.forEach((task) => task.deferred.reject(reason))
         } finally {
+            releaseAbortBinding?.()
             if (controller) lane.controllers.delete(controller)
             batch.forEach((task) => lane.inFlightTasks.delete(task))
         }
