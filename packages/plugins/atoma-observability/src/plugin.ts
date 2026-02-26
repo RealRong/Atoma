@@ -1,109 +1,81 @@
 import type { ClientPlugin } from 'atoma-types/client/plugins'
+import type { StoreToken } from 'atoma-types/core'
 import { HUB_TOKEN } from 'atoma-types/devtools'
-import { LifecycleBridge } from './lifecycle/LifecycleBridge'
-import { StoreObservability } from './store-observability'
-import { TraceStore } from './storage/TraceStore'
-import { CompositeExporter } from './exporter/CompositeExporter'
-import { DevtoolsExporter } from './exporter/DevtoolsExporter'
-import { OtlpExporter } from './exporter/OtlpExporter'
-import { PinoExporter } from './exporter/PinoExporter'
-import type { EventExporter } from './exporter/types'
-import type { ObservabilityExtension, ObservabilityPluginOptions } from './types'
+import { DevtoolsExporter } from './DevtoolsExporter'
+import { LifecycleBridge } from './LifecycleBridge'
+import { ObservabilityRuntime } from './ObservabilityRuntime'
+import { TraceStore } from './TraceStore'
+import type { ObservabilityPluginOptions } from './types'
 
 const resolvePositiveInteger = (value: number | undefined, fallback: number): number => {
     const parsed = Number.isFinite(value) ? Math.floor(Number(value)) : fallback
     return parsed > 0 ? parsed : fallback
 }
 
-export function observabilityPlugin(options: ObservabilityPluginOptions = {}): ClientPlugin<ObservabilityExtension> {
-    const eventPrefix = String(options.eventPrefix ?? 'obs')
+const toStoreScope = (storeName: StoreToken | string) => String(storeName || 'store')
+
+const emitSafely = <T>(fn: ((value: T) => void) | undefined, value: T) => {
+    if (typeof fn !== 'function') return
+    try {
+        fn(value)
+    } catch {
+        // ignore
+    }
+}
+
+export function observabilityPlugin(options: ObservabilityPluginOptions = {}): ClientPlugin {
     const maxTraceEvents = resolvePositiveInteger(options.maxTraceEvents, 1000)
     const maxRuntimeTraces = resolvePositiveInteger(options.maxRuntimeTraces, 1024)
-
-    const storeObservability = new StoreObservability({
-        maxTraces: maxRuntimeTraces
-    })
 
     return {
         id: 'atoma-observability',
         setup: (ctx) => {
+            const runtimeByStore = new Map<string, ObservabilityRuntime>()
             const sourceId = `obs.trace.${ctx.clientId}`
             const traceStore = new TraceStore({
                 maxEvents: maxTraceEvents
             })
-
-            const exporters: EventExporter[] = [
-                new DevtoolsExporter({
-                    sourceId,
-                    clientId: ctx.clientId,
-                    runtimeNow: ctx.runtime.now,
-                    traceStore,
-                    hub: ctx.services.resolve(HUB_TOKEN)
-                })
-            ]
-
-            if (options.pino?.enabled) {
-                exporters.push(new PinoExporter(options.pino))
-            }
-
-            if (options.otlp?.enabled) {
-                const endpoint = typeof options.otlp.endpoint === 'string' ? options.otlp.endpoint.trim() : ''
-                if (!endpoint) {
-                    throw new Error('[Atoma] observabilityPlugin otlp.enabled=true 时必须提供 otlp.endpoint')
-                }
-                exporters.push(new OtlpExporter({
-                    endpoint,
-                    headers: options.otlp.headers,
-                    timeoutMs: options.otlp.timeoutMs,
-                    retries: options.otlp.retries,
-                    concurrency: options.otlp.concurrency,
-                    batchSize: options.otlp.batchSize
-                }))
-            }
-
-            const exporter = new CompositeExporter(exporters)
-            const lifecycleBridge = new LifecycleBridge({
-                ctx,
-                storeObservability,
-                eventPrefix
+            const exporter = new DevtoolsExporter({
+                sourceId,
+                clientId: ctx.clientId,
+                runtimeNow: ctx.runtime.now,
+                traceStore,
+                hub: ctx.services.resolve(HUB_TOKEN)
             })
-            lifecycleBridge.mount()
+
+            const ensureStoreRuntime = (storeName: StoreToken | string): ObservabilityRuntime => {
+                const scope = toStoreScope(storeName)
+                const existing = runtimeByStore.get(scope)
+                if (existing) return existing
+
+                const runtime = new ObservabilityRuntime({
+                    scope,
+                    maxTraces: maxRuntimeTraces,
+                    debug: options.debug,
+                    onEvent: (event) => {
+                        exporter.publish({
+                            storeName: scope,
+                            event
+                        })
+                        emitSafely((value) => options.debugSink?.(value, scope), event)
+                    }
+                })
+
+                runtimeByStore.set(scope, runtime)
+                return runtime
+            }
+
+            const lifecycle = new LifecycleBridge({
+                ctx,
+                ensureStoreRuntime
+            })
+            lifecycle.mount()
 
             return {
-                extension: {
-                    observe: {
-                        createContext: (storeName, args) => {
-                            return storeObservability.createContext(String(storeName), args)
-                        },
-                        registerStore: (config) => {
-                            const storeName = String(config.storeName)
-                            const userSink = config.debugSink
-
-                            storeObservability.registerStore({
-                                ...config,
-                                storeName,
-                                debugSink: (event) => {
-                                    exporter.publish({
-                                        storeName,
-                                        event
-                                    })
-
-                                    if (typeof userSink !== 'function') return
-                                    try {
-                                        userSink(event)
-                                    } catch {
-                                        // ignore
-                                    }
-                                }
-                            })
-                        }
-                    }
-                },
                 dispose: () => {
-                    lifecycleBridge.dispose()
-                    void exporter.dispose().catch(() => {
-                        // ignore
-                    })
+                    lifecycle.dispose()
+                    exporter.dispose()
+                    runtimeByStore.clear()
                 }
             }
         }

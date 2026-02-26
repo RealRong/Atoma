@@ -1,5 +1,15 @@
 # ATOMA Observability 设计与重构方案（含开源库简化）
 
+## 已落地状态（2026-02-26）
+
+- 根导出已收敛为 `observabilityPlugin`，并提供 `atoma-observability/runtime` 子入口给高级场景。
+- 插件已改为自动监听 `storeCreated`，不再要求手动调用 `observe.registerStore(...)`。
+- `StoreObservability` 已移除，store runtime 在插件内按需创建并缓存，生命周期通过 `LifecycleBridge` 统一编排。
+- `observe` 扩展已移除，`observabilityPlugin` 仅保留 side-effect 编排职责，公开 API 进一步收敛。
+- 配置已收敛为插件级 `debug/debugSink`，不再保留按 store 分店配置入口。
+- `ObservabilityRuntime` 的 trace slot 缓存已改为 `quick-lru`，移除手写 LRU 淘汰逻辑。
+- `README.md` 与 `README.zh-CN.md` 已同步更新为当前用法（插件级 `debug/debugSink` 配置）。
+
 ## 1. 背景与目标
 
 `plugins/atoma-observability` 当前实现功能完整，但复杂度主要集中在一个编排入口文件，导致维护成本上升、扩展路径不清晰。
@@ -160,7 +170,7 @@ packages/plugins/atoma-observability/src/
 ### 阶段 4：OTel 收敛（可选但推荐）
 
 - runtime 内部改为 OTel Span/Context 模型。
-- 保留 Atoma 外部 `observe.createContext` API，不暴露 OTel 细节。
+- 不再暴露 `observe.createContext` 扩展 API；如需手工埋点，直接使用 `atoma-observability/runtime` 子入口。
 - 事件模型统一映射到语义字段，减少自定义字段分叉。
 
 验收：

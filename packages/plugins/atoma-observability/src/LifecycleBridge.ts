@@ -1,11 +1,9 @@
 import type { PluginContext } from 'atoma-types/client/plugins'
+import type { StoreToken } from 'atoma-types/core'
 import type { ObservabilityContext } from 'atoma-types/observability'
-import type { StoreObservability } from '../store-observability'
+import type { ObservabilityRuntime } from './ObservabilityRuntime'
 
-type WriteContextEntry = {
-    ctx: ObservabilityContext
-    storeName: string
-}
+type RuntimeResolver = (storeName: StoreToken | string) => ObservabilityRuntime
 
 type LifecycleEventType =
     | 'write:start'
@@ -15,54 +13,57 @@ type LifecycleEventType =
     | 'change:finish'
     | 'change:failed'
 
+const EVENT_PREFIX = 'obs'
+
 const resolveErrorMessage = (error: unknown): string => {
     return error instanceof Error ? error.message : String(error)
 }
 
 export class LifecycleBridge {
     private readonly readContextByQuery = new WeakMap<object, ObservabilityContext>()
-    private readonly writeContextByAction = new Map<string, WriteContextEntry>()
     private readonly stopEvents: Array<() => void> = []
-
     private readonly ctx: PluginContext
-    private readonly storeObservability: StoreObservability
-    private readonly eventPrefix: string
+    private readonly ensureStoreRuntime: RuntimeResolver
 
     constructor(args: {
         ctx: PluginContext
-        storeObservability: StoreObservability
-        eventPrefix: string
+        ensureStoreRuntime: RuntimeResolver
     }) {
         this.ctx = args.ctx
-        this.storeObservability = args.storeObservability
-        this.eventPrefix = args.eventPrefix
+        this.ensureStoreRuntime = args.ensureStoreRuntime
     }
 
     mount() {
+        this.ctx.runtime.stores.list().forEach((storeName) => {
+            this.ensureStoreRuntime(storeName)
+        })
+
+        this.stopEvents.push(this.ctx.events.on('storeCreated', (args) => {
+            this.ensureStoreRuntime(args.storeName)
+        }))
+
         this.stopEvents.push(this.ctx.events.on('readStart', (args) => {
-            const storeName = String(args.storeName)
-            const context = this.storeObservability.createContext(storeName)
+            const context = this.createContext(args.storeName)
             if (args.query && typeof args.query === 'object') {
                 this.readContextByQuery.set(args.query as object, context)
             }
-            context.emit(`${this.eventPrefix}:read:start`, {
-                storeName,
+            context.emit(`${EVENT_PREFIX}:read:start`, {
+                storeName: String(args.storeName),
                 query: args.query
             })
         }))
 
         this.stopEvents.push(this.ctx.events.on('readFinish', (args) => {
-            const storeName = String(args.storeName)
             const context = (args.query && typeof args.query === 'object')
-                ? (this.readContextByQuery.get(args.query as object) ?? this.storeObservability.createContext(storeName))
-                : this.storeObservability.createContext(storeName)
+                ? (this.readContextByQuery.get(args.query as object) ?? this.createContext(args.storeName))
+                : this.createContext(args.storeName)
 
             if (args.query && typeof args.query === 'object') {
                 this.readContextByQuery.delete(args.query as object)
             }
 
-            context.emit(`${this.eventPrefix}:read:finish`, {
-                storeName,
+            context.emit(`${EVENT_PREFIX}:read:finish`, {
+                storeName: String(args.storeName),
                 size: Array.isArray(args.result?.data) ? args.result.data.length : 0,
                 durationMs: args.durationMs
             })
@@ -70,7 +71,7 @@ export class LifecycleBridge {
 
         this.stopEvents.push(this.ctx.events.on('writeStart', (args) => {
             this.emitWriteLifecycle({
-                storeName: String(args.storeName),
+                storeName: args.storeName,
                 context: args.context,
                 type: 'write:start',
                 payload: {
@@ -83,31 +84,29 @@ export class LifecycleBridge {
 
         this.stopEvents.push(this.ctx.events.on('writeCommitted', (args) => {
             this.emitWriteLifecycle({
-                storeName: String(args.storeName),
+                storeName: args.storeName,
                 context: args.context,
                 type: 'write:finish',
                 payload: {
                     changeCount: Array.isArray(args.changes) ? args.changes.length : 0
-                },
-                releaseAfter: true
+                }
             })
         }))
 
         this.stopEvents.push(this.ctx.events.on('writeFailed', (args) => {
             this.emitWriteLifecycle({
-                storeName: String(args.storeName),
+                storeName: args.storeName,
                 context: args.context,
                 type: 'write:failed',
                 payload: {
                     message: resolveErrorMessage(args.error)
-                },
-                releaseAfter: true
+                }
             })
         }))
 
         this.stopEvents.push(this.ctx.events.on('changeStart', (args) => {
             this.emitWriteLifecycle({
-                storeName: String(args.storeName),
+                storeName: args.storeName,
                 context: args.context,
                 type: 'change:start',
                 payload: {
@@ -121,27 +120,25 @@ export class LifecycleBridge {
 
         this.stopEvents.push(this.ctx.events.on('changeCommitted', (args) => {
             this.emitWriteLifecycle({
-                storeName: String(args.storeName),
+                storeName: args.storeName,
                 context: args.context,
                 type: 'change:finish',
                 payload: {
                     direction: args.direction,
                     changeCount: Array.isArray(args.changes) ? args.changes.length : 0
-                },
-                releaseAfter: true
+                }
             })
         }))
 
         this.stopEvents.push(this.ctx.events.on('changeFailed', (args) => {
             this.emitWriteLifecycle({
-                storeName: String(args.storeName),
+                storeName: args.storeName,
                 context: args.context,
                 type: 'change:failed',
                 payload: {
                     direction: args.direction,
                     message: resolveErrorMessage(args.error)
-                },
-                releaseAfter: true
+                }
             })
         }))
     }
@@ -154,42 +151,22 @@ export class LifecycleBridge {
                 // ignore
             }
         }
-        this.writeContextByAction.clear()
     }
 
-    private getWriteContext(storeName: string, id: string): WriteContextEntry {
-        const key = String(id)
-        const existing = this.writeContextByAction.get(key)
-        if (existing) return existing
-
-        const context = this.storeObservability.createContext(storeName, { traceId: id })
-        const created: WriteContextEntry = {
-            ctx: context,
-            storeName
-        }
-        this.writeContextByAction.set(key, created)
-        return created
-    }
-
-    private releaseWriteContext(id: string) {
-        this.writeContextByAction.delete(String(id))
+    private createContext(storeName: StoreToken | string, args?: { traceId?: string; explain?: boolean }) {
+        return this.ensureStoreRuntime(storeName).createContext(args)
     }
 
     private emitWriteLifecycle(args: {
-        storeName: string
+        storeName: StoreToken | string
         context: { id: string }
         type: LifecycleEventType
         payload: Record<string, unknown>
-        releaseAfter?: boolean
     }) {
-        const entry = this.getWriteContext(args.storeName, args.context.id)
-        entry.ctx.emit(`${this.eventPrefix}:${args.type}`, {
-            storeName: entry.storeName,
+        this.createContext(args.storeName, { traceId: args.context.id }).emit(`${EVENT_PREFIX}:${args.type}`, {
+            storeName: String(args.storeName),
             id: args.context.id,
             ...args.payload
         })
-        if (args.releaseAfter) {
-            this.releaseWriteContext(args.context.id)
-        }
     }
 }

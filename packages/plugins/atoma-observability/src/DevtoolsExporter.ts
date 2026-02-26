@@ -1,6 +1,6 @@
 import type { Hub, Source, StreamEvent } from 'atoma-types/devtools'
-import type { EventExporter, ExportEvent } from './types'
-import { TraceStore } from '../storage/TraceStore'
+import type { TraceEntry } from './TraceStore'
+import { TraceStore } from './TraceStore'
 
 const emitSafely = (subscriber: (event: StreamEvent) => void, event: StreamEvent) => {
     try {
@@ -18,7 +18,7 @@ export type DevtoolsExporterArgs = Readonly<{
     hub?: Hub
 }>
 
-export class DevtoolsExporter implements EventExporter {
+export class DevtoolsExporter {
     private readonly clientId: string
     private readonly runtimeNow: () => number
     private readonly traceStore: TraceStore
@@ -46,9 +46,7 @@ export class DevtoolsExporter implements EventExporter {
                 ],
                 capability: {
                     snapshot: true,
-                    stream: true,
-                    search: true,
-                    paginate: true
+                    stream: true
                 },
                 tags: ['plugin', 'observability']
             },
@@ -72,7 +70,7 @@ export class DevtoolsExporter implements EventExporter {
         this.unregisterSource = args.hub?.register(source)
     }
 
-    publish(entry: ExportEvent): void {
+    publish(entry: TraceEntry): void {
         const revision = this.traceStore.record(entry)
         const timestamp = this.runtimeNow()
 

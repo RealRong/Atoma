@@ -1,4 +1,3 @@
-import type { DebugConfig, DebugEvent } from 'atoma-types/observability'
 import type { AtomaServerLogger } from './logger'
 import type { IOrmAdapter, ISyncAdapter } from './adapters/ports'
 
@@ -19,12 +18,6 @@ export type AtomaServerHook<TArgs> = (args: TArgs) => void | Promise<void>
 
 export type AtomaServerTraceConfig = {
     createId?: () => string
-}
-
-export type AtomaServerDebugConfig = {
-    scope?: string
-    debug?: DebugConfig
-    onEvent?: (e: DebugEvent) => void
 }
 
 export type AtomaServerPluginRuntime<Ctx> = {
@@ -136,7 +129,6 @@ export type AtomaServerConfig<Ctx = unknown> = {
     observability?: {
         logger?: AtomaServerLogger
         trace?: AtomaServerTraceConfig
-        debug?: AtomaServerDebugConfig
         hooks?: {
             onRequest?: AtomaServerHook<AtomaServerHookArgs<Ctx> & { incoming: any }>
             onResponse?: AtomaServerHook<AtomaServerHookArgs<Ctx> & { status: number }>

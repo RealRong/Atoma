@@ -11,17 +11,16 @@ describe('observability.trace', () => {
     it('write path should emit debug events', async () => {
         const events: DebugEvent[] = []
         const client = harness.trackClient(
-            createObservableDemoClient()
+            createObservableDemoClient({
+                observability: {
+                    debug: { enabled: true, sample: 1, payload: true },
+                    debugSink: (event) => {
+                        events.push(event)
+                    }
+                }
+            })
         )
         const userId = createTestId('u-obs')
-
-        client.observe.registerStore({
-            storeName: 'users',
-            debug: { enabled: true, sample: 1, payload: true },
-            debugSink: (event) => {
-                events.push(event)
-            }
-        })
 
         await client.stores('users').create({
             id: userId,

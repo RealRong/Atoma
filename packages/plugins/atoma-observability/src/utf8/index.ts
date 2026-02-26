@@ -1,1 +1,0 @@
-export { byteLength } from './fns'

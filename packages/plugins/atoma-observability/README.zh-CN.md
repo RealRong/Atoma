@@ -1,33 +1,28 @@
 # Atoma Observability
 
-本包提供 Atoma 的可观测性原语 **以及** 一个官方客户端插件（通过 hooks 完成接入）。
+本包默认只暴露 `observabilityPlugin` 作为客户端接入入口。
 
-Core/Runtime 不再感知 observability。需要 trace/debug 时，请显式安装插件（或自建插件）。
+## 根导出（最小公开面）
 
-## 包含内容
+```ts
+import { observabilityPlugin } from 'atoma-observability'
+```
 
-- `Observability` runtime
-  - trace id 生成
-  - 确定性采样
-  - 安全的 debug 事件发射
-- `StoreObservability`
-  - 按 store 复用 runtime 的便捷封装
-- `observabilityPlugin()`
-  - 基于 hooks 的 `atoma-client` 官方接入
+## 运行时子入口（仅高级场景）
 
-## 插件行为（零核心耦合）
+```ts
+import { ObservabilityRuntime } from 'atoma-observability/runtime'
+```
 
-插件通过 `ctx.events.on(...)` 订阅：
+## 插件行为
 
-- `storeCreated`
-- `readStart/readFinish`
-- `writeStart/writeCommitted/writeFailed`
-- `changeStart/changeCommitted/changeFailed`
+- 监听 `storeCreated` 并自动准备 store runtime
+- 监听 `readStart/readFinish`
+- 监听 `writeStart/writeCommitted/writeFailed`
+- 监听 `changeStart/changeCommitted/changeFailed`
+- 通过 devtools source 输出 trace 时间线
 
-随后由 `StoreObservability` 发出 debug 事件（默认前缀 `obs:*`）。
-插件内置 devtools trace 导出，并支持可选 `pino` 日志导出与 OTLP HTTP 导出。
-
-## 用法（客户端）
+## 用法
 
 ```ts
 import { createClient } from 'atoma-client'
@@ -38,30 +33,15 @@ const client = createClient({
     plugins: [
         memoryBackendPlugin(),
         observabilityPlugin({
-            eventPrefix: 'obs',
-            pino: { enabled: true, level: 'info' },
-            otlp: {
-                enabled: true,
-                endpoint: 'http://localhost:4318/v1/traces'
+            maxTraceEvents: 800,
+            maxRuntimeTraces: 512,
+            debug: { enabled: true, sample: 1, payload: false },
+            debugSink: (event, storeName) => {
+                console.log(storeName, event)
             }
         })
     ]
 })
 
-client.observe.registerStore({
-    storeName: 'todos',
-    debug: { enabled: true, sample: 1, payload: false },
-    debugSink: (e: any) => console.log(e)
-})
+client.stores('todos').create({ id: '1', title: 'hello' })
 ```
-
-## 备注
-
-- `query.explain` 已不再属于 core API。如需 explain 类诊断，请在插件层自行实现（例如按 trace 缓存事件并生成摘要）。
-- 插件默认使用 `id` 作为写入 traceId，读请求使用每次 query 的上下文；也可通过插件扩展自行创建 context。
-- 建议在该 store 开始读写前调用 `observe.registerStore(...)`。
-
-## 延伸阅读
-
-- `OBSERVABILITY_OPTIMAL_ARCHITECTURE.md`（根目录）
-- `ATOMA_OBSERVABILITY_PLUGINIZATION_REFACTOR.zh.md`（根目录）

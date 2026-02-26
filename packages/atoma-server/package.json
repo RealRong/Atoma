@@ -30,8 +30,7 @@
     },
     "dependencies": {
         "atoma": "workspace:*",
-        "atoma-shared": "workspace:*",
-        "atoma-observability": "workspace:*"
+        "atoma-shared": "workspace:*"
     },
     "peerDependencies": {
         "@prisma/client": "^5.0.0",

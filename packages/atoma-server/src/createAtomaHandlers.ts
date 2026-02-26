@@ -229,7 +229,6 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
 
         try {
             if (runtime.hooks?.onRequest) await runtime.hooks.onRequest({ ...runtime.hookArgs, incoming: args.request })
-            runtime.observabilityContext.emit('server:request', { method: args.method, pathname: args.pathname })
 
             const response = await composeResponsePlugins<Ctx>(args.plugins ?? [])(
                 { request: args.request, route: args.route, runtime: pluginRuntime },
@@ -239,7 +238,6 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
             if (runtime.hooks?.onResponse) await runtime.hooks.onResponse({ ...runtime.hookArgs, status: response.status })
             return response
         } catch (err: any) {
-            runtime.observabilityContext.emit('server:error', { message: err?.message })
             runtime.logger?.error?.('request failed', {
                 route: args.route,
                 method: args.method,

@@ -1,11 +1,19 @@
 import { createId } from 'atoma-shared'
-import { Observability } from 'atoma-observability'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import { createNoopLogger } from '../logger'
-import type { ObservabilityContext } from 'atoma-types/observability'
 
 function createDefaultRequestId() {
     return createId({ kind: 'request' })
+}
+
+function createTraceRequestId(traceId: string) {
+    return `r_${traceId}_1`
+}
+
+function resolveNonEmpty(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined
+    const normalized = value.trim()
+    return normalized ? normalized : undefined
 }
 
 export function createRuntimeFactory<Ctx>(args: {
@@ -14,12 +22,8 @@ export function createRuntimeFactory<Ctx>(args: {
     const { config } = args
 
     const loggerBase = config.observability?.logger ?? createNoopLogger()
-    const debugScope = config.observability?.debug?.scope ?? 'atoma-server'
-    const debugConfig = config.observability?.debug?.debug
-    const debugOnEvent = config.observability?.debug?.onEvent
-    const createIdFn = config.observability?.trace?.createId
+    const createTraceId = config.observability?.trace?.createId
     const hooks = config.observability?.hooks
-    const observability = Observability.runtime.create({ scope: debugScope, debug: debugConfig, onEvent: debugOnEvent })
 
     return async function createRuntime(runtimeArgs: {
         incoming: any
@@ -27,27 +31,13 @@ export function createRuntimeFactory<Ctx>(args: {
         initialTraceId?: string
         initialRequestId?: string
     }) {
-        const createObservabilityContext = (ctxArgs?: { traceId?: string; requestId?: string; opId?: string }): ObservabilityContext => {
-            const traceId = (typeof ctxArgs?.traceId === 'string' && ctxArgs.traceId) ? ctxArgs.traceId : undefined
-            const base = observability.createContext({ traceId })
-            const requestId = (typeof ctxArgs?.requestId === 'string' && ctxArgs.requestId) ? ctxArgs.requestId : undefined
-            const withRequest = requestId ? base.with({ requestId }) : base
-            const opId = (typeof ctxArgs?.opId === 'string' && ctxArgs.opId) ? ctxArgs.opId : undefined
-            return opId ? withRequest.with({ opId }) : withRequest
-        }
-
-        const initialTraceId = (() => {
-            if (typeof runtimeArgs.initialTraceId === 'string' && runtimeArgs.initialTraceId) return runtimeArgs.initialTraceId
-            if (typeof createIdFn === 'function') return createIdFn()
-            return undefined
-        })()
-
-        const baseCtx = observability.createContext({ traceId: initialTraceId })
-        const traceId = baseCtx.traceId
+        const traceId = resolveNonEmpty(runtimeArgs.initialTraceId)
+            ?? (typeof createTraceId === 'function' ? resolveNonEmpty(createTraceId()) : undefined)
 
         const requestId = (() => {
-            if (typeof runtimeArgs.initialRequestId === 'string' && runtimeArgs.initialRequestId) return runtimeArgs.initialRequestId
-            if (traceId) return baseCtx.requestId() ?? createDefaultRequestId()
+            const initialRequestId = resolveNonEmpty(runtimeArgs.initialRequestId)
+            if (initialRequestId) return initialRequestId
+            if (traceId) return createTraceRequestId(traceId)
             return createDefaultRequestId()
         })()
 
@@ -64,9 +54,8 @@ export function createRuntimeFactory<Ctx>(args: {
             : (undefined as any as Ctx)
 
         const hookArgs = { route: runtimeArgs.route, ctx, traceId, requestId }
-        const observabilityContext = baseCtx.with({ requestId })
 
-        return { traceId, requestId, logger, ctx, hookArgs, observabilityContext, createObservabilityContext, hooks }
+        return { traceId, requestId, logger, ctx, hookArgs, hooks }
     }
 }
 
@@ -81,7 +70,5 @@ export type ServerRuntime<Ctx> = {
         traceId?: string
         requestId: string
     }
-    observabilityContext: ObservabilityContext
-    createObservabilityContext: (args?: { traceId?: string; requestId?: string; opId?: string }) => ObservabilityContext
     hooks?: any
 }

@@ -1,33 +1,28 @@
 # Atoma Observability
 
-This package provides Atoma’s observability primitives **and** an official client plugin that wires them via runtime hooks.
+This package intentionally keeps the root API minimal and exposes `observabilityPlugin` as the primary entry.
 
-Core/runtime no longer knows about observability. If you want traces/debug events, install the plugin (or build your own).
+## Root API (minimal)
 
-## What’s included
+```ts
+import { observabilityPlugin } from 'atoma-observability'
+```
 
-- `Observability` runtime
-  - trace id generation
-  - deterministic sampling
-  - safe debug event emission
-- `StoreObservability`
-  - per-store runtime helper
-- `observabilityPlugin()`
-  - hooks-based wiring for `atoma-client`
+## Runtime subpath (advanced)
 
-## Plugin behavior (no core coupling)
+```ts
+import { ObservabilityRuntime } from 'atoma-observability/runtime'
+```
 
-The plugin registers `ctx.events.on(...)` listeners and listens to:
+## Plugin behavior
 
-- `storeCreated`
-- `readStart/readFinish`
-- `writeStart/writeCommitted/writeFailed`
-- `changeStart/changeCommitted/changeFailed`
+- listens to `storeCreated` and auto-prepares store runtime
+- listens to `readStart/readFinish`
+- listens to `writeStart/writeCommitted/writeFailed`
+- listens to `changeStart/changeCommitted/changeFailed`
+- emits trace timeline through a devtools source
 
-It then uses `StoreObservability` to emit debug events (default prefix: `obs:*`).
-The plugin ships with a devtools trace exporter and optional `pino` + OTLP HTTP exporters.
-
-## Usage (client)
+## Usage
 
 ```ts
 import { createClient } from 'atoma-client'
@@ -38,30 +33,15 @@ const client = createClient({
     plugins: [
         memoryBackendPlugin(),
         observabilityPlugin({
-            eventPrefix: 'obs',
-            pino: { enabled: true, level: 'info' },
-            otlp: {
-                enabled: true,
-                endpoint: 'http://localhost:4318/v1/traces'
+            maxTraceEvents: 800,
+            maxRuntimeTraces: 512,
+            debug: { enabled: true, sample: 1, payload: false },
+            debugSink: (event, storeName) => {
+                console.log(storeName, event)
             }
         })
     ]
 })
 
-client.observe.registerStore({
-    storeName: 'todos',
-    debug: { enabled: true, sample: 1, payload: false },
-    debugSink: (e: any) => console.log(e)
-})
+client.stores('todos').create({ id: '1', title: 'hello' })
 ```
-
-## Notes
-
-- `query.explain` is no longer part of core APIs. If you want explain-like artifacts, implement them at the plugin layer (e.g. buffer events per trace and build a summary).
-- The plugin’s default trace id uses `id` for writes and a per-query context for reads. You can always create custom contexts via the plugin extension.
-- For best results, call `observe.registerStore(...)` before issuing reads/writes for that store.
-
-## Further reading
-
-- `OBSERVABILITY_OPTIMAL_ARCHITECTURE.md` (repo root)
-- `ATOMA_OBSERVABILITY_PLUGINIZATION_REFACTOR.zh.md` (repo root)
