@@ -1,4 +1,4 @@
-import type { HttpOperationClientConfig } from './operation-client'
+import type { HttpOperationClientConfig } from './client'
 
 export type HttpBackendPluginOptions = Readonly<{
     baseURL: string

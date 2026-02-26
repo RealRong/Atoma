@@ -8,7 +8,7 @@ type RecordArgs = Readonly<{
     context: ActionContext
 }>
 
-export function bindRecordEvents(args: {
+export function bindEvents(args: {
     events: PluginEvents
     manager: HistoryManager
     emitChanged: () => void

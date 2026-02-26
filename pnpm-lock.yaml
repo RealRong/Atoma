@@ -221,6 +221,12 @@ importers:
       atoma-types:
         specifier: workspace:*
         version: link:../../atoma-types
+      p-queue:
+        specifier: ^6.6.2
+        version: 6.6.2
+      p-retry:
+        specifier: ^7.1.1
+        version: 7.1.1
 
   packages/plugins/atoma-backend-indexeddb:
     dependencies:

@@ -1,19 +1,8 @@
-import { HttpOperationClient } from './operation-client'
+import { HttpOperationClient } from './client'
 import { buildOperationExecutor } from 'atoma-backend-shared'
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
 import type { HttpBackendPluginOptions } from './types'
-
-const HTTP_EXECUTOR_ID = 'backend.http.operation'
-
-function safeDispose(dispose?: () => void): void {
-    if (typeof dispose !== 'function') return
-    try {
-        dispose()
-    } catch {
-        // ignore
-    }
-}
 
 function normalizeBaseUrl(baseURL: string): string {
     const url = String(baseURL ?? '').trim()
@@ -59,14 +48,31 @@ export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlug
                     })
                 })
             } catch (error) {
-                safeDispose(unregisterService)
+                try {
+                    unregisterService()
+                } catch {
+                    // ignore
+                }
                 throw error
             }
 
             return {
                 dispose: () => {
-                    safeDispose(unregisterExecution)
-                    safeDispose(unregisterService)
+                    try {
+                        unregisterExecution?.()
+                    } catch {
+                        // ignore
+                    }
+                    try {
+                        unregisterService()
+                    } catch {
+                        // ignore
+                    }
+                    try {
+                        operationClient.dispose()
+                    } catch {
+                        // ignore
+                    }
                 }
             }
         }

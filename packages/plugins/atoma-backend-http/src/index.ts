@@ -1,5 +1,4 @@
 export { httpBackendPlugin } from './plugin'
 export type { HttpBackendPluginOptions } from './types'
-export { HttpOperationClient } from './operation-client'
-export type { HttpOperationClientConfig, RetryOptions } from './operation-client'
-export { OperationClientBase } from './internal/operation-client-base'
+export { HttpOperationClient } from './client'
+export type { HttpOperationClientConfig, RetryOptions } from './client'

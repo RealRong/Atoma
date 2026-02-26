@@ -4,7 +4,7 @@ import type { AtomaHistory, HistoryApplyArgs } from 'atoma-types/history'
 import { HUB_TOKEN } from 'atoma-types/devtools'
 import { HistoryManager } from './manager'
 import { createCommands, historyCommandSpecs } from './plugin/commands'
-import { bindRecordEvents } from './plugin/recordEvents'
+import { bindEvents } from './plugin/events'
 import { createSource } from './plugin/source'
 
 export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
@@ -29,7 +29,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
 
             const sourceRuntime = createSource({
                 clientId: ctx.clientId,
-                now: () => ctx.runtime.now(),
+                now: ctx.runtime.now,
                 manager,
                 commands: historyCommandSpecs
             })
@@ -38,7 +38,7 @@ export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
                 apply,
                 emitChanged: sourceRuntime.emitChanged
             })
-            const stopEvents = bindRecordEvents({
+            const stopEvents = bindEvents({
                 events: ctx.events,
                 manager,
                 emitChanged: sourceRuntime.emitChanged

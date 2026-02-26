@@ -1,10 +1,10 @@
 import { assertOutgoingRemoteOps, HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
 import type { Meta, RemoteOpsResponseData } from 'atoma-types/protocol'
-import { OperationClientBase } from './internal/operation-client-base'
 import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-types/client/ops'
-import { BatchEngine } from './internal/batch/batch-engine'
-import { createOperationHttpTransport } from './internal/transport/operation-transport'
-import type { HttpInterceptors } from './internal/transport/json-client'
+import { BatchEngine } from './batch'
+import { createTransport } from './transport'
+import type { HttpInterceptors } from './transport'
+import pRetry from 'p-retry'
 
 export type RetryOptions = {
     maxAttempts?: number
@@ -37,18 +37,16 @@ export type HttpOperationClientConfig = {
     }
 }
 
-export class HttpOperationClient extends OperationClientBase {
+export class HttpOperationClient {
     private readonly baseURL: string
     private readonly operationsPath: string
     private readonly fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
     private readonly retry?: RetryOptions
     private readonly getHeaders: () => Promise<Record<string, string>>
-    private readonly transport: ReturnType<typeof createOperationHttpTransport>
+    private readonly transport: ReturnType<typeof createTransport>
     private readonly batchEngine?: BatchEngine
 
     constructor(config: HttpOperationClientConfig) {
-        super()
-
         this.baseURL = config.baseURL
         this.operationsPath = config.operationsPath ?? HTTP_PATH_OPS
         this.fetchFn = config.fetchFn ?? fetch.bind(globalThis)
@@ -64,7 +62,7 @@ export class HttpOperationClient extends OperationClientBase {
             return headers
         }
 
-        this.transport = createOperationHttpTransport({
+        this.transport = createTransport({
             fetchFn: async (input, init) => fetchWithRetry(this.fetchFn, input, init, this.retry),
             getHeaders: this.getHeaders,
             interceptors: config.interceptors
@@ -74,7 +72,6 @@ export class HttpOperationClient extends OperationClientBase {
         const batchEnabled = config.batch?.enabled ?? true
         if (batchEnabled) {
             this.batchEngine = new BatchEngine({
-                endpoint: this.operationsPath,
                 executeFn: (input) => this.executeOperationsDirectly(input),
                 flushIntervalMs: config.batch?.flushIntervalMs ?? 0,
                 maxBatchSize: config.batch?.maxBatchSize,
@@ -109,6 +106,10 @@ export class HttpOperationClient extends OperationClientBase {
             }
         }
         return this.executeOperationsDirectly(input)
+    }
+
+    dispose(): void {
+        this.batchEngine?.dispose()
     }
 
     /**
@@ -152,41 +153,54 @@ function calculateBackoff(
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+function isAbortError(error: unknown): boolean {
+    return Boolean(error && typeof error === 'object' && (error as { name?: string }).name === 'AbortError')
+}
+
+function normalizePositiveInt(value: unknown, fallback: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback
+    return Math.floor(value)
+}
+
 async function fetchWithRetry(
     fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
     input: RequestInfo | URL,
     init: RequestInit | undefined,
     retry: RetryOptions | undefined,
-    startedAt = Date.now(),
-    attemptNumber = 1
 ): Promise<Response> {
-    try {
-        const response = await fetchFn(input, init)
+    const maxAttempts = normalizePositiveInt(retry?.maxAttempts, 3)
+    const maxRetryTime = normalizePositiveInt(retry?.maxElapsedMs, 30_000)
+    const backoff = retry?.backoff ?? 'exponential'
+    const initialDelayMs = normalizePositiveInt(retry?.initialDelayMs, 1000)
+    const jitter = retry?.jitter === true
 
-        // Don't retry client errors (4xx except 409)
-        if (response.status >= 400 && response.status < 500 && response.status !== 409) {
+    return pRetry(
+        async () => {
+            if (init?.signal?.aborted) {
+                throw new Error('Request aborted')
+            }
+
+            const response = await fetchFn(input, init)
+            if (response.status >= 500) {
+                throw new Error(`Server error: ${response.status}`)
+            }
             return response
+        },
+        {
+            retries: Math.max(0, maxAttempts - 1),
+            minTimeout: 0,
+            factor: 1,
+            randomize: false,
+            maxRetryTime,
+            shouldRetry: ({ error }) => {
+                if (init?.signal?.aborted) return false
+                if (isAbortError(error)) return false
+                return true
+            },
+            onFailedAttempt: async ({ attemptNumber, retriesLeft }) => {
+                if (retriesLeft <= 0) return
+                await sleep(calculateBackoff(backoff, initialDelayMs, attemptNumber, jitter))
+            }
         }
-
-        // Retry server errors (5xx)
-        if (response.status >= 500) {
-            throw new Error(`Server error: ${response.status}`)
-        }
-
-        return response
-    } catch (error) {
-        const maxAttempts = retry?.maxAttempts ?? 3
-        if (attemptNumber >= maxAttempts) throw error
-
-        const maxElapsedMs = retry?.maxElapsedMs ?? 30_000
-        const elapsed = Date.now() - startedAt
-        if (elapsed >= maxElapsedMs) throw error
-
-        const backoff = retry?.backoff ?? 'exponential'
-        const initialDelayMs = retry?.initialDelayMs ?? 1000
-        const delay = calculateBackoff(backoff, initialDelayMs, attemptNumber, retry?.jitter === true)
-
-        await sleep(delay)
-        return fetchWithRetry(fetchFn, input, init, retry, startedAt, attemptNumber + 1)
-    }
+    )
 }
