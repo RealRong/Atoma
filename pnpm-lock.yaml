@@ -186,11 +186,7 @@ importers:
         specifier: ^0.3.20
         version: 0.3.28(babel-plugin-macros@3.1.0)(mongodb@6.21.0(socks@2.8.7))(sqlite3@5.1.7)
 
-  packages/atoma-shared:
-    dependencies:
-      zod:
-        specifier: ^4.2.1
-        version: 4.3.5
+  packages/atoma-shared: {}
 
   packages/atoma-types:
     dependencies:
@@ -206,6 +202,9 @@ importers:
       atoma-backend-shared:
         specifier: workspace:*
         version: link:../atoma-backend-shared
+      atoma-shared:
+        specifier: workspace:*
+        version: link:../../atoma-shared
       atoma-types:
         specifier: workspace:*
         version: link:../../atoma-types
@@ -254,6 +253,9 @@ importers:
       atoma-core:
         specifier: workspace:*
         version: link:../../atoma-core
+      atoma-shared:
+        specifier: workspace:*
+        version: link:../../atoma-shared
       atoma-types:
         specifier: workspace:*
         version: link:../../atoma-types
@@ -278,6 +280,9 @@ importers:
       atoma-client:
         specifier: workspace:*
         version: link:../../atoma-client
+      atoma-shared:
+        specifier: workspace:*
+        version: link:../../atoma-shared
       atoma-types:
         specifier: workspace:*
         version: link:../../atoma-types

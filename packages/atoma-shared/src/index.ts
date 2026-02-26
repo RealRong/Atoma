@@ -1,6 +1,10 @@
 export { toError, toErrorWithFallback, createCodedError, isCodedError } from './errors'
 export type { CodedError } from './errors'
 
+export { safeDispose, disposeInReverse } from './lifecycle'
+
+export { isRecord } from './record'
+
 export { createActionId, createEntityId, createId, createIdempotencyKey } from './id'
 export type { CreateIdArgs, IdKind } from './id'
 

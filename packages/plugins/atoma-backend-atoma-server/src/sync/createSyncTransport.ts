@@ -1,4 +1,5 @@
 import type { SyncTransport, SyncStream } from 'atoma-types/client/sync'
+import { isRecord } from 'atoma-shared'
 import {
     HTTP_PATH_SYNC_RXDB_PULL,
     HTTP_PATH_SYNC_RXDB_PUSH,
@@ -341,8 +342,4 @@ function readCursor(value: unknown): number | undefined {
     if (!Number.isFinite(cursor)) return undefined
     if (cursor < 0) return undefined
     return Math.floor(cursor)
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

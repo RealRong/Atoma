@@ -4,7 +4,7 @@ import type {
     AtomaSchema,
     CreateClientOptions,
 } from 'atoma-types/client'
-import { createId } from 'atoma-shared'
+import { createId, disposeInReverse, safeDispose } from 'atoma-shared'
 import { Runtime } from 'atoma-runtime'
 import { PluginContext } from './plugins/PluginContext'
 import { setupPlugins } from './plugins/setupPlugins'
@@ -38,11 +38,7 @@ export function createClient<
         disposers.push(pluginSetup.dispose)
     } catch (error) {
         if (pluginSetup && !disposers.includes(pluginSetup.dispose)) {
-            try {
-                pluginSetup.dispose()
-            } catch {
-                // ignore
-            }
+            safeDispose(pluginSetup.dispose)
         }
         disposeInReverse(disposers)
         throw error
@@ -64,14 +60,4 @@ export function createClient<
 
     pluginSetup.mount(client)
     return client
-}
-
-function disposeInReverse(disposers: Array<() => void>): void {
-    while (disposers.length > 0) {
-        try {
-            disposers.pop()?.()
-        } catch {
-            // ignore
-        }
-    }
 }

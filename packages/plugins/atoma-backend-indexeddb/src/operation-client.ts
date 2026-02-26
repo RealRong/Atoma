@@ -1,16 +1,13 @@
 import type { Table } from 'dexie'
 import { StorageOperationClient } from 'atoma-backend-shared'
-
-function isPlainObject(value: unknown): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
+import { isRecord } from 'atoma-shared'
 
 function clonePlain(value: any) {
     return value ? JSON.parse(JSON.stringify(value)) : value
 }
 
 function serializeValue(value: any) {
-    const cloned = isPlainObject(value) ? { ...value } : value
+    const cloned = isRecord(value) ? { ...value } : value
 
     const iterate = (obj: any) => {
         const stack = [obj]

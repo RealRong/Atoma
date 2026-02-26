@@ -1,4 +1,5 @@
 import PQueue from 'p-queue'
+import { toError } from 'atoma-shared'
 import type { Meta, RemoteOp, RemoteOpResult, WriteOp } from 'atoma-types/protocol'
 import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-types/client/ops'
 import { normalizeNonNegativeInt, normalizePositiveInt } from './normalize'
@@ -55,10 +56,6 @@ function normalizeLaneQueueLength(args: {
 function createAbortController(): AbortController | undefined {
     if (typeof AbortController === 'undefined') return undefined
     return new AbortController()
-}
-
-function toError(error: unknown): Error {
-    return error instanceof Error ? error : new Error(String(error))
 }
 
 function mapResults(results: unknown): Map<string, RemoteOpResult> {

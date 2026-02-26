@@ -1,18 +1,10 @@
 import type { PluginContext } from 'atoma-types/client/plugins'
 import type { Hub, SnapshotQuery, Source, StreamEvent } from 'atoma-types/devtools'
+import { safeDispose } from 'atoma-shared'
 
 type SourceRuntime = {
     source: Source
     markChanged: () => void
-}
-
-function safeDispose(dispose?: () => void): void {
-    if (typeof dispose !== 'function') return
-    try {
-        dispose()
-    } catch {
-        // ignore
-    }
 }
 
 function listStoreNames(ctx: PluginContext): string[] {

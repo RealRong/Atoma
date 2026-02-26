@@ -1,20 +1,12 @@
 import { HttpOperationClient } from 'atoma-backend-http'
 import { buildOperationExecutor } from 'atoma-backend-shared'
+import { safeDispose } from 'atoma-shared'
 import { OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN } from 'atoma-types/client/ops'
 import { SYNC_TRANSPORT_TOKEN } from 'atoma-types/client/sync'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
 import { createSyncTransport } from './sync/createSyncTransport'
 import type { AtomaServerBackendPluginOptions } from './types'
 import { createWriteCoordinator } from './write/createWriteCoordinator'
-
-function safeDispose(dispose?: () => void): void {
-    if (typeof dispose !== 'function') return
-    try {
-        dispose()
-    } catch {
-        // ignore
-    }
-}
 
 function normalizeBaseUrl(baseURL: string): string {
     const url = String(baseURL ?? '').trim()

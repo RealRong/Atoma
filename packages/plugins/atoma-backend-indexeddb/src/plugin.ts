@@ -2,19 +2,11 @@ import type { Table } from 'dexie'
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
 import { buildOperationExecutor } from 'atoma-backend-shared'
+import { safeDispose } from 'atoma-shared'
 import { IndexedDbOperationClient } from './operation-client'
 import type { IndexedDbBackendPluginOptions } from './types'
 
 const INDEXEDDB_EXECUTOR_ID = 'backend.indexeddb.operation'
-
-function safeDispose(dispose?: () => void): void {
-    if (typeof dispose !== 'function') return
-    try {
-        dispose()
-    } catch {
-        // ignore
-    }
-}
 
 export function indexedDbBackendPlugin(options: IndexedDbBackendPluginOptions): ClientPlugin {
     return {

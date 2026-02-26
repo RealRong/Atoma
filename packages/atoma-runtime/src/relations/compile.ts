@@ -1,12 +1,9 @@
 import { belongsTo, hasMany, hasOne } from 'atoma-core/relations'
+import { isRecord } from 'atoma-shared'
 import type { Entity, KeySelector, RelationMap } from 'atoma-types/core'
 
 type RelationType = 'belongsTo' | 'hasMany' | 'hasOne'
 type SourceShape = Record<string, unknown>
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-    return !!value && typeof value === 'object' && !Array.isArray(value)
-}
 
 function ensureRecord(value: unknown, path: string, message = 'must be an object'): Record<string, unknown> {
     if (!isRecord(value)) {

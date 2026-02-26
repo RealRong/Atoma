@@ -1,3 +1,5 @@
+import { isRecord as sharedIsRecord, toErrorWithFallback } from 'atoma-shared'
+
 export function normalizeName(value: string): string {
     const normalized = String(value ?? '')
         .trim()
@@ -16,7 +18,7 @@ export function readVersion(value: unknown): number | undefined {
 }
 
 export function isRecord(value: unknown): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    return sharedIsRecord(value)
 }
 
 export function wait(ms: number): Promise<void> {
@@ -26,12 +28,5 @@ export function wait(ms: number): Promise<void> {
 }
 
 export function toError(error: unknown, fallbackMessage = '[Sync] Unknown error'): Error {
-    if (error instanceof Error) {
-        return error
-    }
-
-    const message = typeof error === 'string'
-        ? error
-        : fallbackMessage
-    return new Error(message)
+    return toErrorWithFallback(error, fallbackMessage)
 }

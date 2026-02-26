@@ -1,4 +1,5 @@
 import { runQuery } from 'atoma-core/query'
+import { isRecord } from 'atoma-shared'
 import type { Entity, Query as CoreQuery } from 'atoma-types/core'
 import type { ExecuteOperationsInput, ExecuteOperationsOutput, OperationClient } from 'atoma-types/client/ops'
 import type {
@@ -27,10 +28,6 @@ export type StorageOperationClientOptions = Readonly<{
     toResponseValue?: (value: any) => any
 }>
 
-function isPlainObject(value: unknown): value is PlainRecord {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
 function standardError(args: { code: string; message: string; kind: StandardError['kind']; details?: StandardError['details'] }): StandardError {
     return {
         code: args.code,
@@ -42,7 +39,7 @@ function standardError(args: { code: string; message: string; kind: StandardErro
 
 function projectSelect(data: unknown, select?: Record<string, boolean>): unknown {
     if (!select) return data
-    if (!isPlainObject(data)) return data
+    if (!isRecord(data)) return data
 
     const out: PlainRecord = {}
     Object.entries(select).forEach(([k, enabled]) => {
@@ -53,12 +50,12 @@ function projectSelect(data: unknown, select?: Record<string, boolean>): unknown
 }
 
 function normalizeWriteOptions(options: unknown): WriteOptions | undefined {
-    if (!isPlainObject(options)) return undefined
+    if (!isRecord(options)) return undefined
     return options as WriteOptions
 }
 
 function normalizeQuery(params: unknown): Query | undefined {
-    if (!isPlainObject(params)) return undefined
+    if (!isRecord(params)) return undefined
     return params as Query
 }
 
@@ -196,8 +193,8 @@ export class StorageOperationClient implements OperationClient {
                     }
 
                     const value = raw?.value
-                    const next = isPlainObject(value) ? { ...(value as any) } : value
-                    if (isPlainObject(next)) {
+                    const next = isRecord(value) ? { ...(value as any) } : value
+                    if (isRecord(next)) {
                         next.id = id
                         if (!(typeof next.version === 'number' && Number.isFinite(next.version) && next.version >= 1)) {
                             next.version = 1
@@ -205,7 +202,7 @@ export class StorageOperationClient implements OperationClient {
                     }
 
                     await this.adapter.put(resource, id, this.toStoredValue(next))
-                    const version = isPlainObject(next) && typeof next.version === 'number' ? next.version : 1
+                    const version = isRecord(next) && typeof next.version === 'number' ? next.version : 1
                     results[index] = { ok: true,
                         id: id,
                         version,
@@ -230,7 +227,7 @@ export class StorageOperationClient implements OperationClient {
                     const currentVersion = (current as any)?.version
 
                     const candidate = raw?.value
-                    if (!isPlainObject(candidate)) {
+                    if (!isRecord(candidate)) {
                         results[index] = { ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing value for update', kind: 'validation', details: { resource, id: id } }) }
                         continue
                     }
@@ -238,11 +235,11 @@ export class StorageOperationClient implements OperationClient {
                     const nextVersion = (typeof currentVersion === 'number' && Number.isFinite(currentVersion))
                         ? currentVersion + 1
                         : 1
-                    const next = isPlainObject(current)
+                    const next = isRecord(current)
                         ? { ...(current as any), ...(candidate as any) }
                         : { ...(candidate as any) }
 
-                    if (isPlainObject(next)) {
+                    if (isRecord(next)) {
                         next.id = id
                         next.version = nextVersion
                     }
@@ -264,7 +261,7 @@ export class StorageOperationClient implements OperationClient {
                     }
 
                     const candidate = raw?.value
-                    if (!isPlainObject(candidate)) {
+                    if (!isRecord(candidate)) {
                         results[index] = { ok: false, error: standardError({ code: 'INVALID_WRITE', message: 'Missing value for upsert', kind: 'validation', details: { resource, id: id } }) }
                         continue
                     }
@@ -288,11 +285,11 @@ export class StorageOperationClient implements OperationClient {
                         ? currentVersion + 1
                         : 1
 
-                    const next = upsertApply === 'merge' && isPlainObject(current) && isPlainObject(candidate)
+                    const next = upsertApply === 'merge' && isRecord(current) && isRecord(candidate)
                         ? { ...(current as any), ...(candidate as any) }
-                        : { ...(candidate as any), ...(isPlainObject(current) ? { createdAt: (current as any).createdAt } : {}) }
+                        : { ...(candidate as any), ...(isRecord(current) ? { createdAt: (current as any).createdAt } : {}) }
 
-                    if (isPlainObject(next)) {
+                    if (isRecord(next)) {
                         next.id = id
                         next.version = nextVersion
                     }

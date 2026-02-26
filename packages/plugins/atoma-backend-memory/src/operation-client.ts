@@ -1,10 +1,7 @@
 import { StorageOperationClient } from 'atoma-backend-shared'
+import { isRecord } from 'atoma-shared'
 
 type ResourceStore = Map<string, any>
-
-function isPlainObject(value: unknown): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
 
 export class MemoryOperationClient extends StorageOperationClient {
     private readonly storesByResource = new Map<string, ResourceStore>()
@@ -25,7 +22,7 @@ export class MemoryOperationClient extends StorageOperationClient {
             }
         })
 
-        if (config?.seed && isPlainObject(config.seed)) {
+        if (config?.seed && isRecord(config.seed)) {
             Object.entries(config.seed).forEach(([resource, items]) => {
                 if (!Array.isArray(items)) return
                 const store = this.requireStore(resource)
@@ -33,8 +30,8 @@ export class MemoryOperationClient extends StorageOperationClient {
                     const rawId = (item as any)?.id
                     if (rawId === undefined) return
                     const id = String(rawId)
-                    const current = isPlainObject(item) ? { ...(item as any) } : item
-                    if (isPlainObject(current)) {
+                    const current = isRecord(item) ? { ...(item as any) } : item
+                    if (isRecord(current)) {
                         current.id = id
                         if (!(typeof current.version === 'number' && Number.isFinite(current.version) && current.version >= 1)) {
                             current.version = 1

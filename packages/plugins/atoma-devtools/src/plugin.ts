@@ -1,5 +1,6 @@
 import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
 import { HUB_TOKEN } from 'atoma-types/devtools'
+import { safeDispose } from 'atoma-shared'
 import { createClientInspector } from './runtime/create-client-inspector'
 import { createHub } from './runtime/hub'
 import { registerBuiltinSources } from './runtime/sources'
@@ -11,15 +12,6 @@ export type DevtoolsPluginOptions = Readonly<{
      */
     label?: string
 }>
-
-function safeDispose(dispose?: () => void): void {
-    if (typeof dispose !== 'function') return
-    try {
-        dispose()
-    } catch {
-        // ignore
-    }
-}
 
 export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugin {
     return {

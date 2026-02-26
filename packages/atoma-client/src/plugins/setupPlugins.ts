@@ -6,6 +6,7 @@ import type {
     PluginInitResult,
 } from 'atoma-types/client/plugins'
 import type { ServiceToken } from 'atoma-types/client/services'
+import { disposeInReverse, isRecord } from 'atoma-shared'
 
 export type PluginsSetup = Readonly<{
     mount: <E extends Record<string, Entity>, S extends AtomaSchema<E>>(client: AtomaClient<E, S>) => void
@@ -93,7 +94,7 @@ function preparePlugins({
             if (typeof plugin.setup === 'function') {
                 const result = normalizePluginInitResult(plugin.id, plugin.setup(context))
                 const extension = result?.extension
-                if (isPlainObject(extension)) {
+                if (isRecord(extension)) {
                     extensions.push(extension)
                 }
                 const dispose = result?.dispose
@@ -202,7 +203,7 @@ function parsePlugins(rawPlugins: ReadonlyArray<unknown>): ClientPlugin[] {
 
 function normalizePluginInitResult(pluginId: string, value: unknown): PluginInitResult<unknown> | null {
     if (value === undefined) return null
-    if (!isPlainObject(value)) {
+    if (!isRecord(value)) {
         throw new Error(`[Atoma] plugin setup 返回值非法: ${pluginId}`)
     }
 
@@ -222,7 +223,7 @@ function normalizePluginInitResult(pluginId: string, value: unknown): PluginInit
 }
 
 function isClientPlugin(value: unknown): value is ClientPlugin {
-    if (!isPlainObject(value)) return false
+    if (!isRecord(value)) return false
 
     const candidate = value
     if (typeof candidate.id !== 'string' || !candidate.id.trim()) return false
@@ -235,22 +236,6 @@ function isClientPlugin(value: unknown): value is ClientPlugin {
 
 function describeToken(token: ServiceToken<unknown>): string {
     return String(token.description ?? token.toString())
-}
-
-function disposeInReverse(disposers: Array<() => void>): void {
-    while (disposers.length > 0) {
-        const dispose = disposers.pop()
-        if (typeof dispose !== 'function') continue
-        try {
-            dispose()
-        } catch {
-            // ignore
-        }
-    }
-}
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> => {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 const isTokenArray = (value: unknown): value is ReadonlyArray<ServiceToken<unknown>> => {

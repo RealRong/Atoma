@@ -19,6 +19,7 @@
     "dependencies": {
         "atoma-backend-http": "workspace:*",
         "atoma-backend-shared": "workspace:*",
+        "atoma-shared": "workspace:*",
         "atoma-types": "workspace:*"
     }
 }
