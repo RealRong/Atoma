@@ -9,8 +9,6 @@ export type { WriteItemMeta } from './writeMeta'
 
 export { resolveFiniteVersion, resolvePositiveVersion, requireBaseVersion } from './version'
 
-export { z, formatZodErrorMessage, parseOrThrow } from './zod'
-
 export { stableStringify } from './stableStringify'
 
 export { encodeCursorToken, decodeCursorToken } from './cursor'

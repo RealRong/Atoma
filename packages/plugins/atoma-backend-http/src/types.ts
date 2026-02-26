@@ -1,13 +1,13 @@
-import type { HttpOperationClientConfig } from './client'
+import type { OperationClientConfig } from './client'
 
-export type HttpBackendPluginOptions = Readonly<{
+export type BackendPluginOptions = Readonly<{
     baseURL: string
-    operationsPath?: HttpOperationClientConfig['operationsPath']
-    headers?: HttpOperationClientConfig['headers']
-    retry?: HttpOperationClientConfig['retry']
-    fetchFn?: HttpOperationClientConfig['fetchFn']
-    onRequest?: NonNullable<HttpOperationClientConfig['interceptors']>['onRequest']
-    onResponse?: NonNullable<HttpOperationClientConfig['interceptors']>['onResponse']
-    responseParser?: NonNullable<HttpOperationClientConfig['interceptors']>['responseParser']
-    batch?: HttpOperationClientConfig['batch']
+    operationsPath?: OperationClientConfig['operationsPath']
+    headers?: OperationClientConfig['headers']
+    retry?: OperationClientConfig['retry']
+    fetchFn?: OperationClientConfig['fetchFn']
+    onRequest?: NonNullable<OperationClientConfig['interceptors']>['onRequest']
+    onResponse?: NonNullable<OperationClientConfig['interceptors']>['onResponse']
+    responseParser?: NonNullable<OperationClientConfig['interceptors']>['responseParser']
+    batch?: OperationClientConfig['batch']
 }>

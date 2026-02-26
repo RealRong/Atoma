@@ -4,6 +4,7 @@ import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-type
 import { BatchEngine } from './batch'
 import { createTransport } from './transport'
 import type { HttpInterceptors } from './transport'
+import { normalizePositiveInt } from './normalize'
 import pRetry from 'p-retry'
 
 export type RetryOptions = {
@@ -14,7 +15,7 @@ export type RetryOptions = {
     jitter?: boolean
 }
 
-export type HttpOperationClientConfig = {
+export type OperationClientConfig = {
     baseURL: string
     operationsPath?: string
     headers?: () => Promise<Record<string, string>> | Record<string, string>
@@ -46,7 +47,7 @@ export class HttpOperationClient {
     private readonly transport: ReturnType<typeof createTransport>
     private readonly batchEngine?: BatchEngine
 
-    constructor(config: HttpOperationClientConfig) {
+    constructor(config: OperationClientConfig) {
         this.baseURL = config.baseURL
         this.operationsPath = config.operationsPath ?? HTTP_PATH_OPS
         this.fetchFn = config.fetchFn ?? fetch.bind(globalThis)
@@ -155,11 +156,6 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 function isAbortError(error: unknown): boolean {
     return Boolean(error && typeof error === 'object' && (error as { name?: string }).name === 'AbortError')
-}
-
-function normalizePositiveInt(value: unknown, fallback: number): number {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback
-    return Math.floor(value)
 }
 
 async function fetchWithRetry(

@@ -14,7 +14,50 @@ import {
     createSyncRxdbPushExecutor,
     createSyncRxdbStreamExecutor
 } from './sync-rxdb'
-import { parseOrThrow, z } from 'atoma-shared'
+
+function isObject(value: unknown): value is Record<string, any> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function assertFunction(value: unknown, message: string): void {
+    if (value !== undefined && typeof value !== 'function') {
+        throw new Error(message)
+    }
+}
+
+function normalizeServerConfig<Ctx>(config: AtomaServerConfig<Ctx>): AtomaServerConfig<Ctx> {
+    if (!isObject(config.adapter) || !config.adapter.orm) {
+        throw new Error('AtomaServerConfig.adapter.orm is required')
+    }
+
+    const syncEnabled = config.sync?.enabled ?? true
+    if (syncEnabled) {
+        if (!config.adapter.sync) {
+            throw new Error('AtomaServerConfig.adapter.sync is required when sync is enabled')
+        }
+        if (typeof (config.adapter.orm as any)?.transaction !== 'function') {
+            throw new Error('AtomaServerConfig.adapter.orm.transaction is required when sync is enabled')
+        }
+    }
+
+    assertFunction(config.context?.create, 'AtomaServerConfig.context.create must be a function')
+    assertFunction(config.errors?.format, 'AtomaServerConfig.errors.format must be a function')
+
+    const hooks = config.observability?.hooks
+    assertFunction(hooks?.onRequest, 'AtomaServerConfig.observability.hooks.onRequest must be a function')
+    assertFunction(hooks?.onResponse, 'AtomaServerConfig.observability.hooks.onResponse must be a function')
+    assertFunction(hooks?.onError, 'AtomaServerConfig.observability.hooks.onError must be a function')
+
+    return (config.sync?.enabled === undefined)
+        ? {
+            ...config,
+            sync: {
+                ...(config.sync ?? {}),
+                enabled: syncEnabled
+            }
+        }
+        : config
+}
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
     return Boolean(value && typeof value === 'object' && typeof (value as any)[Symbol.asyncIterator] === 'function')
@@ -111,63 +154,7 @@ function toIncoming(request: Request) {
 }
 
 export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx>) {
-    const parsed = parseOrThrow(
-        z.object({
-            adapter: z.object({
-                orm: z.any(),
-                sync: z.any().optional()
-            }).loose(),
-            sync: z.object({
-                enabled: z.boolean().optional()
-            }).loose().optional()
-        })
-            .loose()
-            .superRefine((value: any, ctx) => {
-                if (!value?.adapter?.orm) {
-                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.adapter.orm is required' })
-                    return
-                }
-
-                const syncEnabled = value.sync?.enabled ?? true
-                if (syncEnabled && !value.adapter.sync) {
-                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.adapter.sync is required when sync is enabled' })
-                }
-
-                const tx = (value.adapter.orm as any)?.transaction
-                if (syncEnabled && typeof tx !== 'function') {
-                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.adapter.orm.transaction is required when sync is enabled' })
-                }
-
-                const createCtx = (value.context as any)?.create
-                if (createCtx !== undefined && typeof createCtx !== 'function') {
-                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.context.create must be a function' })
-                }
-
-                const format = (value.errors as any)?.format
-                if (format !== undefined && typeof format !== 'function') {
-                    ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.errors.format must be a function' })
-                }
-
-                const hooks = (value.observability as any)?.hooks
-                const onRequest = hooks?.onRequest
-                const onResponse = hooks?.onResponse
-                const onError = hooks?.onError
-                if (onRequest !== undefined && typeof onRequest !== 'function') ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.observability.hooks.onRequest must be a function' })
-                if (onResponse !== undefined && typeof onResponse !== 'function') ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.observability.hooks.onResponse must be a function' })
-                if (onError !== undefined && typeof onError !== 'function') ctx.addIssue({ code: 'custom', message: 'AtomaServerConfig.observability.hooks.onError must be a function' })
-            })
-            .transform((value: any) => {
-                const syncEnabled = value.sync?.enabled ?? true
-                return {
-                    ...value,
-                    sync: { ...(value.sync ?? {}), enabled: syncEnabled }
-                } as AtomaServerConfig<Ctx>
-            }),
-        config,
-        { prefix: '' }
-    )
-
-    config = parsed
+    config = normalizeServerConfig(config)
 
     const syncEnabled = config.sync?.enabled ?? true
 

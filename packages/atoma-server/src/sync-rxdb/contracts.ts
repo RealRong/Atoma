@@ -1,59 +1,138 @@
-import { parseOrThrow, z } from 'atoma-shared'
 import type {
+    SyncDocument,
     SyncPullRequest,
     SyncPushRequest,
     SyncPushRow
 } from 'atoma-types/sync'
 
-const nonEmptyString = z.string().trim().min(1)
-const nonNegativeInt = z.number().int().min(0)
+type AnyRecord = Record<string, unknown>
 
-const syncDocumentSchema = z.object({
-    id: nonEmptyString,
-    version: nonNegativeInt,
-    _deleted: z.boolean().optional()
-}).passthrough()
+function asObject(value: unknown, label: string): AnyRecord {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`${label} 必须是对象`)
+    }
+    return value as AnyRecord
+}
 
-const syncPushRowSchema = z.object({
-    newDocumentState: syncDocumentSchema,
-    assumedMasterState: syncDocumentSchema.nullish()
-}).passthrough()
+function asNonEmptyString(value: unknown, label: string): string {
+    if (typeof value !== 'string' || !value.trim()) {
+        throw new Error(`${label} 必须是非空字符串`)
+    }
+    return value.trim()
+}
+
+function asOptionalNonEmptyString(value: unknown, label: string): string | undefined {
+    if (value === undefined) return undefined
+    return asNonEmptyString(value, label)
+}
+
+function asNonNegativeInt(value: unknown, label: string): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || Math.floor(value) !== value) {
+        throw new Error(`${label} 必须是非负整数`)
+    }
+    return value
+}
+
+function parseSyncDocument(value: unknown, label: string): SyncDocument {
+    const input = asObject(value, label)
+    const id = asNonEmptyString(input.id, `${label}.id`)
+    const version = asNonNegativeInt(input.version, `${label}.version`)
+    const deleted = input._deleted
+    if (deleted !== undefined && typeof deleted !== 'boolean') {
+        throw new Error(`${label}._deleted 必须是布尔值`)
+    }
+
+    return {
+        ...input,
+        id,
+        version,
+        ...(deleted === undefined ? {} : { _deleted: deleted })
+    }
+}
+
+function parseSyncPushRow(value: unknown, label: string): SyncPushRow {
+    const input = asObject(value, label)
+    const assumedMasterState = input.assumedMasterState
+
+    if (assumedMasterState === undefined) {
+        return {
+            ...input,
+            newDocumentState: parseSyncDocument(input.newDocumentState, `${label}.newDocumentState`)
+        }
+    }
+
+    if (assumedMasterState === null) {
+        return {
+            ...input,
+            newDocumentState: parseSyncDocument(input.newDocumentState, `${label}.newDocumentState`),
+            assumedMasterState: null
+        }
+    }
+
+    return {
+        ...input,
+        newDocumentState: parseSyncDocument(input.newDocumentState, `${label}.newDocumentState`),
+        assumedMasterState: parseSyncDocument(assumedMasterState, `${label}.assumedMasterState`)
+    }
+}
 
 export function parseSyncPullRequest(value: unknown, args: {
     defaultBatchSize: number
 }): SyncPullRequest {
     const defaultBatchSize = Math.max(1, Math.floor(args.defaultBatchSize))
-    return parseOrThrow(
-        z.object({
-            resource: nonEmptyString,
-            checkpoint: z.object({
-                cursor: nonNegativeInt
-            }).optional(),
-            batchSize: nonNegativeInt.optional()
-        }).transform((input) => ({
-            resource: input.resource,
-            checkpoint: input.checkpoint,
-            batchSize: Math.max(1, Math.floor(input.batchSize ?? defaultBatchSize))
-        })),
-        value,
-        { prefix: '[SyncRxdbPull]' }
-    ) as SyncPullRequest
+    const input = asObject(value, '[SyncRxdbPull]')
+
+    const resource = asNonEmptyString(input.resource, '[SyncRxdbPull].resource')
+    const checkpointInput = input.checkpoint
+    const batchSizeInput = input.batchSize
+
+    const checkpoint = checkpointInput === undefined
+        ? undefined
+        : {
+            cursor: asNonNegativeInt(asObject(checkpointInput, '[SyncRxdbPull].checkpoint').cursor, '[SyncRxdbPull].checkpoint.cursor')
+        }
+
+    const batchSize = batchSizeInput === undefined
+        ? defaultBatchSize
+        : Math.max(1, asNonNegativeInt(batchSizeInput, '[SyncRxdbPull].batchSize'))
+
+    return {
+        resource,
+        ...(checkpoint ? { checkpoint } : {}),
+        batchSize
+    }
 }
 
 export function parseSyncPushRequest(value: unknown): SyncPushRequest {
-    return parseOrThrow(
-        z.object({
-            resource: nonEmptyString,
-            rows: z.array(syncPushRowSchema).default([]),
-            context: z.object({
-                clientId: nonEmptyString.optional(),
-                requestId: nonEmptyString.optional(),
-                traceId: nonEmptyString.optional()
-            }).optional()
-        }),
-        value,
-        { prefix: '[SyncRxdbPush]' }
-    ) as SyncPushRequest
+    const input = asObject(value, '[SyncRxdbPush]')
+    const resource = asNonEmptyString(input.resource, '[SyncRxdbPush].resource')
+
+    const rowsInput = input.rows
+    if (rowsInput !== undefined && !Array.isArray(rowsInput)) {
+        throw new Error('[SyncRxdbPush].rows 必须是数组')
+    }
+    const rows = (rowsInput ?? []).map((row, index) => parseSyncPushRow(row, `[SyncRxdbPush].rows[${index}]`))
+
+    const contextInput = input.context
+    const context = contextInput === undefined
+        ? undefined
+        : (() => {
+            const contextObject = asObject(contextInput, '[SyncRxdbPush].context')
+            const clientId = asOptionalNonEmptyString(contextObject.clientId, '[SyncRxdbPush].context.clientId')
+            const requestId = asOptionalNonEmptyString(contextObject.requestId, '[SyncRxdbPush].context.requestId')
+            const traceId = asOptionalNonEmptyString(contextObject.traceId, '[SyncRxdbPush].context.traceId')
+            return {
+                ...(clientId ? { clientId } : {}),
+                ...(requestId ? { requestId } : {}),
+                ...(traceId ? { traceId } : {})
+            }
+        })()
+
+    return {
+        resource,
+        rows,
+        ...(context ? { context } : {})
+    }
 }
 
 export function parseSyncStreamQuery(urlObj: URL): {

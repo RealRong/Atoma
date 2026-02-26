@@ -1,6 +1,5 @@
 import type { Table } from 'dexie'
 import { StorageOperationClient } from 'atoma-backend-shared'
-import { parseOrThrow, z } from 'atoma-shared'
 
 function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -35,34 +34,33 @@ function serializeValue(value: any) {
     return cloned
 }
 
+function requireTableResolver(config: {
+    tableForResource: (resource: string) => Table<any, string>
+}): (resource: string) => Table<any, string> {
+    if (typeof config.tableForResource !== 'function') {
+        throw new Error('[IndexedDbOperationClient] config.tableForResource is required')
+    }
+    return config.tableForResource
+}
+
 export class IndexedDbOperationClient extends StorageOperationClient {
     constructor(config: {
         tableForResource: (resource: string) => Table<any, string>
     }) {
-        const parsed = parseOrThrow(
-            z.object({ tableForResource: z.any() })
-                .loose()
-                .superRefine((value: any, ctx) => {
-                    if (typeof value.tableForResource !== 'function') {
-                        ctx.addIssue({ code: 'custom', message: '[IndexedDbOperationClient] config.tableForResource is required' })
-                    }
-                }),
-            config,
-            { prefix: '' }
-        ) as any
+        const tableForResource = requireTableResolver(config)
 
         super({
             adapter: {
-                list: async (resource) => await parsed.tableForResource(resource).toArray(),
+                list: async (resource) => await tableForResource(resource).toArray(),
                 get: async (resource, id) => {
-                    const existing = await parsed.tableForResource(resource).get(id as any)
+                    const existing = await tableForResource(resource).get(id as any)
                     return existing ?? undefined
                 },
                 put: async (resource, id, value) => {
-                    await parsed.tableForResource(resource).put(value, id as any)
+                    await tableForResource(resource).put(value, id as any)
                 },
                 delete: async (resource, id) => {
-                    await parsed.tableForResource(resource).delete(id as any)
+                    await tableForResource(resource).delete(id as any)
                 }
             },
             toStoredValue: serializeValue,

@@ -20,8 +20,5 @@
     "scripts": {
         "build": "tsup",
         "typecheck": "tsc -p tsconfig.json --noEmit"
-    },
-    "dependencies": {
-        "zod": "^4.2.1"
     }
 }

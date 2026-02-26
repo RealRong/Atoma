@@ -9,9 +9,5 @@ export default defineConfig({
     splitting: false,
     sourcemap: true,
     clean: true,
-    treeshake: true,
-    external: [
-        'zod',
-        'zod/v4'
-    ]
+    treeshake: true
 })

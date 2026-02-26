@@ -1,4 +1,4 @@
-export { httpBackendPlugin } from './plugin'
-export type { HttpBackendPluginOptions } from './types'
+export { backendPlugin } from './plugin'
+export type { BackendPluginOptions } from './types'
 export { HttpOperationClient } from './client'
-export type { HttpOperationClientConfig, RetryOptions } from './client'
+export type { OperationClientConfig, RetryOptions } from './client'

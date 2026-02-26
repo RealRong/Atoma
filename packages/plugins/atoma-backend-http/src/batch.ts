@@ -1,6 +1,7 @@
 import PQueue from 'p-queue'
 import type { Meta, RemoteOp, RemoteOpResult, WriteOp } from 'atoma-types/protocol'
 import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-types/client/ops'
+import { normalizeNonNegativeInt, normalizePositiveInt } from './normalize'
 
 type Deferred<T> = {
     resolve: (value: T) => void
@@ -36,22 +37,16 @@ export interface BatchEngineConfig {
     onError?: (error: Error, context: { lane: LaneKind }) => void
 }
 
-function normalizePositiveInt(value: unknown): number | undefined {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
-    return Math.floor(value)
-}
-
-function normalizeNonNegativeInt(value: unknown, fallback: number): number {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return fallback
-    return Math.floor(value)
-}
-
-function normalizeLaneQueueLength(config: BatchEngineConfig, kind: LaneKind): number {
-    if (typeof config.maxQueueLength === 'number') {
-        return normalizePositiveInt(config.maxQueueLength) ?? Infinity
+function normalizeLaneQueueLength(args: {
+    maxQueueLength: BatchEngineConfig['maxQueueLength']
+    sharedMaxQueueLength?: number
+    kind: LaneKind
+}): number {
+    if (typeof args.maxQueueLength === 'number') {
+        return args.sharedMaxQueueLength ?? Infinity
     }
-    if (config.maxQueueLength && typeof config.maxQueueLength === 'object') {
-        const value = kind === 'query' ? config.maxQueueLength.query : config.maxQueueLength.write
+    if (args.maxQueueLength && typeof args.maxQueueLength === 'object') {
+        const value = args.kind === 'query' ? args.maxQueueLength.query : args.maxQueueLength.write
         return normalizePositiveInt(value) ?? Infinity
     }
     return Infinity
@@ -120,8 +115,19 @@ export class BatchEngine {
         }
 
         this.executeFn = config.executeFn
-        this.queryMaxQueueLength = normalizeLaneQueueLength(config, 'query')
-        this.writeMaxQueueLength = normalizeLaneQueueLength(config, 'write')
+        const sharedMaxQueueLength = typeof config.maxQueueLength === 'number'
+            ? normalizePositiveInt(config.maxQueueLength)
+            : undefined
+        this.queryMaxQueueLength = normalizeLaneQueueLength({
+            maxQueueLength: config.maxQueueLength,
+            sharedMaxQueueLength,
+            kind: 'query'
+        })
+        this.writeMaxQueueLength = normalizeLaneQueueLength({
+            maxQueueLength: config.maxQueueLength,
+            sharedMaxQueueLength,
+            kind: 'write'
+        })
         this.queryOverflowStrategy = config.queryOverflowStrategy ?? 'reject_new'
         this.maxBatchSize = normalizePositiveInt(config.maxBatchSize)
         this.flushIntervalMs = normalizeNonNegativeInt(config.flushIntervalMs, 0)
@@ -135,8 +141,8 @@ export class BatchEngine {
     }
 
     enqueueOp(op: RemoteOp): Promise<RemoteOpResult> {
-        if (!op || typeof op !== 'object' || typeof op.opId !== 'string' || !op.opId) {
-            return Promise.reject(new Error('[BatchEngine] opId is required'))
+        if (!op || typeof op !== 'object') {
+            return Promise.reject(new Error('[BatchEngine] Invalid op'))
         }
 
         if (op.kind === 'query') {
@@ -264,8 +270,7 @@ export class BatchEngine {
 
         try {
             const meta: Meta = {
-                v: 1,
-                clientTimeMs: Date.now()
+                v: 1
             }
 
             const output = await this.executeFn({

@@ -2,16 +2,16 @@ import { HttpOperationClient } from './client'
 import { buildOperationExecutor } from 'atoma-backend-shared'
 import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
-import type { HttpBackendPluginOptions } from './types'
+import type { BackendPluginOptions } from './types'
 
 function normalizeBaseUrl(baseURL: string): string {
     const url = String(baseURL ?? '').trim()
-    if (!url) throw new Error('[Atoma] HttpBackendPlugin: baseURL 必填')
+    if (!url) throw new Error('[Atoma] backendPlugin: baseURL 必填')
     return url
 }
 
-export function httpBackendPlugin(options: HttpBackendPluginOptions): ClientPlugin {
-    const opts: HttpBackendPluginOptions = {
+export function backendPlugin(options: BackendPluginOptions): ClientPlugin {
+    const opts: BackendPluginOptions = {
         ...options,
         baseURL: normalizeBaseUrl(options.baseURL)
     }
