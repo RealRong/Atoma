@@ -1,31 +1,18 @@
 export {
-    buildRequestMeta,
-    withTraceMeta,
     buildWriteOp,
     buildQueryOp
 } from './ops/build'
 
 export {
-    assertMeta,
     assertRemoteOp,
     assertRemoteOpsRequest,
-    assertOutgoingRemoteOps,
-    assertRemoteOpResult,
-    assertRemoteOpResults,
-    assertQuery,
-    assertFilterExpr,
     assertQueryResultData,
     assertWriteResultData
 } from './ops/validate'
 
-export { ensureMeta } from './core/meta'
-
 export {
-    createError as createProtocolError,
     create as createErrorFromCode,
-    inferKindFromCode as inferErrorKindFromCode,
     wrap as wrapProtocolError,
-    withDetails as withErrorDetails,
     withTrace as withErrorTrace
 } from './core/error/error'
 
@@ -36,13 +23,9 @@ export {
 } from './core/envelope/envelope'
 
 export {
-    SSE_EVENT_NOTIFY,
     sseComment,
     sseRetry,
-    sseEvent,
     sseNotify,
-    parseNotifyMessage,
-    parseNotifyMessageJson
 } from './transport/sse'
 
 export {
@@ -53,6 +36,5 @@ export {
 } from './transport/http'
 
 export {
-    createIdempotencyKey,
     createOpId
 } from './ids'
