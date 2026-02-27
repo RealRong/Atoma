@@ -1,9 +1,8 @@
 import { useMemo } from 'react'
 import type { Entity, Store, RelationIncludeInput, WithRelations } from 'atoma-types/core'
-import { getStoreBindings } from 'atoma-types/internal'
-import { useRelations } from './useRelations'
 import { useShallowStableArray } from './useShallowStableArray'
 import { useStoreSelector } from './internal/useStoreSelector'
+import { useProjectedRelations } from './internal/useProjectedRelations'
 
 type UseManyOptions<Relations, Include extends RelationIncludeInput<Relations>> = Readonly<{
     limit?: number
@@ -51,15 +50,12 @@ export function useMany<T extends Entity, Relations = {}, const Include extends 
     }, [stableIds, limit, unique])
 
     const base = useStoreSelector(store, selector, shallowEqual, 'useMany')
-    const bindings = getStoreBindings(store, 'useMany')
-    const relations = bindings.relations?.()
-    const includeOptions = include ?? ({} as Include)
-    const relationResult = useRelations<T, Relations, Include>(
-        base,
-        includeOptions,
-        relations,
-        bindings.useStore
-    )
+    const relationResult = useProjectedRelations<T, Relations, Include>({
+        store,
+        items: base,
+        include,
+        tag: 'useMany'
+    })
 
     return relationResult.data as Result
 }

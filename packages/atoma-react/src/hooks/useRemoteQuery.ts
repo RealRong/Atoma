@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { stableStringify } from 'atoma-shared'
 import type { Entity, Store, PageInfo, Query } from 'atoma-types/core'
 import { getStoreBindings } from 'atoma-types/internal'
-import { getOrCreateEntry, publish, type RemoteState } from './internal/remoteQueryCache'
+import { dedupeTask, getOrCreateEntry, publish, type RemoteState } from './internal/remoteQueryCache'
 
 type UseRemoteQueryResult<T extends Entity> = RemoteState<T> & Readonly<{
     refetch: () => Promise<T[]>
     fetchMore: (options: Query<T>) => Promise<T[]>
 }>
+
+type FetchMode = 'refetch' | 'fetchMore'
 
 function normalizeResult<T extends Entity>(value: unknown): { data: T[]; pageInfo?: PageInfo } {
     if (!value || typeof value !== 'object') {
@@ -24,11 +26,12 @@ export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
     options?: Query<T>
     enabled?: boolean
 }): UseRemoteQueryResult<T> {
-    const enabled = args.enabled !== false
-    const bindings = getStoreBindings(args.store, 'useRemoteQuery')
+    const { store, options, enabled: enabledInput } = args
+    const enabled = enabledInput !== false
+    const bindings = getStoreBindings(store, 'useRemoteQuery')
     const storeName = bindings.name
     const runtime = bindings.runtime as object
-    const optionsKey = useMemo(() => stableStringify(args.options), [args.options])
+    const optionsKey = useMemo(() => stableStringify(options), [options])
     const key = `${storeName}:remoteQuery:${optionsKey}`
 
     const entry = useMemo(
@@ -48,55 +51,54 @@ export function useRemoteQuery<T extends Entity, Relations = {}>(args: {
         }
     }, [entry])
 
-    const runFetch = useCallback(async (query: Query<T> | undefined, mode: 'refetch' | 'fetchMore'): Promise<T[]> => {
+    const runFetch = useCallback(async (query: Query<T> | undefined, mode: FetchMode): Promise<T[]> => {
         if (!enabled) return []
-        if (entry.promise) return entry.promise
 
-        publish(entry, {
-            isFetching: true,
-            ...(mode === 'refetch' ? { error: undefined } : {})
+        const queryKey = stableStringify(query)
+        return dedupeTask<T[]>({
+            runtime,
+            key: `${key}:${mode}:${queryKey}`,
+            dedupeTtlMs: 0,
+            task: async () => {
+                entry.inflightCount += 1
+                publish(entry, {
+                    isFetching: true,
+                    ...(mode === 'refetch' ? { error: undefined } : {})
+                })
+                try {
+                    const result = await store.query(query ?? {})
+                    const { data, pageInfo } = normalizeResult<T>(result)
+                    publish(entry, {
+                        error: undefined,
+                        pageInfo,
+                        data: mode === 'fetchMore'
+                            ? [...(entry.state.data ?? []), ...data]
+                            : data
+                    })
+                    return data
+                } catch (error: unknown) {
+                    const normalized = error instanceof Error ? error : new Error(String(error))
+                    publish(entry, { error: normalized })
+                    throw normalized
+                } finally {
+                    entry.inflightCount = Math.max(0, entry.inflightCount - 1)
+                    publish(entry, { isFetching: entry.inflightCount > 0 })
+                    entry.lastAccessAt = Date.now()
+                }
+            }
         })
-
-        const currentPromise = args.store.query(query ?? {})
-            .then((result) => {
-                const { data, pageInfo } = normalizeResult<T>(result)
-                publish(entry, {
-                    isFetching: false,
-                    error: undefined,
-                    pageInfo,
-                    data: mode === 'fetchMore'
-                        ? [...(entry.state.data ?? []), ...data]
-                        : data
-                })
-                return data
-            })
-            .catch((error: unknown) => {
-                const normalized = error instanceof Error ? error : new Error(String(error))
-                publish(entry, {
-                    isFetching: false,
-                    error: normalized
-                })
-                throw normalized
-            })
-            .finally(() => {
-                entry.promise = null
-                entry.lastAccessAt = Date.now()
-            })
-
-        entry.promise = currentPromise
-        return currentPromise
-    }, [args.store, enabled, entry])
+    }, [enabled, entry, key, runtime, store])
 
     useEffect(() => {
         if (!enabled) return
-        runFetch(args.options, 'refetch').catch(() => {
+        runFetch(options, 'refetch').catch(() => {
             // error already published
         })
-    }, [args.options, enabled, key, runFetch])
+    }, [enabled, optionsKey, runFetch])
 
     return {
         ...state,
-        refetch: () => runFetch(args.options, 'refetch'),
+        refetch: () => runFetch(options, 'refetch'),
         fetchMore: (options: Query<T>) => runFetch(options, 'fetchMore')
     }
 }

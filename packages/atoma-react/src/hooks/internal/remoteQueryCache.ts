@@ -10,7 +10,7 @@ export type RemoteState<T extends Entity> = Readonly<{
 export type CacheEntry<T extends Entity> = {
     state: RemoteState<T>
     subscribers: Set<(state: RemoteState<T>) => void>
-    promise: Promise<T[]> | null
+    inflightCount: number
     lastAccessAt: number
 }
 
@@ -30,7 +30,7 @@ const TASK_CACHE_TTL_MS = 5 * 60 * 1000
 const TASK_CACHE_MAX_ENTRIES = 200
 
 function shouldEvictEntry<T extends Entity>(entry: CacheEntry<T>, now: number): boolean {
-    return !entry.promise
+    return entry.inflightCount === 0
         && entry.subscribers.size === 0
         && now - entry.lastAccessAt > REMOTE_CACHE_TTL_MS
 }
@@ -47,7 +47,7 @@ function cleanupCache<T extends Entity>(cache: Map<string, CacheEntry<T>>, now: 
             cache.delete(key)
             return
         }
-        if (!entry.promise && entry.subscribers.size === 0) {
+        if (entry.inflightCount === 0 && entry.subscribers.size === 0) {
             candidates.push([key, entry])
         }
     })
@@ -118,7 +118,7 @@ export function getOrCreateEntry<T extends Entity>(runtime: object | null, key: 
             data: undefined
         },
         subscribers: new Set(),
-        promise: null,
+        inflightCount: 0,
         lastAccessAt: now
     }
     cache.set(key, next)

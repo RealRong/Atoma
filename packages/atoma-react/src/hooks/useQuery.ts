@@ -1,6 +1,5 @@
 import type { Entity, Store, PageInfo, Query, RelationIncludeInput, WithRelations } from 'atoma-types/core'
-import { getStoreBindings } from 'atoma-types/internal'
-import { useRelations } from './useRelations'
+import { useProjectedRelations } from './internal/useProjectedRelations'
 import { useStoreQuery } from './useStoreQuery'
 import { useRemoteQuery } from './useRemoteQuery'
 
@@ -46,38 +45,33 @@ export function useQuery<T extends Entity, Relations = {}, const Include extends
 
     const hasData = localData.length > 0
     const isFetching = remoteEnabled ? remote.isFetching : false
+    const remoteError = remoteEnabled ? remote.error : undefined
+    const remotePageInfo = remoteEnabled ? remote.pageInfo : undefined
     const status: UseQueryStatus = {
         loading: remoteEnabled && isFetching && !hasData,
         isFetching,
         isStale: fetchPolicy === 'cache-and-network' && hasData && isFetching,
-        error: remote.error,
-        pageInfo: remote.pageInfo
+        error: remoteError,
+        pageInfo: remotePageInfo
     }
 
     const refetch = () => remoteEnabled ? remote.refetch() : Promise.resolve(localData)
 
     const fetchMore = (moreOptions: Query<T>) => remoteEnabled ? remote.fetchMore(moreOptions) : Promise.resolve([])
 
-    const bindings = getStoreBindings(store, 'useQuery')
-    const relations = bindings.relations?.()
-    const include = options?.include
+    const relationResult = useProjectedRelations<T, Relations, Include>({
+        store,
+        items: localData,
+        include: options?.include,
+        tag: 'useQuery'
+    })
+
     const baseResult: UseQueryResult<T, Relations, Include> = {
         ...status,
         data: localData as keyof Include extends never ? T[] : WithRelations<T, Relations, Include>[],
         refetch,
         fetchMore
     }
-
-    if (!include || !relations) {
-        return baseResult
-    }
-
-    const relationResult = useRelations<T, Relations, Include>(
-        localData,
-        include,
-        relations,
-        bindings.useStore
-    )
 
     return {
         ...baseResult,

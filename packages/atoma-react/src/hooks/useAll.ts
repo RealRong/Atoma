@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 import type { Entity, Store, RelationIncludeInput, WithRelations } from 'atoma-types/core'
-import { getStoreBindings } from 'atoma-types/internal'
 import { useStoreSnapshot } from './internal/useStoreSelector'
-import { useRelations } from './useRelations'
+import { useProjectedRelations } from './internal/useProjectedRelations'
 
 /**
  * React hook to subscribe to entire collection
@@ -16,16 +15,11 @@ export function useAll<T extends Entity, Relations = {}, const Include extends R
 
     const all = useStoreSnapshot(store, 'useAll')
     const memoedArr = useMemo(() => Array.from(all.values()), [all])
-
-    const bindings = getStoreBindings(store, 'useAll')
-    const relations = bindings.relations?.()
-    if (!options?.include || !relations) return memoedArr as Result
-
-    const relationsResult = useRelations<T, Relations, Include>(
-        memoedArr,
-        options.include,
-        relations,
-        bindings.useStore
-    )
-    return relationsResult.data as unknown as Result
+    const relationResult = useProjectedRelations<T, Relations, Include>({
+        store,
+        items: memoedArr,
+        include: options?.include,
+        tag: 'useAll'
+    })
+    return relationResult.data as unknown as Result
 }

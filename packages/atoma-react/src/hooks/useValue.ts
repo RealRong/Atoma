@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
 import type { Entity, Store, RelationIncludeInput, WithRelations } from 'atoma-types/core'
-import { getStoreBindings } from 'atoma-types/internal'
 import { useStoreSelector } from './internal/useStoreSelector'
-import { useRelations } from './useRelations'
+import { useProjectedRelations } from './internal/useProjectedRelations'
 
 /**
  * React hook to subscribe to a single entity by ID
@@ -25,18 +24,16 @@ export function useOne<T extends Entity, Relations = {}, const Include extends R
     useEffect(() => {
         if (!id) return
         if (base !== undefined) return
-        store.get(id)
+        void store.get(id).catch((error: unknown) => {
+            console.warn('[Atoma] useOne: store.get 失败', error)
+        })
     }, [id, base, store])
 
-    const bindings = getStoreBindings(store, 'useOne')
-    const relations = bindings.relations?.()
-    if (!options?.include || !relations) return base as Result
-
-    const rel = useRelations<T, Relations, Include>(
-        base ? [base] : [],
-        options.include,
-        relations,
-        bindings.useStore
-    )
+    const rel = useProjectedRelations<T, Relations, Include>({
+        store,
+        items: base ? [base] : [],
+        include: options?.include,
+        tag: 'useOne'
+    })
     return rel.data[0] as unknown as Result
 }

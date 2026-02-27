@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { stableStringify } from 'atoma-shared'
-import { buildRelationPlan, collectPlanStoreTokens } from 'atoma-core/relations'
 import type {
     Entity,
     Store,
@@ -17,14 +16,16 @@ import { getStoreBindings } from 'atoma-types/internal'
 import { useShallowStableArray } from './useShallowStableArray'
 import { createBatchedSubscribe } from './internal/batchedSubscribe'
 import { dedupeTask } from './internal/remoteQueryCache'
+import { mergeSnapshotValues, buildSnapshotValues } from './internal/relationProjection'
+import { useRelationPlans } from './internal/useRelationPlans'
 import {
     buildPrefetchDoneKey,
     collectCurrentAndNewIds,
     filterStableItemsForRelation,
     getEntityId,
-    normalizeInclude,
     resolvePrefetchMode
 } from './internal/relationInclude'
+import { useStableIncludeBucket } from './internal/useStableIncludeBucket'
 
 const DEFAULT_PREFETCH_OPTIONS = { onError: 'partial', timeout: 5000, maxConcurrency: 10 } as const
 const PREFETCH_DEDUP_TTL_MS = 300
@@ -136,31 +137,18 @@ export function useRelations<T extends Entity>(
         return undefined
     }, [resolveStoreStable])
 
-    const includePlan = useMemo(() => normalizeInclude(include), [include])
+    const includePlan = useStableIncludeBucket(include)
     const { includeKey, effectiveInclude, liveInclude, snapshotInclude, snapshotNames } = includePlan
     const stableItems = useShallowStableArray(items)
     const relationMap = relations
 
-    const relationPlans = useMemo(() => {
-        const effectiveEntries = buildRelationPlan(stableItems, effectiveInclude, relationMap)
-        const liveNames = liveInclude ? new Set(Object.keys(liveInclude)) : undefined
-        const snapshotNames = snapshotInclude ? new Set(Object.keys(snapshotInclude)) : undefined
-        const liveEntries = liveNames
-            ? effectiveEntries.filter((entry) => liveNames.has(entry.relationName))
-            : []
-        const snapshotEntries = snapshotNames
-            ? effectiveEntries.filter((entry) => snapshotNames.has(entry.relationName))
-            : []
-
-        return {
-            effectiveEntries,
-            liveEntries,
-            snapshotEntries,
-            effectiveTokens: collectPlanStoreTokens(effectiveEntries),
-            liveTokens: collectPlanStoreTokens(liveEntries),
-            snapshotTokens: collectPlanStoreTokens(snapshotEntries)
-        }
-    }, [stableItems, effectiveInclude, liveInclude, snapshotInclude, relationMap])
+    const relationPlans = useRelationPlans({
+        items: stableItems,
+        effectiveInclude,
+        liveInclude,
+        snapshotInclude,
+        relationMap
+    })
 
     type State = { data: T[]; loading: boolean; error?: Error }
     const [state, setState] = useState<State>(() => ({
@@ -252,13 +240,10 @@ export function useRelations<T extends Entity>(
         const names = snapshotNamesRef.current
         if (!names.length) return projectedLive
 
-        const snapshot = snapshotRef.current
-        return projectedLive.map((item) => {
-            const id = getEntityId(item)
-            if (!id) return item
-            const cached = snapshot.get(id)
-            if (!cached) return item
-            return { ...item, ...cached } as T
+        return mergeSnapshotValues({
+            items: projectedLive,
+            snapshot: snapshotRef.current,
+            getEntityId
         })
     }
 
@@ -277,20 +262,11 @@ export function useRelations<T extends Entity>(
             collectStoreStates(relationPlans.snapshotTokens, 'snapshot')
         )
 
-        const next = new Map<EntityId, Record<string, unknown>>()
-        projected.forEach((item) => {
-            const id = getEntityId(item)
-            if (!id) return
-
-            const record = item as unknown as Record<string, unknown>
-            const values: Record<string, unknown> = {}
-            snapshotNames.forEach((name) => {
-                values[name] = record[name]
-            })
-            next.set(id, values)
+        snapshotRef.current = buildSnapshotValues({
+            items: projected,
+            relationNames: snapshotNames,
+            getEntityId
         })
-
-        snapshotRef.current = next
         snapshotNamesRef.current = snapshotNames
     }
 
