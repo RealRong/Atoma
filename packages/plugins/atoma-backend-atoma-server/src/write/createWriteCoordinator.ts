@@ -10,7 +10,7 @@ function readPositiveVersion(value: unknown): Version | undefined {
         : undefined
 }
 
-function readSnapshotVersion(args: {
+function readStoreVersion(args: {
     runtime: PluginRuntime
     storeName: StoreToken
     id: string
@@ -20,6 +20,13 @@ function readSnapshotVersion(args: {
     const version = (current as { version?: unknown } | undefined)?.version
     return readPositiveVersion(version)
 }
+
+type WriteCoordinatorWithSnapshot = WriteCoordinator & Readonly<{
+    capture: (args: {
+        storeName: StoreToken
+        entries: ReadonlyArray<RuntimeWriteEntry>
+    }) => void
+}>
 
 function requireWriteMeta(args: {
     action: RuntimeWriteEntry['action']
@@ -43,11 +50,11 @@ function requireWriteMeta(args: {
 }
 
 function encodeWriteEntry(args: {
-    runtime: PluginRuntime
     storeName: StoreToken
     entry: RuntimeWriteEntry
+    capturedVersion: Version | undefined
 }): ProtocolWriteEntry {
-    const { runtime, storeName, entry } = args
+    const { storeName, entry, capturedVersion } = args
     const meta = requireWriteMeta({
         action: entry.action,
         storeName,
@@ -65,11 +72,7 @@ function encodeWriteEntry(args: {
                 }
             }
         case 'update': {
-            const baseVersion = readSnapshotVersion({
-                runtime,
-                storeName,
-                id: entry.item.id
-            })
+            const baseVersion = capturedVersion
             if (typeof baseVersion !== 'number') {
                 throw new Error(`[Atoma] write(update) requires baseVersion (store=${storeName}, id=${entry.item.id})`)
             }
@@ -83,11 +86,7 @@ function encodeWriteEntry(args: {
             }
         }
         case 'delete': {
-            const baseVersion = readSnapshotVersion({
-                runtime,
-                storeName,
-                id: entry.item.id
-            })
+            const baseVersion = capturedVersion
             if (typeof baseVersion !== 'number') {
                 throw new Error(`[Atoma] write(delete) requires baseVersion (store=${storeName}, id=${entry.item.id})`)
             }
@@ -112,11 +111,7 @@ function encodeWriteEntry(args: {
                 }
             }
 
-            const expectedVersion = readSnapshotVersion({
-                runtime,
-                storeName,
-                id: entry.item.id
-            })
+            const expectedVersion = capturedVersion
             return {
                 ...entry,
                 item: {
@@ -131,14 +126,47 @@ function encodeWriteEntry(args: {
     }
 }
 
-export function createWriteCoordinator(runtime: PluginRuntime): WriteCoordinator {
+export function createWriteCoordinator(runtime: PluginRuntime): WriteCoordinatorWithSnapshot {
+    const versionByEntry = new WeakMap<RuntimeWriteEntry, Version | undefined>()
+
     return {
+        capture: ({ storeName, entries }) => {
+            entries.forEach((entry) => {
+                switch (entry.action) {
+                    case 'update':
+                    case 'delete': {
+                        versionByEntry.set(entry, readStoreVersion({
+                            runtime,
+                            storeName,
+                            id: entry.item.id
+                        }))
+                        break
+                    }
+                    case 'upsert': {
+                        const conflict = entry.options?.upsert?.conflict ?? 'cas'
+                        if (conflict !== 'cas') break
+                        versionByEntry.set(entry, readStoreVersion({
+                            runtime,
+                            storeName,
+                            id: entry.item.id
+                        }))
+                        break
+                    }
+                    case 'create':
+                        break
+                }
+            })
+        },
         encode: ({ storeName, entries }) => {
-            return entries.map((entry) => encodeWriteEntry({
-                runtime,
-                storeName,
-                entry
-            }))
+            return entries.map((entry) => {
+                const encoded = encodeWriteEntry({
+                    storeName,
+                    entry,
+                    capturedVersion: versionByEntry.get(entry)
+                })
+                versionByEntry.delete(entry)
+                return encoded
+            })
         }
     }
 }

@@ -7,6 +7,10 @@ import {
     HTTP_PATH_SYNC_RXDB_STREAM
 } from 'atoma-types/protocol-tools'
 import type {
+    Envelope,
+    RemoteOpsResponseData
+} from 'atoma-types/protocol'
+import type {
     SyncCheckpoint,
     SyncDocument,
     SyncPullResponse,
@@ -25,7 +29,10 @@ type EventSourceLike = {
 type EventSourceCtor = new (url: string) => EventSourceLike
 
 export function createSyncTransport(
-    options: Pick<AtomaServerBackendPluginOptions, 'baseURL' | 'fetchFn' | 'headers' | 'syncPaths'>
+    options: Pick<
+        AtomaServerBackendPluginOptions,
+        'baseURL' | 'fetchFn' | 'headers' | 'retry' | 'onRequest' | 'onResponse' | 'syncPaths'
+    >
 ): SyncTransport {
     const baseURL = options.baseURL
     const fetchFn = resolveFetch(options.fetchFn)
@@ -37,46 +44,30 @@ export function createSyncTransport(
 
     return {
         pull: async (request) => {
-            const payload = await postJson({
+            return await postJson({
                 path: syncPaths.pull,
                 request,
                 baseURL,
                 fetchFn,
-                headers: options.headers
+                headers: options.headers,
+                retry: options.retry,
+                onRequest: options.onRequest,
+                onResponse: options.onResponse,
+                parser: parsePullResponse
             })
-
-            if (!isRecord(payload)) {
-                throw new Error('[Sync] pull response must be an object')
-            }
-
-            const documents = Array.isArray(payload.documents)
-                ? payload.documents as SyncDocument[]
-                : []
-            const checkpoint = resolveCheckpoint(payload.checkpoint)
-            return {
-                documents,
-                checkpoint
-            } satisfies SyncPullResponse
         },
         push: async (request) => {
-            const payload = await postJson({
+            return await postJson({
                 path: syncPaths.push,
                 request,
                 baseURL,
                 fetchFn,
-                headers: options.headers
+                headers: options.headers,
+                retry: options.retry,
+                onRequest: options.onRequest,
+                onResponse: options.onResponse,
+                parser: parsePushResponse
             })
-
-            if (!isRecord(payload)) {
-                throw new Error('[Sync] push response must be an object')
-            }
-
-            const conflicts = Array.isArray(payload.conflicts)
-                ? payload.conflicts as SyncDocument[]
-                : []
-            return {
-                conflicts
-            } satisfies SyncPushResponse
         },
         subscribe: (args) => {
             return createStream({
@@ -92,30 +83,56 @@ export function createSyncTransport(
     }
 }
 
-async function postJson(args: {
+async function postJson<T>(args: {
     path: string
     request: unknown
     baseURL: string
     fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
     headers?: AtomaServerBackendPluginOptions['headers']
-}): Promise<unknown> {
-    const response = await args.fetchFn(
-        joinUrl(args.baseURL, args.path),
-        {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json; charset=utf-8',
-                ...(await resolveHeaders(args.headers))
-            },
-            body: JSON.stringify(args.request)
+    retry?: AtomaServerBackendPluginOptions['retry']
+    onRequest?: AtomaServerBackendPluginOptions['onRequest']
+    onResponse?: AtomaServerBackendPluginOptions['onResponse']
+    parser: (payload: unknown) => T
+}): Promise<T> {
+    const headers = await resolveHeaders(args.headers)
+    if (!hasHeader(headers, 'content-type')) {
+        headers['content-type'] = 'application/json; charset=utf-8'
+    }
+    let request = new Request(joinUrl(args.baseURL, args.path), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(args.request)
+    })
+    if (typeof args.onRequest === 'function') {
+        const nextRequest = await args.onRequest(request)
+        if (nextRequest instanceof Request) {
+            request = nextRequest
         }
-    )
+    }
+
+    const response = await fetchWithRetry({
+        fetchFn: args.fetchFn,
+        request,
+        retry: args.retry
+    })
+    const payload = await readJson(response)
+
+    if (typeof args.onResponse === 'function') {
+        args.onResponse({
+            response,
+            request,
+            envelope: createSyncEnvelope({
+                status: response.status,
+                payload
+            })
+        })
+    }
 
     if (!response.ok) {
         throw new Error(`[Sync] request failed: HTTP ${response.status}`)
     }
 
-    return await readJson(response)
+    return args.parser(payload)
 }
 
 function createStream(args: {
@@ -132,6 +149,8 @@ function createStream(args: {
     let notifyListener: ((event: { data?: unknown }) => void) | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let pollTimer: ReturnType<typeof setInterval> | null = null
+    let reconnectFailures = 0
+    let fallbackToPolling = false
 
     const clearReconnect = () => {
         if (reconnectTimer) {
@@ -169,12 +188,19 @@ function createStream(args: {
     }
 
     const scheduleReconnect = () => {
-        if (stopped || reconnectTimer) return
+        if (stopped || reconnectTimer || fallbackToPolling) return
+        reconnectFailures += 1
+        if (reconnectFailures >= 5) {
+            fallbackToPolling = true
+            startPolling()
+            return
+        }
+        const delay = resolveReconnectDelay(args.reconnectDelayMs, reconnectFailures)
 
         reconnectTimer = setTimeout(() => {
             reconnectTimer = null
             connect()
-        }, args.reconnectDelayMs)
+        }, delay)
     }
 
     const startPolling = () => {
@@ -202,6 +228,9 @@ function createStream(args: {
         try {
             const source = new EventSourceImpl(url.toString())
             eventSource = source
+            fallbackToPolling = false
+            reconnectFailures = 0
+            clearPoll()
 
             notifyListener = (event) => {
                 try {
@@ -216,8 +245,9 @@ function createStream(args: {
             }
 
             source.addEventListener(SSE_EVENT_NOTIFY, notifyListener)
-            source.onerror = () => {
+            source.onerror = (_event) => {
                 if (stopped) return
+                args.onError(new Error('[Sync] stream connection error'))
                 closeEventSource()
                 scheduleReconnect()
             }
@@ -232,6 +262,8 @@ function createStream(args: {
         start: () => {
             if (!stopped) return
             stopped = false
+            fallbackToPolling = false
+            reconnectFailures = 0
             clearPoll()
             clearReconnect()
             connect()
@@ -316,14 +348,112 @@ async function readJson(response: Response): Promise<unknown> {
     }
 }
 
-function resolveCheckpoint(value: unknown): SyncCheckpoint {
-    if (!isRecord(value)) {
-        return { cursor: 0 }
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+    const needle = name.toLowerCase()
+    return Object.keys(headers).some((key) => key.toLowerCase() === needle)
+}
+
+function createSyncEnvelope(args: {
+    status: number
+    payload: unknown
+}): Envelope<RemoteOpsResponseData> {
+    if (args.status >= 200 && args.status < 300) {
+        return {
+            ok: true,
+            data: { results: [] },
+            meta: {
+                v: 1
+            }
+        }
     }
 
-    const cursor = readCursor(value.cursor)
     return {
-        cursor: cursor ?? 0
+        ok: false,
+        error: {
+            code: `SYNC_HTTP_${args.status}`,
+            message: `[Sync] request failed: HTTP ${args.status}`,
+            kind: 'internal',
+            ...(isRecord(args.payload)
+                ? {
+                    details: args.payload
+                }
+                : {})
+        },
+        meta: {
+            v: 1
+        }
+    }
+}
+
+function parsePullResponse(payload: unknown): SyncPullResponse {
+    const input = asRecord(payload, '[Sync] pull response')
+    if (!Array.isArray(input.documents)) {
+        throw new Error('[Sync] pull response.documents must be an array')
+    }
+    const documents = input.documents.map((value, index) => {
+        return parseSyncDocument(value, `[Sync] pull response.documents[${index}]`)
+    })
+    const checkpoint = parseCheckpoint(input.checkpoint, '[Sync] pull response.checkpoint')
+    return {
+        documents,
+        checkpoint
+    }
+}
+
+function parsePushResponse(payload: unknown): SyncPushResponse {
+    const input = asRecord(payload, '[Sync] push response')
+    if (!Array.isArray(input.conflicts)) {
+        throw new Error('[Sync] push response.conflicts must be an array')
+    }
+    const conflicts = input.conflicts.map((value, index) => {
+        return parseSyncDocument(value, `[Sync] push response.conflicts[${index}]`)
+    })
+    return {
+        conflicts
+    }
+}
+
+function asRecord(value: unknown, label: string): Record<string, unknown> {
+    if (!isRecord(value)) {
+        throw new Error(`${label} must be an object`)
+    }
+    return value as Record<string, unknown>
+}
+
+function asNonEmptyString(value: unknown, label: string): string {
+    if (typeof value !== 'string' || !value.trim()) {
+        throw new Error(`${label} must be a non-empty string`)
+    }
+    return value.trim()
+}
+
+function asNonNegativeInt(value: unknown, label: string): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || Math.floor(value) !== value) {
+        throw new Error(`${label} must be a non-negative integer`)
+    }
+    return value
+}
+
+function parseCheckpoint(value: unknown, label: string): SyncCheckpoint {
+    const input = asRecord(value, label)
+    return {
+        cursor: asNonNegativeInt(input.cursor, `${label}.cursor`)
+    }
+}
+
+function parseSyncDocument(value: unknown, label: string): SyncDocument {
+    const input = asRecord(value, label)
+    const id = asNonEmptyString(input.id, `${label}.id`)
+    const version = asNonNegativeInt(input.version, `${label}.version`)
+    const deleted = input._deleted
+    if (deleted !== undefined && typeof deleted !== 'boolean') {
+        throw new Error(`${label}._deleted must be boolean`)
+    }
+    return {
+        ...input,
+        id,
+        version,
+        ...(deleted === undefined ? {} : { _deleted: deleted })
     }
 }
 
@@ -332,16 +462,26 @@ function parseStreamNotify(value: unknown): SyncStreamNotify {
         return {}
     }
 
-    const parsed = JSON.parse(value)
-    if (!isRecord(parsed)) return {}
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(value)
+    } catch {
+        throw new Error('[Sync] stream notify payload is not valid JSON')
+    }
+    if (!isRecord(parsed)) {
+        throw new Error('[Sync] stream notify payload must be an object')
+    }
 
-    const resource = typeof parsed.resource === 'string'
-        ? parsed.resource
-        : undefined
-    const cursor = readCursor(parsed.cursor)
+    const resource = parsed.resource
+    if (resource !== undefined && (typeof resource !== 'string' || !resource.trim())) {
+        throw new Error('[Sync] stream notify resource must be a non-empty string')
+    }
+    const cursor = parsed.cursor === undefined
+        ? undefined
+        : asNonNegativeInt(parsed.cursor, '[Sync] stream notify cursor')
 
     return {
-        ...(resource ? { resource } : {}),
+        ...(typeof resource === 'string' ? { resource: resource.trim() } : {}),
         ...(cursor !== undefined ? { cursor } : {})
     }
 }
@@ -353,9 +493,93 @@ function resolveEventSourceCtor(): EventSourceCtor | undefined {
         : undefined
 }
 
-function readCursor(value: unknown): number | undefined {
-    const cursor = Number(value)
-    if (!Number.isFinite(cursor)) return undefined
-    if (cursor < 0) return undefined
-    return Math.floor(cursor)
+function normalizePositiveInt(value: unknown, fallback: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback
+    return Math.floor(value)
+}
+
+function addJitter(base: number): number {
+    const jitter = Math.random() * 0.3 * base
+    return base + jitter
+}
+
+function calculateBackoffDelay(args: {
+    backoff: 'exponential' | 'linear'
+    initialDelayMs: number
+    attempt: number
+    jitter: boolean
+}): number {
+    const base = args.backoff === 'exponential'
+        ? args.initialDelayMs * Math.pow(2, Math.max(0, args.attempt - 1))
+        : args.initialDelayMs * Math.max(1, args.attempt)
+    return args.jitter ? addJitter(base) : base
+}
+
+function isAbortError(error: unknown): boolean {
+    return Boolean(error && typeof error === 'object' && (error as { name?: string }).name === 'AbortError')
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms)
+    })
+}
+
+async function fetchWithRetry(args: {
+    fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+    request: Request
+    retry: AtomaServerBackendPluginOptions['retry']
+}): Promise<Response> {
+    const maxAttempts = normalizePositiveInt(args.retry?.maxAttempts, 3)
+    const maxElapsedMs = normalizePositiveInt(args.retry?.maxElapsedMs, 30_000)
+    const initialDelayMs = normalizePositiveInt(args.retry?.initialDelayMs, 1000)
+    const backoff = args.retry?.backoff ?? 'exponential'
+    const jitter = args.retry?.jitter === true
+    const startedAt = Date.now()
+    let attempt = 0
+    let lastError: unknown
+
+    while (attempt < maxAttempts) {
+        attempt += 1
+        try {
+            if (args.request.signal?.aborted) {
+                throw new Error('Request aborted')
+            }
+
+            const response = await args.fetchFn(args.request)
+            if (response.status >= 500) {
+                throw new Error(`[Sync] request failed: HTTP ${response.status}`)
+            }
+            return response
+        } catch (error) {
+            lastError = error
+            if (args.request.signal?.aborted || isAbortError(error)) {
+                throw error
+            }
+            if (attempt >= maxAttempts) {
+                break
+            }
+
+            const delay = calculateBackoffDelay({
+                backoff,
+                initialDelayMs,
+                attempt,
+                jitter
+            })
+            if (Date.now() - startedAt + delay > maxElapsedMs) {
+                break
+            }
+            await sleep(delay)
+        }
+    }
+
+    if (lastError instanceof Error) {
+        throw lastError
+    }
+    throw new Error('[Sync] request failed')
+}
+
+function resolveReconnectDelay(baseDelayMs: number, failures: number): number {
+    const base = Math.max(200, Math.floor(baseDelayMs))
+    return Math.min(base * Math.pow(2, Math.max(0, failures - 1)), 30_000)
 }

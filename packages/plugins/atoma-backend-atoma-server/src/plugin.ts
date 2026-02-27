@@ -41,6 +41,9 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
                 baseURL: normalizedOptions.baseURL,
                 headers: normalizedOptions.headers,
                 fetchFn: normalizedOptions.fetchFn,
+                retry: normalizedOptions.retry,
+                onRequest: normalizedOptions.onRequest,
+                onResponse: normalizedOptions.onResponse,
                 syncPaths: normalizedOptions.syncPaths
             })
 
@@ -48,6 +51,12 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
             const unregisterService = ctx.services.register(OPERATION_CLIENT_TOKEN, operationClient)
             const unregisterWriteCoordinator = ctx.services.register(WRITE_COORDINATOR_TOKEN, writeCoordinator)
             const unregisterSyncTransport = ctx.services.register(SYNC_TRANSPORT_TOKEN, syncTransport)
+            const unregisterWriteStart = ctx.events.on('writeStart', ({ storeName, writeEntries }) => {
+                writeCoordinator.capture({
+                    storeName,
+                    entries: writeEntries
+                })
+            })
             let unregisterExecution: (() => void) | undefined
 
             try {
@@ -67,18 +76,22 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
                     })
                 })
             } catch (error) {
+                safeDispose(unregisterWriteStart)
                 safeDispose(unregisterSyncTransport)
                 safeDispose(unregisterWriteCoordinator)
                 safeDispose(unregisterService)
+                safeDispose(() => operationClient.dispose())
                 throw error
             }
 
             return {
                 dispose: () => {
                     safeDispose(unregisterExecution)
+                    safeDispose(unregisterWriteStart)
                     safeDispose(unregisterSyncTransport)
                     safeDispose(unregisterWriteCoordinator)
                     safeDispose(unregisterService)
+                    safeDispose(() => operationClient.dispose())
                 }
             }
         }
