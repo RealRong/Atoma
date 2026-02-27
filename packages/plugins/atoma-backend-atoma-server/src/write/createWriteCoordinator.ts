@@ -3,11 +3,10 @@ import type { PluginRuntime } from 'atoma-types/client/plugins'
 import type { StoreToken } from 'atoma-types/core'
 import type { Version, WriteEntry as ProtocolWriteEntry, WriteItemMeta } from 'atoma-types/protocol'
 import type { WriteEntry as RuntimeWriteEntry } from 'atoma-types/runtime'
+import { normalizePositiveInt } from 'atoma-shared'
 
 function readPositiveVersion(value: unknown): Version | undefined {
-    return typeof value === 'number' && Number.isFinite(value) && value > 0
-        ? value
-        : undefined
+    return normalizePositiveInt(value)
 }
 
 function readStoreVersion(args: {
@@ -27,6 +26,16 @@ type WriteCoordinatorWithSnapshot = WriteCoordinator & Readonly<{
         entries: ReadonlyArray<RuntimeWriteEntry>
     }) => void
 }>
+
+function resolveCapturedVersionTargetId(entry: RuntimeWriteEntry): string | undefined {
+    if (entry.action === 'update' || entry.action === 'delete') {
+        return entry.item.id
+    }
+    if (entry.action === 'upsert' && (entry.options?.upsert?.conflict ?? 'cas') === 'cas') {
+        return entry.item.id
+    }
+    return undefined
+}
 
 function requireWriteMeta(args: {
     action: RuntimeWriteEntry['action']
@@ -132,40 +141,26 @@ export function createWriteCoordinator(runtime: PluginRuntime): WriteCoordinator
     return {
         capture: ({ storeName, entries }) => {
             entries.forEach((entry) => {
-                switch (entry.action) {
-                    case 'update':
-                    case 'delete': {
-                        versionByEntry.set(entry, readStoreVersion({
-                            runtime,
-                            storeName,
-                            id: entry.item.id
-                        }))
-                        break
-                    }
-                    case 'upsert': {
-                        const conflict = entry.options?.upsert?.conflict ?? 'cas'
-                        if (conflict !== 'cas') break
-                        versionByEntry.set(entry, readStoreVersion({
-                            runtime,
-                            storeName,
-                            id: entry.item.id
-                        }))
-                        break
-                    }
-                    case 'create':
-                        break
-                }
+                const id = resolveCapturedVersionTargetId(entry)
+                if (!id) return
+                versionByEntry.set(entry, readStoreVersion({
+                    runtime,
+                    storeName,
+                    id
+                }))
             })
         },
         encode: ({ storeName, entries }) => {
             return entries.map((entry) => {
-                const encoded = encodeWriteEntry({
-                    storeName,
-                    entry,
-                    capturedVersion: versionByEntry.get(entry)
-                })
-                versionByEntry.delete(entry)
-                return encoded
+                try {
+                    return encodeWriteEntry({
+                        storeName,
+                        entry,
+                        capturedVersion: versionByEntry.get(entry)
+                    })
+                } finally {
+                    versionByEntry.delete(entry)
+                }
             })
         }
     }

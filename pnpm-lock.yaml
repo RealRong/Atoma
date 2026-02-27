@@ -11,18 +11,6 @@ importers:
       '@prisma/client':
         specifier: ^5.0.0
         version: 5.22.0(prisma@5.22.0)
-      lodash:
-        specifier: ^4.17.21
-        version: 4.17.23
-      mitt:
-        specifier: ^3.0.1
-        version: 3.0.1
-      p-limit:
-        specifier: ^7.2.0
-        version: 7.2.0
-      zod:
-        specifier: ^4.2.1
-        version: 4.3.5
     devDependencies:
       '@testing-library/react':
         specifier: ^16.3.1
@@ -51,6 +39,9 @@ importers:
       jsdom:
         specifier: ^25.0.0
         version: 25.0.1
+      mitt:
+        specifier: ^3.0.1
+        version: 3.0.1
       p-retry:
         specifier: ^7.1.1
         version: 7.1.1
@@ -223,9 +214,6 @@ importers:
       p-queue:
         specifier: ^6.6.2
         version: 6.6.2
-      p-retry:
-        specifier: ^7.1.1
-        version: 7.1.1
 
   packages/plugins/atoma-backend-indexeddb:
     dependencies:
@@ -2196,9 +2184,6 @@ packages:
     resolution: {integrity: sha512-pDo3lu8Jhfjqls6GkMgpahsF9kCyayhgykjyLMNFTKWrpVdAQtYyB4muAMWozBB4ig/dtWAmsMxLEI8wuz+DYQ==}
     deprecated: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
 
-  lodash@4.17.23:
-    resolution: {integrity: sha512-LgVTMpQtIopCi79SJeDiP0TfWi5CNEc/L/aRdTh3yIvmZXTnheWpKjSZhnvMl8iXbC1tFg9gdHHDMLoV7CnG+w==}
-
   long@5.3.2:
     resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
 
@@ -2410,10 +2395,6 @@ packages:
   p-finally@1.0.0:
     resolution: {integrity: sha512-LICb2p9CB7FS+0eR1oqWnHhp0FljGLZCWBE9aix0Uye9W8LTQPwMTYVGWQWIw9RdQiDg4+epXQODwIYJtSJaow==}
     engines: {node: '>=4'}
-
-  p-limit@7.2.0:
-    resolution: {integrity: sha512-ATHLtwoTNDloHRFFxFJdHnG6n2WUeFjaR8XQMFdKIv0xkXjrER8/iG9iu265jOM95zXHAfv9oTkqhrfbIzosrQ==}
-    engines: {node: '>=20'}
 
   p-map@4.0.0:
     resolution: {integrity: sha512-/bjOqmgETBYB5BoEeGVea8dmvHb2m9GLy1E9W43yeyfP6QQCZGFNa+XRceJEuDB6zqr+gKpIAmlLebMpykw/MQ==}
@@ -3195,17 +3176,10 @@ packages:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
     engines: {node: '>=12'}
 
-  yocto-queue@1.2.2:
-    resolution: {integrity: sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ==}
-    engines: {node: '>=12.20'}
-
   z-schema@6.0.2:
     resolution: {integrity: sha512-9fQb2ZhpMD0ZQXYw0ll5ya6uLQm3Xtt4DXY2RV3QO1QVI4ihSzSWirlgkDsMgGg4qK0EV4tLOJgRSH2bn0cbIw==}
     engines: {node: '>=16.0.0'}
     hasBin: true
-
-  zod@4.3.5:
-    resolution: {integrity: sha512-k7Nwx6vuWx1IJ9Bjuf4Zt1PEllcwe7cls3VNzm4CQ1/hgtFUK2bRNG3rvnpPUhFjmqJKAKtjV576KnUkHocg/g==}
 
 snapshots:
 
@@ -5110,8 +5084,6 @@ snapshots:
 
   lodash.isequal@4.5.0: {}
 
-  lodash@4.17.23: {}
-
   long@5.3.2: {}
 
   lru-cache@10.4.3: {}
@@ -5323,10 +5295,6 @@ snapshots:
       wrappy: 1.0.2
 
   p-finally@1.0.0: {}
-
-  p-limit@7.2.0:
-    dependencies:
-      yocto-queue: 1.2.2
 
   p-map@4.0.0:
     dependencies:
@@ -6132,8 +6100,6 @@ snapshots:
       y18n: 5.0.8
       yargs-parser: 21.1.1
 
-  yocto-queue@1.2.2: {}
-
   z-schema@6.0.2:
     dependencies:
       lodash.get: 4.4.2
@@ -6141,5 +6107,3 @@ snapshots:
       validator: 13.15.26
     optionalDependencies:
       commander: 11.1.0
-
-  zod@4.3.5: {}

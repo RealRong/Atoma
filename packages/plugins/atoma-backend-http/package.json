@@ -20,7 +20,6 @@
         "atoma-backend-shared": "workspace:*",
         "atoma-shared": "workspace:*",
         "atoma-types": "workspace:*",
-        "p-queue": "^6.6.2",
-        "p-retry": "^7.1.1"
+        "p-queue": "^6.6.2"
     }
 }

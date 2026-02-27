@@ -39,3 +39,14 @@ export {
 export {
     createOpId
 } from './ids'
+
+export {
+    parseSyncDocument,
+    parseSyncPullRequest,
+    parseSyncPushRequest,
+    parseSyncStreamQuery,
+    parseSyncPullResponse,
+    parseSyncPushResponse,
+    parseSyncStreamNotify,
+    readPushIdempotencyKey
+} from './sync/rxdb'

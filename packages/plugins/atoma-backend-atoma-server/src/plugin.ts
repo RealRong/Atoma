@@ -1,6 +1,6 @@
 import { HttpOperationClient } from 'atoma-backend-http'
 import { buildOperationExecutor } from 'atoma-backend-shared'
-import { safeDispose } from 'atoma-shared'
+import { disposeInReverse } from 'atoma-shared'
 import { OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN } from 'atoma-types/client/ops'
 import { SYNC_TRANSPORT_TOKEN } from 'atoma-types/client/sync'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
@@ -57,10 +57,16 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
                     entries: writeEntries
                 })
             })
-            let unregisterExecution: (() => void) | undefined
+            const disposers: Array<() => void> = [
+                () => operationClient.dispose(),
+                unregisterService,
+                unregisterWriteCoordinator,
+                unregisterSyncTransport,
+                unregisterWriteStart
+            ]
 
             try {
-                unregisterExecution = ctx.runtime.execution.register({
+                disposers.push(ctx.runtime.execution.register({
                     id: `backend.atoma-server:${normalizedOptions.baseURL}`,
                     ...buildOperationExecutor({
                         runtime: {
@@ -74,24 +80,15 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
                             })
                         }
                     })
-                })
+                }))
             } catch (error) {
-                safeDispose(unregisterWriteStart)
-                safeDispose(unregisterSyncTransport)
-                safeDispose(unregisterWriteCoordinator)
-                safeDispose(unregisterService)
-                safeDispose(() => operationClient.dispose())
+                disposeInReverse(disposers)
                 throw error
             }
 
             return {
                 dispose: () => {
-                    safeDispose(unregisterExecution)
-                    safeDispose(unregisterWriteStart)
-                    safeDispose(unregisterSyncTransport)
-                    safeDispose(unregisterWriteCoordinator)
-                    safeDispose(unregisterService)
-                    safeDispose(() => operationClient.dispose())
+                    disposeInReverse(disposers)
                 }
             }
         }

@@ -1,8 +1,8 @@
 import type { SyncDocument, SyncPullResponse } from 'atoma-types/sync'
+import { parseSyncPullRequest } from 'atoma-types/protocol-tools'
 import type { AtomaServerConfig } from '../config'
 import type { HandleResult } from '../runtime/http'
 import { throwError } from '../error'
-import { parseSyncPullRequest } from './contracts'
 
 type PullExecutor<Ctx> = Readonly<{
     handle: (args: {

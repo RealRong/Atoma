@@ -1,5 +1,6 @@
 import type { Envelope, Meta, RemoteOp, RemoteOpsResponseData } from 'atoma-types/protocol'
 import { parseEnvelope } from 'atoma-types/protocol-tools'
+import { hasHeader, joinUrl } from 'atoma-shared'
 
 export type HttpInterceptors<T> = {
     onRequest?: (request: Request) => Promise<Request | void> | Request | void
@@ -18,11 +19,6 @@ export type ExecuteOperationRequest = {
     meta: Meta
     extraHeaders?: Record<string, string>
     signal?: AbortSignal
-}
-
-const hasHeader = (headers: Record<string, string>, name: string): boolean => {
-    const needle = name.toLowerCase()
-    return Object.keys(headers).some((key) => key.toLowerCase() === needle)
 }
 
 async function resolveHeaders(
@@ -44,18 +40,6 @@ async function parseResponseJson(response: Response): Promise<unknown> {
     } catch {
         return null
     }
-}
-
-function joinUrl(base: string, path: string): string {
-    if (!base) return path
-    if (!path) return base
-
-    const hasTrailing = base.endsWith('/')
-    const hasLeading = path.startsWith('/')
-
-    if (hasTrailing && hasLeading) return `${base}${path.slice(1)}`
-    if (!hasTrailing && !hasLeading) return `${base}/${path}`
-    return `${base}${path}`
 }
 
 export function createTransport(deps: {

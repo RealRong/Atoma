@@ -1,9 +1,9 @@
 import type { SyncDocument, SyncPushRequest, SyncPushResponse } from 'atoma-types/sync'
+import { parseSyncPushRequest, readPushIdempotencyKey } from 'atoma-types/protocol-tools'
 import type { AtomaServerConfig } from '../config'
 import type { HandleResult } from '../runtime/http'
 import { throwError } from '../error'
 import { executeWriteItemWithSemantics } from '../ops/writeSemantics'
-import { parseSyncPushRequest, readPushIdempotencyKey } from './contracts'
 
 type PushExecutor<Ctx> = Readonly<{
     handle: (args: {
@@ -65,6 +65,7 @@ export function createSyncRxdbPushExecutor<Ctx>(args: {
 
                 const deleted = Boolean((newState as any)?._deleted === true)
                 const assumedVersion = readVersion((assumed as any)?.version)
+                const idempotencyKey = readPushIdempotencyKey(row)
 
                 if (deleted && assumedVersion === undefined) {
                     continue
@@ -95,7 +96,7 @@ export function createSyncRxdbPushExecutor<Ctx>(args: {
                         ...(writeKind === 'update'
                             ? { baseVersion: assumedVersion! }
                             : {}),
-                        ...(readPushIdempotencyKey(row) ? { idempotencyKey: readPushIdempotencyKey(row) } : {})
+                        ...(idempotencyKey ? { idempotencyKey } : {})
                     }
                 })
 

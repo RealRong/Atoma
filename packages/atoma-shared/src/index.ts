@@ -5,6 +5,10 @@ export { safeDispose, disposeInReverse } from './lifecycle'
 
 export { isRecord } from './record'
 export { read } from './field'
+export { hasHeader, joinUrl } from './http'
+export { normalizePositiveInt, normalizeNonNegativeInt } from './number'
+export { fetchWithRetry, sleep, isAbortError } from './retry'
+export type { RetryOptions } from './retry'
 
 export { createActionId, createEntityId, createId, createIdempotencyKey } from './id'
 export type { CreateIdArgs, IdKind } from './id'

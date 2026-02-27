@@ -2,7 +2,11 @@ import type {
     SyncDocument,
     SyncPullRequest,
     SyncPushRequest,
-    SyncPushRow
+    SyncPushRow,
+    SyncPullResponse,
+    SyncPushResponse,
+    SyncStreamNotify,
+    SyncCheckpoint
 } from 'atoma-types/sync'
 
 type AnyRecord = Record<string, unknown>
@@ -33,7 +37,7 @@ function asNonNegativeInt(value: unknown, label: string): number {
     return value
 }
 
-function parseSyncDocument(value: unknown, label: string): SyncDocument {
+export function parseSyncDocument(value: unknown, label: string): SyncDocument {
     const input = asObject(value, label)
     const id = asNonEmptyString(input.id, `${label}.id`)
     const version = asNonNegativeInt(input.version, `${label}.version`)
@@ -168,6 +172,58 @@ export function parseSyncStreamQuery(urlObj: URL): {
         afterCursorByResource,
         ...(traceId ? { traceId } : {}),
         ...(requestId ? { requestId } : {})
+    }
+}
+
+export function parseSyncPullResponse(value: unknown): SyncPullResponse {
+    const input = asObject(value, '[SyncRxdbPullResponse]')
+    const documents = input.documents
+    if (!Array.isArray(documents)) {
+        throw new Error('[SyncRxdbPullResponse].documents 必须是数组')
+    }
+    return {
+        documents: documents.map((item, index) => parseSyncDocument(item, `[SyncRxdbPullResponse].documents[${index}]`)),
+        checkpoint: parseSyncCheckpoint(input.checkpoint, '[SyncRxdbPullResponse].checkpoint')
+    }
+}
+
+export function parseSyncPushResponse(value: unknown): SyncPushResponse {
+    const input = asObject(value, '[SyncRxdbPushResponse]')
+    const conflicts = input.conflicts
+    if (!Array.isArray(conflicts)) {
+        throw new Error('[SyncRxdbPushResponse].conflicts 必须是数组')
+    }
+    return {
+        conflicts: conflicts.map((item, index) => parseSyncDocument(item, `[SyncRxdbPushResponse].conflicts[${index}]`))
+    }
+}
+
+export function parseSyncStreamNotify(value: unknown): SyncStreamNotify {
+    if (typeof value !== 'string' || !value.trim()) {
+        return {}
+    }
+
+    const parsed = JSON.parse(value)
+    const input = asObject(parsed, '[SyncRxdbStreamNotify]')
+    const resource = input.resource
+    if (resource !== undefined && (typeof resource !== 'string' || !resource.trim())) {
+        throw new Error('[SyncRxdbStreamNotify].resource 必须是非空字符串')
+    }
+
+    const cursor = input.cursor === undefined
+        ? undefined
+        : asNonNegativeInt(input.cursor, '[SyncRxdbStreamNotify].cursor')
+
+    return {
+        ...(typeof resource === 'string' ? { resource: resource.trim() } : {}),
+        ...(cursor !== undefined ? { cursor } : {})
+    }
+}
+
+function parseSyncCheckpoint(value: unknown, label: string): SyncCheckpoint {
+    const input = asObject(value, label)
+    return {
+        cursor: asNonNegativeInt(input.cursor, `${label}.cursor`)
     }
 }
 

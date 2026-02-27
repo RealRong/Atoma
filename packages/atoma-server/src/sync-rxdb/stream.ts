@@ -1,8 +1,7 @@
-import { sseComment, sseNotify, sseRetry } from 'atoma-types/protocol-tools'
+import { parseSyncStreamQuery, sseComment, sseNotify, sseRetry } from 'atoma-types/protocol-tools'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import type { HandleResult } from '../runtime/http'
 import { throwError } from '../error'
-import { parseSyncStreamQuery } from './contracts'
 
 type StreamExecutor<Ctx> = Readonly<{
     handle: (args: {
