@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createMemoryDemoClient } from '../support/createDemoClient'
+import { createLocalDemoClient } from '../support/createDemoClient'
 import { useScenarioHarness } from '../support/harness'
 import { createTestId } from '../support/ids'
 
@@ -8,7 +8,7 @@ const harness = useScenarioHarness()
 describe('history.undo-redo', () => {
     it('undo/redo should rollback and replay', async () => {
         const client = harness.trackClient(
-            createMemoryDemoClient({
+            await createLocalDemoClient({
                 enableHistory: true,
                 enableSync: false
             })

@@ -1,5 +1,4 @@
 import { createClient } from 'atoma-client'
-import { memoryBackendPlugin } from 'atoma-backend-memory'
 import { atomaServerBackendPlugin } from 'atoma-backend-atoma-server'
 import { historyPlugin } from 'atoma-history'
 import { syncPlugin, type SyncExtension } from 'atoma-sync'
@@ -22,14 +21,23 @@ type BaseClientOptions = Readonly<{
     onSyncError?: (error: Error, context: { phase: SyncPhase }) => void
 }>
 
-export function createMemoryDemoClient(options: BaseClientOptions & {
+export async function createLocalDemoClient(options: BaseClientOptions & {
     seed?: DemoSeed
-} = {}): DemoClient {
-    const plugins: ClientPlugin[] = [
-        memoryBackendPlugin(options.seed ? { seed: options.seed as unknown as Record<string, any[]> } : undefined)
-    ]
+} = {}): Promise<DemoClient> {
+    const plugins: ClientPlugin[] = []
     mountOptionalPlugins(plugins, options)
-    return buildClient(plugins)
+    const client = buildClient(plugins)
+
+    try {
+        if (options.seed) {
+            await seedClientData(client, options.seed)
+        }
+    } catch (error) {
+        client.dispose()
+        throw error
+    }
+
+    return client
 }
 
 export function createHttpDemoClient(options: BaseClientOptions & {
@@ -70,4 +78,26 @@ function buildClient(plugins: ClientPlugin[]): DemoClient {
         },
         plugins
     }) as DemoClient
+}
+
+function ensureWriteManyOk(
+    label: string,
+    results: Array<{
+        index: number
+        ok: boolean
+        error?: unknown
+    }>
+): void {
+    const failed = results.find((result) => !result.ok)
+    if (!failed) return
+    const reason = failed.error instanceof Error
+        ? failed.error.message
+        : String(failed.error ?? 'unknown')
+    throw new Error(`[Atoma][demo-seed] ${label} failed at index=${failed.index}: ${reason}`)
+}
+
+async function seedClientData(client: DemoClient, seed: DemoSeed): Promise<void> {
+    ensureWriteManyOk('users', await client.stores('users').createMany(seed.users))
+    ensureWriteManyOk('posts', await client.stores('posts').createMany(seed.posts))
+    ensureWriteManyOk('comments', await client.stores('comments').createMany(seed.comments))
 }

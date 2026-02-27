@@ -7,7 +7,7 @@
 ## 解决什么问题
 
 - **原子化 + 类型安全的 Store**（可插拔 runtime）
-- **统一的持久化抽象**：HTTP / IndexedDB / memory / hybrid 等 datasource
+- **统一的持久化抽象**：HTTP / IndexedDB / local(runtime) / hybrid 等 datasource
 - **统一的 ops 协议**（`/ops`）：读写都走同一套请求/响应结构，天然适配 batch/sync
 - **Offline-first 同步**：outbox + pull + subscribe（SSE）
 - **Relations**：belongsTo/hasMany/hasOne/variants，客户端 prefetch + 投影（include）

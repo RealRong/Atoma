@@ -7,7 +7,7 @@ Atomic state management with universal persistence.
 ## Why Atoma
 
 - **Atomic + type-safe stores** with pluggable runtime
-- **Unified persistence** via pluggable data sources (HTTP, IndexedDB, memory, hybrid)
+- **Unified persistence** via pluggable data sources (HTTP, IndexedDB, local runtime, hybrid)
 - **Ops protocol** (`/ops`) for reads/writes, designed for batching and sync
 - **Offline-first sync** (outbox + pull/subscribe SSE)
 - **Relations** (belongsTo/hasMany/hasOne/variants) with client-side prefetch + projection

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDemoSeed, createUserFilterByRegionAndMinAge } from './support/demoSchema'
-import { createHttpDemoClient, createMemoryDemoClient, type DemoClient } from './support/createDemoClient'
+import { createHttpDemoClient, createLocalDemoClient, type DemoClient } from './support/createDemoClient'
 import { createSqliteDemoServer, type SqliteDemoServer } from './support/createSqliteDemoServer'
 
 function resolveServerMode(): 'in-process' | 'tcp' {
@@ -27,9 +27,9 @@ describe.sequential('Demo No-UI Integration System', () => {
         }
     })
 
-    it('memory backend should cover CRUD + query + history', async () => {
+    it('local runtime should cover CRUD + query + history', async () => {
         const seed = createDemoSeed()
-        const client = createMemoryDemoClient({
+        const client = await createLocalDemoClient({
             seed,
             enableHistory: true,
             enableSync: false

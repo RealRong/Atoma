@@ -1,6 +1,7 @@
 import type { SyncTransport, SyncStream } from 'atoma-types/client/sync'
 import { isRecord } from 'atoma-shared'
 import {
+    SSE_EVENT_NOTIFY,
     HTTP_PATH_SYNC_RXDB_PULL,
     HTTP_PATH_SYNC_RXDB_PUSH,
     HTTP_PATH_SYNC_RXDB_STREAM
@@ -24,15 +25,20 @@ type EventSourceLike = {
 type EventSourceCtor = new (url: string) => EventSourceLike
 
 export function createSyncTransport(
-    options: Pick<AtomaServerBackendPluginOptions, 'baseURL' | 'fetchFn' | 'headers'>
+    options: Pick<AtomaServerBackendPluginOptions, 'baseURL' | 'fetchFn' | 'headers' | 'syncPaths'>
 ): SyncTransport {
     const baseURL = options.baseURL
     const fetchFn = resolveFetch(options.fetchFn)
+    const syncPaths = {
+        pull: normalizeSyncPath(options.syncPaths?.pull, HTTP_PATH_SYNC_RXDB_PULL),
+        push: normalizeSyncPath(options.syncPaths?.push, HTTP_PATH_SYNC_RXDB_PUSH),
+        stream: normalizeSyncPath(options.syncPaths?.stream, HTTP_PATH_SYNC_RXDB_STREAM)
+    }
 
     return {
         pull: async (request) => {
             const payload = await postJson({
-                path: HTTP_PATH_SYNC_RXDB_PULL,
+                path: syncPaths.pull,
                 request,
                 baseURL,
                 fetchFn,
@@ -54,7 +60,7 @@ export function createSyncTransport(
         },
         push: async (request) => {
             const payload = await postJson({
-                path: HTTP_PATH_SYNC_RXDB_PUSH,
+                path: syncPaths.push,
                 request,
                 baseURL,
                 fetchFn,
@@ -75,6 +81,7 @@ export function createSyncTransport(
         subscribe: (args) => {
             return createStream({
                 baseURL,
+                streamPath: syncPaths.stream,
                 resource: args.resource,
                 reconnectDelayMs: args.reconnectDelayMs,
                 pollIntervalMs: args.pollIntervalMs,
@@ -113,6 +120,7 @@ async function postJson(args: {
 
 function createStream(args: {
     baseURL: string
+    streamPath: string
     resource: string
     reconnectDelayMs: number
     pollIntervalMs: number
@@ -144,7 +152,7 @@ function createStream(args: {
 
         if (notifyListener && typeof eventSource.removeEventListener === 'function') {
             try {
-                eventSource.removeEventListener('sync.notify', notifyListener)
+                eventSource.removeEventListener(SSE_EVENT_NOTIFY, notifyListener)
             } catch {
                 // ignore
             }
@@ -188,7 +196,7 @@ function createStream(args: {
             return
         }
 
-        const url = new URL(joinUrl(args.baseURL, HTTP_PATH_SYNC_RXDB_STREAM))
+        const url = new URL(joinUrl(args.baseURL, args.streamPath))
         url.searchParams.set('resource', args.resource)
 
         try {
@@ -207,7 +215,7 @@ function createStream(args: {
                 }
             }
 
-            source.addEventListener('sync.notify', notifyListener)
+            source.addEventListener(SSE_EVENT_NOTIFY, notifyListener)
             source.onerror = () => {
                 if (stopped) return
                 closeEventSource()
@@ -254,6 +262,12 @@ function joinUrl(base: string, path: string): string {
     if (hasTrailing && hasLeading) return `${base}${path.slice(1)}`
     if (!hasTrailing && !hasLeading) return `${base}/${path}`
     return `${base}${path}`
+}
+
+function normalizeSyncPath(path: string | undefined, fallback: string): string {
+    if (typeof path !== 'string') return fallback
+    const normalized = path.trim()
+    return normalized || fallback
 }
 
 function resolveFetch(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createMemoryDemoClient } from '../support/createDemoClient'
+import { createLocalDemoClient } from '../support/createDemoClient'
 import { createDemoSeed, createUserFilterByRegionAndMinAge } from '../support/demoSchema'
 import { useScenarioHarness } from '../support/harness'
 
@@ -8,7 +8,7 @@ const harness = useScenarioHarness()
 describe('index.query', () => {
     it('query by indexed fields should return stable result', async () => {
         const client = harness.trackClient(
-            createMemoryDemoClient({
+            await createLocalDemoClient({
                 seed: createDemoSeed(),
                 enableSync: false
             })

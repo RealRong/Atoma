@@ -245,21 +245,6 @@ importers:
         specifier: ^3.2.0 || ^4.0.0
         version: 4.2.1
 
-  packages/plugins/atoma-backend-memory:
-    dependencies:
-      atoma-backend-shared:
-        specifier: workspace:*
-        version: link:../atoma-backend-shared
-      atoma-core:
-        specifier: workspace:*
-        version: link:../../atoma-core
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../../atoma-shared
-      atoma-types:
-        specifier: workspace:*
-        version: link:../../atoma-types
-
   packages/plugins/atoma-backend-shared:
     dependencies:
       atoma-core:

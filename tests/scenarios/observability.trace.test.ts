@@ -11,7 +11,7 @@ describe('observability.trace', () => {
     it('write path should emit debug events', async () => {
         const events: DebugEvent[] = []
         const client = harness.trackClient(
-            createObservableDemoClient({
+            await createObservableDemoClient({
                 observability: {
                     debug: { enabled: true, sample: 1, payload: true },
                     debugSink: (event) => {

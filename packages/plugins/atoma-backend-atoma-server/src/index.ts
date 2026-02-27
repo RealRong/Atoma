@@ -1,2 +1,5 @@
 export { atomaServerBackendPlugin } from './plugin'
-export type { AtomaServerBackendPluginOptions } from './types'
+export type {
+    AtomaServerBackendPluginOptions,
+    AtomaServerSyncPaths
+} from './types'

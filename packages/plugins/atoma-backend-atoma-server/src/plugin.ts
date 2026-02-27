@@ -40,7 +40,8 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
             const syncTransport = createSyncTransport({
                 baseURL: normalizedOptions.baseURL,
                 headers: normalizedOptions.headers,
-                fetchFn: normalizedOptions.fetchFn
+                fetchFn: normalizedOptions.fetchFn,
+                syncPaths: normalizedOptions.syncPaths
             })
 
             const writeCoordinator = createWriteCoordinator(ctx.runtime)

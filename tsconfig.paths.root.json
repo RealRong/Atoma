@@ -15,9 +15,6 @@
             "atoma-backend-indexeddb": [
                 "packages/plugins/atoma-backend-indexeddb/src/index.ts"
             ],
-            "atoma-backend-memory": [
-                "packages/plugins/atoma-backend-memory/src/index.ts"
-            ],
             "atoma-backend-shared": [
                 "packages/plugins/atoma-backend-shared/src/index.ts"
             ],

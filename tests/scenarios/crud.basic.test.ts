@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createMemoryDemoClient } from '../support/createDemoClient'
+import { createLocalDemoClient } from '../support/createDemoClient'
 import { createDemoSeed } from '../support/demoSchema'
 import { useScenarioHarness } from '../support/harness'
 import { createTestId } from '../support/ids'
@@ -9,7 +9,7 @@ const harness = useScenarioHarness()
 describe('crud.basic', () => {
     it('create/update/delete should work', async () => {
         const client = harness.trackClient(
-            createMemoryDemoClient({
+            await createLocalDemoClient({
                 seed: createDemoSeed(),
                 enableSync: false
             })

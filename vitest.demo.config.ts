@@ -18,7 +18,6 @@ export default defineConfig({
             { find: /^atoma-shared$/, replacement: resolvePath('packages/atoma-shared/src/index.ts') },
 
             { find: /^atoma-backend-shared$/, replacement: resolvePath('packages/plugins/atoma-backend-shared/src/index.ts') },
-            { find: /^atoma-backend-memory$/, replacement: resolvePath('packages/plugins/atoma-backend-memory/src/index.ts') },
             { find: /^atoma-backend-indexeddb$/, replacement: resolvePath('packages/plugins/atoma-backend-indexeddb/src/index.ts') },
             { find: /^atoma-backend-http$/, replacement: resolvePath('packages/plugins/atoma-backend-http/src/index.ts') },
             { find: /^atoma-backend-atoma-server$/, replacement: resolvePath('packages/plugins/atoma-backend-atoma-server/src/index.ts') },

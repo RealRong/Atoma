@@ -20,12 +20,10 @@ import { observabilityPlugin } from 'atoma-observability'
 
 ```ts
 import { createClient } from 'atoma-client'
-import { memoryBackendPlugin } from 'atoma-backend-memory'
 import { observabilityPlugin } from 'atoma-observability'
 
 const client = createClient({
     plugins: [
-        memoryBackendPlugin(),
         observabilityPlugin({
             maxTraceEvents: 800,
             maxRuntimeTraces: 512,

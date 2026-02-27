@@ -23,6 +23,7 @@ export {
 } from './core/envelope/envelope'
 
 export {
+    SSE_EVENT_NOTIFY,
     sseComment,
     sseRetry,
     sseNotify,
