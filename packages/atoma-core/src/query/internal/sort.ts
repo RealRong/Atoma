@@ -1,5 +1,5 @@
 import type { SortRule } from 'atoma-types/core'
-import { read } from '../../shared/field'
+import { read } from 'atoma-shared'
 
 export function isSameSortRules(left: SortRule[], right: SortRule[]): boolean {
     if (left.length !== right.length) return false

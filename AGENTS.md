@@ -51,7 +51,7 @@
 ### 1.5 atoma-shared and atoma-types/shared Boundaries
 
 - atoma-types/shared is type-only (scalar contracts only).
-- atoma-shared is runtime utility foundation (ids/random/time/error/url/stable serialization/zod helpers).
+- atoma-shared is runtime utility foundation (ids/random/time/error/url/stable serialization).
 - Runtime helper logic must not be duplicated across packages; prefer atoma-shared single-source utilities.
 - atoma-core domain modules must not implement package-local random/uuid fallback logic.
 - Default entity-id policy must be runtime-configurable; core may expose optional algorithms but must not hardcode one as the domain default.

@@ -1,6 +1,6 @@
 import type { FilterExpr } from 'atoma-types/core'
+import { read } from 'atoma-shared'
 import type { FuzzyDefaults, MatchDefaults } from './types'
-import { read } from '../../shared/field'
 import { defaultTokenizer, levenshteinDistance, lower, tokenize } from '../../shared/text'
 
 const matchesMatch = (fieldValue: unknown, query: string, defaults?: MatchDefaults): boolean => {

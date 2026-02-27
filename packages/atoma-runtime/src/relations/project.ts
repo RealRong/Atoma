@@ -10,6 +10,7 @@ import type {
 } from 'atoma-types/core'
 import type { EntityId } from 'atoma-types/shared'
 import type { StoreMap } from 'atoma-types/runtime'
+import { read } from 'atoma-shared'
 import { runQuery } from 'atoma-core/query'
 import {
     buildRelationPlan,
@@ -41,10 +42,6 @@ const setRelationValue = <T extends Entity>(item: T, relationName: string, value
 
 const toEntityId = (value: unknown): EntityId | undefined => {
     return typeof value === 'string' ? value : undefined
-}
-
-const readField = (item: Entity, field: string): unknown => {
-    return (item as unknown as Record<string, unknown>)[field]
 }
 
 const resolveLookupMode = (
@@ -92,7 +89,7 @@ function buildTargetLookup(
         if (!bucket) {
             const next = new Map<EntityId, Entity[]>()
             map.forEach(target => {
-                const targetKey = toEntityId(readField(target, targetKeyField))
+                const targetKey = toEntityId(read(target, targetKeyField))
                 if (!targetKey) return
                 const list = next.get(targetKey) || []
                 list.push(target)
