@@ -60,11 +60,10 @@ function extractConflictMeta(error: any) {
     }
 }
 
-function extractWriteItemMeta(raw: any): { idempotencyKey?: string; timestamp?: number } {
+function extractWriteItemMeta(raw: any): { idempotencyKey?: string } {
     const meta = isObject(raw?.meta) ? raw.meta : undefined
     const idempotencyKey = meta && typeof meta.idempotencyKey === 'string' ? meta.idempotencyKey : undefined
-    const timestamp = meta && typeof meta.clientTimeMs === 'number' ? meta.clientTimeMs : undefined
-    return { idempotencyKey, timestamp }
+    return { idempotencyKey }
 }
 
 function toOkItemResult(res: any) {
@@ -170,7 +169,7 @@ export async function executeWriteOps<Ctx>(args: {
 
             const executeSingleInContext = async (ctx: { orm: IOrmAdapter; tx?: unknown }, index: number) => {
                 const raw = items[index] as any
-                const { idempotencyKey, timestamp } = extractWriteItemMeta(raw)
+                const { idempotencyKey } = extractWriteItemMeta(raw)
 
                 try {
                     const base = {
@@ -236,7 +235,6 @@ export async function executeWriteOps<Ctx>(args: {
                                     id: raw?.id,
                                     expectedVersion: raw?.expectedVersion,
                                     data: raw?.value,
-                                    ...(timestamp !== undefined ? { timestamp } : {}),
                                     ...(writeOptions !== undefined ? { options: writeOptions as any } : {})
                                 }
                             }

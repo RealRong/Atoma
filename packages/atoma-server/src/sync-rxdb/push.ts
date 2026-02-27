@@ -3,7 +3,7 @@ import type { AtomaServerConfig } from '../config'
 import type { HandleResult } from '../runtime/http'
 import { throwError } from '../error'
 import { executeWriteItemWithSemantics } from '../ops/writeSemantics'
-import { parseSyncPushRequest, readPushIdempotencyKey, readPushTimestamp } from './contracts'
+import { parseSyncPushRequest, readPushIdempotencyKey } from './contracts'
 
 type PushExecutor<Ctx> = Readonly<{
     handle: (args: {
@@ -95,8 +95,7 @@ export function createSyncRxdbPushExecutor<Ctx>(args: {
                         ...(writeKind === 'update'
                             ? { baseVersion: assumedVersion! }
                             : {}),
-                        ...(readPushIdempotencyKey(row) ? { idempotencyKey: readPushIdempotencyKey(row) } : {}),
-                        ...(readPushTimestamp(row) !== undefined ? { timestamp: readPushTimestamp(row) } : {})
+                        ...(readPushIdempotencyKey(row) ? { idempotencyKey: readPushIdempotencyKey(row) } : {})
                     }
                 })
 

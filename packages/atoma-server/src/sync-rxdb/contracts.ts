@@ -216,12 +216,3 @@ export function readPushIdempotencyKey(row: SyncPushRow): string | undefined {
         ? idempotencyKey
         : undefined
 }
-
-export function readPushTimestamp(row: SyncPushRow): number | undefined {
-    const meta = (row.newDocumentState as any)?.atomaSync
-    if (!meta || typeof meta !== 'object') return undefined
-    const changedAtMs = (meta as any).changedAtMs
-    return typeof changedAtMs === 'number' && Number.isFinite(changedAtMs)
-        ? changedAtMs
-        : undefined
-}

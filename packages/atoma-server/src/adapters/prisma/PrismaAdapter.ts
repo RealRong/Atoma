@@ -183,7 +183,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
 
     async update(
         resource: string,
-        item: { id: any; data: any; baseVersion?: number; timestamp?: number },
+        item: { id: any; data: any; baseVersion?: number },
         options: WriteOptions = {}
     ): Promise<QueryResultOne> {
         if (item?.id === undefined || !item?.data || typeof item.data !== 'object' || Array.isArray(item.data)) {
@@ -274,7 +274,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
 
     async upsert(
         resource: string,
-        item: { id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' },
+        item: { id: any; data: any; expectedVersion?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' },
         options: WriteOptions = {}
     ): Promise<QueryResultOne> {
         const conflict: 'cas' | 'lww' = item.conflict === 'lww' ? 'lww' : 'cas'
@@ -359,7 +359,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
 
     async bulkUpsert(
         resource: string,
-        items: Array<{ id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' }>,
+        items: Array<{ id: any; data: any; expectedVersion?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' }>,
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
         const returning = options.returning !== false
@@ -421,7 +421,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
 
     async bulkUpdate(
         resource: string,
-        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number }>,
+        items: Array<{ id: any; data: any; baseVersion?: number }>,
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
         const returning = options.returning !== false

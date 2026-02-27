@@ -154,7 +154,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     async update(
         resource: string,
-        item: { id: any; data: any; baseVersion?: number; timestamp?: number },
+        item: { id: any; data: any; baseVersion?: number },
         options: WriteOptions = {}
     ): Promise<QueryResultOne> {
         try {
@@ -274,7 +274,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     async bulkUpdate(
         resource: string,
-        items: Array<{ id: any; data: any; baseVersion?: number; timestamp?: number }>,
+        items: Array<{ id: any; data: any; baseVersion?: number }>,
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
         const repo = (this.manager ?? this.dataSource).getRepository(resource as any)
@@ -355,7 +355,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     async upsert(
         resource: string,
-        item: { id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' },
+        item: { id: any; data: any; expectedVersion?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' },
         options: WriteOptions = {}
     ): Promise<QueryResultOne> {
         try {
@@ -511,7 +511,7 @@ export class AtomaTypeormAdapter implements IOrmAdapter {
 
     async bulkUpsert(
         resource: string,
-        items: Array<{ id: any; data: any; expectedVersion?: number; timestamp?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' }>,
+        items: Array<{ id: any; data: any; expectedVersion?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' }>,
         options: WriteOptions = {}
     ): Promise<QueryResultMany> {
         const returning = options.returning !== false

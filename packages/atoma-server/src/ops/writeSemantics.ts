@@ -59,7 +59,6 @@ type ExecuteArgs = {
         data?: unknown
         baseVersion?: number
         expectedVersion?: number
-        timestamp?: number
         options?: WriteOptions
     }
 }
@@ -286,7 +285,6 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                     id,
                     data,
                     expectedVersion: write.expectedVersion,
-                    timestamp: write.timestamp,
                     conflict,
                     apply
                 } as any,
@@ -345,7 +343,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
             // update 必须能产出 version（即使 options.returning=false），否则协议无法返回 version
             const res = await orm.update(
                 write.resource,
-                { id: rawId, data, baseVersion: write.baseVersion, timestamp: write.timestamp } as any,
+                { id: rawId, data, baseVersion: write.baseVersion } as any,
                 { ...options, returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any
             )
             if (res?.error) throw res.error
@@ -430,8 +428,7 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
                 idempotencyKey,
                 id: write.id,
                 baseVersion: write.baseVersion,
-                expectedVersion: write.expectedVersion,
-                timestamp: write.timestamp
+                expectedVersion: write.expectedVersion
             },
             error: serializeErrorForLog(err),
             standard
