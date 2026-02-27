@@ -1,5 +1,5 @@
 import { toChange } from 'atoma-core/store'
-import { createIdempotencyKey, ensureWriteItemMeta } from 'atoma-shared'
+import { createIdempotencyKey } from 'atoma-shared'
 import type {
     Entity,
     PartialWithId
@@ -40,13 +40,10 @@ async function requireOutbound<T extends Entity>({
 }
 
 function createMeta(now: () => number) {
-    return ensureWriteItemMeta({
-        meta: {
-            idempotencyKey: createIdempotencyKey({ now }),
-            clientTimeMs: now()
-        },
-        now
-    })
+    return {
+        idempotencyKey: createIdempotencyKey({ now }),
+        clientTimeMs: now()
+    }
 }
 
 function requireUpdatedEntity<T extends Entity>(value: unknown, id: string): PartialWithId<T> {

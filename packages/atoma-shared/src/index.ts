@@ -9,11 +9,6 @@ export { read } from './field'
 export { createActionId, createEntityId, createId, createIdempotencyKey } from './id'
 export type { CreateIdArgs, IdKind } from './id'
 
-export { ensureWriteItemMeta, newWriteItemMeta } from './writeMeta'
-export type { WriteItemMeta } from './writeMeta'
-
-export { resolveFiniteVersion, resolvePositiveVersion, requireBaseVersion } from './version'
-
 export { stableStringify } from './stableStringify'
 
 export { encodeCursorToken, decodeCursorToken } from './cursor'

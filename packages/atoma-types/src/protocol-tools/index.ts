@@ -5,8 +5,6 @@ export {
     buildQueryOp
 } from './ops/build'
 
-export { ensureWriteItemMeta, newWriteItemMeta } from './ops/meta'
-
 export {
     assertMeta,
     assertRemoteOp,
