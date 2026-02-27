@@ -11,10 +11,3 @@ export function assertRemoteOpsRequest(value: unknown): { meta: Meta; ops: Remot
     const ops = opsRaw.map(op => assertRemoteOp(op))
     return { meta, ops }
 }
-
-export function assertOutgoingRemoteOps(args: { meta: Meta; ops: RemoteOp[] }) {
-    const detailsFor = makeValidationDetails('body')
-    assertMeta(args.meta)
-    requireArray(args.ops, { code: 'INVALID_REQUEST', message: 'Missing ops', details: detailsFor('ops') })
-    args.ops.forEach(op => { void assertRemoteOp(op) })
-}

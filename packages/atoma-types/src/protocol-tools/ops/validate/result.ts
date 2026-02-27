@@ -1,4 +1,4 @@
-import type { RemoteOpResult, QueryResultData, StandardError, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
+import type { QueryResultData, StandardError, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
 import { assertPositiveVersion, invalid, isObject, makeValidationDetails, requireArray, requireObject, requireString } from './common'
 
 function assertStandardError(value: unknown, ctx: { part: string; field?: string }): StandardError {
@@ -12,39 +12,6 @@ function assertStandardError(value: unknown, ctx: { part: string; field?: string
     requireString(obj, 'message', { code: 'INVALID_RESPONSE', message: 'Invalid error', details: detailsFor(ctx.field) })
     requireString(obj, 'kind', { code: 'INVALID_RESPONSE', message: 'Invalid error', details: detailsFor(ctx.field) })
     return obj as unknown as StandardError
-}
-
-export function assertRemoteOpResult(value: unknown): RemoteOpResult {
-    const detailsFor = makeValidationDetails('opResult')
-    const obj = requireObject(value, { code: 'INVALID_RESPONSE', message: 'Invalid operation result', details: detailsFor() })
-
-    const opId = requireString(obj, 'opId', {
-        code: 'INVALID_RESPONSE',
-        message: 'Invalid operation result (missing opId)',
-        details: detailsFor('opId')
-    })
-
-    const ok = (obj as any).ok
-    if (ok !== true && ok !== false) {
-        throw invalid('INVALID_RESPONSE', 'Invalid operation result (missing ok)', detailsFor('ok', { opId }))
-    }
-
-    if (ok === true) {
-        if (!Object.prototype.hasOwnProperty.call(obj, 'data')) {
-            throw invalid('INVALID_RESPONSE', 'Invalid operation result (missing data)', detailsFor('data', { opId }))
-        }
-        return obj as unknown as RemoteOpResult
-    }
-
-    const error = (obj as any).error
-    assertStandardError(error, { part: 'opResult', field: 'error' })
-    return obj as unknown as RemoteOpResult
-}
-
-export function assertRemoteOpResults(value: unknown): RemoteOpResult[] {
-    const detailsFor = makeValidationDetails('opsResponse')
-    const arr = requireArray(value, { code: 'INVALID_RESPONSE', message: 'Invalid results (must be an array)', details: detailsFor('results') })
-    return arr.map(r => assertRemoteOpResult(r))
 }
 
 export function assertQueryResultData(value: unknown): QueryResultData {

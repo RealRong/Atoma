@@ -62,11 +62,6 @@ export function withTrace(error: StandardError, meta: { traceId?: string; reques
     return { ...error, details: nextDetails }
 }
 
-export function withDetails(error: StandardError, details: StandardErrorDetails) {
-    const base = (error && typeof error === 'object') ? error : create('INTERNAL', 'Internal error')
-    return { ...base, details }
-}
-
 export function wrap(error: unknown, fallback: { code: string; message: string; kind?: ErrorKind; details?: StandardErrorDetails }) {
     const e: any = error
     if (e && typeof e === 'object'
