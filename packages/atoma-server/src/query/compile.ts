@@ -1,4 +1,5 @@
 import type { FilterExpr } from 'atoma-types/protocol'
+import { throwError } from '../error'
 
 type SqlFilter = { sql: string; params: Record<string, any> }
 
@@ -6,6 +7,8 @@ type SqlCompileContext = {
     alias?: string
     nextParam: (hint: string) => string
 }
+
+const SQL_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 export function compileFilterToSql(filter: FilterExpr | undefined, ctx: SqlCompileContext): SqlFilter | undefined {
     if (!filter) return undefined
@@ -36,7 +39,7 @@ function compileSqlExpr(expr: FilterExpr, ctx: SqlCompileContext): SqlFilter {
             if (expr.value === null) {
                 return { sql: `${column} IS NULL`, params: {} }
             }
-            const key = ctx.nextParam(`${expr.field}_eq`)
+            const key = ctx.nextParam('f_eq')
             return { sql: `${column} = :${key}`, params: { [key]: expr.value } }
         }
         case 'in': {
@@ -45,7 +48,7 @@ function compileSqlExpr(expr: FilterExpr, ctx: SqlCompileContext): SqlFilter {
             if (!values.length) {
                 return { sql: '1=0', params: {} }
             }
-            const key = ctx.nextParam(`${expr.field}_in`)
+            const key = ctx.nextParam('f_in')
             return { sql: `${column} IN (:...${key})`, params: { [key]: values } }
         }
         case 'gt':
@@ -60,14 +63,14 @@ function compileSqlExpr(expr: FilterExpr, ctx: SqlCompileContext): SqlFilter {
                     : expr.op === 'lt'
                         ? '<'
                         : '<='
-            const key = ctx.nextParam(`${expr.field}_${expr.op}`)
+            const key = ctx.nextParam(`f_${expr.op}`)
             return { sql: `${column} ${op} :${key}`, params: { [key]: expr.value } }
         }
         case 'startsWith':
         case 'endsWith':
         case 'contains': {
             const column = resolveColumn(ctx.alias, expr.field)
-            const key = ctx.nextParam(`${expr.field}_${expr.op}`)
+            const key = ctx.nextParam(`f_${expr.op}`)
             const value = expr.op === 'startsWith'
                 ? `${expr.value}%`
                 : expr.op === 'endsWith'
@@ -85,7 +88,7 @@ function compileSqlExpr(expr: FilterExpr, ctx: SqlCompileContext): SqlFilter {
         }
         case 'text': {
             const column = resolveColumn(ctx.alias, expr.field)
-            const key = ctx.nextParam(`${expr.field}_text`)
+            const key = ctx.nextParam('f_text')
             return { sql: `${column} LIKE :${key}`, params: { [key]: `%${expr.query}%` } }
         }
     }
@@ -98,7 +101,18 @@ function joinSql(parts: SqlFilter[], joiner: 'AND' | 'OR'): SqlFilter {
 }
 
 function resolveColumn(alias: string | undefined, field: string) {
-    return alias ? `${alias}.${field}` : field
+    const safeField = assertSqlIdentifier(field)
+    return alias ? `${alias}.${safeField}` : safeField
+}
+
+function assertSqlIdentifier(field: string) {
+    if (SQL_IDENTIFIER_RE.test(field)) return field
+    throwError('INVALID_FILTER', 'Invalid filter.field', {
+        kind: 'validation',
+        path: 'filter.field',
+        field: 'field',
+        currentValue: field
+    })
 }
 
 function compilePrismaExpr(expr: FilterExpr): any {

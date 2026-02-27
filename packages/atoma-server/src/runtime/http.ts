@@ -1,4 +1,4 @@
-import { byteLengthUtf8, throwError } from '../error'
+import { byteLengthUtf8, isAtomaError, throwError } from '../error'
 
 export type HandleResult = {
     status: number
@@ -11,9 +11,9 @@ export async function readJsonBody(incoming: any): Promise<any> {
     if (typeof incoming?.text === 'function') {
         const txt = await incoming.text()
         if (!txt) return undefined
-        return JSON.parse(txt)
+        return parseJsonText(txt)
     }
-    if (typeof incoming?.json === 'function') return incoming.json()
+    if (typeof incoming?.json === 'function') return readIncomingJson(incoming)
     return undefined
 }
 
@@ -25,13 +25,9 @@ export async function readJsonBodyWithLimit(incoming: any, bodyBytesLimit: numbe
     if (incoming?.body !== undefined) {
         const body = incoming.body
         if (limit) {
-            try {
-                const bytes = byteLengthUtf8(JSON.stringify(body ?? ''))
-                if (bytes > limit) {
-                    throwError('PAYLOAD_TOO_LARGE', `Body too large: max ${limit} bytes`, { kind: 'limits', max: limit, actual: bytes })
-                }
-            } catch {
-                // ignore size estimation failure
+            const bytes = estimateJsonBytes(body)
+            if (typeof bytes === 'number' && bytes > limit) {
+                throwError('PAYLOAD_TOO_LARGE', `Body too large: max ${limit} bytes`, { kind: 'limits', max: limit, actual: bytes })
             }
         }
         return body
@@ -46,19 +42,15 @@ export async function readJsonBodyWithLimit(incoming: any, bodyBytesLimit: numbe
                 throwError('PAYLOAD_TOO_LARGE', `Body too large: max ${limit} bytes`, { kind: 'limits', max: limit, actual: bytes })
             }
         }
-        return JSON.parse(txt)
+        return parseJsonText(txt)
     }
 
     if (typeof incoming?.json === 'function') {
-        const obj = await incoming.json()
+        const obj = await readIncomingJson(incoming)
         if (limit) {
-            try {
-                const bytes = byteLengthUtf8(JSON.stringify(obj ?? ''))
-                if (bytes > limit) {
-                    throwError('PAYLOAD_TOO_LARGE', `Body too large: max ${limit} bytes`, { kind: 'limits', max: limit, actual: bytes })
-                }
-            } catch {
-                // ignore
+            const bytes = estimateJsonBytes(obj)
+            if (typeof bytes === 'number' && bytes > limit) {
+                throwError('PAYLOAD_TOO_LARGE', `Body too large: max ${limit} bytes`, { kind: 'limits', max: limit, actual: bytes })
             }
         }
         return obj
@@ -81,3 +73,34 @@ export function stripBasePath(url: string, basePath: string): string | undefined
     return (rest.startsWith('/') ? rest : `/${rest}`) + u.search
 }
 
+function parseJsonText(text: string): any {
+    try {
+        return JSON.parse(text)
+    } catch (error) {
+        throwInvalidPayload(error)
+    }
+}
+
+async function readIncomingJson(incoming: { json: () => Promise<any> }) {
+    try {
+        return await incoming.json()
+    } catch (error) {
+        throwInvalidPayload(error)
+    }
+}
+
+function estimateJsonBytes(value: unknown): number | undefined {
+    try {
+        return byteLengthUtf8(JSON.stringify(value ?? ''))
+    } catch {
+        return undefined
+    }
+}
+
+function throwInvalidPayload(error: unknown): never {
+    if (isAtomaError(error)) throw error
+    throwError('INVALID_PAYLOAD', 'Invalid JSON payload', {
+        kind: 'validation',
+        path: 'body'
+    })
+}

@@ -1,5 +1,5 @@
 import type { SyncDocument, SyncPushRequest, SyncPushResponse } from 'atoma-types/sync'
-import { parseSyncPushRequest, readPushIdempotencyKey } from 'atoma-types/protocol-tools'
+import { parseSyncPushRequest, readPushIdempotencyKey, wrapProtocolError } from 'atoma-types/protocol-tools'
 import type { AtomaServerConfig } from '../config'
 import type { HandleResult } from '../runtime/http'
 import { throwError } from '../error'
@@ -41,7 +41,7 @@ export function createSyncRxdbPushExecutor<Ctx>(args: {
                 })
             }
 
-            const request = parseSyncPushRequest(await args.readBodyJson(incoming))
+            const request = parsePushRequest(await args.readBodyJson(incoming))
             const maxBatchSize = Math.max(1, Math.floor(args.config.sync?.push?.maxBatchSize ?? 200))
             if (request.rows.length > maxBatchSize) {
                 throwError('TOO_MANY_ITEMS', `Too many sync rows: max ${maxBatchSize}`, {
@@ -118,6 +118,28 @@ export function createSyncRxdbPushExecutor<Ctx>(args: {
             }
         }
     }
+}
+
+function parsePushRequest(input: unknown): SyncPushRequest {
+    try {
+        return parseSyncPushRequest(input)
+    } catch (error) {
+        const standard = wrapProtocolError(error, {
+            code: 'INVALID_REQUEST',
+            message: 'Invalid sync push request',
+            kind: 'validation'
+        })
+        const details = toThrowDetails(standard.details)
+        throwError(standard.code, standard.message, {
+            kind: standard.kind,
+            ...(details ? details : {})
+        } as any)
+    }
+}
+
+function toThrowDetails(details: unknown): Record<string, unknown> | undefined {
+    if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
+    return details as Record<string, unknown>
 }
 
 async function resolveConflictDocument<Ctx>(args: {

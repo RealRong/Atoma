@@ -164,6 +164,9 @@ function inferKindFromCode(code: string): ErrorKind {
         case 'PAYLOAD_TOO_LARGE':
             return 'limits'
         default:
+            if (code.startsWith('INVALID_') || code.startsWith('PROTOCOL_')) {
+                return 'validation'
+            }
             return 'internal'
     }
 }
@@ -195,6 +198,10 @@ function wrapToStandardError(reason: unknown, fallback: {
 }
 
 export function errorStatus(error: Pick<StandardError, 'code'>) {
+    if (error.code.startsWith('INVALID_') || error.code.startsWith('PROTOCOL_')) {
+        return 422
+    }
+
     switch (error.code) {
         case 'METHOD_NOT_ALLOWED':
             return 405
