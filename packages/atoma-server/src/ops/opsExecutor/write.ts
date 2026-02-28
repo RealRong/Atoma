@@ -278,14 +278,20 @@ export async function executeWriteOps<Ctx>(args: {
                 return itemResults
             }
 
+            let batchTransactionApplied = false
+
             const itemResults = await (async () => {
                 if (!args.syncEnabled) {
+                    batchTransactionApplied = false
                     return executePerItemInContext({ orm: args.adapter, tx: undefined })
                 }
 
                 try {
-                    return await args.adapter.transaction(async (tx) => executePerItemInContext({ orm: tx.orm, tx: tx.tx }))
+                    const result = await args.adapter.transaction(async (tx) => executePerItemInContext({ orm: tx.orm, tx: tx.tx }))
+                    batchTransactionApplied = true
+                    return result
                 } catch {
+                    batchTransactionApplied = false
                     const fallback: any[] = new Array(items.length)
                     for (let i = 0; i < items.length; i++) {
                         try {
@@ -298,7 +304,7 @@ export async function executeWriteOps<Ctx>(args: {
                 }
             })()
 
-            const transactionApplied = args.syncEnabled
+            const transactionApplied = batchTransactionApplied
             return { ok: true, data: { transactionApplied, results: itemResults } }
         })
 

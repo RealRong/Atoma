@@ -26,7 +26,5 @@ export type {
 
 export { AtomaPrismaAdapter } from './adapters/prisma'
 export type { PrismaAdapterOptions } from './adapters/prisma'
-export { AtomaTypeormAdapter } from './adapters/typeorm'
-export type { TypeormAdapterOptions } from './adapters/typeorm'
 
 export type { ISyncAdapter, AtomaChange, IdempotencyResult } from './adapters/ports'

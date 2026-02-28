@@ -1,4 +1,8 @@
 import type { CursorToken, SortRule } from 'atoma-types/protocol'
+import {
+    decodeCursorToken as decodeSharedCursorToken,
+    encodeCursorToken as encodeSharedCursorToken
+} from 'atoma-shared'
 
 type CursorPayload = { v: number; sort: SortRule[]; values: any[] }
 
@@ -24,40 +28,49 @@ export function reverseOrderBy(sort: SortRule[]): SortRule[] {
 }
 
 export function encodeCursorToken(values: any[], sort: SortRule[]): CursorToken {
-    const json = JSON.stringify({ v: 1, sort, values } satisfies CursorPayload)
-    return base64UrlEncode(json)
+    return encodeSharedCursorToken(sort, values)
 }
 
-export function decodeCursorToken(token: CursorToken): any[] {
-    const json = base64UrlDecode(token)
-    const parsed = JSON.parse(json) as CursorPayload
-    if (!parsed || !Array.isArray(parsed.values)) {
+export function decodeCursorToken(token: CursorToken): CursorPayload {
+    const parsed = decodeSharedCursorToken(token)
+    if (!parsed || !Array.isArray(parsed.values) || !Array.isArray(parsed.sort)) {
         throw new Error('Invalid cursor token')
     }
-    return parsed.values
+    if (parsed.values.length < parsed.sort.length) {
+        throw new Error('Invalid cursor token')
+    }
+    return {
+        v: 1,
+        sort: parsed.sort.map(rule => ({ field: rule.field, dir: rule.dir })),
+        values: parsed.values
+    }
 }
 
 export function getCursorValuesFromRow(row: any, sort: SortRule[]): any[] {
     return sort.map(r => (row as any)?.[r.field])
 }
 
+export function isSameSort(a: SortRule[], b: SortRule[]): boolean {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i += 1) {
+        if (a[i].field !== b[i].field || a[i].dir !== b[i].dir) {
+            return false
+        }
+    }
+    return true
+}
+
+export function readNullCursorField(values: unknown[], sort: SortRule[]): string | undefined {
+    const len = Math.min(values.length, sort.length)
+    for (let i = 0; i < len; i += 1) {
+        const value = values[i]
+        if (value === null || value === undefined) {
+            return sort[i].field
+        }
+    }
+    return undefined
+}
+
 export function compareOpForAfter(dir: SortRule['dir']) {
     return dir === 'asc' ? 'gt' : 'lt'
-}
-
-function base64UrlEncode(input: string) {
-    const base64 = (typeof Buffer !== 'undefined')
-        ? Buffer.from(input, 'utf8').toString('base64')
-        : btoa(unescape(encodeURIComponent(input)))
-    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
-}
-
-function base64UrlDecode(input: string) {
-    const padded = input.replace(/-/g, '+').replace(/_/g, '/')
-    const padLen = (4 - (padded.length % 4)) % 4
-    const base64 = padded + '='.repeat(padLen)
-    if (typeof Buffer !== 'undefined') {
-        return Buffer.from(base64, 'base64').toString('utf8')
-    }
-    return decodeURIComponent(escape(atob(base64)))
 }

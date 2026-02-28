@@ -21,7 +21,7 @@ npm i atoma
 
 Peer 依赖：
 - `immer`
-- 服务端 adapter：`typeorm` / `@prisma/client`（按需）
+- 服务端 adapter：`@prisma/client`（按需）
 
 ## 快速开始（client + React）
 

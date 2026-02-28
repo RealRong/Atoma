@@ -15,10 +15,6 @@
             "types": "./dist/adapters/index.d.ts",
             "import": "./dist/adapters/index.js"
         },
-        "./adapters/typeorm": {
-            "types": "./dist/adapters/typeorm/index.d.ts",
-            "import": "./dist/adapters/typeorm/index.js"
-        },
         "./adapters/prisma": {
             "types": "./dist/adapters/prisma/index.d.ts",
             "import": "./dist/adapters/prisma/index.js"
@@ -33,14 +29,10 @@
         "atoma-shared": "workspace:*"
     },
     "peerDependencies": {
-        "@prisma/client": "^5.0.0",
-        "typeorm": "^0.3.20"
+        "@prisma/client": "^5.0.0"
     },
     "peerDependenciesMeta": {
         "@prisma/client": {
-            "optional": true
-        },
-        "typeorm": {
             "optional": true
         }
     }

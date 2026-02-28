@@ -1,8 +1,6 @@
 import type {
     AtomaServerConfig,
-    AtomaServerRoute,
-    AtomaOpsPlugin,
-    AtomaRoutePlugin
+    AtomaServerRoute
 } from './config'
 import type { HandleResult } from './runtime/http'
 import { createRuntimeFactory } from './runtime/createRuntime'
@@ -130,15 +128,64 @@ type PluginRuntime<Ctx> = {
     logger: any
 }
 
+async function invokeOnResponseSafely(args: {
+    runtime: any
+    route: AtomaServerRoute
+    method: string
+    pathname: string
+    status: number
+}) {
+    if (!args.runtime.hooks?.onResponse) return
+
+    try {
+        await args.runtime.hooks.onResponse({ ...args.runtime.hookArgs, status: args.status })
+    } catch (err) {
+        args.runtime.logger?.error?.('onResponse hook failed', {
+            route: args.route,
+            method: args.method,
+            pathname: args.pathname,
+            status: args.status,
+            error: serializeErrorForLog(err)
+        })
+    }
+}
+
+async function invokeOnErrorSafely(args: {
+    runtime: any
+    route: AtomaServerRoute
+    method: string
+    pathname: string
+    error: unknown
+}) {
+    if (!args.runtime.hooks?.onError) return
+
+    try {
+        await args.runtime.hooks.onError({ ...args.runtime.hookArgs, error: args.error })
+    } catch (hookErr) {
+        args.runtime.logger?.error?.('onError hook failed', {
+            route: args.route,
+            method: args.method,
+            pathname: args.pathname,
+            error: serializeErrorForLog(hookErr),
+            sourceError: serializeErrorForLog(args.error)
+        })
+    }
+}
+
 function composeResponsePlugins<Ctx>(
     plugins: Array<(ctx: any, next: () => Promise<Response>) => Promise<Response>>
 ) {
+    if (!plugins.length) {
+        return (_ctx: any, next: () => Promise<Response>) => next()
+    }
+
     return (ctx: any, next: () => Promise<Response>) => {
-        const dispatch = plugins.reduceRight<() => Promise<Response>>(
-            (nextFn, plugin) => () => plugin(ctx, nextFn),
-            next
-        )
-        return dispatch()
+        const execute = (index: number): Promise<Response> => {
+            if (index >= plugins.length) return next()
+            return plugins[index](ctx, () => execute(index + 1))
+        }
+
+        return execute(0)
     }
 }
 
@@ -178,6 +225,10 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
     const syncStreamExecutor = createSyncRxdbStreamExecutor({
         config
     })
+    const runOpsResponsePlugins = composeResponsePlugins<Ctx>(config.plugins?.ops ?? [])
+    const runPullResponsePlugins = composeResponsePlugins<Ctx>(config.plugins?.syncRxdbPull ?? [])
+    const runPushResponsePlugins = composeResponsePlugins<Ctx>(config.plugins?.syncRxdbPush ?? [])
+    const runStreamResponsePlugins = composeResponsePlugins<Ctx>(config.plugins?.syncRxdbStream ?? [])
 
     const runWithRuntime = async (args: {
         request: Request
@@ -186,7 +237,7 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
         pathname: string
         initialTraceId?: string
         initialRequestId?: string
-        plugins?: Array<AtomaOpsPlugin<Ctx> | AtomaRoutePlugin<Ctx>>
+        runResponsePlugins: (ctx: any, next: () => Promise<Response>) => Promise<Response>
         run: (runtime: any) => Promise<Response>
     }): Promise<Response> => {
         let runtime: any
@@ -217,12 +268,18 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
         try {
             if (runtime.hooks?.onRequest) await runtime.hooks.onRequest({ ...runtime.hookArgs, incoming: args.request })
 
-            const response = await composeResponsePlugins<Ctx>(args.plugins ?? [])(
+            const response = await args.runResponsePlugins(
                 { request: args.request, route: args.route, runtime: pluginRuntime },
                 () => args.run(runtime)
             )
 
-            if (runtime.hooks?.onResponse) await runtime.hooks.onResponse({ ...runtime.hookArgs, status: response.status })
+            await invokeOnResponseSafely({
+                runtime,
+                route: args.route,
+                method: args.method,
+                pathname: args.pathname,
+                status: response.status
+            })
             return response
         } catch (err: any) {
             runtime.logger?.error?.('request failed', {
@@ -231,7 +288,13 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
                 pathname: args.pathname,
                 error: serializeErrorForLog(err)
             })
-            if (runtime.hooks?.onError) await runtime.hooks.onError({ ...runtime.hookArgs, error: err })
+            await invokeOnErrorSafely({
+                runtime,
+                route: args.route,
+                method: args.method,
+                pathname: args.pathname,
+                error: err
+            })
 
             const formatted = formatTopLevelError({
                 route: args.route,
@@ -241,7 +304,13 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
                 error: err
             })
             const response = handleResultToResponse(formatted)
-            if (runtime.hooks?.onResponse) await runtime.hooks.onResponse({ ...runtime.hookArgs, status: response.status })
+            await invokeOnResponseSafely({
+                runtime,
+                route: args.route,
+                method: args.method,
+                pathname: args.pathname,
+                status: response.status
+            })
             return response
         }
     }
@@ -257,7 +326,7 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
                 route: { kind: 'ops' },
                 method,
                 pathname,
-                plugins: config.plugins?.ops,
+                runResponsePlugins: runOpsResponsePlugins,
                 run: async (runtime) => {
                     const incoming = toIncoming(request)
                     const result = await opsExecutor.handle({
@@ -285,7 +354,7 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
                 pathname,
                 initialTraceId,
                 initialRequestId,
-                plugins: config.plugins?.syncRxdbPull,
+                runResponsePlugins: runPullResponsePlugins,
                 run: async (runtime) => {
                     const incoming = toIncoming(request)
                     const result = await syncPullExecutor.handle({
@@ -311,7 +380,7 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
                 pathname,
                 initialTraceId,
                 initialRequestId,
-                plugins: config.plugins?.syncRxdbPush,
+                runResponsePlugins: runPushResponsePlugins,
                 run: async (runtime) => {
                     const incoming = toIncoming(request)
                     const result = await syncPushExecutor.handle({
@@ -337,7 +406,7 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
                 pathname,
                 initialTraceId,
                 initialRequestId,
-                plugins: config.plugins?.syncRxdbStream,
+                runResponsePlugins: runStreamResponsePlugins,
                 run: async (runtime) => {
                     const incoming = toIncoming(request)
                     const result = await syncStreamExecutor.handle({

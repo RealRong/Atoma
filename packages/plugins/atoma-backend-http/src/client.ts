@@ -1,6 +1,5 @@
 import { HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
 import type { RemoteOpsResponseData } from 'atoma-types/protocol'
-import { fetchWithRetry } from 'atoma-shared'
 import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-types/client/ops'
 import { BatchEngine } from './batch'
 import { createTransport } from './transport'
@@ -58,14 +57,8 @@ export class HttpOperationClient {
         }
 
         this.transport = createTransport({
-            fetchFn: async (input, init) => {
-                return await fetchWithRetry({
-                    fetchFn: this.fetchFn,
-                    input,
-                    init,
-                    retry: this.retry
-                })
-            },
+            fetchFn: this.fetchFn,
+            retry: this.retry,
             getHeaders: this.getHeaders,
             interceptors: config.interceptors
         })

@@ -21,7 +21,7 @@ npm i atoma
 
 Peer deps:
 - `immer`
-- Server-side adapters: `typeorm` and/or `@prisma/client` (optional)
+- Server-side adapter: `@prisma/client` (optional)
 
 ## Quick start (client + React)
 

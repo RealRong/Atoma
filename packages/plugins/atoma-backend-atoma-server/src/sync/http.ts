@@ -1,4 +1,4 @@
-import { fetchWithRetry, hasHeader, isRecord, joinUrl } from 'atoma-shared'
+import { isRecord, requestJson } from 'atoma-shared'
 import type { Envelope, RemoteOpsResponseData } from 'atoma-types/protocol'
 import type { AtomaServerBackendPluginOptions } from '../types'
 
@@ -13,28 +13,20 @@ export async function postJson<T>(args: {
     onResponse?: AtomaServerBackendPluginOptions['onResponse']
     parser: (payload: unknown) => T
 }): Promise<T> {
-    const headers = await resolveHeaders(args.headers)
-    if (!hasHeader(headers, 'content-type')) {
-        headers['content-type'] = 'application/json; charset=utf-8'
-    }
-    let request = new Request(joinUrl(args.baseURL, args.path), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(args.request)
-    })
-    if (typeof args.onRequest === 'function') {
-        const nextRequest = await args.onRequest(request)
-        if (nextRequest instanceof Request) {
-            request = nextRequest
-        }
-    }
-
-    const response = await fetchWithRetry({
+    const { request, response, payload } = await requestJson({
+        baseURL: args.baseURL,
+        path: args.path,
         fetchFn: args.fetchFn,
-        input: request,
-        retry: args.retry
+        headers: args.headers,
+        retry: args.retry,
+        onRequest: args.onRequest,
+        method: 'POST',
+        body: args.request,
+        defaultContentType: 'application/json; charset=utf-8',
+        jsonMode: 'strict',
+        emptyJsonValue: {},
+        invalidJsonMessage: '[Sync] response body is not valid JSON'
     })
-    const payload = await readJson(response)
 
     if (typeof args.onResponse === 'function') {
         args.onResponse({
@@ -66,34 +58,6 @@ export function resolveFetch(
     }
 
     throw new Error('[Sync] fetch is not available')
-}
-
-async function resolveHeaders(
-    provider: AtomaServerBackendPluginOptions['headers']
-): Promise<Record<string, string>> {
-    if (!provider) return {}
-
-    const value = await provider()
-    if (!isRecord(value)) return {}
-
-    const headers: Record<string, string> = {}
-    for (const [key, raw] of Object.entries(value)) {
-        if (!key) continue
-        if (raw === undefined || raw === null) continue
-        headers[String(key)] = String(raw)
-    }
-    return headers
-}
-
-async function readJson(response: Response): Promise<unknown> {
-    const text = await response.text()
-    if (!text.trim()) return {}
-
-    try {
-        return JSON.parse(text)
-    } catch {
-        throw new Error('[Sync] response body is not valid JSON')
-    }
 }
 
 function createSyncEnvelope(args: {

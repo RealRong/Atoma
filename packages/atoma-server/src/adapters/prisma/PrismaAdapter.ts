@@ -12,6 +12,8 @@ import {
     encodeCursorToken,
     ensureStableOrderBy,
     getCursorValuesFromRow,
+    isSameSort,
+    readNullCursorField,
     reverseOrderBy
 } from '../shared/keyset'
 import { createError, isAtomaError, throwError } from '../../error'
@@ -151,7 +153,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
 
         const cursorRow = cursor?.before ? finalRows[0] : finalRows[finalRows.length - 1]
         const nextCursor = cursorRow
-            ? encodeCursorToken(getCursorValuesFromRow(cursorRow, orderBy), orderBy)
+            ? this.encodePageCursor(cursorRow, orderBy)
             : undefined
 
         return {
@@ -190,44 +192,65 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             throw new Error('update requires id and data object')
         }
 
-        const run = async (client: PrismaClientLike) => {
-            const delegate = this.requireDelegateFromClient(client, resource, 'update')
-            const current = await this.findOneByKey(client, resource, this.idField, item.id)
-            if (!current) {
-                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(item.id) })
-            }
+        const client = this.client
+        const delegate = this.requireDelegateFromClient(client, resource, 'update')
+        const hasBaseVersion = typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)
 
-            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)) {
+        if (hasBaseVersion) {
+            const baseVersion = Math.floor(item.baseVersion as number)
+            const updateManyDelegate = this.requireDelegateFromClient(client, resource, 'updateMany')
+
+            const next = {
+                ...(item.data as any),
+                [this.idField]: item.id,
+                version: baseVersion + 1
+            }
+            const data = this.toUpdateData(next, this.idField)
+            const updated = await updateManyDelegate.updateMany!({
+                where: {
+                    [this.idField]: item.id,
+                    version: baseVersion
+                },
+                data
+            })
+
+            if (this.readAffectedCount(updated) <= 0) {
+                const current = await this.findOneByKey(client, resource, this.idField, item.id)
+                if (!current) {
+                    throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(item.id) })
+                }
                 const currentVersion = (current as any).version
                 if (typeof currentVersion !== 'number') {
                     throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
                 }
-                if (currentVersion !== item.baseVersion) {
-                    throwError('CONFLICT', 'Version conflict', {
-                        kind: 'conflict',
-                        resource,
-                        currentVersion,
-                        currentValue: current
-                    })
-                }
+                throwError('CONFLICT', 'Version conflict', {
+                    kind: 'conflict',
+                    resource,
+                    currentVersion,
+                    currentValue: current
+                })
             }
 
-            const baseVersion = (current as any).version
-            const next = { ...(item.data as any), [this.idField]: item.id }
-            if (typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion) && typeof baseVersion === 'number') {
-                next.version = baseVersion + 1
+            if (options.returning === false) {
+                return { data: undefined, transactionApplied: this.inTransaction }
             }
-
-            const data = this.toUpdateData(next, this.idField)
-            const row = await delegate.update!({
-                where: { [this.idField]: item.id },
-                data,
-                select: this.buildSelect(options.select)
-            })
-            return row
+            const row = await this.findOneByKey(
+                client,
+                resource,
+                this.idField,
+                item.id,
+                this.buildSelect(options.select)
+            )
+            return { data: row, transactionApplied: this.inTransaction }
         }
 
-        const row = await run(this.client)
+        const next = { ...(item.data as any), [this.idField]: item.id }
+        const data = this.toUpdateData(next, this.idField)
+        const row = await delegate.update!({
+            where: { [this.idField]: item.id },
+            data,
+            select: this.buildSelect(options.select)
+        })
         return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
     }
 
@@ -240,16 +263,22 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             const id = (whereOrId as any).id
             if (id === undefined) throw new Error('delete requires id')
 
-            const delegate = this.requireDelegateFromClient(this.client, resource, 'delete')
-            const current = await this.findOneByKey(this.client, resource, this.idField, id)
-            if (!current) {
-                throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(id) })
-            }
-            const currentVersion = (current as any).version
-            if (typeof currentVersion !== 'number') {
-                throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
-            }
-            if (currentVersion !== baseVersion) {
+            const delegate = this.requireDelegateFromClient(this.client, resource, 'deleteMany')
+            const deleted = await delegate.deleteMany!({
+                where: {
+                    [this.idField]: id,
+                    version: Math.floor(baseVersion)
+                }
+            })
+            if (this.readAffectedCount(deleted) <= 0) {
+                const current = await this.findOneByKey(this.client, resource, this.idField, id)
+                if (!current) {
+                    throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(id) })
+                }
+                const currentVersion = (current as any).version
+                if (typeof currentVersion !== 'number') {
+                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+                }
                 throwError('CONFLICT', 'Version conflict', {
                     kind: 'conflict',
                     resource,
@@ -257,8 +286,6 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                     currentValue: current
                 })
             }
-
-            await delegate.delete!({ where: { [this.idField]: id } })
             return { data: undefined, transactionApplied: this.inTransaction }
         }
 
@@ -281,6 +308,8 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const apply: 'merge' | 'replace' = item.apply === 'replace' ? 'replace' : 'merge'
         const id = item?.id
         if (id === undefined) throw new Error('upsert requires id')
+        const client = this.client
+        const updateDelegate = this.requireDelegateFromClient(client, resource, 'updateMany')
 
         const candidate = (item?.data && typeof item.data === 'object' && !Array.isArray(item.data))
             ? { ...(item.data as any), [this.idField]: id }
@@ -292,35 +321,28 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             return data
         }
 
-        if (conflict === 'lww' && apply === 'merge') {
-            const delegate = this.requireDelegate(resource, 'upsert')
-            const createData = ensureCreateVersion(candidate)
-            const updateData = this.toUpdateData(candidate, this.idField)
-            const row = await delegate.upsert!({
-                where: { [this.idField]: id },
-                create: createData,
-                update: {
-                    ...updateData,
-                    // lww + merge: 保持 version 单调递增
-                    version: { increment: 1 }
-                },
-                select: this.buildSelect(options.select)
-            })
-            return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
+        const fetchReturning = async () => {
+            if (options.returning === false) return undefined
+            return this.findOneByKey(
+                client,
+                resource,
+                this.idField,
+                id,
+                this.buildSelect(options.select)
+            )
         }
 
-        const current = await this.findOneByKey(this.client, resource, this.idField, id)
-        if (!current) {
-            return this.create(resource, ensureCreateVersion(candidate), options)
-        }
-
-        const currentVersion = (current as any)?.version
-        if (typeof currentVersion !== 'number') {
-            throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
-        }
-
-        const expectedVersion = item.expectedVersion
         if (conflict === 'cas') {
+            const expectedVersion = item.expectedVersion
+            const current = await this.findOneByKey(client, resource, this.idField, id)
+            if (!current) {
+                return this.create(resource, ensureCreateVersion(candidate), options)
+            }
+
+            const currentVersion = (current as any)?.version
+            if (typeof currentVersion !== 'number') {
+                throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+            }
             if (!(typeof expectedVersion === 'number' && Number.isFinite(expectedVersion))) {
                 throwError('CONFLICT', 'CAS upsert requires expectedVersion for existing entity', {
                     kind: 'conflict',
@@ -339,22 +361,89 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
                     currentValue: current
                 })
             }
+
+            const nextVersion = Math.floor(expectedVersion) + 1
+            const next = apply === 'merge'
+                ? { ...(current as any), ...(candidate as any), [this.idField]: id, version: nextVersion }
+                : { ...(candidate as any), [this.idField]: id, version: nextVersion, createdAt: (current as any)?.createdAt }
+
+            const updated = await updateDelegate.updateMany!({
+                where: {
+                    [this.idField]: id,
+                    version: Math.floor(expectedVersion)
+                },
+                data: this.toUpdateData(next, this.idField)
+            })
+            if (this.readAffectedCount(updated) <= 0) {
+                const latest = await this.findOneByKey(client, resource, this.idField, id)
+                if (!latest) {
+                    throwError('CONFLICT', 'Version conflict', {
+                        kind: 'conflict',
+                        resource,
+                        id: String(id),
+                        hint: 'rebase'
+                    } as any)
+                }
+                const latestVersion = (latest as any)?.version
+                if (typeof latestVersion !== 'number') {
+                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+                }
+                throwError('CONFLICT', 'Version conflict', {
+                    kind: 'conflict',
+                    resource,
+                    currentVersion: latestVersion,
+                    currentValue: latest
+                })
+            }
+
+            return {
+                data: await fetchReturning(),
+                transactionApplied: this.inTransaction
+            }
         }
 
-        const nextVersion = conflict === 'cas'
-            ? (expectedVersion as number) + 1
-            : currentVersion + 1
-        const next = apply === 'merge'
-            ? { ...(current as any), ...(candidate as any), [this.idField]: id, version: nextVersion }
-            : { ...(candidate as any), [this.idField]: id, version: nextVersion, createdAt: (current as any)?.createdAt }
-        const delegate = this.requireDelegate(resource, 'update')
-        const row = await delegate.update!({
-            where: { [this.idField]: id },
-            data: this.toUpdateData(next, this.idField),
-            select: this.buildSelect(options.select)
-        })
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+            const current = await this.findOneByKey(client, resource, this.idField, id)
+            if (!current) {
+                try {
+                    return this.create(resource, ensureCreateVersion(candidate), options)
+                } catch (error) {
+                    if (!this.isUniqueViolation(error)) throw error
+                    continue
+                }
+            }
 
-        return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
+            const currentVersion = (current as any)?.version
+            if (typeof currentVersion !== 'number' || !Number.isFinite(currentVersion)) {
+                throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
+            }
+
+            const nextVersion = Math.floor(currentVersion) + 1
+            const next = apply === 'merge'
+                ? { ...(current as any), ...(candidate as any), [this.idField]: id, version: nextVersion }
+                : { ...(candidate as any), [this.idField]: id, version: nextVersion, createdAt: (current as any)?.createdAt }
+
+            const updated = await updateDelegate.updateMany!({
+                where: {
+                    [this.idField]: id,
+                    version: Math.floor(currentVersion)
+                },
+                data: this.toUpdateData(next, this.idField)
+            })
+            if (this.readAffectedCount(updated) <= 0) continue
+
+            return {
+                data: await fetchReturning(),
+                transactionApplied: this.inTransaction
+            }
+        }
+
+        throwError('CONFLICT', 'Version conflict', {
+            kind: 'conflict',
+            resource,
+            id: String(id),
+            hint: 'rebase'
+        } as any)
     }
 
     async bulkUpsert(
@@ -521,7 +610,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
 
     private normalizeWhereOrId(whereOrId: any) {
         if (whereOrId && typeof whereOrId === 'object' && !Array.isArray(whereOrId)) return whereOrId
-        return { id: whereOrId }
+        return { [this.idField]: whereOrId }
     }
 
     // 事务由 IOrmAdapter.transaction 作为宿主统一管理（不在单个方法内隐式开启事务）
@@ -532,13 +621,31 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return createError('INTERNAL', 'Internal error', { kind: 'adapter' })
     }
 
-    private async findOneByKey(client: PrismaClientLike, resource: string, field: string, value: any) {
+    private async findOneByKey(
+        client: PrismaClientLike,
+        resource: string,
+        field: string,
+        value: any,
+        select?: Record<string, boolean>
+    ) {
         const delegate = this.requireDelegateFromClient(client, resource, 'findMany')
         const list = await delegate.findMany({
             where: { [field]: value },
+            ...(select ? { select } : {}),
             take: 1
         })
         return Array.isArray(list) ? list[0] : undefined
+    }
+
+    private readAffectedCount(value: any): number {
+        if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value))
+        const count = Number((value as any)?.count)
+        if (Number.isFinite(count)) return Math.max(0, Math.floor(count))
+        return 0
+    }
+
+    private isUniqueViolation(error: unknown): boolean {
+        return Boolean(error && typeof error === 'object' && (error as any).code === 'P2002')
     }
 
     private toUpdateData(row: any, idField: string) {
@@ -560,13 +667,20 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         const before = cursor.before
         const token = cursor.token
         const queryOrderBy = before ? reverseOrderBy(orderBy) : orderBy
-        let values: any[]
+        let decoded: ReturnType<typeof decodeCursorToken>
         try {
-            values = decodeCursorToken(token)
+            decoded = decodeCursorToken(token)
         } catch {
             throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path: before ? 'before' : 'after' })
         }
-        const keysetWhere = this.buildPrismaKeysetWhere(queryOrderBy, values, before ? 'before' : 'after')
+
+        const path = before ? 'before' : 'after'
+        if (!isSameSort(decoded.sort, orderBy)) {
+            throwError('INVALID_QUERY', 'Cursor token sort does not match query.sort', { kind: 'validation', path })
+        }
+        this.assertCursorValuesComparable(decoded.values, orderBy, path)
+
+        const keysetWhere = this.buildPrismaKeysetWhere(queryOrderBy, decoded.values, path)
 
         return {
             prismaOrderBy: this.buildOrderBy(queryOrderBy),
@@ -597,5 +711,25 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     private andWhere(a: any, b: any) {
         if (a && b) return { AND: [a, b] }
         return a || b
+    }
+
+    private encodePageCursor(row: any, orderBy: SortRule[]) {
+        const values = getCursorValuesFromRow(row, orderBy)
+        this.assertCursorValuesComparable(values, orderBy, 'page.cursor')
+        return encodeCursorToken(values, orderBy)
+    }
+
+    private assertCursorValuesComparable(values: unknown[], orderBy: SortRule[], path: string) {
+        if (values.length < orderBy.length) {
+            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path })
+        }
+        const nullField = readNullCursorField(values, orderBy)
+        if (nullField) {
+            throwError('INVALID_QUERY', 'Cursor pagination does not support null sort values', {
+                kind: 'validation',
+                path,
+                field: nullField
+            })
+        }
     }
 }

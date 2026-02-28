@@ -1,6 +1,7 @@
 import type { Envelope, Meta, RemoteOp, RemoteOpsResponseData } from 'atoma-types/protocol'
 import { parseEnvelope } from 'atoma-types/protocol-tools'
-import { hasHeader, joinUrl } from 'atoma-shared'
+import { requestJson } from 'atoma-shared'
+import type { RetryOptions } from 'atoma-shared'
 
 export type HttpInterceptors<T> = {
     onRequest?: (request: Request) => Promise<Request | void> | Request | void
@@ -21,29 +22,9 @@ export type ExecuteOperationRequest = {
     signal?: AbortSignal
 }
 
-async function resolveHeaders(
-    getBaseHeaders: () => Promise<Record<string, string>>,
-    extraHeaders?: Record<string, string>
-): Promise<Record<string, string>> {
-    const baseHeaders = await getBaseHeaders()
-    return extraHeaders ? { ...baseHeaders, ...extraHeaders } : baseHeaders
-}
-
-async function parseResponseJson(response: Response): Promise<unknown> {
-    if (response.status === 204) return null
-
-    try {
-        if (typeof (response as { clone?: () => Response }).clone === 'function') {
-            return await response.clone().json()
-        }
-        return await response.json()
-    } catch {
-        return null
-    }
-}
-
 export function createTransport(deps: {
     fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+    retry?: RetryOptions
     getHeaders: () => Promise<Record<string, string>>
     interceptors?: HttpInterceptors<RemoteOpsResponseData>
 }) {
@@ -56,28 +37,26 @@ export function createTransport(deps: {
         response: Response
         results: RemoteOpsResponseData['results']
     }> => {
-        const headers = await resolveHeaders(deps.getHeaders, args.extraHeaders)
-        if (!hasHeader(headers, 'Content-Type')) {
-            headers['Content-Type'] = 'application/json'
-        }
-
-        let request = new Request(joinUrl(args.baseURL, args.endpointPath), {
+        const { response, request, payload } = await requestJson({
+            baseURL: args.baseURL,
+            path: args.endpointPath,
+            fetchFn: deps.fetchFn,
+            retry: deps.retry,
+            headers: deps.getHeaders,
+            extraHeaders: args.extraHeaders,
             method: 'POST',
-            headers,
-            body: JSON.stringify({
+            body: {
                 meta: args.meta,
                 ops: args.ops
-            } satisfies { meta: Meta; ops: RemoteOp[] }),
-            signal: args.signal
+            } satisfies { meta: Meta; ops: RemoteOp[] },
+            signal: args.signal,
+            defaultContentType: 'application/json',
+            jsonMode: 'loose',
+            emptyJsonValue: null,
+            preserveResponseBody: true,
+            onRequest: deps.interceptors?.onRequest
         })
-
-        if (deps.interceptors?.onRequest) {
-            const nextRequest = await deps.interceptors.onRequest(request)
-            if (nextRequest instanceof Request) request = nextRequest
-        }
-
-        const response = await deps.fetchFn(request)
-        const envelope = await responseParser(response, await parseResponseJson(response))
+        const envelope = await responseParser(response, payload)
 
         deps.interceptors?.onResponse?.({
             response,

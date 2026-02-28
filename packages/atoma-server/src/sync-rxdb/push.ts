@@ -102,6 +102,14 @@ export function createSyncRxdbPushExecutor<Ctx>(args: {
 
                 if (result.ok) continue
 
+                if (result.error.kind !== 'conflict' && result.error.code !== 'CONFLICT') {
+                    const details = toThrowErrorDetails(result.error)
+                    throwError(result.error.code, result.error.message, {
+                        kind: result.error.kind,
+                        ...(details ? details : {})
+                    } as any)
+                }
+
                 conflicts.push(await resolveConflictDocument({
                     config: args.config,
                     resource,
@@ -140,6 +148,13 @@ function parsePushRequest(input: unknown): SyncPushRequest {
 function toThrowDetails(details: unknown): Record<string, unknown> | undefined {
     if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
     return details as Record<string, unknown>
+}
+
+function toThrowErrorDetails(error: { details?: unknown; kind: string }): Record<string, unknown> | undefined {
+    const details = error.details
+    if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
+    const { kind: _kind, ...rest } = details as Record<string, unknown>
+    return Object.keys(rest).length ? rest : undefined
 }
 
 async function resolveConflictDocument<Ctx>(args: {

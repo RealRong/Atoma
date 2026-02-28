@@ -4,9 +4,9 @@ import { disposeInReverse } from 'atoma-shared'
 import { OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN } from 'atoma-types/client/ops'
 import { SYNC_TRANSPORT_TOKEN } from 'atoma-types/client/sync'
 import type { ClientPlugin } from 'atoma-types/client/plugins'
-import { createSyncTransport } from './sync/createSyncTransport'
+import { createSyncTransport } from './sync/transport'
 import type { AtomaServerBackendPluginOptions } from './types'
-import { createWriteCoordinator } from './write/createWriteCoordinator'
+import { createWriteCoordinator } from './write/coordinator'
 
 function normalizeBaseUrl(baseURL: string): string {
     const url = String(baseURL ?? '').trim()

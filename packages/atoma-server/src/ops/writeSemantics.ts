@@ -129,6 +129,280 @@ function requiredSelectFields(kind: WriteKind): string[] {
     return []
 }
 
+function readStoredWriteReplay(value: unknown): StoredWriteReplay | undefined {
+    if (!value || typeof value !== 'object') return undefined
+    const kind = (value as any).kind
+    if (kind !== 'write') return undefined
+    const replay = (value as any).value
+    if (!replay || typeof replay !== 'object') return undefined
+    const replayKind = (replay as any).kind
+    if (replayKind !== 'ok' && replayKind !== 'error') return undefined
+    return replay as StoredWriteReplay
+}
+
+type WriteExecutionContext = {
+    orm: IOrmAdapter
+    sync?: ISyncAdapter
+    tx?: unknown
+    syncEnabled: boolean
+    changedAt: number
+    write: ExecuteArgs['write']
+    options: WriteOptions
+    internalSelect?: Record<string, boolean>
+    returningRequested: boolean
+}
+
+type WriteExecutionSuccess = {
+    replay: OkReplay
+    data?: unknown
+    change?: AtomaChange
+}
+
+async function appendChangeIfEnabled(args: {
+    syncEnabled: boolean
+    sync?: ISyncAdapter
+    tx?: unknown
+    resource: string
+    id: string
+    kind: ChangeKind
+    serverVersion: number
+    changedAt: number
+}): Promise<AtomaChange | undefined> {
+    if (!args.syncEnabled) return undefined
+    return args.sync!.appendChange({
+        resource: args.resource,
+        id: args.id,
+        kind: args.kind,
+        serverVersion: args.serverVersion,
+        changedAt: args.changedAt
+    }, args.tx)
+}
+
+async function executeCreateWrite(ctx: WriteExecutionContext): Promise<WriteExecutionSuccess> {
+    const { orm, write } = ctx
+    if (typeof orm.create !== 'function' && typeof (orm as any).bulkCreate !== 'function') {
+        throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement create', { kind: 'adapter' })
+    }
+
+    const data = write.data && typeof write.data === 'object' ? { ...(write.data as any) } : {}
+    if (write.id !== undefined) (data as any).id = write.id
+    const v = (data as any).version
+    if (!(typeof v === 'number' && Number.isFinite(v) && v >= 1)) (data as any).version = 1
+
+    const row = await (async () => {
+        if (typeof orm.create === 'function') {
+            const res = await orm.create(write.resource, data, { returning: true, ...(ctx.internalSelect ? { select: ctx.internalSelect } : {}) } as any)
+            if (res?.error) throw res.error
+            return res?.data
+        }
+        const res = await (orm as any).bulkCreate(write.resource, [data], { returning: true, ...(ctx.internalSelect ? { select: ctx.internalSelect } : {}) } as any)
+        const r0 = res?.resultsByIndex?.[0]
+        if (!r0) throw new Error('bulkCreate returned empty resultsByIndex')
+        if (!r0.ok) throw r0.error
+        return r0.data
+    })()
+
+    const expectedId = write.id !== undefined ? normalizeId(write.id) : ''
+    const actualId = normalizeId((row as any)?.id)
+
+    if (write.id !== undefined && actualId && expectedId && actualId !== expectedId) {
+        throwError('INTERNAL', `Create returned mismatched id (expected=${expectedId}, actual=${actualId})`, {
+            kind: 'internal',
+            resource: write.resource
+        })
+    }
+
+    if (write.id === undefined && !actualId) {
+        throwError('INTERNAL', 'Create returned missing id', { kind: 'internal', resource: write.resource })
+    }
+
+    const id = write.id !== undefined
+        ? expectedId
+        : actualId
+    const serverVersion = typeof (row as any)?.version === 'number' ? (row as any).version : 1
+    const change = await appendChangeIfEnabled({
+        syncEnabled: ctx.syncEnabled,
+        sync: ctx.sync,
+        tx: ctx.tx,
+        resource: write.resource,
+        id,
+        kind: 'upsert',
+        serverVersion,
+        changedAt: ctx.changedAt
+    })
+    const replay: OkReplay = {
+        kind: 'ok',
+        resource: write.resource,
+        id,
+        changeKind: 'upsert',
+        serverVersion,
+        ...(change ? { cursor: change.cursor } : {}),
+        data: row
+    }
+
+    return { replay, data: row, ...(change ? { change } : {}) }
+}
+
+async function executeUpsertWrite(ctx: WriteExecutionContext): Promise<WriteExecutionSuccess> {
+    const { orm, write } = ctx
+    if (typeof orm.upsert !== 'function') {
+        throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement upsert', { kind: 'adapter' })
+    }
+    if (write.id === undefined) {
+        throwError('INVALID_WRITE', 'Missing id for upsert', { kind: 'validation', resource: write.resource })
+    }
+
+    const conflict: 'cas' | 'lww' = (ctx.options as any)?.upsert?.conflict === 'lww' ? 'lww' : 'cas'
+    const apply: 'merge' | 'replace' = (ctx.options as any)?.upsert?.apply === 'replace' ? 'replace' : 'merge'
+    const id = normalizeId(write.id)
+    const data = (write.data && typeof write.data === 'object' && !Array.isArray(write.data))
+        ? { ...(write.data as any) }
+        : {}
+
+    // upsert 必须能产出 version（即使 options.returning=false），否则协议无法返回 version
+    const res = await orm.upsert(
+        write.resource,
+        {
+            id,
+            data,
+            expectedVersion: write.expectedVersion,
+            conflict,
+            apply
+        } as any,
+        { ...ctx.options, returning: true, ...(ctx.internalSelect ? { select: ctx.internalSelect } : {}) } as any
+    )
+    if (res?.error) throw res.error
+
+    const row = res?.data
+    const rowVersion = typeof (row as any)?.version === 'number' ? (row as any).version : undefined
+    if (!(typeof rowVersion === 'number' && Number.isFinite(rowVersion) && rowVersion >= 1)) {
+        throwError('INTERNAL', 'Upsert returned missing version', { kind: 'internal', resource: write.resource })
+    }
+    const serverVersion = rowVersion
+    const change = await appendChangeIfEnabled({
+        syncEnabled: ctx.syncEnabled,
+        sync: ctx.sync,
+        tx: ctx.tx,
+        resource: write.resource,
+        id,
+        kind: 'upsert',
+        serverVersion,
+        changedAt: ctx.changedAt
+    })
+    const replay: OkReplay = {
+        kind: 'ok',
+        resource: write.resource,
+        id,
+        changeKind: 'upsert',
+        serverVersion,
+        ...(change ? { cursor: change.cursor } : {}),
+        ...(ctx.returningRequested ? { data: row } : {})
+    }
+
+    return { replay, ...(ctx.returningRequested ? { data: row } : {}), ...(change ? { change } : {}) }
+}
+
+async function executeUpdateWrite(ctx: WriteExecutionContext): Promise<WriteExecutionSuccess> {
+    const { orm, write } = ctx
+    if (typeof orm.update !== 'function') {
+        throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement update', { kind: 'adapter' })
+    }
+    if (write.id === undefined) {
+        throwError('INVALID_WRITE', 'Missing id for update', { kind: 'validation', resource: write.resource })
+    }
+    if (typeof write.baseVersion !== 'number' || !Number.isFinite(write.baseVersion) || write.baseVersion <= 0) {
+        throwError('INVALID_WRITE', 'Missing baseVersion for update', { kind: 'validation', resource: write.resource })
+    }
+
+    const rawId = write.id
+    const id = normalizeId(rawId)
+    const data = (write.data && typeof write.data === 'object' && !Array.isArray(write.data))
+        ? { ...(write.data as any) }
+        : {}
+
+    // update 必须能产出 version（即使 options.returning=false），否则协议无法返回 version
+    const res = await orm.update(
+        write.resource,
+        { id: rawId, data, baseVersion: write.baseVersion } as any,
+        { ...ctx.options, returning: true, ...(ctx.internalSelect ? { select: ctx.internalSelect } : {}) } as any
+    )
+    if (res?.error) throw res.error
+
+    const row = res?.data
+    const serverVersion = typeof (row as any)?.version === 'number'
+        ? (row as any).version
+        : (typeof write.baseVersion === 'number' && Number.isFinite(write.baseVersion) ? write.baseVersion + 1 : 1)
+    const change = await appendChangeIfEnabled({
+        syncEnabled: ctx.syncEnabled,
+        sync: ctx.sync,
+        tx: ctx.tx,
+        resource: write.resource,
+        id,
+        kind: 'upsert',
+        serverVersion,
+        changedAt: ctx.changedAt
+    })
+    const replay: OkReplay = {
+        kind: 'ok',
+        resource: write.resource,
+        id,
+        changeKind: 'upsert',
+        serverVersion,
+        ...(change ? { cursor: change.cursor } : {}),
+        data: row
+    }
+
+    return { replay, data: row, ...(change ? { change } : {}) }
+}
+
+async function executeDeleteWrite(ctx: WriteExecutionContext): Promise<WriteExecutionSuccess> {
+    const { orm, write } = ctx
+    if (typeof orm.delete !== 'function') {
+        throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement delete', { kind: 'adapter' })
+    }
+    if (write.id === undefined) {
+        throwError('INVALID_WRITE', 'Missing id for delete', { kind: 'validation', resource: write.resource })
+    }
+    if (typeof write.baseVersion !== 'number' || !Number.isFinite(write.baseVersion)) {
+        throwError('INVALID_WRITE', 'Missing baseVersion for delete', { kind: 'validation', resource: write.resource })
+    }
+
+    const res = await orm.delete(write.resource, { id: write.id, baseVersion: write.baseVersion } as any, { returning: false } as any)
+    if (res?.error) throw res.error
+
+    const id = normalizeId(write.id)
+    const serverVersion = write.baseVersion + 1
+    const change = await appendChangeIfEnabled({
+        syncEnabled: ctx.syncEnabled,
+        sync: ctx.sync,
+        tx: ctx.tx,
+        resource: write.resource,
+        id,
+        kind: 'delete',
+        serverVersion,
+        changedAt: ctx.changedAt
+    })
+    const replay: OkReplay = {
+        kind: 'ok',
+        resource: write.resource,
+        id,
+        changeKind: 'delete',
+        serverVersion,
+        ...(change ? { cursor: change.cursor } : {})
+    }
+
+    return { replay, ...(change ? { change } : {}) }
+}
+
+async function executeWriteByKind(ctx: WriteExecutionContext): Promise<WriteExecutionSuccess> {
+    if (ctx.write.kind === 'create') return executeCreateWrite(ctx)
+    if (ctx.write.kind === 'upsert') return executeUpsertWrite(ctx)
+    if (ctx.write.kind === 'update') return executeUpdateWrite(ctx)
+    if (ctx.write.kind === 'delete') return executeDeleteWrite(ctx)
+
+    throwError('INVALID_WRITE', 'Unsupported write kind', { kind: 'validation', resource: ctx.write.resource })
+}
+
 export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<ExecuteWriteItemResult> {
     const now = args.now ?? (() => Date.now())
     const { orm, sync, tx, write } = args
@@ -149,19 +423,60 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
         }
     }
 
-    const readIdempotency = async (): Promise<StoredWriteReplay | undefined> => {
-        if (!args.syncEnabled) return undefined
-        if (!idempotencyKey) return undefined
+    const toReplayResult = (replay: StoredWriteReplay): ExecuteWriteItemResult => {
+        if (replay.kind === 'ok') {
+            return {
+                ok: true,
+                status: 200,
+                data: replay.data,
+                replay: replay as OkReplay
+            }
+        }
+        return {
+            ok: false,
+            status: errorStatus(replay.error),
+            error: replay.error,
+            replay: replay as ErrorReplay
+        }
+    }
+
+    const readIdempotencyReplay = async (): Promise<StoredWriteReplay | undefined> => {
+        if (!args.syncEnabled || !idempotencyKey) return undefined
         const hit = await sync!.getIdempotency(idempotencyKey, tx)
         if (!hit.hit) return undefined
-        const body = hit.body
-        if (!body || typeof body !== 'object') return undefined
-        const kind = (body as any).kind
-        if (kind !== 'write') return undefined
-        const value = (body as any).value
-        if (!value || typeof value !== 'object') return undefined
-        if ((value as any).kind !== 'ok' && (value as any).kind !== 'error') return undefined
-        return value as StoredWriteReplay
+        return readStoredWriteReplay(hit.body)
+    }
+
+    const claimIdempotencyOrReplay = async (): Promise<StoredWriteReplay | true> => {
+        if (!args.syncEnabled || !idempotencyKey) return true
+
+        if (typeof sync!.claimIdempotency !== 'function') {
+            const replay = await readIdempotencyReplay()
+            return replay ?? true
+        }
+
+        const claim = await sync!.claimIdempotency(
+            idempotencyKey,
+            { status: 102, body: { kind: 'pending' } },
+            args.idempotencyTtlMs,
+            tx
+        )
+        if (claim.acquired) return true
+
+        const replayFromClaim = readStoredWriteReplay(claim.body)
+        if (replayFromClaim) return replayFromClaim
+
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            await new Promise(resolve => setTimeout(resolve, 20 * (attempt + 1)))
+            const replay = await readIdempotencyReplay()
+            if (replay) return replay
+        }
+
+        throwError('CONFLICT', 'Idempotency key is in progress', {
+            kind: 'conflict',
+            resource: write.resource,
+            ...(write.id !== undefined ? { id: normalizeId(write.id) } : {})
+        } as any)
     }
 
     const writeIdempotency = async (replay: StoredWriteReplay, status: number) => {
@@ -175,249 +490,31 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
         )
     }
 
-    const replayHit = await readIdempotency()
-    if (replayHit) {
-        if (replayHit.kind === 'ok') {
-            return {
-                ok: true,
-                status: 200,
-                data: replayHit.data,
-                replay: replayHit as OkReplay
-            }
-        }
-        return {
-            ok: false,
-            status: errorStatus(replayHit.error),
-            error: replayHit.error,
-            replay: replayHit as ErrorReplay
-        }
-    }
+    const claimResult = await claimIdempotencyOrReplay()
+    if (claimResult !== true) return toReplayResult(claimResult)
 
     try {
         const changedAt = now()
+        const success = await executeWriteByKind({
+            orm,
+            sync,
+            tx,
+            syncEnabled: args.syncEnabled,
+            changedAt,
+            write,
+            options,
+            internalSelect,
+            returningRequested
+        })
 
-        if (write.kind === 'create') {
-            if (typeof orm.create !== 'function' && typeof (orm as any).bulkCreate !== 'function') {
-                throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement create', { kind: 'adapter' })
-            }
-
-            const data = write.data && typeof write.data === 'object' ? { ...(write.data as any) } : {}
-            if (write.id !== undefined) (data as any).id = write.id
-            const v = (data as any).version
-            if (!(typeof v === 'number' && Number.isFinite(v) && v >= 1)) (data as any).version = 1
-
-            const row = await (async () => {
-                if (typeof orm.create === 'function') {
-                    const res = await orm.create(write.resource, data, { returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any)
-                    if (res?.error) throw res.error
-                    return res?.data
-                }
-                const res = await (orm as any).bulkCreate(write.resource, [data], { returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any)
-                const r0 = res?.resultsByIndex?.[0]
-                if (!r0) throw new Error('bulkCreate returned empty resultsByIndex')
-                if (!r0.ok) throw r0.error
-                return r0.data
-            })()
-
-            const expectedId = write.id !== undefined ? normalizeId(write.id) : ''
-            const actualId = normalizeId((row as any)?.id)
-
-            if (write.id !== undefined && actualId && expectedId && actualId !== expectedId) {
-                throwError('INTERNAL', `Create returned mismatched id (expected=${expectedId}, actual=${actualId})`, {
-                    kind: 'internal',
-                    resource: write.resource
-                })
-            }
-
-            if (write.id === undefined && !actualId) {
-                throwError('INTERNAL', 'Create returned missing id', { kind: 'internal', resource: write.resource })
-            }
-
-            const id = write.id !== undefined
-                ? expectedId
-                : actualId
-            const serverVersion = typeof (row as any)?.version === 'number' ? (row as any).version : 1
-
-            let change: AtomaChange | undefined
-            if (args.syncEnabled) {
-                change = await sync!.appendChange({
-                    resource: write.resource,
-                    id,
-                    kind: 'upsert',
-                    serverVersion,
-                    changedAt
-                }, tx)
-            }
-
-            const replay: OkReplay = {
-                kind: 'ok',
-                resource: write.resource,
-                id,
-                changeKind: 'upsert',
-                serverVersion,
-                ...(change ? { cursor: change.cursor } : {}),
-                data: row
-            }
-            await writeIdempotency(replay, 200)
-            return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
+        await writeIdempotency(success.replay, 200)
+        return {
+            ok: true,
+            status: 200,
+            ...(success.data !== undefined ? { data: success.data } : {}),
+            replay: success.replay,
+            ...(success.change ? { change: success.change } : {})
         }
-
-        if (write.kind === 'upsert') {
-            if (typeof orm.upsert !== 'function') {
-                throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement upsert', { kind: 'adapter' })
-            }
-            if (write.id === undefined) {
-                throwError('INVALID_WRITE', 'Missing id for upsert', { kind: 'validation', resource: write.resource })
-            }
-
-            const conflict: 'cas' | 'lww' = (options as any)?.upsert?.conflict === 'lww' ? 'lww' : 'cas'
-            const apply: 'merge' | 'replace' = (options as any)?.upsert?.apply === 'replace' ? 'replace' : 'merge'
-            const id = normalizeId(write.id)
-
-            const data = (write.data && typeof write.data === 'object' && !Array.isArray(write.data))
-                ? { ...(write.data as any) }
-                : {}
-
-            // upsert 必须能产出 version（即使 options.returning=false），否则协议无法返回 version
-            const res = await orm.upsert(
-                write.resource,
-                {
-                    id,
-                    data,
-                    expectedVersion: write.expectedVersion,
-                    conflict,
-                    apply
-                } as any,
-                { ...options, returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any
-            )
-            if (res?.error) throw res.error
-
-            const row = res?.data
-            const rowVersion = typeof (row as any)?.version === 'number' ? (row as any).version : undefined
-            if (!(typeof rowVersion === 'number' && Number.isFinite(rowVersion) && rowVersion >= 1)) {
-                throwError('INTERNAL', 'Upsert returned missing version', { kind: 'internal', resource: write.resource })
-            }
-            const serverVersion = rowVersion
-
-            let change: AtomaChange | undefined
-            if (args.syncEnabled) {
-                change = await sync!.appendChange({
-                    resource: write.resource,
-                    id,
-                    kind: 'upsert',
-                    serverVersion,
-                    changedAt
-                }, tx)
-            }
-
-            const replay: OkReplay = {
-                kind: 'ok',
-                resource: write.resource,
-                id,
-                changeKind: 'upsert',
-                serverVersion,
-                ...(change ? { cursor: change.cursor } : {}),
-                ...(returningRequested ? { data: row } : {})
-            }
-            await writeIdempotency(replay, 200)
-            return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
-        }
-
-        if (write.kind === 'update') {
-            if (typeof orm.update !== 'function') {
-                throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement update', { kind: 'adapter' })
-            }
-            if (write.id === undefined) {
-                throwError('INVALID_WRITE', 'Missing id for update', { kind: 'validation', resource: write.resource })
-            }
-            if (typeof write.baseVersion !== 'number' || !Number.isFinite(write.baseVersion) || write.baseVersion <= 0) {
-                throwError('INVALID_WRITE', 'Missing baseVersion for update', { kind: 'validation', resource: write.resource })
-            }
-
-            const rawId = write.id
-            const id = normalizeId(rawId)
-            const data = (write.data && typeof write.data === 'object' && !Array.isArray(write.data))
-                ? { ...(write.data as any) }
-                : {}
-
-            // update 必须能产出 version（即使 options.returning=false），否则协议无法返回 version
-            const res = await orm.update(
-                write.resource,
-                { id: rawId, data, baseVersion: write.baseVersion } as any,
-                { ...options, returning: true, ...(internalSelect ? { select: internalSelect } : {}) } as any
-            )
-            if (res?.error) throw res.error
-
-            const row = res?.data
-            const serverVersion = typeof (row as any)?.version === 'number'
-                ? (row as any).version
-                : (typeof write.baseVersion === 'number' && Number.isFinite(write.baseVersion) ? write.baseVersion + 1 : 1)
-
-            let change: AtomaChange | undefined
-            if (args.syncEnabled) {
-                change = await sync!.appendChange({
-                    resource: write.resource,
-                    id,
-                    kind: 'upsert',
-                    serverVersion,
-                    changedAt
-                }, tx)
-            }
-
-            const replay: OkReplay = {
-                kind: 'ok',
-                resource: write.resource,
-                id,
-                changeKind: 'upsert',
-                serverVersion,
-                ...(change ? { cursor: change.cursor } : {}),
-                data: row
-            }
-            await writeIdempotency(replay, 200)
-            return { ok: true, status: 200, data: replay.data, replay, ...(change ? { change } : {}) }
-        }
-
-        if (write.kind === 'delete') {
-            if (typeof orm.delete !== 'function') {
-                throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement delete', { kind: 'adapter' })
-            }
-            if (write.id === undefined) {
-                throwError('INVALID_WRITE', 'Missing id for delete', { kind: 'validation', resource: write.resource })
-            }
-            if (typeof write.baseVersion !== 'number' || !Number.isFinite(write.baseVersion)) {
-                throwError('INVALID_WRITE', 'Missing baseVersion for delete', { kind: 'validation', resource: write.resource })
-            }
-
-            const res = await orm.delete(write.resource, { id: write.id, baseVersion: write.baseVersion } as any, { returning: false } as any)
-            if (res?.error) throw res.error
-
-            const id = normalizeId(write.id)
-            const serverVersion = write.baseVersion + 1
-
-            let change: AtomaChange | undefined
-            if (args.syncEnabled) {
-                change = await sync!.appendChange({
-                    resource: write.resource,
-                    id,
-                    kind: 'delete',
-                    serverVersion,
-                    changedAt
-                }, tx)
-            }
-
-            const replay: OkReplay = {
-                kind: 'ok',
-                resource: write.resource,
-                id,
-                changeKind: 'delete',
-                serverVersion,
-                ...(change ? { cursor: change.cursor } : {})
-            }
-            await writeIdempotency(replay, 200)
-            return { ok: true, status: 200, replay, ...(change ? { change } : {}) }
-        }
-
-        throwError('INVALID_WRITE', 'Unsupported write kind', { kind: 'validation', resource: write.resource })
     } catch (err: any) {
         const standard = toStandardError(err, 'WRITE_FAILED')
         const logMeta = {

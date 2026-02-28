@@ -63,9 +63,6 @@
             "atoma-server/adapters/prisma": [
                 "packages/atoma-server/src/adapters/prisma/index.ts"
             ],
-            "atoma-server/adapters/typeorm": [
-                "packages/atoma-server/src/adapters/typeorm/index.ts"
-            ],
             "atoma-shared": [
                 "packages/atoma-shared/src/index.ts"
             ],

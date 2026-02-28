@@ -43,6 +43,11 @@ export async function executeQueryOps<Ctx>(args: {
     if (!args.hasOpPlugins && typeof args.adapter.batchFindMany === 'function') {
         try {
             const resList = await args.adapter.batchFindMany(entries.map(e => ({ resource: e.resource, query: e.query })))
+            if (resList.length !== entries.length) {
+                throw new Error(
+                    `batchFindMany result size mismatch: expected ${entries.length}, got ${resList.length}`
+                )
+            }
             for (let i = 0; i < entries.length; i++) {
                 const e = entries[i]
                 args.resultsByOpId.set(e.opId, toQueryOk(e.opId, resList[i] as QueryResult | undefined))

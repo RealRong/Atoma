@@ -94,10 +94,28 @@ export type IdempotencyMiss = {
 
 export type IdempotencyResult = IdempotencyHit | IdempotencyMiss
 
+export type IdempotencyClaimAcquired = {
+    acquired: true
+}
+
+export type IdempotencyClaimRejected = {
+    acquired: false
+    status?: number
+    body?: unknown
+}
+
+export type IdempotencyClaimResult = IdempotencyClaimAcquired | IdempotencyClaimRejected
+
 export type SyncTransactionContext = unknown
 
 export interface ISyncAdapter {
     getIdempotency: (key: string, tx?: SyncTransactionContext) => Promise<IdempotencyResult>
+    claimIdempotency: (
+        key: string,
+        value: { status: number; body: unknown },
+        ttlMs?: number,
+        tx?: SyncTransactionContext
+    ) => Promise<IdempotencyClaimResult>
     putIdempotency: (key: string, value: { status: number; body: unknown }, ttlMs?: number, tx?: SyncTransactionContext) => Promise<void>
     appendChange: (change: Omit<AtomaChange, 'cursor'>, tx?: SyncTransactionContext) => Promise<AtomaChange>
     pullChangesByResource: (args: {

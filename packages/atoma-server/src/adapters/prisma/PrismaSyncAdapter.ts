@@ -1,4 +1,4 @@
-import type { AtomaChange, ISyncAdapter, IdempotencyResult } from '../ports'
+import type { AtomaChange, ISyncAdapter, IdempotencyClaimResult, IdempotencyResult } from '../ports'
 import { AtomaPrismaAdapter } from './PrismaAdapter'
 
 type PrismaClientLike = Record<string, any> & {
@@ -44,6 +44,46 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
         return (c && typeof c === 'object') ? (c as PrismaClientLike) : this.client
     }
 
+    private parseStoredBody(bodyJson: unknown): unknown {
+        if (typeof bodyJson !== 'string' || !bodyJson) return undefined
+        try {
+            return JSON.parse(bodyJson)
+        } catch {
+            return undefined
+        }
+    }
+
+    private normalizeExpiry(expiresAt: unknown): number | undefined {
+        const value = typeof expiresAt === 'number' ? expiresAt : Number(expiresAt)
+        if (!Number.isFinite(value)) return undefined
+        return Math.floor(value)
+    }
+
+    private normalizeStatus(status: unknown): number | undefined {
+        const value = typeof status === 'number' ? status : Number(status)
+        if (!Number.isFinite(value)) return undefined
+        return Math.floor(value)
+    }
+
+    private isExpired(expiresAt: unknown, now: number): boolean {
+        const expiry = this.normalizeExpiry(expiresAt)
+        return typeof expiry === 'number' && expiry > 0 && now > expiry
+    }
+
+    private readClaimExisting(row: any): IdempotencyClaimResult {
+        const status = this.normalizeStatus(row?.status)
+        const body = this.parseStoredBody(row?.bodyJson)
+        return {
+            acquired: false,
+            ...(typeof status === 'number' ? { status } : {}),
+            ...(body !== undefined ? { body } : {})
+        }
+    }
+
+    private isUniqueViolation(err: any) {
+        return Boolean(err && typeof err === 'object' && (err as any).code === 'P2002')
+    }
+
     async getIdempotency(key: string, tx?: unknown): Promise<IdempotencyResult> {
         const client = this.clientFor(tx)
         const model = this.idempotency(client)
@@ -52,29 +92,71 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
         const row = await model.findUnique({ where: { idempotencyKey: key } })
         if (!row) return { hit: false }
 
-        const expiresAt = typeof row.expiresAt === 'number' ? row.expiresAt : Number(row.expiresAt)
-        if (Number.isFinite(expiresAt) && expiresAt > 0 && Date.now() > expiresAt) {
+        const now = Date.now()
+        if (this.isExpired(row.expiresAt, now)) {
             return { hit: false }
         }
 
-        const status = typeof row.status === 'number' ? row.status : Number(row.status)
-        if (!Number.isFinite(status)) return { hit: false }
-
-        const body = (() => {
-            try {
-                return row.bodyJson ? JSON.parse(row.bodyJson) : undefined
-            } catch {
-                return undefined
-            }
-        })()
+        const status = this.normalizeStatus(row.status)
+        if (typeof status !== 'number') return { hit: false }
+        const body = this.parseStoredBody(row.bodyJson)
 
         return { hit: true, status, body }
+    }
+
+    async claimIdempotency(
+        key: string,
+        value: { status: number; body: unknown },
+        ttlMs?: number,
+        tx?: unknown
+    ): Promise<IdempotencyClaimResult> {
+        const client = this.clientFor(tx)
+        const model = this.idempotency(client)
+        if (!model?.findUnique || !model?.create) {
+            return { acquired: true }
+        }
+
+        const now = Date.now()
+        const expiresAt = now + Math.max(0, Math.floor(ttlMs ?? 0))
+        const data = {
+            idempotencyKey: key,
+            status: value.status,
+            bodyJson: JSON.stringify(value.body ?? null),
+            createdAt: now,
+            expiresAt
+        }
+
+        const existing = await model.findUnique({ where: { idempotencyKey: key } })
+        if (existing) {
+            if (!this.isExpired(existing.expiresAt, now)) {
+                return this.readClaimExisting(existing)
+            }
+            if (typeof model.deleteMany === 'function') {
+                await model.deleteMany({
+                    where: {
+                        idempotencyKey: key,
+                        expiresAt: { lte: now }
+                    }
+                })
+            }
+        }
+
+        try {
+            await model.create({ data })
+            return { acquired: true }
+        } catch (err) {
+            if (!this.isUniqueViolation(err)) throw err
+        }
+
+        const winner = await model.findUnique({ where: { idempotencyKey: key } })
+        if (!winner) return { acquired: false }
+        return this.readClaimExisting(winner)
     }
 
     async putIdempotency(key: string, value: { status: number; body: unknown }, ttlMs?: number, tx?: unknown): Promise<void> {
         const client = this.clientFor(tx)
         const model = this.idempotency(client)
-        if (!model?.createMany && !model?.create) return
+        if (!model) return
 
         const now = Date.now()
         const expiresAt = now + Math.max(0, Math.floor(ttlMs ?? 0))
@@ -87,8 +169,27 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
             expiresAt
         }
 
-        const isUniqueViolation = (err: any) => {
-            return Boolean(err && typeof err === 'object' && (err as any).code === 'P2002')
+        const upsert = (model as any)?.upsert
+        if (typeof upsert === 'function') {
+            await upsert({
+                where: { idempotencyKey: key },
+                create: data,
+                update: data
+            })
+            return
+        }
+
+        if (typeof model.update === 'function') {
+            try {
+                await model.update({
+                    where: { idempotencyKey: key },
+                    data
+                })
+                return
+            } catch (err) {
+                const code = (err as any)?.code
+                if (code !== 'P2025') throw err
+            }
         }
 
         if (typeof model.create === 'function') {
@@ -96,16 +197,15 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
                 await model.create({ data })
                 return
             } catch (err) {
-                if (isUniqueViolation(err)) return
-                throw err
+                if (!this.isUniqueViolation(err)) throw err
             }
         }
 
-        try {
-            await model.createMany({ data: [data] })
-        } catch (err) {
-            if (isUniqueViolation(err)) return
-            throw err
+        if (typeof model.update === 'function') {
+            await model.update({
+                where: { idempotencyKey: key },
+                data
+            })
         }
     }
 
