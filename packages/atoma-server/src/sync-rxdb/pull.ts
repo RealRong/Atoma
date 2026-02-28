@@ -1,8 +1,8 @@
 import type { SyncDocument, SyncPullResponse } from 'atoma-types/sync'
-import { parseSyncPullRequest, wrapProtocolError } from 'atoma-types/protocol-tools'
 import type { AtomaServerConfig } from '../config'
 import type { HandleResult } from '../runtime/http'
 import { throwError } from '../error'
+import { parseSyncPullRequestOrThrow } from './contracts'
 
 type PullExecutor<Ctx> = Readonly<{
     handle: (args: {
@@ -43,7 +43,7 @@ export function createSyncRxdbPullExecutor<Ctx>(args: {
             const defaultBatchSize = args.config.sync?.pull?.defaultBatchSize ?? 200
             const maxBatchSize = args.config.sync?.pull?.maxBatchSize ?? 500
 
-            const request = parsePullRequest(
+            const request = parseSyncPullRequestOrThrow(
                 await args.readBodyJson(incoming),
                 { defaultBatchSize }
             )
@@ -144,29 +144,4 @@ export function createSyncRxdbPullExecutor<Ctx>(args: {
             }
         }
     }
-}
-
-function parsePullRequest(
-    input: unknown,
-    args: { defaultBatchSize: number }
-) {
-    try {
-        return parseSyncPullRequest(input, args)
-    } catch (error) {
-        const standard = wrapProtocolError(error, {
-            code: 'INVALID_REQUEST',
-            message: 'Invalid sync pull request',
-            kind: 'validation'
-        })
-        const details = toThrowDetails(standard.details)
-        throwError(standard.code, standard.message, {
-            kind: standard.kind,
-            ...(details ? details : {})
-        } as any)
-    }
-}
-
-function toThrowDetails(details: unknown): Record<string, unknown> | undefined {
-    if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
-    return details as Record<string, unknown>
 }

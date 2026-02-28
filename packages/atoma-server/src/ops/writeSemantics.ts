@@ -180,7 +180,7 @@ async function appendChangeIfEnabled(args: {
 
 async function executeCreateWrite(ctx: WriteExecutionContext): Promise<WriteExecutionSuccess> {
     const { orm, write } = ctx
-    if (typeof orm.create !== 'function' && typeof (orm as any).bulkCreate !== 'function') {
+    if (typeof orm.create !== 'function') {
         throwError('ADAPTER_NOT_IMPLEMENTED', 'Adapter does not implement create', { kind: 'adapter' })
     }
 
@@ -189,18 +189,13 @@ async function executeCreateWrite(ctx: WriteExecutionContext): Promise<WriteExec
     const v = (data as any).version
     if (!(typeof v === 'number' && Number.isFinite(v) && v >= 1)) (data as any).version = 1
 
-    const row = await (async () => {
-        if (typeof orm.create === 'function') {
-            const res = await orm.create(write.resource, data, { returning: true, ...(ctx.internalSelect ? { select: ctx.internalSelect } : {}) } as any)
-            if (res?.error) throw res.error
-            return res?.data
-        }
-        const res = await (orm as any).bulkCreate(write.resource, [data], { returning: true, ...(ctx.internalSelect ? { select: ctx.internalSelect } : {}) } as any)
-        const r0 = res?.resultsByIndex?.[0]
-        if (!r0) throw new Error('bulkCreate returned empty resultsByIndex')
-        if (!r0.ok) throw r0.error
-        return r0.data
-    })()
+    const res = await orm.create(
+        write.resource,
+        data,
+        { returning: true, ...(ctx.internalSelect ? { select: ctx.internalSelect } : {}) } as any
+    )
+    if (res?.error) throw res.error
+    const row = res?.data
 
     const expectedId = write.id !== undefined ? normalizeId(write.id) : ''
     const actualId = normalizeId((row as any)?.id)
@@ -449,11 +444,6 @@ export async function executeWriteItemWithSemantics(args: ExecuteArgs): Promise<
 
     const claimIdempotencyOrReplay = async (): Promise<StoredWriteReplay | true> => {
         if (!args.syncEnabled || !idempotencyKey) return true
-
-        if (typeof sync!.claimIdempotency !== 'function') {
-            const replay = await readIdempotencyReplay()
-            return replay ?? true
-        }
 
         const claim = await sync!.claimIdempotency(
             idempotencyKey,

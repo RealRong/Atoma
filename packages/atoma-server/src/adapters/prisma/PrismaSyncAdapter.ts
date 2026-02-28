@@ -156,7 +156,10 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
     async putIdempotency(key: string, value: { status: number; body: unknown }, ttlMs?: number, tx?: unknown): Promise<void> {
         const client = this.clientFor(tx)
         const model = this.idempotency(client)
-        if (!model) return
+        const upsert = model?.upsert
+        if (typeof upsert !== 'function') {
+            throw new Error('Prisma idempotency model must implement upsert(idempotencyKey).')
+        }
 
         const now = Date.now()
         const expiresAt = now + Math.max(0, Math.floor(ttlMs ?? 0))
@@ -169,44 +172,11 @@ export class AtomaPrismaSyncAdapter implements ISyncAdapter {
             expiresAt
         }
 
-        const upsert = (model as any)?.upsert
-        if (typeof upsert === 'function') {
-            await upsert({
-                where: { idempotencyKey: key },
-                create: data,
-                update: data
-            })
-            return
-        }
-
-        if (typeof model.update === 'function') {
-            try {
-                await model.update({
-                    where: { idempotencyKey: key },
-                    data
-                })
-                return
-            } catch (err) {
-                const code = (err as any)?.code
-                if (code !== 'P2025') throw err
-            }
-        }
-
-        if (typeof model.create === 'function') {
-            try {
-                await model.create({ data })
-                return
-            } catch (err) {
-                if (!this.isUniqueViolation(err)) throw err
-            }
-        }
-
-        if (typeof model.update === 'function') {
-            await model.update({
-                where: { idempotencyKey: key },
-                data
-            })
-        }
+        await upsert({
+            where: { idempotencyKey: key },
+            create: data,
+            update: data
+        })
     }
 
     async appendChange(change: Omit<AtomaChange, 'cursor'>, tx?: unknown): Promise<AtomaChange> {

@@ -16,23 +16,6 @@ export interface QueryResultOne<T = any> {
     transactionApplied?: boolean
 }
 
-export interface QueryResultMany<T = any> {
-    /**
-     * 与输入 items 的 index 一一对应（resultsByIndex.length 必须等于 items.length）。
-     */
-    resultsByIndex: Array<
-        | { ok: true; data?: T }
-        | {
-            ok: false
-            /**
-             * errors 同样要求 AtomaError。
-             */
-            error: AtomaError
-        }
-    >
-    transactionApplied?: boolean
-}
-
 export type OrmTransactionContext = unknown
 
 export type OrmTransactionArgs = {
@@ -56,14 +39,6 @@ export interface IOrmAdapter {
         options?: WriteOptions
     ): Promise<QueryResultOne>
     delete?(resource: string, whereOrId: any, options?: WriteOptions): Promise<QueryResultOne>
-    bulkCreate?(resource: string, items: any[], options?: WriteOptions): Promise<QueryResultMany>
-    bulkUpdate?(resource: string, items: Array<{ id: any; data: any; baseVersion?: number }>, options?: WriteOptions): Promise<QueryResultMany>
-    bulkUpsert?(
-        resource: string,
-        items: Array<{ id: any; data: any; expectedVersion?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' }>,
-        options?: WriteOptions
-    ): Promise<QueryResultMany>
-    bulkDelete?(resource: string, items: Array<{ id: any; baseVersion?: number }>, options?: WriteOptions): Promise<QueryResultMany>
 }
 
 export interface OrmAdapterOptions {

@@ -94,10 +94,6 @@ export type AtomaServerConfig<Ctx = unknown> = {
 
     sync?: {
         enabled?: boolean
-        tables?: {
-            changes?: string
-            idempotency?: string
-        }
         pull?: {
             defaultBatchSize?: number
             maxBatchSize?: number

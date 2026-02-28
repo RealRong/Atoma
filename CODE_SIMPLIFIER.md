@@ -7,6 +7,8 @@
 3. 在功能不变前提下，流程是否可以减少步骤、降低分支复杂度。
 4. 文件名、变量名、函数名、类型名是否过长或语义不清；优先更简短、更常见、易理解的词（尽量 1-2 个词，但不牺牲可读性）。
 5. 是否存在冗余代码或逻辑；若有 2 处及以上相同且语义稳定的逻辑，考虑抽取公共函数，并确认其放置层级合理。
+6. 命名原则：class文件使用PascalCase，函数使用camelCase，常量使用UPPER_SNAKE_CASE，枚举使用PascalCase，接口使用PascalCase。
+7. 尽量避免一个目录下只有一个文件。
 
 ### 二、简化检查项（进阶）
 
@@ -24,7 +26,7 @@
 12. 类型表达简化：冗余泛型、过深类型嵌套、重复类型别名是否可降复杂度。
 13. 配置模型简化：配置项是否重复、冲突或语义重叠，能否收敛成更清晰模型。
 14. 测试代码简化：重复 fixture、样板断言、重复 mock 是否可抽象为测试辅助工具。
-15. 命名族目录化（prefix-based operation family modularization）：当同层实现共享稳定前缀且仅在操作语义上分化，应将公共前缀上提为目录边界，并将文件名收敛，以消除命名冗余并强化语义索引。
+15. 命名族目录化（prefix-based operation family modularization）：当同层实现共享稳定前缀且仅在操作语义上分化（如 `prepareCreate`、`prepareUpdate`、`prepareUpsert`、`prepareDelete`、`prepareWrite`），应将公共前缀上提为目录边界（`prepare/`），并将文件名收敛为 `create`、`update`、`upsert`、`delete`、`write`，以消除命名冗余并强化语义索引。
 
 ### 三、触发阈值（建议）
 

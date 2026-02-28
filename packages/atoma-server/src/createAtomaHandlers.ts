@@ -1,12 +1,11 @@
-import type {
-    AtomaServerConfig,
-    AtomaServerRoute
-} from './config'
-import type { HandleResult } from './runtime/http'
+import type { AtomaServerConfig } from './config'
+import { composeResponsePlugins } from './entry/pluginChain'
+import { handleResultToResponse, toIncoming } from './entry/response'
+import { createRuntimeRunner } from './entry/runWithRuntime'
+import { createOpsExecutor } from './ops/opsExecutor'
 import { createRuntimeFactory } from './runtime/createRuntime'
 import { createTopLevelErrorFormatter } from './runtime/errors'
 import { readJsonBodyWithLimit } from './runtime/http'
-import { createOpsExecutor } from './ops/opsExecutor'
 import {
     createSyncRxdbPullExecutor,
     createSyncRxdbPushExecutor,
@@ -57,157 +56,25 @@ function normalizeServerConfig<Ctx>(config: AtomaServerConfig<Ctx>): AtomaServer
         : config
 }
 
-function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
-    return Boolean(value && typeof value === 'object' && typeof (value as any)[Symbol.asyncIterator] === 'function')
-}
-
-function serializeErrorForLog(error: unknown) {
-    if (error instanceof Error) {
-        const anyErr = error as any
-        return {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-            ...(anyErr?.cause !== undefined ? { cause: anyErr.cause } : {})
-        }
-    }
-    return { value: error }
-}
-
-function asyncIterableToReadableStream(body: AsyncIterable<unknown>): ReadableStream<Uint8Array> {
-    if (typeof ReadableStream !== 'function') {
-        throw new Error('ReadableStream is required to stream subscribe responses')
-    }
-
-    const encoder = new TextEncoder()
-    const iterator = body[Symbol.asyncIterator]()
-
-    return new ReadableStream<Uint8Array>({
-        async pull(controller) {
-            const { value, done } = await iterator.next()
-            if (done) {
-                controller.close()
-                return
-            }
-            if (value === undefined) return
-            if (value instanceof Uint8Array) {
-                controller.enqueue(value)
-                return
-            }
-            controller.enqueue(encoder.encode(typeof value === 'string' ? value : String(value)))
-        },
-        async cancel() {
-            if (typeof iterator.return === 'function') {
-                await iterator.return()
-            }
-        }
-    })
-}
-
-function handleResultToResponse(result: HandleResult): Response {
-    const headers = new Headers(result.headers ?? {})
-
-    const body = (() => {
-        if (result.body === undefined) return null
-        if (typeof result.body === 'string') return result.body
-        if (isAsyncIterable(result.body)) return asyncIterableToReadableStream(result.body)
-
-        if (!headers.has('content-type')) {
-            headers.set('content-type', 'application/json; charset=utf-8')
-        }
-        return JSON.stringify(result.body)
-    })()
-
-    return new Response(body, { status: result.status, headers })
-}
-
-type PluginRuntime<Ctx> = {
-    ctx: Ctx
-    traceId?: string
-    requestId: string
-    logger: any
-}
-
-async function invokeOnResponseSafely(args: {
-    runtime: any
-    route: AtomaServerRoute
-    method: string
-    pathname: string
-    status: number
-}) {
-    if (!args.runtime.hooks?.onResponse) return
-
-    try {
-        await args.runtime.hooks.onResponse({ ...args.runtime.hookArgs, status: args.status })
-    } catch (err) {
-        args.runtime.logger?.error?.('onResponse hook failed', {
-            route: args.route,
-            method: args.method,
-            pathname: args.pathname,
-            status: args.status,
-            error: serializeErrorForLog(err)
-        })
-    }
-}
-
-async function invokeOnErrorSafely(args: {
-    runtime: any
-    route: AtomaServerRoute
-    method: string
-    pathname: string
-    error: unknown
-}) {
-    if (!args.runtime.hooks?.onError) return
-
-    try {
-        await args.runtime.hooks.onError({ ...args.runtime.hookArgs, error: args.error })
-    } catch (hookErr) {
-        args.runtime.logger?.error?.('onError hook failed', {
-            route: args.route,
-            method: args.method,
-            pathname: args.pathname,
-            error: serializeErrorForLog(hookErr),
-            sourceError: serializeErrorForLog(args.error)
-        })
-    }
-}
-
-function composeResponsePlugins<Ctx>(
-    plugins: Array<(ctx: any, next: () => Promise<Response>) => Promise<Response>>
-) {
-    if (!plugins.length) {
-        return (_ctx: any, next: () => Promise<Response>) => next()
-    }
-
-    return (ctx: any, next: () => Promise<Response>) => {
-        const execute = (index: number): Promise<Response> => {
-            if (index >= plugins.length) return next()
-            return plugins[index](ctx, () => execute(index + 1))
-        }
-
-        return execute(0)
-    }
-}
-
-function toIncoming(request: Request) {
-    return {
-        url: request.url,
-        method: request.method,
-        headers: request.headers,
-        signal: request.signal,
-        text: () => request.text(),
-        json: () => request.json()
-    }
+function resolveQueryValue(urlObj: URL, key: string): string | undefined {
+    const value = urlObj.searchParams.get(key)
+    if (typeof value !== 'string') return undefined
+    const normalized = value.trim()
+    return normalized ? normalized : undefined
 }
 
 export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx>) {
     config = normalizeServerConfig(config)
 
     const syncEnabled = config.sync?.enabled ?? true
-
     const formatTopLevelError = createTopLevelErrorFormatter(config)
     const createRuntime = createRuntimeFactory({ config })
     const readBodyJson = (incoming: any) => readJsonBodyWithLimit(incoming, config.limits?.bodyBytes)
+    const runWithRuntime = createRuntimeRunner<Ctx>({
+        createRuntime,
+        formatTopLevelError
+    })
+
     const opsExecutor = createOpsExecutor({
         config,
         readBodyJson,
@@ -225,95 +92,11 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
     const syncStreamExecutor = createSyncRxdbStreamExecutor({
         config
     })
+
     const runOpsResponsePlugins = composeResponsePlugins<Ctx>(config.plugins?.ops ?? [])
     const runPullResponsePlugins = composeResponsePlugins<Ctx>(config.plugins?.syncRxdbPull ?? [])
     const runPushResponsePlugins = composeResponsePlugins<Ctx>(config.plugins?.syncRxdbPush ?? [])
     const runStreamResponsePlugins = composeResponsePlugins<Ctx>(config.plugins?.syncRxdbStream ?? [])
-
-    const runWithRuntime = async (args: {
-        request: Request
-        route: AtomaServerRoute
-        method: string
-        pathname: string
-        initialTraceId?: string
-        initialRequestId?: string
-        runResponsePlugins: (ctx: any, next: () => Promise<Response>) => Promise<Response>
-        run: (runtime: any) => Promise<Response>
-    }): Promise<Response> => {
-        let runtime: any
-
-        try {
-            runtime = await createRuntime({
-                incoming: args.request,
-                route: args.route,
-                initialTraceId: args.initialTraceId,
-                initialRequestId: args.initialRequestId
-            })
-        } catch (err) {
-            return handleResultToResponse(formatTopLevelError({
-                route: args.route,
-                traceId: args.initialTraceId,
-                requestId: args.initialRequestId,
-                error: err
-            }))
-        }
-
-        const pluginRuntime: PluginRuntime<Ctx> = {
-            ctx: runtime.ctx as Ctx,
-            traceId: runtime.traceId,
-            requestId: runtime.requestId,
-            logger: runtime.logger
-        }
-
-        try {
-            if (runtime.hooks?.onRequest) await runtime.hooks.onRequest({ ...runtime.hookArgs, incoming: args.request })
-
-            const response = await args.runResponsePlugins(
-                { request: args.request, route: args.route, runtime: pluginRuntime },
-                () => args.run(runtime)
-            )
-
-            await invokeOnResponseSafely({
-                runtime,
-                route: args.route,
-                method: args.method,
-                pathname: args.pathname,
-                status: response.status
-            })
-            return response
-        } catch (err: any) {
-            runtime.logger?.error?.('request failed', {
-                route: args.route,
-                method: args.method,
-                pathname: args.pathname,
-                error: serializeErrorForLog(err)
-            })
-            await invokeOnErrorSafely({
-                runtime,
-                route: args.route,
-                method: args.method,
-                pathname: args.pathname,
-                error: err
-            })
-
-            const formatted = formatTopLevelError({
-                route: args.route,
-                ctx: runtime.ctx,
-                requestId: runtime.requestId,
-                traceId: runtime.traceId,
-                error: err
-            })
-            const response = handleResultToResponse(formatted)
-            await invokeOnResponseSafely({
-                runtime,
-                route: args.route,
-                method: args.method,
-                pathname: args.pathname,
-                status: response.status
-            })
-            return response
-        }
-    }
 
     return {
         ops: async (request: Request): Promise<Response> => {
@@ -343,7 +126,6 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
             const urlObj = new URL(request.url)
             const pathname = urlObj.pathname
             const method = request.method.toUpperCase()
-
             const initialTraceId = resolveQueryValue(urlObj, 'traceId')
             const initialRequestId = resolveQueryValue(urlObj, 'requestId')
 
@@ -421,11 +203,4 @@ export function createAtomaHandlers<Ctx = unknown>(config: AtomaServerConfig<Ctx
             })
         }
     }
-}
-
-function resolveQueryValue(urlObj: URL, key: string): string | undefined {
-    const value = urlObj.searchParams.get(key)
-    if (typeof value !== 'string') return undefined
-    const normalized = value.trim()
-    return normalized ? normalized : undefined
 }

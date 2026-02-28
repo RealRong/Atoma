@@ -1,9 +1,13 @@
 import type { SyncDocument, SyncPushRequest, SyncPushResponse } from 'atoma-types/sync'
-import { parseSyncPushRequest, readPushIdempotencyKey, wrapProtocolError } from 'atoma-types/protocol-tools'
+import { readPushIdempotencyKey } from 'atoma-types/protocol-tools'
 import type { AtomaServerConfig } from '../config'
 import type { HandleResult } from '../runtime/http'
 import { throwError } from '../error'
 import { executeWriteItemWithSemantics } from '../ops/writeSemantics'
+import {
+    parseSyncPushRequestOrThrow,
+    throwFromStandardError
+} from './contracts'
 
 type PushExecutor<Ctx> = Readonly<{
     handle: (args: {
@@ -41,7 +45,7 @@ export function createSyncRxdbPushExecutor<Ctx>(args: {
                 })
             }
 
-            const request = parsePushRequest(await args.readBodyJson(incoming))
+            const request = parseSyncPushRequestOrThrow(await args.readBodyJson(incoming))
             const maxBatchSize = Math.max(1, Math.floor(args.config.sync?.push?.maxBatchSize ?? 200))
             if (request.rows.length > maxBatchSize) {
                 throwError('TOO_MANY_ITEMS', `Too many sync rows: max ${maxBatchSize}`, {
@@ -103,11 +107,7 @@ export function createSyncRxdbPushExecutor<Ctx>(args: {
                 if (result.ok) continue
 
                 if (result.error.kind !== 'conflict' && result.error.code !== 'CONFLICT') {
-                    const details = toThrowErrorDetails(result.error)
-                    throwError(result.error.code, result.error.message, {
-                        kind: result.error.kind,
-                        ...(details ? details : {})
-                    } as any)
+                    throwFromStandardError(result.error)
                 }
 
                 conflicts.push(await resolveConflictDocument({
@@ -126,35 +126,6 @@ export function createSyncRxdbPushExecutor<Ctx>(args: {
             }
         }
     }
-}
-
-function parsePushRequest(input: unknown): SyncPushRequest {
-    try {
-        return parseSyncPushRequest(input)
-    } catch (error) {
-        const standard = wrapProtocolError(error, {
-            code: 'INVALID_REQUEST',
-            message: 'Invalid sync push request',
-            kind: 'validation'
-        })
-        const details = toThrowDetails(standard.details)
-        throwError(standard.code, standard.message, {
-            kind: standard.kind,
-            ...(details ? details : {})
-        } as any)
-    }
-}
-
-function toThrowDetails(details: unknown): Record<string, unknown> | undefined {
-    if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
-    return details as Record<string, unknown>
-}
-
-function toThrowErrorDetails(error: { details?: unknown; kind: string }): Record<string, unknown> | undefined {
-    const details = error.details
-    if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
-    const { kind: _kind, ...rest } = details as Record<string, unknown>
-    return Object.keys(rest).length ? rest : undefined
 }
 
 async function resolveConflictDocument<Ctx>(args: {

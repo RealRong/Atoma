@@ -3,21 +3,20 @@ import type {
     IOrmAdapter,
     OrmAdapterOptions,
     QueryResult,
-    QueryResultMany,
     QueryResultOne
 } from '../ports'
 import {
     compareOpForAfter,
     decodeCursorToken,
     encodeCursorToken,
-    ensureStableOrderBy,
     getCursorValuesFromRow,
     isSameSort,
     readNullCursorField,
     reverseOrderBy
 } from '../shared/keyset'
 import { createError, isAtomaError, throwError } from '../../error'
-import { compileFilterToPrismaWhere } from '../../query/compile'
+import { prismaBatchFindMany, prismaFindMany } from './query'
+import { prismaCreate, prismaDelete, prismaUpdate, prismaUpsert } from './write'
 
 type PrismaDelegate = {
     findMany: (args: any) => Promise<any[]>
@@ -36,16 +35,6 @@ type PrismaClientLike = Record<string, any> & {
         <T>(operations: Promise<T>[]): Promise<T[]>
         <T>(fn: (tx: any) => Promise<T>): Promise<T>
     }
-}
-
-function normalizeOptionalLimit(value: unknown): number | undefined {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
-    return Math.max(0, Math.floor(value))
-}
-
-function normalizeOffset(value: unknown): number | undefined {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
-    return Math.max(0, Math.floor(value))
 }
 
 export class AtomaPrismaAdapter implements IOrmAdapter {
@@ -76,111 +65,15 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     }
 
     async findMany(resource: string, query: Query = {}): Promise<QueryResult> {
-        const delegate = this.getDelegate(resource)
-        if (!delegate?.findMany) {
-            throwError('RESOURCE_NOT_ALLOWED', `Resource not allowed: ${resource}`, { kind: 'auth', resource })
-        }
-
-        const orderBy = ensureStableOrderBy(query.sort, {
-            idField: this.idField,
-            defaultSort: this.defaultSort
-        })
-
-        const baseWhere = compileFilterToPrismaWhere(query.filter)
-        const page = query.page
-        const pageMode = page?.mode ?? undefined
-        const beforeToken = (pageMode === 'cursor' && typeof (page as any).before === 'string') ? (page as any).before as string : undefined
-        const afterToken = (pageMode === 'cursor' && typeof (page as any).after === 'string') ? (page as any).after as string : undefined
-
-        const cursor = (pageMode === 'cursor' && (beforeToken || afterToken))
-            ? { token: beforeToken ?? afterToken!, before: Boolean(beforeToken) }
-            : undefined
-
-        const { prismaOrderBy, reverseResult, keysetWhere } = this.buildKeysetWhere(cursor, orderBy)
-        const where = keysetWhere ? this.andWhere(baseWhere, keysetWhere) : baseWhere
-
-        if (!page) {
-            const data = await delegate.findMany({ where, orderBy: prismaOrderBy })
-            return { data }
-        }
-
-        if (pageMode === 'offset') {
-            const skip = normalizeOffset((page as any).offset) ?? 0
-            const take = normalizeOptionalLimit((page as any).limit)
-            const includeTotal = (page as any).includeTotal === true
-
-            if (includeTotal && delegate.count && typeof take === 'number') {
-                const [data, total] = await Promise.all([
-                    delegate.findMany({ where, orderBy: prismaOrderBy, skip, take }),
-                    delegate.count({ where })
-                ])
-                return {
-                    data,
-                    pageInfo: {
-                        total,
-                        hasNext: skip + take < total
-                    }
-                }
-            }
-
-            if (typeof take === 'number') {
-                const data = await delegate.findMany({ where, orderBy: prismaOrderBy, skip, take: take + 1 })
-                const hasNext = data.length > take
-                const sliced = data.slice(0, take)
-                return {
-                    data: sliced,
-                    pageInfo: { hasNext, ...(includeTotal && delegate.count ? { total: await delegate.count({ where }) } : {}) }
-                }
-            }
-
-            const data = await delegate.findMany({ where, orderBy: prismaOrderBy, skip })
-            return {
-                data,
-                pageInfo: { hasNext: false, ...(includeTotal && delegate.count ? { total: await delegate.count({ where }) } : {}) }
-            }
-        }
-
-        // cursor keyset：默认不返回 total
-        const take = normalizeOptionalLimit((page as any).limit) ?? 50
-        const data = await delegate.findMany({
-            where,
-            orderBy: prismaOrderBy,
-            take: take + 1
-        })
-        const hasNext = data.length > take
-        const sliced = data.slice(0, take)
-        const finalRows = reverseResult ? sliced.reverse() : sliced
-
-        const cursorRow = cursor?.before ? finalRows[0] : finalRows[finalRows.length - 1]
-        const nextCursor = cursorRow
-            ? this.encodePageCursor(cursorRow, orderBy)
-            : undefined
-
-        return {
-            data: finalRows,
-            pageInfo: {
-                hasNext,
-                cursor: nextCursor
-            }
-        }
+        return prismaFindMany(this, resource, query)
     }
 
     async batchFindMany(requests: Array<{ resource: string; query: Query }>): Promise<QueryResult[]> {
-        const operations = requests.map(r => this.findMany(r.resource, r.query))
-        if (this.client.$transaction) {
-            return this.client.$transaction(operations)
-        }
-        return Promise.all(operations)
+        return prismaBatchFindMany(this, requests)
     }
 
     async create(resource: string, data: any, options: WriteOptions = {}): Promise<QueryResultOne> {
-        const delegate = this.requireDelegate(resource, 'create')
-        const args: any = {
-            data,
-            select: this.buildSelect(options.select)
-        }
-        const row = await delegate.create!(args)
-        return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
+        return prismaCreate(this, resource, data, options)
     }
 
     async update(
@@ -188,115 +81,11 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         item: { id: any; data: any; baseVersion?: number },
         options: WriteOptions = {}
     ): Promise<QueryResultOne> {
-        if (item?.id === undefined || !item?.data || typeof item.data !== 'object' || Array.isArray(item.data)) {
-            throw new Error('update requires id and data object')
-        }
-
-        const client = this.client
-        const delegate = this.requireDelegateFromClient(client, resource, 'update')
-        const hasBaseVersion = typeof item.baseVersion === 'number' && Number.isFinite(item.baseVersion)
-
-        if (hasBaseVersion) {
-            const baseVersion = Math.floor(item.baseVersion as number)
-            const updateManyDelegate = this.requireDelegateFromClient(client, resource, 'updateMany')
-
-            const next = {
-                ...(item.data as any),
-                [this.idField]: item.id,
-                version: baseVersion + 1
-            }
-            const data = this.toUpdateData(next, this.idField)
-            const updated = await updateManyDelegate.updateMany!({
-                where: {
-                    [this.idField]: item.id,
-                    version: baseVersion
-                },
-                data
-            })
-
-            if (this.readAffectedCount(updated) <= 0) {
-                const current = await this.findOneByKey(client, resource, this.idField, item.id)
-                if (!current) {
-                    throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(item.id) })
-                }
-                const currentVersion = (current as any).version
-                if (typeof currentVersion !== 'number') {
-                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
-                }
-                throwError('CONFLICT', 'Version conflict', {
-                    kind: 'conflict',
-                    resource,
-                    currentVersion,
-                    currentValue: current
-                })
-            }
-
-            if (options.returning === false) {
-                return { data: undefined, transactionApplied: this.inTransaction }
-            }
-            const row = await this.findOneByKey(
-                client,
-                resource,
-                this.idField,
-                item.id,
-                this.buildSelect(options.select)
-            )
-            return { data: row, transactionApplied: this.inTransaction }
-        }
-
-        const next = { ...(item.data as any), [this.idField]: item.id }
-        const data = this.toUpdateData(next, this.idField)
-        const row = await delegate.update!({
-            where: { [this.idField]: item.id },
-            data,
-            select: this.buildSelect(options.select)
-        })
-        return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
+        return prismaUpdate(this, resource, item, options)
     }
 
     async delete(resource: string, whereOrId: any, options: WriteOptions = {}): Promise<QueryResultOne> {
-        const baseVersion = (whereOrId && typeof whereOrId === 'object' && !Array.isArray(whereOrId))
-            ? (whereOrId as any).baseVersion
-            : undefined
-
-        if (typeof baseVersion === 'number' && Number.isFinite(baseVersion)) {
-            const id = (whereOrId as any).id
-            if (id === undefined) throw new Error('delete requires id')
-
-            const delegate = this.requireDelegateFromClient(this.client, resource, 'deleteMany')
-            const deleted = await delegate.deleteMany!({
-                where: {
-                    [this.idField]: id,
-                    version: Math.floor(baseVersion)
-                }
-            })
-            if (this.readAffectedCount(deleted) <= 0) {
-                const current = await this.findOneByKey(this.client, resource, this.idField, id)
-                if (!current) {
-                    throwError('NOT_FOUND', 'Not found', { kind: 'not_found', resource, id: String(id) })
-                }
-                const currentVersion = (current as any).version
-                if (typeof currentVersion !== 'number') {
-                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
-                }
-                throwError('CONFLICT', 'Version conflict', {
-                    kind: 'conflict',
-                    resource,
-                    currentVersion,
-                    currentValue: current
-                })
-            }
-            return { data: undefined, transactionApplied: this.inTransaction }
-        }
-
-        const delegate = this.requireDelegate(resource, 'delete')
-        const where = this.normalizeWhereOrId(whereOrId)
-        const args: any = {
-            where,
-            select: this.buildSelect(options.select)
-        }
-        const row = await delegate.delete!(args)
-        return { data: options.returning === false ? undefined : row, transactionApplied: this.inTransaction }
+        return prismaDelete(this, resource, whereOrId, options)
     }
 
     async upsert(
@@ -304,267 +93,7 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         item: { id: any; data: any; expectedVersion?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' },
         options: WriteOptions = {}
     ): Promise<QueryResultOne> {
-        const conflict: 'cas' | 'lww' = item.conflict === 'lww' ? 'lww' : 'cas'
-        const apply: 'merge' | 'replace' = item.apply === 'replace' ? 'replace' : 'merge'
-        const id = item?.id
-        if (id === undefined) throw new Error('upsert requires id')
-        const client = this.client
-        const updateDelegate = this.requireDelegateFromClient(client, resource, 'updateMany')
-
-        const candidate = (item?.data && typeof item.data === 'object' && !Array.isArray(item.data))
-            ? { ...(item.data as any), [this.idField]: id }
-            : { [this.idField]: id }
-
-        const ensureCreateVersion = (data: any) => {
-            const v = (data as any)?.version
-            if (!(typeof v === 'number' && Number.isFinite(v) && v >= 1)) return { ...(data as any), version: 1 }
-            return data
-        }
-
-        const fetchReturning = async () => {
-            if (options.returning === false) return undefined
-            return this.findOneByKey(
-                client,
-                resource,
-                this.idField,
-                id,
-                this.buildSelect(options.select)
-            )
-        }
-
-        if (conflict === 'cas') {
-            const expectedVersion = item.expectedVersion
-            const current = await this.findOneByKey(client, resource, this.idField, id)
-            if (!current) {
-                return this.create(resource, ensureCreateVersion(candidate), options)
-            }
-
-            const currentVersion = (current as any)?.version
-            if (typeof currentVersion !== 'number') {
-                throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
-            }
-            if (!(typeof expectedVersion === 'number' && Number.isFinite(expectedVersion))) {
-                throwError('CONFLICT', 'CAS upsert requires expectedVersion for existing entity', {
-                    kind: 'conflict',
-                    resource,
-                    id: String(id),
-                    currentVersion,
-                    currentValue: current,
-                    hint: 'rebase'
-                })
-            }
-            if (currentVersion !== expectedVersion) {
-                throwError('CONFLICT', 'Version conflict', {
-                    kind: 'conflict',
-                    resource,
-                    currentVersion,
-                    currentValue: current
-                })
-            }
-
-            const nextVersion = Math.floor(expectedVersion) + 1
-            const next = apply === 'merge'
-                ? { ...(current as any), ...(candidate as any), [this.idField]: id, version: nextVersion }
-                : { ...(candidate as any), [this.idField]: id, version: nextVersion, createdAt: (current as any)?.createdAt }
-
-            const updated = await updateDelegate.updateMany!({
-                where: {
-                    [this.idField]: id,
-                    version: Math.floor(expectedVersion)
-                },
-                data: this.toUpdateData(next, this.idField)
-            })
-            if (this.readAffectedCount(updated) <= 0) {
-                const latest = await this.findOneByKey(client, resource, this.idField, id)
-                if (!latest) {
-                    throwError('CONFLICT', 'Version conflict', {
-                        kind: 'conflict',
-                        resource,
-                        id: String(id),
-                        hint: 'rebase'
-                    } as any)
-                }
-                const latestVersion = (latest as any)?.version
-                if (typeof latestVersion !== 'number') {
-                    throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
-                }
-                throwError('CONFLICT', 'Version conflict', {
-                    kind: 'conflict',
-                    resource,
-                    currentVersion: latestVersion,
-                    currentValue: latest
-                })
-            }
-
-            return {
-                data: await fetchReturning(),
-                transactionApplied: this.inTransaction
-            }
-        }
-
-        for (let attempt = 0; attempt < 6; attempt += 1) {
-            const current = await this.findOneByKey(client, resource, this.idField, id)
-            if (!current) {
-                try {
-                    return this.create(resource, ensureCreateVersion(candidate), options)
-                } catch (error) {
-                    if (!this.isUniqueViolation(error)) throw error
-                    continue
-                }
-            }
-
-            const currentVersion = (current as any)?.version
-            if (typeof currentVersion !== 'number' || !Number.isFinite(currentVersion)) {
-                throwError('INVALID_WRITE', 'Missing version field', { kind: 'validation', resource })
-            }
-
-            const nextVersion = Math.floor(currentVersion) + 1
-            const next = apply === 'merge'
-                ? { ...(current as any), ...(candidate as any), [this.idField]: id, version: nextVersion }
-                : { ...(candidate as any), [this.idField]: id, version: nextVersion, createdAt: (current as any)?.createdAt }
-
-            const updated = await updateDelegate.updateMany!({
-                where: {
-                    [this.idField]: id,
-                    version: Math.floor(currentVersion)
-                },
-                data: this.toUpdateData(next, this.idField)
-            })
-            if (this.readAffectedCount(updated) <= 0) continue
-
-            return {
-                data: await fetchReturning(),
-                transactionApplied: this.inTransaction
-            }
-        }
-
-        throwError('CONFLICT', 'Version conflict', {
-            kind: 'conflict',
-            resource,
-            id: String(id),
-            hint: 'rebase'
-        } as any)
-    }
-
-    async bulkUpsert(
-        resource: string,
-        items: Array<{ id: any; data: any; expectedVersion?: number; conflict?: 'cas' | 'lww'; apply?: 'merge' | 'replace' }>,
-        options: WriteOptions = {}
-    ): Promise<QueryResultMany> {
-        const returning = options.returning !== false
-        const resultsByIndex: any[] = new Array(items.length)
-
-        if (this.inTransaction) {
-            for (let i = 0; i < items.length; i++) {
-                try {
-                    const res = await this.upsert(resource, items[i], options)
-                    resultsByIndex[i] = { ok: true, ...(returning ? { data: res.data } : {}) }
-                } catch (err) {
-                    resultsByIndex[i] = { ok: false, error: this.toError(err) }
-                }
-            }
-            return { resultsByIndex, transactionApplied: true }
-        }
-
-        const settled = await Promise.allSettled(items.map(item => this.upsert(resource, item, options)))
-        settled.forEach((res, idx) => {
-            if (res.status === 'fulfilled') {
-                resultsByIndex[idx] = { ok: true, ...(returning ? { data: res.value.data } : {}) }
-                return
-            }
-            resultsByIndex[idx] = { ok: false, error: this.toError(res.reason) }
-        })
-
-        return { resultsByIndex, transactionApplied: false }
-    }
-
-    async bulkCreate(resource: string, items: any[], options: WriteOptions = {}): Promise<QueryResultMany> {
-        const delegate = this.requireDelegate(resource, 'create')
-        const returning = options.returning !== false
-        const operations = items.map(item => () => delegate.create!({ data: item, select: this.buildSelect(options.select) }))
-        const resultsByIndex: any[] = new Array(items.length)
-
-        if (this.inTransaction) {
-            for (let i = 0; i < operations.length; i++) {
-                try {
-                    const row = await operations[i]()
-                    resultsByIndex[i] = { ok: true, ...(returning ? { data: row } : {}) }
-                } catch (err) {
-                    resultsByIndex[i] = { ok: false, error: this.toError(err) }
-                }
-            }
-            return { resultsByIndex, transactionApplied: true }
-        }
-
-        const settled = await Promise.allSettled(operations.map(op => op()))
-        settled.forEach((res, idx) => {
-            if (res.status === 'fulfilled') {
-                resultsByIndex[idx] = { ok: true, ...(returning ? { data: res.value } : {}) }
-                return
-            }
-            resultsByIndex[idx] = { ok: false, error: this.toError(res.reason) }
-        })
-
-        return { resultsByIndex, transactionApplied: false }
-    }
-
-    async bulkUpdate(
-        resource: string,
-        items: Array<{ id: any; data: any; baseVersion?: number }>,
-        options: WriteOptions = {}
-    ): Promise<QueryResultMany> {
-        const returning = options.returning !== false
-        const resultsByIndex: any[] = new Array(items.length)
-
-        if (this.inTransaction) {
-            for (let i = 0; i < items.length; i++) {
-                try {
-                    const res = await this.update(resource, items[i], options)
-                    resultsByIndex[i] = { ok: true, ...(returning ? { data: res.data } : {}) }
-                } catch (err) {
-                    resultsByIndex[i] = { ok: false, error: this.toError(err) }
-                }
-            }
-            return { resultsByIndex, transactionApplied: true }
-        }
-
-        const settled = await Promise.allSettled(items.map(item => this.update(resource, item, options)))
-        settled.forEach((res, idx) => {
-            if (res.status === 'fulfilled') {
-                resultsByIndex[idx] = { ok: true, ...(returning ? { data: res.value.data } : {}) }
-                return
-            }
-            resultsByIndex[idx] = { ok: false, error: this.toError(res.reason) }
-        })
-        return { resultsByIndex, transactionApplied: false }
-    }
-
-    async bulkDelete(resource: string, items: Array<{ id: any; baseVersion?: number }>, options: WriteOptions = {}): Promise<QueryResultMany> {
-        const returning = options.returning !== false
-        const resultsByIndex: any[] = new Array(items.length)
-
-        if (this.inTransaction) {
-            for (let i = 0; i < items.length; i++) {
-                const item = items[i]
-                try {
-                    const res = await this.delete(resource, { id: item.id, baseVersion: item.baseVersion }, options)
-                    resultsByIndex[i] = { ok: true, ...(returning ? { data: res.data } : {}) }
-                } catch (err) {
-                    resultsByIndex[i] = { ok: false, error: this.toError(err) }
-                }
-            }
-            return { resultsByIndex, transactionApplied: true }
-        }
-
-        const settled = await Promise.allSettled(items.map(item => this.delete(resource, { id: item.id, baseVersion: item.baseVersion }, options)))
-        settled.forEach((res, idx) => {
-            if (res.status === 'fulfilled') {
-                resultsByIndex[idx] = { ok: true, ...(returning ? { data: res.value.data } : {}) }
-                return
-            }
-            resultsByIndex[idx] = { ok: false, error: this.toError(res.reason) }
-        })
-        return { resultsByIndex, transactionApplied: false }
+        return prismaUpsert(this, resource, item, options)
     }
 
     private buildOrderBy(orderBy: SortRule[]) {
@@ -613,8 +142,6 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return { [this.idField]: whereOrId }
     }
 
-    // 事务由 IOrmAdapter.transaction 作为宿主统一管理（不在单个方法内隐式开启事务）
-
     private toError(reason: any) {
         if (isAtomaError(reason)) return reason
         // Do not leak raw adapter/DB errors to clients.
@@ -654,7 +181,6 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return rest
     }
 
-    // patch/JSONPatch 已移除：不再需要 stripIdPrefix
     private buildKeysetWhere(cursor: { token: string; before: boolean } | undefined, orderBy: SortRule[]) {
         if (!cursor?.token) {
             return {

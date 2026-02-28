@@ -20,7 +20,6 @@ export type {
     IOrmAdapter,
     QueryResult,
     QueryResultOne,
-    QueryResultMany,
     OrmAdapterOptions
 } from './adapters/ports'
 
