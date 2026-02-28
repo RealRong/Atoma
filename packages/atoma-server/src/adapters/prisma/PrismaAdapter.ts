@@ -5,19 +5,9 @@ import type {
     QueryResult,
     QueryResultOne
 } from '../ports'
-import {
-    compareOpForAfter,
-    decodeCursorToken,
-    encodeCursorToken,
-    getCursorValuesFromRow,
-    isSameSort,
-    readNullCursorField,
-    reverseOrderBy
-} from '../shared/keyset'
-import { createError, isAtomaError, throwError } from '../../error'
 import { prismaBatchFindMany, prismaFindMany } from './query'
 import { prismaCreate, prismaDelete, prismaUpdate, prismaUpsert } from './write'
-
+import { buildKeysetWhere, encodePageCursor } from './keysetQuery'
 type PrismaDelegate = {
     findMany: (args: any) => Promise<any[]>
     count?: (args: any) => Promise<number>
@@ -36,7 +26,6 @@ type PrismaClientLike = Record<string, any> & {
         <T>(fn: (tx: any) => Promise<T>): Promise<T>
     }
 }
-
 export class AtomaPrismaAdapter implements IOrmAdapter {
     private readonly idField: string
     private readonly defaultSort?: SortRule[]
@@ -63,19 +52,15 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
             return fn({ orm: txOrm, tx })
         })
     }
-
     async findMany(resource: string, query: Query = {}): Promise<QueryResult> {
         return prismaFindMany(this, resource, query)
     }
-
     async batchFindMany(requests: Array<{ resource: string; query: Query }>): Promise<QueryResult[]> {
         return prismaBatchFindMany(this, requests)
     }
-
     async create(resource: string, data: any, options: WriteOptions = {}): Promise<QueryResultOne> {
         return prismaCreate(this, resource, data, options)
     }
-
     async update(
         resource: string,
         item: { id: any; data: any; baseVersion?: number },
@@ -83,7 +68,6 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     ): Promise<QueryResultOne> {
         return prismaUpdate(this, resource, item, options)
     }
-
     async delete(resource: string, whereOrId: any, options: WriteOptions = {}): Promise<QueryResultOne> {
         return prismaDelete(this, resource, whereOrId, options)
     }
@@ -142,12 +126,6 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
         return { [this.idField]: whereOrId }
     }
 
-    private toError(reason: any) {
-        if (isAtomaError(reason)) return reason
-        // Do not leak raw adapter/DB errors to clients.
-        return createError('INTERNAL', 'Internal error', { kind: 'adapter' })
-    }
-
     private async findOneByKey(
         client: PrismaClientLike,
         resource: string,
@@ -182,56 +160,11 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     }
 
     private buildKeysetWhere(cursor: { token: string; before: boolean } | undefined, orderBy: SortRule[]) {
-        if (!cursor?.token) {
-            return {
-                prismaOrderBy: this.buildOrderBy(orderBy),
-                reverseResult: false,
-                keysetWhere: undefined as any
-            }
-        }
-
-        const before = cursor.before
-        const token = cursor.token
-        const queryOrderBy = before ? reverseOrderBy(orderBy) : orderBy
-        let decoded: ReturnType<typeof decodeCursorToken>
-        try {
-            decoded = decodeCursorToken(token)
-        } catch {
-            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path: before ? 'before' : 'after' })
-        }
-
-        const path = before ? 'before' : 'after'
-        if (!isSameSort(decoded.sort, orderBy)) {
-            throwError('INVALID_QUERY', 'Cursor token sort does not match query.sort', { kind: 'validation', path })
-        }
-        this.assertCursorValuesComparable(decoded.values, orderBy, path)
-
-        const keysetWhere = this.buildPrismaKeysetWhere(queryOrderBy, decoded.values, path)
-
-        return {
-            prismaOrderBy: this.buildOrderBy(queryOrderBy),
-            reverseResult: before,
-            keysetWhere
-        }
-    }
-
-    private buildPrismaKeysetWhere(orderBy: SortRule[], values: any[], path: string) {
-        if (values.length < orderBy.length) {
-            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path })
-        }
-
-        const or: any[] = []
-        for (let i = 0; i < orderBy.length; i++) {
-            const and: any[] = []
-            for (let j = 0; j < i; j++) {
-                and.push({ [orderBy[j].field]: values[j] })
-            }
-            const op = compareOpForAfter(orderBy[i].dir)
-            and.push({ [orderBy[i].field]: { [op]: values[i] } })
-            or.push({ AND: and })
-        }
-
-        return { OR: or }
+        return buildKeysetWhere({
+            cursor,
+            orderBy,
+            buildOrderBy: (queryOrderBy) => this.buildOrderBy(queryOrderBy)
+        })
     }
 
     private andWhere(a: any, b: any) {
@@ -240,22 +173,6 @@ export class AtomaPrismaAdapter implements IOrmAdapter {
     }
 
     private encodePageCursor(row: any, orderBy: SortRule[]) {
-        const values = getCursorValuesFromRow(row, orderBy)
-        this.assertCursorValuesComparable(values, orderBy, 'page.cursor')
-        return encodeCursorToken(values, orderBy)
-    }
-
-    private assertCursorValuesComparable(values: unknown[], orderBy: SortRule[], path: string) {
-        if (values.length < orderBy.length) {
-            throwError('INVALID_QUERY', 'Invalid cursor token', { kind: 'validation', path })
-        }
-        const nullField = readNullCursorField(values, orderBy)
-        if (nullField) {
-            throwError('INVALID_QUERY', 'Cursor pagination does not support null sort values', {
-                kind: 'validation',
-                path,
-                field: nullField
-            })
-        }
+        return encodePageCursor(row, orderBy)
     }
 }

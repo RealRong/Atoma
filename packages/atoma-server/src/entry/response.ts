@@ -1,20 +1,8 @@
 import type { HandleResult } from '../runtime/http'
+export { serializeError as serializeErrorForLog } from '../shared/logging/serializeError'
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
     return Boolean(value && typeof value === 'object' && typeof (value as any)[Symbol.asyncIterator] === 'function')
-}
-
-export function serializeErrorForLog(error: unknown) {
-    if (error instanceof Error) {
-        const anyErr = error as any
-        return {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-            ...(anyErr?.cause !== undefined ? { cause: anyErr.cause } : {})
-        }
-    }
-    return { value: error }
 }
 
 function asyncIterableToReadableStream(body: AsyncIterable<unknown>): ReadableStream<Uint8Array> {

@@ -7,15 +7,6 @@ export type AtomaServerRoute =
     | { kind: 'sync-rxdb-push' }
     | { kind: 'sync-rxdb-stream' }
 
-export type AtomaServerHookArgs<Ctx> = {
-    route: AtomaServerRoute
-    ctx: Ctx
-    traceId?: string
-    requestId?: string
-}
-
-export type AtomaServerHook<TArgs> = (args: TArgs) => void | Promise<void>
-
 export type AtomaServerTraceConfig = {
     createId?: () => string
 }
@@ -27,23 +18,21 @@ export type AtomaServerPluginRuntime<Ctx> = {
     logger: AtomaServerLogger
 }
 
-export type AtomaOpPluginResult =
+export type AtomaOpMiddlewareResult =
     | { ok: true; data: any }
     | { ok: false; error: any }
 
-export type AtomaOpsPluginContext<Ctx> = {
+export type AtomaRouteMiddlewareContext<Ctx> = {
     request: Request
     route: AtomaServerRoute
     runtime: AtomaServerPluginRuntime<Ctx>
 }
 
-export type AtomaRoutePluginContext<Ctx> = {
-    request: Request
-    route: AtomaServerRoute
-    runtime: AtomaServerPluginRuntime<Ctx>
+export type AtomaErrorMiddlewareContext<Ctx> = AtomaRouteMiddlewareContext<Ctx> & {
+    error: unknown
 }
 
-export type AtomaOpPluginContext<Ctx> = {
+export type AtomaOpMiddlewareContext<Ctx> = {
     opId: string
     kind: 'query' | 'write'
     resource?: string
@@ -52,16 +41,23 @@ export type AtomaOpPluginContext<Ctx> = {
     runtime: AtomaServerPluginRuntime<Ctx>
 }
 
-export type AtomaOpsPlugin<Ctx> = (ctx: AtomaOpsPluginContext<Ctx>, next: () => Promise<Response>) => Promise<Response>
-export type AtomaRoutePlugin<Ctx> = (ctx: AtomaRoutePluginContext<Ctx>, next: () => Promise<Response>) => Promise<Response>
-export type AtomaOpPlugin<Ctx> = (ctx: AtomaOpPluginContext<Ctx>, next: () => Promise<AtomaOpPluginResult>) => Promise<AtomaOpPluginResult>
-
-export type AtomaServerPlugins<Ctx> = {
-    ops?: AtomaOpsPlugin<Ctx>[]
-    syncRxdbPull?: AtomaRoutePlugin<Ctx>[]
-    syncRxdbPush?: AtomaRoutePlugin<Ctx>[]
-    syncRxdbStream?: AtomaRoutePlugin<Ctx>[]
-    op?: AtomaOpPlugin<Ctx>[]
+export type AtomaServerMiddleware<Ctx> = {
+    onRequest?: (
+        ctx: AtomaRouteMiddlewareContext<Ctx>,
+        next: () => Promise<void>
+    ) => Promise<void>
+    onResponse?: (
+        ctx: AtomaRouteMiddlewareContext<Ctx>,
+        next: () => Promise<Response>
+    ) => Promise<Response>
+    onError?: (
+        ctx: AtomaErrorMiddlewareContext<Ctx>,
+        next: () => Promise<void>
+    ) => Promise<void>
+    onOp?: (
+        ctx: AtomaOpMiddlewareContext<Ctx>,
+        next: () => Promise<AtomaOpMiddlewareResult>
+    ) => Promise<AtomaOpMiddlewareResult>
 }
 
 export type AtomaErrorFormatterArgs<Ctx> = {
@@ -125,11 +121,6 @@ export type AtomaServerConfig<Ctx = unknown> = {
     observability?: {
         logger?: AtomaServerLogger
         trace?: AtomaServerTraceConfig
-        hooks?: {
-            onRequest?: AtomaServerHook<AtomaServerHookArgs<Ctx> & { incoming: any }>
-            onResponse?: AtomaServerHook<AtomaServerHookArgs<Ctx> & { status: number }>
-            onError?: AtomaServerHook<AtomaServerHookArgs<Ctx> & { error: unknown }>
-        }
     }
 
     errors?: {
@@ -137,5 +128,5 @@ export type AtomaServerConfig<Ctx = unknown> = {
         format?: (args: AtomaErrorFormatterArgs<Ctx>) => { status: number; body: unknown }
     }
 
-    plugins?: AtomaServerPlugins<Ctx>
+    middleware?: AtomaServerMiddleware<Ctx>[]
 }

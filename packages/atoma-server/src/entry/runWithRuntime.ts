@@ -1,7 +1,10 @@
-import type { AtomaServerRoute } from '../config'
+import type {
+    AtomaErrorMiddlewareContext,
+    AtomaRouteMiddlewareContext,
+    AtomaServerPluginRuntime,
+    AtomaServerRoute
+} from '../config'
 import type { HandleResult } from '../runtime/http'
-import type { PluginRuntime } from './pluginChain'
-import { invokeOnErrorSafely, invokeOnResponseSafely } from './hooks'
 import { handleResultToResponse, serializeErrorForLog } from './response'
 
 export function createRuntimeRunner<Ctx>(args: {
@@ -26,7 +29,18 @@ export function createRuntimeRunner<Ctx>(args: {
         pathname: string
         initialTraceId?: string
         initialRequestId?: string
-        runResponsePlugins: (ctx: any, next: () => Promise<Response>) => Promise<Response>
+        runRequestMiddlewares: (
+            ctx: AtomaRouteMiddlewareContext<Ctx>,
+            next: () => Promise<void>
+        ) => Promise<void>
+        runResponseMiddlewares: (
+            ctx: AtomaRouteMiddlewareContext<Ctx>,
+            next: () => Promise<Response>
+        ) => Promise<Response>
+        runErrorMiddlewares: (
+            ctx: AtomaErrorMiddlewareContext<Ctx>,
+            next: () => Promise<void>
+        ) => Promise<void>
         run: (runtime: any) => Promise<Response>
     }): Promise<Response> => {
         let runtime: any
@@ -47,29 +61,25 @@ export function createRuntimeRunner<Ctx>(args: {
             }))
         }
 
-        const pluginRuntime: PluginRuntime<Ctx> = {
+        const pluginRuntime: AtomaServerPluginRuntime<Ctx> = {
             ctx: runtime.ctx as Ctx,
             traceId: runtime.traceId,
             requestId: runtime.requestId,
             logger: runtime.logger
         }
+        const routeContext: AtomaRouteMiddlewareContext<Ctx> = {
+            request: input.request,
+            route: input.route,
+            runtime: pluginRuntime
+        }
 
         try {
-            if (runtime.hooks?.onRequest) await runtime.hooks.onRequest({ ...runtime.hookArgs, incoming: input.request })
+            await input.runRequestMiddlewares(routeContext, async () => undefined)
 
-            const response = await input.runResponsePlugins(
-                { request: input.request, route: input.route, runtime: pluginRuntime },
+            return await input.runResponseMiddlewares(
+                routeContext,
                 () => input.run(runtime)
             )
-
-            await invokeOnResponseSafely({
-                runtime,
-                route: input.route,
-                method: input.method,
-                pathname: input.pathname,
-                status: response.status
-            })
-            return response
         } catch (err: any) {
             runtime.logger?.error?.('request failed', {
                 route: input.route,
@@ -77,30 +87,43 @@ export function createRuntimeRunner<Ctx>(args: {
                 pathname: input.pathname,
                 error: serializeErrorForLog(err)
             })
-            await invokeOnErrorSafely({
-                runtime,
-                route: input.route,
-                method: input.method,
-                pathname: input.pathname,
-                error: err
-            })
 
-            const formatted = args.formatTopLevelError({
+            try {
+                await input.runErrorMiddlewares({
+                    ...routeContext,
+                    error: err
+                }, async () => undefined)
+            } catch (middlewareError) {
+                runtime.logger?.error?.('error middleware failed', {
+                    route: input.route,
+                    method: input.method,
+                    pathname: input.pathname,
+                    error: serializeErrorForLog(middlewareError),
+                    sourceError: serializeErrorForLog(err)
+                })
+            }
+
+            const response = handleResultToResponse(args.formatTopLevelError({
                 route: input.route,
                 ctx: runtime.ctx,
                 requestId: runtime.requestId,
                 traceId: runtime.traceId,
                 error: err
-            })
-            const response = handleResultToResponse(formatted)
-            await invokeOnResponseSafely({
-                runtime,
-                route: input.route,
-                method: input.method,
-                pathname: input.pathname,
-                status: response.status
-            })
-            return response
+            }))
+
+            try {
+                return await input.runResponseMiddlewares(routeContext, async () => response)
+            } catch (middlewareError) {
+                runtime.logger?.error?.('response middleware failed', {
+                    route: input.route,
+                    method: input.method,
+                    pathname: input.pathname,
+                    status: response.status,
+                    error: serializeErrorForLog(middlewareError),
+                    sourceError: serializeErrorForLog(err)
+                })
+                return response
+            }
         }
     }
 }

@@ -23,7 +23,6 @@ export function createRuntimeFactory<Ctx>(args: {
 
     const loggerBase = config.observability?.logger ?? createNoopLogger()
     const createTraceId = config.observability?.trace?.createId
-    const hooks = config.observability?.hooks
 
     return async function createRuntime(runtimeArgs: {
         incoming: any
@@ -53,9 +52,7 @@ export function createRuntimeFactory<Ctx>(args: {
             ? await config.context.create({ incoming: runtimeArgs.incoming, route: runtimeArgs.route, requestId, logger })
             : (undefined as any as Ctx)
 
-        const hookArgs = { route: runtimeArgs.route, ctx, traceId, requestId }
-
-        return { traceId, requestId, logger, ctx, hookArgs, hooks }
+        return { traceId, requestId, logger, ctx }
     }
 }
 
@@ -64,11 +61,4 @@ export type ServerRuntime<Ctx> = {
     requestId: string
     logger: any
     ctx: Ctx
-    hookArgs: {
-        route: AtomaServerRoute
-        ctx: Ctx
-        traceId?: string
-        requestId: string
-    }
-    hooks?: any
 }

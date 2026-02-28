@@ -22,7 +22,8 @@
     },
     "scripts": {
         "build": "tsup",
-        "typecheck": "tsc -p tsconfig.json --noEmit"
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "check:layering": "node scripts/checkLayering.mjs"
     },
     "dependencies": {
         "atoma": "workspace:*",
