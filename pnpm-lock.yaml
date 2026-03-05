@@ -72,16 +72,13 @@ importers:
       vitest:
         specifier: ^4.0.16
         version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@24.10.9)(jiti@2.6.1)(jsdom@25.0.1)(lightningcss@1.30.2)(tsx@4.21.0)
-      xstate:
-        specifier: ^5.25.1
-        version: 5.25.1
 
   demo/server:
     dependencies:
-      atoma-server:
+      '@atoma-js/server':
         specifier: workspace:*
         version: link:../../packages/server
-      atoma-types:
+      '@atoma-js/types':
         specifier: workspace:*
         version: link:../../packages/types
       reflect-metadata:
@@ -103,162 +100,108 @@ importers:
 
   packages/atoma:
     dependencies:
-      atoma-client:
+      '@atoma-js/client':
         specifier: workspace:*
-        version: link:../atoma-client
-      atoma-types:
+        version: link:../client
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../atoma-types
+        version: link:../types
 
   packages/client:
     dependencies:
-      atoma-runtime:
+      '@atoma-js/runtime':
         specifier: workspace:*
-        version: link:../atoma-runtime
-      atoma-shared:
+        version: link:../runtime
+      '@atoma-js/shared':
         specifier: workspace:*
-        version: link:../atoma-shared
-      atoma-types:
+        version: link:../shared
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../atoma-types
+        version: link:../types
 
   packages/core:
     dependencies:
-      atoma-shared:
+      '@atoma-js/shared':
         specifier: workspace:*
-        version: link:../atoma-shared
-      atoma-types:
+        version: link:../shared
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../atoma-types
-
-  packages/react:
-    dependencies:
-      atoma-core:
-        specifier: workspace:*
-        version: link:../atoma-core
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../atoma-shared
-      atoma-types:
-        specifier: workspace:*
-        version: link:../atoma-types
-      react:
-        specifier: ^18.0.0 || ^19.0.0
-        version: 19.2.3
-    devDependencies:
-      atoma:
-        specifier: workspace:*
-        version: link:../atoma
-
-  packages/runtime:
-    dependencies:
-      atoma-core:
-        specifier: workspace:*
-        version: link:../atoma-core
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../atoma-shared
-      atoma-types:
-        specifier: workspace:*
-        version: link:../atoma-types
-
-  packages/server:
-    dependencies:
-      '@prisma/client':
-        specifier: ^5.0.0
-        version: 5.22.0(prisma@5.22.0)
-      atoma:
-        specifier: workspace:*
-        version: link:../atoma
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../atoma-shared
-      typeorm:
-        specifier: ^0.3.20
-        version: 0.3.28(babel-plugin-macros@3.1.0)(mongodb@6.21.0(socks@2.8.7))(sqlite3@5.1.7)
-
-  packages/shared: {}
-
-  packages/types:
-    dependencies:
-      atoma-shared:
-        specifier: workspace:*
-        version: link:../atoma-shared
+        version: link:../types
 
   packages/plugins/backend-atoma-server:
     dependencies:
-      atoma-backend-http:
+      '@atoma-js/backend-http':
         specifier: workspace:*
-        version: link:../atoma-backend-http
-      atoma-backend-shared:
+        version: link:../backend-http
+      '@atoma-js/backend-shared':
         specifier: workspace:*
-        version: link:../atoma-backend-shared
-      atoma-shared:
+        version: link:../backend-shared
+      '@atoma-js/shared':
         specifier: workspace:*
-        version: link:../../atoma-shared
-      atoma-types:
+        version: link:../../shared
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../../atoma-types
+        version: link:../../types
 
   packages/plugins/backend-http:
     dependencies:
-      atoma-backend-shared:
+      '@atoma-js/backend-shared':
         specifier: workspace:*
-        version: link:../atoma-backend-shared
-      atoma-shared:
+        version: link:../backend-shared
+      '@atoma-js/shared':
         specifier: workspace:*
-        version: link:../../atoma-shared
-      atoma-types:
+        version: link:../../shared
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../../atoma-types
+        version: link:../../types
       p-queue:
         specifier: ^6.6.2
         version: 6.6.2
 
   packages/plugins/backend-indexeddb:
     dependencies:
-      atoma-backend-shared:
+      '@atoma-js/backend-shared':
         specifier: workspace:*
-        version: link:../atoma-backend-shared
-      atoma-core:
+        version: link:../backend-shared
+      '@atoma-js/core':
         specifier: workspace:*
-        version: link:../../atoma-core
-      atoma-shared:
+        version: link:../../core
+      '@atoma-js/shared':
         specifier: workspace:*
-        version: link:../../atoma-shared
-      atoma-types:
+        version: link:../../shared
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../../atoma-types
+        version: link:../../types
       dexie:
         specifier: ^3.2.0 || ^4.0.0
         version: 4.2.1
 
   packages/plugins/backend-shared:
     dependencies:
-      atoma-core:
+      '@atoma-js/core':
         specifier: workspace:*
-        version: link:../../atoma-core
-      atoma-shared:
+        version: link:../../core
+      '@atoma-js/shared':
         specifier: workspace:*
-        version: link:../../atoma-shared
-      atoma-types:
+        version: link:../../shared
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../../atoma-types
+        version: link:../../types
 
   packages/plugins/devtools:
     dependencies:
-      atoma:
+      '@atoma-js/atoma':
         specifier: workspace:*
         version: link:../../atoma
-      atoma-client:
+      '@atoma-js/client':
         specifier: workspace:*
-        version: link:../../atoma-client
-      atoma-shared:
+        version: link:../../client
+      '@atoma-js/shared':
         specifier: workspace:*
-        version: link:../../atoma-shared
-      atoma-types:
+        version: link:../../shared
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../../atoma-types
+        version: link:../../types
       autoprefixer:
         specifier: ^10.4.0
         version: 10.4.23(postcss@8.5.6)
@@ -299,54 +242,105 @@ importers:
 
   packages/plugins/history:
     dependencies:
-      atoma:
+      '@atoma-js/atoma':
         specifier: workspace:*
         version: link:../../atoma
-      atoma-client:
+      '@atoma-js/client':
         specifier: workspace:*
-        version: link:../../atoma-client
-      atoma-core:
+        version: link:../../client
+      '@atoma-js/core':
         specifier: workspace:*
-        version: link:../../atoma-core
-      atoma-runtime:
+        version: link:../../core
+      '@atoma-js/runtime':
         specifier: workspace:*
-        version: link:../../atoma-runtime
+        version: link:../../runtime
 
   packages/plugins/observability:
     dependencies:
-      atoma-shared:
+      '@atoma-js/shared':
         specifier: workspace:*
-        version: link:../../atoma-shared
-      atoma-types:
+        version: link:../../shared
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../../atoma-types
+        version: link:../../types
       quick-lru:
         specifier: ^7.3.0
         version: 7.3.0
 
   packages/plugins/sync:
     dependencies:
-      atoma:
+      '@atoma-js/atoma':
         specifier: workspace:*
         version: link:../../atoma
-      atoma-client:
+      '@atoma-js/client':
         specifier: workspace:*
-        version: link:../../atoma-client
-      atoma-core:
+        version: link:../../client
+      '@atoma-js/core':
         specifier: workspace:*
-        version: link:../../atoma-core
-      atoma-runtime:
+        version: link:../../core
+      '@atoma-js/runtime':
         specifier: workspace:*
-        version: link:../../atoma-runtime
-      atoma-shared:
+        version: link:../../runtime
+      '@atoma-js/shared':
         specifier: workspace:*
-        version: link:../../atoma-shared
-      atoma-types:
+        version: link:../../shared
+      '@atoma-js/types':
         specifier: workspace:*
-        version: link:../../atoma-types
+        version: link:../../types
       rxdb:
         specifier: ^16.20.0
         version: 16.21.1(rxjs@7.8.2)(socks@2.8.7)
+
+  packages/react:
+    dependencies:
+      '@atoma-js/core':
+        specifier: workspace:*
+        version: link:../core
+      '@atoma-js/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@atoma-js/types':
+        specifier: workspace:*
+        version: link:../types
+      react:
+        specifier: ^18.0.0 || ^19.0.0
+        version: 19.2.3
+    devDependencies:
+      '@atoma-js/atoma':
+        specifier: workspace:*
+        version: link:../atoma
+
+  packages/runtime:
+    dependencies:
+      '@atoma-js/core':
+        specifier: workspace:*
+        version: link:../core
+      '@atoma-js/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@atoma-js/types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/server:
+    dependencies:
+      '@atoma-js/atoma':
+        specifier: workspace:*
+        version: link:../atoma
+      '@atoma-js/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@prisma/client':
+        specifier: ^5.0.0
+        version: 5.22.0(prisma@5.22.0)
+
+  packages/shared: {}
+
+  packages/types:
+    dependencies:
+      '@atoma-js/shared':
+        specifier: workspace:*
+        version: link:../shared
 
 packages:
 
@@ -3146,9 +3140,6 @@ packages:
 
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
-
-  xstate@5.25.1:
-    resolution: {integrity: sha512-oyvsNH5pF2qkHmiHEMdWqc3OjDtoZOH2MTAI35r01f/ZQWOD+VLOiYqo65UgQET0XMA5s9eRm8fnsIo+82biEw==}
 
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
@@ -6074,8 +6065,6 @@ snapshots:
   xml-name-validator@5.0.0: {}
 
   xmlchars@2.2.0: {}
-
-  xstate@5.25.1: {}
 
   xtend@4.0.2: {}
 
