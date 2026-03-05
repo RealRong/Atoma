@@ -1,5 +1,5 @@
 {
-    "name": "atoma-backend-shared",
+    "name": "@atoma-js/backend-shared",
     "version": "0.0.0",
     "type": "module",
     "description": "Shared backend helpers for Atoma optional backend plugins",
@@ -18,8 +18,8 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-core": "workspace:*",
-        "atoma-shared": "workspace:*",
-        "atoma-types": "workspace:*"
+        "@atoma-js/core": "workspace:*",
+        "@atoma-js/shared": "workspace:*",
+        "@atoma-js/types": "workspace:*"
     }
 }

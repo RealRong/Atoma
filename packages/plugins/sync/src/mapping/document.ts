@@ -1,5 +1,5 @@
-import { createId } from 'atoma-shared'
-import type { StoreChange } from 'atoma-types/core'
+import { createId } from '@atoma-js/shared'
+import type { StoreChange } from '@atoma-js/types/core'
 import type { SyncDoc } from '../runtime/contracts'
 import { isRecord, readVersion } from '../utils/common'
 

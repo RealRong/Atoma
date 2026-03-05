@@ -10,7 +10,7 @@
 - Prioritize root-cause fixes; avoid temporary compatibility patches.
 - Unless explicitly requested, do not add transition aliases / compatibility wrappers / deprecated dual paths.
 - 命名重构默认**一步到位**：不保留旧名并存、不保留兼容别名、不保留过渡导出。
-- 对“路径上下文已提供语义”的命名，禁止重复前缀（例如在 `atoma-types/runtime` 下使用 `WriteEntry`，而不是 `RuntimeWriteEntry`）。
+- 对“路径上下文已提供语义”的命名，禁止重复前缀（例如在 `@atoma-js/types/runtime` 下使用 `WriteEntry`，而不是 `RuntimeWriteEntry`）。
 
 ---
 
@@ -20,10 +20,10 @@
 
 - `atoma-protocol` has been merged and must no longer be used as a standalone package.
 - Protocol capabilities are unified in:
-  - `atoma-types/protocol` (types)
-  - `atoma-types/protocol-tools` (runtime tools)
-- Root import from `atoma-types` is **forbidden** (`from 'atoma-types'`).
-  - Only subpath imports are allowed: `atoma-types/{shared|core|runtime|client|protocol|protocol-tools|sync|observability|devtools|internal}`.
+  - `@atoma-js/types/protocol` (types)
+  - `@atoma-js/types/protocol-tools` (runtime tools)
+- Root import from `@atoma-js/types` is **forbidden** (`from '@atoma-js/types'`).
+  - Only subpath imports are allowed: `@atoma-js/types/{shared|core|runtime|client|protocol|protocol-tools|sync|observability|devtools|internal}`.
 
 ### 1.2 Dependency Direction (One-way)
 
@@ -36,7 +36,7 @@
 - Named exports only.
 - `Protocol.xxx` facade style is forbidden.
 - Recommended:
-  - `import { buildQueryOp, assertOperationResults } from 'atoma-types/protocol-tools'`
+  - `import { buildQueryOp, assertOperationResults } from '@atoma-js/types/protocol-tools'`
 
 ### 1.4 Responsibility Separation (Hard Constraint)
 
@@ -48,14 +48,14 @@
 
 ---
 
-### 1.5 atoma-shared and atoma-types/shared Boundaries
+### 1.5 @atoma-js/shared and @atoma-js/types/shared Boundaries
 
-- atoma-types/shared is type-only (scalar contracts only).
-- atoma-shared is runtime utility foundation (ids/random/time/error/url/stable serialization).
-- Runtime helper logic must not be duplicated across packages; prefer atoma-shared single-source utilities.
-- atoma-core domain modules must not implement package-local random/uuid fallback logic.
+- @atoma-js/types/shared is type-only (scalar contracts only).
+- @atoma-js/shared is runtime utility foundation (ids/random/time/error/url/stable serialization).
+- Runtime helper logic must not be duplicated across packages; prefer @atoma-js/shared single-source utilities.
+- @atoma-js/core domain modules must not implement package-local random/uuid fallback logic.
 - Default entity-id policy must be runtime-configurable; core may expose optional algorithms but must not hardcode one as the domain default.
-- If a utility is used by 2+ packages and has no business semantics, it belongs in atoma-shared.
+- If a utility is used by 2+ packages and has no business semantics, it belongs in @atoma-js/shared.
 
 ### 1.6 ID and Context Generation Principles
 
@@ -149,14 +149,14 @@
 
 ### 4.1 Forbidden
 
-- `from 'atoma-types'` root import is forbidden.
+- `from '@atoma-js/types'` root import is forbidden.
 - `from 'atoma-protocol'` is forbidden.
 - Star-namespace type imports like `import type * as Types from '../core'` are forbidden.
 
 ### 4.2 Recommended
 
 - Use explicit named imports:
-  - `import type { Entity, Query, StoreState } from 'atoma-types/core'`
+  - `import type { Entity, Query, StoreState } from '@atoma-js/types/core'`
 - Keep barrel exports updated (e.g. `src/*/index.ts`).
 
 ---
@@ -210,10 +210,10 @@
 
 ## 7. Repository-specific Implementation Contracts
 
-- `atoma-types/sync` has been split into `outbox.ts / transport.ts / events.ts / config.ts`; `index.ts` is export-only.
-- `atoma-types/shared/scalars` is the single source of base scalars (`EntityId/Version/Cursor/CursorToken`).
-- Local query in `atoma-client/defaults/LocalBackendPlugin` must use `runtime.engine.query.evaluate({ state, query })`.
-- `atoma-react` query hooks handling external arrays should construct temporary `StoreState` to reuse runtime query semantics.
+- `@atoma-js/types/sync` has been split into `outbox.ts / transport.ts / events.ts / config.ts`; `index.ts` is export-only.
+- `@atoma-js/types/shared/scalars` is the single source of base scalars (`EntityId/Version/Cursor/CursorToken`).
+- Local query in `@atoma-js/client/defaults/LocalBackendPlugin` must use `runtime.engine.query.evaluate({ state, query })`.
+- `@atoma-js/react` query hooks handling external arrays should construct temporary `StoreState` to reuse runtime query semantics.
 
 ---
 

@@ -1,4 +1,4 @@
-import type { StandardError } from 'atoma-types/protocol'
+import type { StandardError } from '@atoma-js/types/protocol'
 import { errorStatus, toStandardError } from '../../error'
 
 export function toStandard(reason: unknown, fallbackCode: string = 'INTERNAL'): StandardError {

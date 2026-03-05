@@ -1,6 +1,6 @@
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import type { HandleResult } from './http'
-import { composeEnvelopeError } from 'atoma-types/protocol-tools'
+import { composeEnvelopeError } from '@atoma-js/types/protocol-tools'
 import { statusOf, toStandard } from '../shared/errors/standardError'
 
 export function createTopLevelErrorFormatter<Ctx>(config: AtomaServerConfig<Ctx>) {

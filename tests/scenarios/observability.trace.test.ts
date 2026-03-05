@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { DebugEvent } from 'atoma-types/observability'
+import type { DebugEvent } from '@atoma-js/types/observability'
 import { createObservableDemoClient } from '../support/createObservableDemoClient'
 import { assertEventually } from '../support/assertEventually'
 import { useScenarioHarness } from '../support/harness'

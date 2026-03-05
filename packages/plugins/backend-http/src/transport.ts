@@ -1,7 +1,7 @@
-import type { Envelope, Meta, RemoteOp, RemoteOpsResponseData } from 'atoma-types/protocol'
-import { parseEnvelope } from 'atoma-types/protocol-tools'
-import { requestJson } from 'atoma-shared'
-import type { RetryOptions } from 'atoma-shared'
+import type { Envelope, Meta, RemoteOp, RemoteOpsResponseData } from '@atoma-js/types/protocol'
+import { parseEnvelope } from '@atoma-js/types/protocol-tools'
+import { requestJson } from '@atoma-js/shared'
+import type { RetryOptions } from '@atoma-js/shared'
 
 export type HttpInterceptors<T> = {
     onRequest?: (request: Request) => Promise<Request | void> | Request | void

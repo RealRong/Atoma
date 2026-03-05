@@ -1,5 +1,5 @@
-import type { Entity, FilterExpr } from 'atoma-types/core'
-import type { AtomaSchema } from 'atoma-types/client'
+import type { Entity, FilterExpr } from '@atoma-js/types/core'
+import type { AtomaSchema } from '@atoma-js/types/client'
 
 export type DemoUser = Entity & {
     id: string

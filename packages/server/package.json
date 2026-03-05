@@ -1,5 +1,5 @@
 {
-    "name": "atoma-server",
+    "name": "@atoma-js/server",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma server handlers + adapters (optional)",
@@ -26,8 +26,8 @@
         "check:layering": "node scripts/checkLayering.mjs"
     },
     "dependencies": {
-        "atoma": "workspace:*",
-        "atoma-shared": "workspace:*"
+        "@atoma-js/atoma": "workspace:*",
+        "@atoma-js/shared": "workspace:*"
     },
     "peerDependencies": {
         "@prisma/client": "^5.0.0"

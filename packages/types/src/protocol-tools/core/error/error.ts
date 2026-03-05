@@ -1,4 +1,4 @@
-import type { ErrorKind, StandardError, StandardErrorDetails } from 'atoma-types/protocol'
+import type { ErrorKind, StandardError, StandardErrorDetails } from '@atoma-js/types/protocol'
 
 export function createError(args: {
     code: string

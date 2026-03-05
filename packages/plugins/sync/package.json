@@ -1,5 +1,5 @@
 {
-    "name": "atoma-sync",
+    "name": "@atoma-js/sync",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma Sync Engine (optional extension package)",
@@ -20,12 +20,12 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma": "workspace:*",
-        "atoma-client": "workspace:*",
-        "atoma-core": "workspace:*",
-        "atoma-runtime": "workspace:*",
-        "atoma-shared": "workspace:*",
-        "atoma-types": "workspace:*",
+        "@atoma-js/atoma": "workspace:*",
+        "@atoma-js/client": "workspace:*",
+        "@atoma-js/core": "workspace:*",
+        "@atoma-js/runtime": "workspace:*",
+        "@atoma-js/shared": "workspace:*",
+        "@atoma-js/types": "workspace:*",
         "rxdb": "^16.20.0"
     }
 }

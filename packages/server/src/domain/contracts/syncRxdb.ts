@@ -1,11 +1,11 @@
-import type { StandardError } from 'atoma-types/protocol'
-import type { SyncPullRequest, SyncPushRequest } from 'atoma-types/sync'
+import type { StandardError } from '@atoma-js/types/protocol'
+import type { SyncPullRequest, SyncPushRequest } from '@atoma-js/types/sync'
 import {
     parseSyncPullRequest,
     parseSyncPushRequest,
     parseSyncStreamQuery,
     wrapProtocolError
-} from 'atoma-types/protocol-tools'
+} from '@atoma-js/types/protocol-tools'
 import { throwError } from '../../error'
 import { toObjectDetails } from '../../shared/utils/details'
 

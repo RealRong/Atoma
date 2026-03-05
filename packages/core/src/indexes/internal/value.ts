@@ -1,5 +1,5 @@
-import type { IndexType } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { IndexType } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/protocol'
 
 export const normalizeNumber = (value: unknown, field: string, kind: IndexType, id: EntityId | string): number => {
     const num =

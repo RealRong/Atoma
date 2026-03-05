@@ -1,12 +1,31 @@
 {
-    "extends": "./tsconfig.json",
+    "extends": "../../../tsconfig.base.json",
     "compilerOptions": {
+        "jsx": "react-jsx",
+        "resolvePackageJsonImports": true,
+        "resolvePackageJsonExports": true,
+        "types": [
+            "node",
+            "vite/client"
+        ],
+        "declaration": true,
+        "declarationMap": true,
         "noEmit": false,
         "emitDeclarationOnly": true,
         "rootDir": "src",
         "outDir": "dist",
         "baseUrl": ".",
-        "paths": {}
+        "paths": {
+            "@atoma-js/shared": [
+                "../../shared/dist/index.d.ts"
+            ],
+            "@atoma-js/types/devtools": [
+                "../../types/dist/devtools/index.d.ts"
+            ],
+            "@atoma-js/types/client/plugins": [
+                "../../types/dist/client/plugins/index.d.ts"
+            ]
+        }
     },
     "include": [
         "src/index.ts"

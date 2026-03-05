@@ -1,11 +1,11 @@
-import type { Entity } from 'atoma-types/core'
+import type { Entity } from '@atoma-js/types/core'
 import type {
     StoreEventName,
     StoreEventListener,
     StoreEventListenerOptions,
     StoreEventPayloadMap,
     StoreEventBus as StoreEventBusType,
-} from 'atoma-types/runtime'
+} from '@atoma-js/types/runtime'
 
 type HandlerSetMap = {
     [K in StoreEventName]: Map<StoreEventListener<StoreEventName>, Readonly<{ once: boolean }>>

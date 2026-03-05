@@ -1,5 +1,5 @@
 {
-    "name": "atoma-core",
+    "name": "@atoma-js/core",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma core store engine",
@@ -35,7 +35,7 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-shared": "workspace:*",
-        "atoma-types": "workspace:*"
+        "@atoma-js/shared": "workspace:*",
+        "@atoma-js/types": "workspace:*"
     }
 }

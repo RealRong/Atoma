@@ -1,13 +1,13 @@
-import { applySteps } from 'atoma-core/store'
+import { applySteps } from '@atoma-js/core/store'
 import type {
     Entity,
     StoreChange
-} from 'atoma-types/core'
+} from '@atoma-js/types/core'
 import type {
     WriteItemResult,
     WriteOutput
-} from 'atoma-types/runtime'
-import type { EntityId } from 'atoma-types/shared'
+} from '@atoma-js/types/runtime'
+import type { EntityId } from '@atoma-js/types/shared'
 import type { WriteCtx } from '../context'
 import {
     ensureChange,

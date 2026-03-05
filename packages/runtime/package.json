@@ -1,5 +1,5 @@
 {
-    "name": "atoma-runtime",
+    "name": "@atoma-js/runtime",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma runtime pipeline",
@@ -18,8 +18,8 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-core": "workspace:*",
-        "atoma-shared": "workspace:*",
-        "atoma-types": "workspace:*"
+        "@atoma-js/core": "workspace:*",
+        "@atoma-js/shared": "workspace:*",
+        "@atoma-js/types": "workspace:*"
     }
 }

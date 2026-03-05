@@ -1,4 +1,4 @@
-import type { WriteOptions } from 'atoma-types/protocol'
+import type { WriteOptions } from '@atoma-js/types/protocol'
 import { serializeError } from '../../shared/logging/serializeError'
 import { statusOf, toStandard } from '../../shared/errors/standardError'
 import { extractConflictMeta } from './conflict'

@@ -1,9 +1,9 @@
-import { toError } from 'atoma-shared'
-import type { ClientPlugin } from 'atoma-types/client/plugins'
-import type { StoreToken } from 'atoma-types/core'
-import type { StoreEventListener, StoreEventName } from 'atoma-types/runtime'
-import type { PluginOptions } from 'atoma-types/observability'
-import { HUB_TOKEN } from 'atoma-types/devtools'
+import { toError } from '@atoma-js/shared'
+import type { ClientPlugin } from '@atoma-js/types/client/plugins'
+import type { StoreToken } from '@atoma-js/types/core'
+import type { StoreEventListener, StoreEventName } from '@atoma-js/types/runtime'
+import type { PluginOptions } from '@atoma-js/types/observability'
+import { HUB_TOKEN } from '@atoma-js/types/devtools'
 import { Devtools } from './devtools'
 import { Runtime } from './runtime'
 
@@ -27,7 +27,7 @@ export function observabilityPlugin(options: PluginOptions = {}): ClientPlugin {
     const maxRuntimeTraces = resolvePositiveInteger(options.maxRuntimeTraces, 1024)
 
     return {
-        id: 'atoma-observability',
+        id: 'observability',
         setup: (ctx) => {
             const devtools = new Devtools({
                 sourceId: `obs.trace.${ctx.clientId}`,

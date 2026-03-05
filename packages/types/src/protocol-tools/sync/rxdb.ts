@@ -7,7 +7,7 @@ import type {
     SyncPushResponse,
     SyncStreamNotify,
     SyncCheckpoint
-} from 'atoma-types/sync'
+} from '@atoma-js/types/sync'
 
 type AnyRecord = Record<string, unknown>
 

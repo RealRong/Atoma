@@ -1,6 +1,6 @@
-import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { HUB_TOKEN } from 'atoma-types/devtools'
-import { safeDispose } from 'atoma-shared'
+import type { ClientPlugin, PluginContext } from '@atoma-js/types/client/plugins'
+import { HUB_TOKEN } from '@atoma-js/types/devtools'
+import { safeDispose } from '@atoma-js/shared'
 import { createClientInspector } from './runtime/create-client-inspector'
 import { createHub } from './runtime/hub'
 import { registerBuiltinSources } from './runtime/sources'
@@ -15,7 +15,7 @@ export type DevtoolsPluginOptions = Readonly<{
 
 export function devtoolsPlugin(options: DevtoolsPluginOptions = {}): ClientPlugin {
     return {
-        id: 'atoma-devtools',
+        id: 'devtools',
         provides: [HUB_TOKEN],
         setup: (ctx: PluginContext) => {
             const hub = createHub()

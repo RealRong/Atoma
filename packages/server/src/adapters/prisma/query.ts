@@ -1,4 +1,4 @@
-import type { Query } from 'atoma-types/protocol'
+import type { Query } from '@atoma-js/types/protocol'
 import type { QueryResult } from '../ports'
 import { ensureStableOrderBy } from '../shared/keyset'
 import { compileFilterToPrismaWhere } from '../../query/compile'

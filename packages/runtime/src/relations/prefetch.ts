@@ -3,9 +3,9 @@ import {
     collectUniqueKeys,
     type IncludeInput,
     type RelationPlanEntry
-} from 'atoma-core/relations'
-import type { Entity, FilterExpr, Query, RelationMap, StoreToken } from 'atoma-types/core'
-import type { RelationPrefetchOptions, RelationStore } from 'atoma-types/runtime'
+} from '@atoma-js/core/relations'
+import type { Entity, FilterExpr, Query, RelationMap, StoreToken } from '@atoma-js/types/core'
+import type { RelationPrefetchOptions, RelationStore } from '@atoma-js/types/runtime'
 
 export async function prefetchRelations<T extends Entity>(
     items: T[],

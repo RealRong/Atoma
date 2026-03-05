@@ -1,4 +1,4 @@
-import type { QueryResultData, StandardError, WriteItemResult, WriteResultData } from 'atoma-types/protocol'
+import type { QueryResultData, StandardError, WriteItemResult, WriteResultData } from '@atoma-js/types/protocol'
 import { assertPositiveVersion, invalid, isObject, makeValidationDetails, requireArray, requireObject, requireString } from './common'
 
 function assertStandardError(value: unknown, ctx: { part: string; field?: string }): StandardError {

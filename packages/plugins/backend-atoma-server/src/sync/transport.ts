@@ -1,11 +1,11 @@
-import type { SyncTransport } from 'atoma-types/client/sync'
+import type { SyncTransport } from '@atoma-js/types/client/sync'
 import {
     HTTP_PATH_SYNC_RXDB_PULL,
     HTTP_PATH_SYNC_RXDB_PUSH,
     HTTP_PATH_SYNC_RXDB_STREAM,
     parseSyncPullResponse,
     parseSyncPushResponse
-} from 'atoma-types/protocol-tools'
+} from '@atoma-js/types/protocol-tools'
 import type { AtomaServerBackendPluginOptions } from '../types'
 import { postJson, resolveFetch } from './http'
 import { createStream } from './stream'

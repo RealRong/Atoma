@@ -1,5 +1,5 @@
 {
-    "name": "atoma-types",
+    "name": "@atoma-js/types",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma shared type exports",
@@ -105,6 +105,6 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-shared": "workspace:*"
+        "@atoma-js/shared": "workspace:*"
     }
 }

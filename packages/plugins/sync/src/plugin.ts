@@ -1,5 +1,5 @@
-import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import { SYNC_TRANSPORT_TOKEN } from 'atoma-types/client/sync'
+import type { ClientPlugin, PluginContext } from '@atoma-js/types/client/plugins'
+import { SYNC_TRANSPORT_TOKEN } from '@atoma-js/types/client/sync'
 import { SyncController } from './controller/SyncController'
 import type { SyncExtension, SyncPluginOptions } from './types'
 

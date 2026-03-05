@@ -18,6 +18,6 @@ export async function createSqliteDemoServer(_options: Readonly<{
     dirPrefix?: string
 }> = {}): Promise<SqliteDemoServer> {
     throw new Error(
-        '[createSqliteDemoServer] atoma-server 已移除 TypeORM 适配器，请迁移测试基建到 Prisma 方案。'
+        '[createSqliteDemoServer] @atoma-js/server 已移除 TypeORM 适配器，请迁移测试基建到 Prisma 方案。'
     )
 }

@@ -3,7 +3,7 @@
  * - Owns all subsystems (execution, processor, stores).
  * - Exposes runtime.read/runtime.write flow entrypoints.
  */
-import type { Entity } from 'atoma-types/core'
+import type { Entity } from '@atoma-js/types/core'
 import type {
     Runtime as RuntimeType,
     Execution as ExecutionType,
@@ -14,7 +14,7 @@ import type {
     Processor as ProcessorType,
     Write,
     StoreCatalog
-} from 'atoma-types/runtime'
+} from '@atoma-js/types/runtime'
 import { Processor } from './Processor'
 import { Catalog } from '../store/Catalog'
 import { EventBus } from '../store/EventBus'

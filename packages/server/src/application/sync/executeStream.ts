@@ -1,4 +1,4 @@
-import { sseComment, sseNotify, sseRetry } from 'atoma-types/protocol-tools'
+import { sseComment, sseNotify, sseRetry } from '@atoma-js/types/protocol-tools'
 import type { AtomaServerConfig } from '../../config'
 import type { HandleResult } from '../../runtime/http'
 import { throwError } from '../../error'

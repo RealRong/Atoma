@@ -1,5 +1,5 @@
 {
-    "name": "atoma-backend-indexeddb",
+    "name": "@atoma-js/backend-indexeddb",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma IndexedDB backend (optional)",
@@ -17,10 +17,10 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-backend-shared": "workspace:*",
-        "atoma-core": "workspace:*",
-        "atoma-shared": "workspace:*",
-        "atoma-types": "workspace:*",
+        "@atoma-js/backend-shared": "workspace:*",
+        "@atoma-js/core": "workspace:*",
+        "@atoma-js/shared": "workspace:*",
+        "@atoma-js/types": "workspace:*",
         "dexie": "^3.2.0 || ^4.0.0"
     }
 }

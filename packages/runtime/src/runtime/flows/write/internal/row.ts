@@ -1,8 +1,8 @@
 import type {
     Entity,
     StoreChange
-} from 'atoma-types/core'
-import type { WriteEntry } from 'atoma-types/runtime'
+} from '@atoma-js/types/core'
+import type { WriteEntry } from '@atoma-js/types/runtime'
 import type { IntentCommand } from '../contracts'
 import type { Row } from '../context'
 

@@ -1,17 +1,17 @@
 import {
     invertChanges,
     mergeChanges
-} from 'atoma-core/store'
+} from '@atoma-js/core/store'
 import type {
     Entity,
     StoreChange,
     WriteManyItemErr,
     WriteManyResult
-} from 'atoma-types/core'
+} from '@atoma-js/types/core'
 import type {
     WriteEntry,
     WriteItemResult
-} from 'atoma-types/runtime'
+} from '@atoma-js/types/runtime'
 import type { WriteCtx } from '../context'
 import {
     ensureEntry,

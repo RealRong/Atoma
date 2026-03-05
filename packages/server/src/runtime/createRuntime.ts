@@ -1,4 +1,4 @@
-import { createId } from 'atoma-shared'
+import { createId } from '@atoma-js/shared'
 import type { AtomaServerConfig, AtomaServerRoute } from '../config'
 import { createNoopLogger } from '../logger'
 

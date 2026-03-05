@@ -9,43 +9,43 @@
         "outDir": "dist",
         "baseUrl": ".",
         "paths": {
-            "atoma-shared": [
-                "../atoma-shared/dist/index.d.ts"
+            "@atoma-js/shared": [
+                "../shared/dist/index.d.ts"
             ],
-            "atoma-types/shared": [
+            "@atoma-js/types/shared": [
                 "src/shared/index.ts"
             ],
-            "atoma-types/core": [
+            "@atoma-js/types/core": [
                 "src/core/index.ts"
             ],
-            "atoma-types/runtime": [
+            "@atoma-js/types/runtime": [
                 "src/runtime/index.ts"
             ],
-            "atoma-types/client": [
+            "@atoma-js/types/client": [
                 "src/client/index.ts"
             ],
-            "atoma-types/client/sync": [
+            "@atoma-js/types/client/sync": [
                 "src/client/sync.ts"
             ],
-            "atoma-types/history": [
+            "@atoma-js/types/history": [
                 "src/history/index.ts"
             ],
-            "atoma-types/protocol": [
+            "@atoma-js/types/protocol": [
                 "src/protocol/index.ts"
             ],
-            "atoma-types/protocol-tools": [
+            "@atoma-js/types/protocol-tools": [
                 "src/protocol-tools/index.ts"
             ],
-            "atoma-types/observability": [
+            "@atoma-js/types/observability": [
                 "src/observability/index.ts"
             ],
-            "atoma-types/sync": [
+            "@atoma-js/types/sync": [
                 "src/sync/index.ts"
             ],
-            "atoma-types/devtools": [
+            "@atoma-js/types/devtools": [
                 "src/devtools/index.ts"
             ],
-            "atoma-types/internal": [
+            "@atoma-js/types/internal": [
                 "src/internal/index.ts"
             ]
         }

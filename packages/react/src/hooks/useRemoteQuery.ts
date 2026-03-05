@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { stableStringify } from 'atoma-shared'
-import type { Entity, Store, PageInfo, Query } from 'atoma-types/core'
-import { getStoreBindings } from 'atoma-types/internal'
+import { stableStringify } from '@atoma-js/shared'
+import type { Entity, Store, PageInfo, Query } from '@atoma-js/types/core'
+import { getStoreBindings } from '@atoma-js/types/internal'
 import { dedupeTask, getOrCreateEntry, publish, type RemoteState } from './internal/remoteQueryCache'
 
 type UseRemoteQueryResult<T extends Entity> = RemoteState<T> & Readonly<{

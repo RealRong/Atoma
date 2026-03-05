@@ -1,4 +1,4 @@
-import type { Entity } from 'atoma-types/core'
+import type { Entity } from '@atoma-js/types/core'
 import type { IntentCommand } from '../contracts'
 import type { Row, WriteCtx } from '../context'
 import { toIntentId } from '../internal/row'

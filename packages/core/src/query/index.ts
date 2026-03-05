@@ -1,5 +1,5 @@
-import type { Entity, Indexes, PageInfo, Query } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
+import type { Entity, Indexes, PageInfo, Query } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
 import { matchesFilter } from './internal/filter'
 import { normalizeQuery } from './internal/normalize'
 import { applyPage } from './internal/page'

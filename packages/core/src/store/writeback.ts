@@ -2,8 +2,8 @@ import type {
     Entity,
     StoreChange,
     StoreWritebackEntry,
-} from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
+} from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
 import { reuse } from './mutation'
 import { mergeChanges, toChange } from './changes'
 

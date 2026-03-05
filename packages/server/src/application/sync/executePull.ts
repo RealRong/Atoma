@@ -1,4 +1,4 @@
-import type { SyncDocument, SyncPullResponse } from 'atoma-types/sync'
+import type { SyncDocument, SyncPullResponse } from '@atoma-js/types/sync'
 import type { AtomaServerConfig } from '../../config'
 import type { HandleResult } from '../../runtime/http'
 import { throwError } from '../../error'

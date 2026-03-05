@@ -1,4 +1,4 @@
-import type { CommandResult, PanelSpec, Snapshot, SourceSpec, StreamEvent } from 'atoma-types/devtools'
+import type { CommandResult, PanelSpec, Snapshot, SourceSpec, StreamEvent } from '@atoma-js/types/devtools'
 
 export type InspectorPanel = {
     id: string

@@ -1,4 +1,4 @@
-import type { WriteOptions } from 'atoma-types/protocol'
+import type { WriteOptions } from '@atoma-js/types/protocol'
 import type { QueryResultOne } from '../ports'
 
 export async function prismaCreate(

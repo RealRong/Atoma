@@ -1,5 +1,5 @@
 {
-    "name": "atoma-history",
+    "name": "@atoma-js/history",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma History Plugin (optional extension package)",
@@ -20,9 +20,9 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma": "workspace:*",
-        "atoma-client": "workspace:*",
-        "atoma-core": "workspace:*",
-        "atoma-runtime": "workspace:*"
+        "@atoma-js/atoma": "workspace:*",
+        "@atoma-js/client": "workspace:*",
+        "@atoma-js/core": "workspace:*",
+        "@atoma-js/runtime": "workspace:*"
     }
 }

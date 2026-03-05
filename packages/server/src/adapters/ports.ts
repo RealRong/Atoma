@@ -1,5 +1,5 @@
 import type { AtomaError } from '../error'
-import type { ChangeKind, PageInfo, Query, SortRule, WriteOptions } from 'atoma-types/protocol'
+import type { ChangeKind, PageInfo, Query, SortRule, WriteOptions } from '@atoma-js/types/protocol'
 
 export interface QueryResult<T = any> {
     data: T[]

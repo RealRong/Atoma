@@ -1,15 +1,15 @@
-import type { Entity } from 'atoma-types/core'
-import type { OperationClient } from 'atoma-types/client/ops'
+import type { Entity } from '@atoma-js/types/core'
+import type { OperationClient } from '@atoma-js/types/client/ops'
 import {
     assertQueryResultData,
     assertWriteResultData,
     buildQueryOp,
     buildWriteOp,
     createOpId
-} from 'atoma-types/protocol-tools'
+} from '@atoma-js/types/protocol-tools'
 import type {
     WriteEntry as ProtocolWriteEntry
-} from 'atoma-types/protocol'
+} from '@atoma-js/types/protocol'
 import type {
     ExecutionOptions,
     ExecutionRegistration,
@@ -19,7 +19,7 @@ import type {
     WriteItemResult,
     WriteRequest,
     WriteOutput
-} from 'atoma-types/runtime'
+} from '@atoma-js/types/runtime'
 
 type OperationRuntime = Readonly<{
     now: () => number

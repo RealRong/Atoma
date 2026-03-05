@@ -1,7 +1,7 @@
 import type {
     PluginContext as PluginContextType,
-} from 'atoma-types/client/plugins'
-import type { Runtime } from 'atoma-runtime'
+} from '@atoma-js/types/client/plugins'
+import type { Runtime } from '@atoma-js/runtime'
 import { ServiceRegistry } from './ServiceRegistry'
 
 export class PluginContext implements PluginContextType {

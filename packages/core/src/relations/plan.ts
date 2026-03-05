@@ -6,7 +6,7 @@ import type {
     RelationMap,
     StoreToken,
     VariantsConfig
-} from 'atoma-types/core'
+} from '@atoma-js/types/core'
 import { mergeIncludeQuery, pickIncludeOptions } from './include'
 
 export type IncludeInput = RelationIncludeInput<Record<string, unknown>> | undefined

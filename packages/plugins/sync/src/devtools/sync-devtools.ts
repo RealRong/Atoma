@@ -1,4 +1,4 @@
-import type { SyncEvent, SyncPhase } from 'atoma-types/sync'
+import type { SyncEvent, SyncPhase } from '@atoma-js/types/sync'
 
 type DevtoolsSubscriber = (e: any) => void
 

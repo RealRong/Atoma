@@ -16,7 +16,7 @@ export default defineConfig({
         options.plugins = [
             ...(options.plugins ?? []),
             {
-                name: 'atoma-history-hash-alias-subpaths',
+                name: 'history-hash-alias-subpaths',
                 setup(build) {
                     const exact: Record<string, string> = {
                         '#history': path.resolve(__dirname, 'src/index.ts'),
@@ -42,10 +42,10 @@ export default defineConfig({
         ]
     },
     external: [
-        'atoma',
-        'atoma-client',
-        'atoma-core',
-        'atoma-shared',
-        'atoma-observability',
+        '@atoma-js/atoma',
+        '@atoma-js/client',
+        '@atoma-js/core',
+        '@atoma-js/shared',
+        '@atoma-js/observability',
     ]
 })

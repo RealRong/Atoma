@@ -1,5 +1,5 @@
-import type { FilterExpr } from 'atoma-types/core'
-import { read } from 'atoma-shared'
+import type { FilterExpr } from '@atoma-js/types/core'
+import { read } from '@atoma-js/shared'
 import type { FuzzyDefaults, MatchDefaults } from './types'
 import { defaultTokenizer, levenshteinDistance, lower, tokenize } from '../../shared/text'
 

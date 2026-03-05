@@ -1,4 +1,4 @@
-import type { ResourceToken, WriteAction, WriteEntry, WriteItem, WriteOptions } from 'atoma-types/protocol'
+import type { ResourceToken, WriteAction, WriteEntry, WriteItem, WriteOptions } from '@atoma-js/types/protocol'
 import { assertFiniteNumber, assertNonEmptyString, assertPositiveVersion, invalid, isObject, makeValidationDetails } from './common'
 
 type WriteEntryCtx = {

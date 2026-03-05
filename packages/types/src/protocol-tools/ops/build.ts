@@ -1,4 +1,4 @@
-import type { Meta, Query, QueryOp, ResourceToken, WriteOp } from 'atoma-types/protocol'
+import type { Meta, Query, QueryOp, ResourceToken, WriteOp } from '@atoma-js/types/protocol'
 
 export function buildWriteOp(args: {
     opId: string

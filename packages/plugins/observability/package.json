@@ -1,5 +1,5 @@
 {
-    "name": "atoma-observability",
+    "name": "@atoma-js/observability",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma observability runtime and types",
@@ -22,8 +22,8 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-shared": "workspace:*",
-        "atoma-types": "workspace:*",
+        "@atoma-js/shared": "workspace:*",
+        "@atoma-js/types": "workspace:*",
         "quick-lru": "^7.3.0"
     }
 }

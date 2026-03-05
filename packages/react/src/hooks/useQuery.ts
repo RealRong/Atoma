@@ -1,4 +1,4 @@
-import type { Entity, Store, PageInfo, Query, RelationIncludeInput, WithRelations } from 'atoma-types/core'
+import type { Entity, Store, PageInfo, Query, RelationIncludeInput, WithRelations } from '@atoma-js/types/core'
 import { useProjectedRelations } from './internal/useProjectedRelations'
 import { useStoreQuery } from './useStoreQuery'
 import { useRemoteQuery } from './useRemoteQuery'

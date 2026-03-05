@@ -1,5 +1,5 @@
-import type { PartialWithId } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { PartialWithId } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/protocol'
 
 const toObjectRecord = (value: unknown): Record<string, unknown> | null => {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return null

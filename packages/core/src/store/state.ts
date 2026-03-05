@@ -1,5 +1,5 @@
-import type { Entity, StoreChange } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
+import type { Entity, StoreChange } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
 import { mergeChanges, toChange } from './changes'
 import { reuse } from './mutation'
 

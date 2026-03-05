@@ -1,5 +1,5 @@
-import { decodeCursorToken } from 'atoma-shared'
-import type { FilterExpr, PageSpec, Query, ResourceToken, SortRule } from 'atoma-types/protocol'
+import { decodeCursorToken } from '@atoma-js/shared'
+import type { FilterExpr, PageSpec, Query, ResourceToken, SortRule } from '@atoma-js/types/protocol'
 import { assertFiniteNumber, invalid, isObject, isPlainObject, makeValidationDetails, requireArray, requireObject } from './common'
 
 function isNonEmptyString(value: unknown): value is string {

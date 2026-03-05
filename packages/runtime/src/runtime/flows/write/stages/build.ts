@@ -1,10 +1,10 @@
-import { toChange } from 'atoma-core/store'
-import { createIdempotencyKey } from 'atoma-shared'
+import { toChange } from '@atoma-js/core/store'
+import { createIdempotencyKey } from '@atoma-js/shared'
 import type {
     Entity,
     PartialWithId
-} from 'atoma-types/core'
-import type { Runtime } from 'atoma-types/runtime'
+} from '@atoma-js/types/core'
+import type { Runtime } from '@atoma-js/types/runtime'
 import type { WriteScope } from '../contracts'
 import type { WriteCtx } from '../context'
 

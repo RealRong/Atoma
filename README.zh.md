@@ -16,7 +16,7 @@
 ## 安装
 
 ```bash
-npm i atoma
+npm i @atoma-js/atoma
 ```
 
 Peer 依赖：
@@ -26,9 +26,9 @@ Peer 依赖：
 ## 快速开始（client + React）
 
 ```ts
-import { createClient } from 'atoma-client'
-import { useFindMany } from 'atoma-react'
-import { httpBackendPlugin } from 'atoma-backend-http'
+import { createClient } from '@atoma-js/client'
+import { useFindMany } from '@atoma-js/react'
+import { httpBackendPlugin } from '@atoma-js/backend-http'
 
 type User = { id: string; name: string; version?: number }
 
@@ -55,8 +55,8 @@ export function Users() {
 ### Atoma Server 插件接入
 
 ```ts
-import { createClient } from 'atoma-client'
-import { atomaServerBackendPlugin } from 'atoma-backend-atoma-server'
+import { createClient } from '@atoma-js/client'
+import { atomaServerBackendPlugin } from '@atoma-js/backend-atoma-server'
 
 const client = createClient({
     schema,
@@ -78,11 +78,11 @@ const client = createClient({
   - ops：`op.meta.traceId` / `op.meta.requestId`（op-scoped，支持 batch mixed trace）
   - subscribe（SSE）：URL query `traceId` / `requestId`（用于无 body 的 GET/SSE）
 
-以上由 `atoma-types/protocol`（类型）与 `atoma-types/protocol-tools`（运行时工具）统一定义，client 与 server 共享同一份协议语义。
+以上由 `@atoma-js/types/protocol`（类型）与 `@atoma-js/types/protocol-tools`（运行时工具）统一定义，client 与 server 共享同一份协议语义。
 
 ## Server
 
-`atoma-server` 的定位是**协议内核**：
+`@atoma-js/server` 的定位是**协议内核**：
 
 - **只认 Web 标准 `Request`/`Response`**
 - 默认只暴露两个 handler：`ops(request)` / `subscribe(request)`（SSE）
@@ -92,8 +92,8 @@ const client = createClient({
 ### 示例（Next.js route handlers）
 
 ```ts
-import { createAtomaHandlers } from 'atoma-server'
-import { createPrismaServerAdapter } from 'atoma-server/adapters/prisma'
+import { createAtomaHandlers } from '@atoma-js/server'
+import { createPrismaServerAdapter } from '@atoma-js/server/adapters/prisma'
 
 const handlers = createAtomaHandlers({
     adapter: createPrismaServerAdapter({ prisma: /* PrismaClient */ } as any)

@@ -1,4 +1,4 @@
-import type { Entity } from 'atoma-types/core'
+import type { Entity } from '@atoma-js/types/core'
 import type {
     Execution as ExecutionType,
     ExecutionPhase,
@@ -9,7 +9,7 @@ import type {
     WriteConsistency,
     WriteRequest,
     WriteOutput
-} from 'atoma-types/runtime'
+} from '@atoma-js/types/runtime'
 
 type QueryExecutor = <T extends Entity>(
     request: QueryRequest<T>,

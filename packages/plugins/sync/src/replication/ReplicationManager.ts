@@ -1,6 +1,6 @@
-import type { PluginContext } from 'atoma-types/client/plugins'
-import type { SyncTransport } from 'atoma-types/client/sync'
-import type { SyncEvent, SyncMode, SyncPhase } from 'atoma-types/sync'
+import type { PluginContext } from '@atoma-js/types/client/plugins'
+import type { SyncTransport } from '@atoma-js/types/client/sync'
+import type { SyncEvent, SyncMode, SyncPhase } from '@atoma-js/types/sync'
 import type { ReadyRuntime, ResourceStateMap } from '../runtime/contracts'
 import {
     buildReplications,

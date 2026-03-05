@@ -19,7 +19,7 @@ let mounted: MountedAtomaDevTools | null = null
 function ensureContainer(target?: HTMLElement) {
     const el = target ?? document.createElement('div')
     if (!target) {
-        el.setAttribute('data-atoma-devtools', '1')
+        el.setAttribute('data-devtools', '1')
         document.body.appendChild(el)
     }
     return el
@@ -28,17 +28,17 @@ function ensureContainer(target?: HTMLElement) {
 function ensureShadowRoot(container: HTMLElement) {
     const root = container.shadowRoot ?? container.attachShadow({ mode: 'open' })
 
-    if (!root.querySelector('style[data-atoma-devtools]')) {
+    if (!root.querySelector('style[data-devtools]')) {
         const style = document.createElement('style')
-        style.setAttribute('data-atoma-devtools', '1')
+        style.setAttribute('data-devtools', '1')
         style.textContent = stylesText
         root.appendChild(style)
     }
 
-    let mountPoint = root.querySelector('#atoma-devtools-root') as HTMLElement | null
+    let mountPoint = root.querySelector('#devtools-root') as HTMLElement | null
     if (!mountPoint) {
         mountPoint = document.createElement('div')
-        mountPoint.id = 'atoma-devtools-root'
+        mountPoint.id = 'devtools-root'
         root.appendChild(mountPoint)
     }
 

@@ -1,7 +1,7 @@
-import type { ClientPlugin, PluginContext } from 'atoma-types/client/plugins'
-import type { Source } from 'atoma-types/devtools'
-import type { AtomaHistory, HistoryApplyArgs } from 'atoma-types/history'
-import { HUB_TOKEN } from 'atoma-types/devtools'
+import type { ClientPlugin, PluginContext } from '@atoma-js/types/client/plugins'
+import type { Source } from '@atoma-js/types/devtools'
+import type { AtomaHistory, HistoryApplyArgs } from '@atoma-js/types/history'
+import { HUB_TOKEN } from '@atoma-js/types/devtools'
 import { HistoryManager } from './manager'
 import { createCommands, historyCommandSpecs } from './plugin/commands'
 import { bindEvents } from './plugin/events'
@@ -9,7 +9,7 @@ import { createSource } from './plugin/source'
 
 export function historyPlugin(): ClientPlugin<{ history: AtomaHistory }> {
     return {
-        id: 'atoma-history',
+        id: 'history',
         setup: (ctx: PluginContext) => {
             const manager = new HistoryManager(ctx.runtime.action.createContext)
             const apply = async ({ storeName, changes, mode, context }: HistoryApplyArgs) => {

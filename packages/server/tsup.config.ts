@@ -13,8 +13,8 @@ export default defineConfig({
     clean: true,
     treeshake: true,
     external: [
-        'atoma',
-        'atoma-shared',
-        'atoma-observability',
+        '@atoma-js/atoma',
+        '@atoma-js/shared',
+        '@atoma-js/observability',
     ]
 })

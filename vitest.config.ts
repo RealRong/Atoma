@@ -4,20 +4,20 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
     resolve: {
         alias: [
-            { find: /^atoma-client$/, replacement: path.resolve(__dirname, 'packages/atoma-client/src/index.ts') },
-            { find: /^atoma-core\/store$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/store/index.ts') },
-            { find: /^atoma-core\/query$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/query/index.ts') },
-            { find: /^atoma-core\/relations$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/relations/index.ts') },
-            { find: /^atoma-core\/indexes$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/indexes/index.ts') },
-            { find: /^atoma-core\/operation$/, replacement: path.resolve(__dirname, 'packages/atoma-core/src/operation.ts') },
-            { find: /^atoma-shared$/, replacement: path.resolve(__dirname, 'packages/atoma-shared/src/index.ts') },
-            { find: /^atoma-observability$/, replacement: path.resolve(__dirname, 'packages/plugins/atoma-observability/src/index.ts') },
-            { find: /^atoma-types\/protocol-tools$/, replacement: path.resolve(__dirname, 'packages/atoma-types/src/protocol-tools/index.ts') },
+            { find: /^@atoma-js\/client$/, replacement: path.resolve(__dirname, 'packages/client/src/index.ts') },
+            { find: /^@atoma-js\/core\/store$/, replacement: path.resolve(__dirname, 'packages/core/src/store/index.ts') },
+            { find: /^@atoma-js\/core\/query$/, replacement: path.resolve(__dirname, 'packages/core/src/query/index.ts') },
+            { find: /^@atoma-js\/core\/relations$/, replacement: path.resolve(__dirname, 'packages/core/src/relations/index.ts') },
+            { find: /^@atoma-js\/core\/indexes$/, replacement: path.resolve(__dirname, 'packages/core/src/indexes/index.ts') },
+            { find: /^@atoma-js\/core\/operation$/, replacement: path.resolve(__dirname, 'packages/core/src/operation.ts') },
+            { find: /^@atoma-js\/shared$/, replacement: path.resolve(__dirname, 'packages/shared/src/index.ts') },
+            { find: /^@atoma-js\/observability$/, replacement: path.resolve(__dirname, 'packages/plugins/observability/src/index.ts') },
+            { find: /^@atoma-js\/types\/protocol-tools$/, replacement: path.resolve(__dirname, 'packages/types/src/protocol-tools/index.ts') },
 
-            { find: /^atoma-sync$/, replacement: path.resolve(__dirname, 'packages/plugins/atoma-sync/src/index.ts') },
-            { find: /^atoma-sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/plugins/atoma-sync/src/$1') },
+            { find: /^@atoma-js\/sync$/, replacement: path.resolve(__dirname, 'packages/plugins/sync/src/index.ts') },
+            { find: /^@atoma-js\/sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/plugins/sync/src/$1') },
 
-            { find: /^#sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/plugins/atoma-sync/src/$1') },
+            { find: /^#sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/plugins/sync/src/$1') },
 
             { find: /^#backend$/, replacement: path.resolve(__dirname, 'packages/atoma/src/backend/index.ts') },
             { find: /^#backend\/(.*)$/, replacement: path.resolve(__dirname, 'packages/atoma/src/backend/$1') },

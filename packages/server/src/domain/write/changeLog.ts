@@ -1,4 +1,4 @@
-import type { ChangeKind } from 'atoma-types/protocol'
+import type { ChangeKind } from '@atoma-js/types/protocol'
 import type { AtomaChange, ISyncAdapter } from '../../adapters/ports'
 
 export type ChangeLogEntry = {

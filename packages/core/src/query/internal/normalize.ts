@@ -1,4 +1,4 @@
-import type { FilterExpr, PageSpec, Query, SortRule } from 'atoma-types/core'
+import type { FilterExpr, PageSpec, Query, SortRule } from '@atoma-js/types/core'
 
 export type NormalizedQuery = {
     filter?: FilterExpr

@@ -1,4 +1,4 @@
-import type { FilterExpr, RelationPrefetchMode, RelationQuery } from 'atoma-types/core'
+import type { FilterExpr, RelationPrefetchMode, RelationQuery } from '@atoma-js/types/core'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
     return typeof value === 'object' && value !== null && !Array.isArray(value)

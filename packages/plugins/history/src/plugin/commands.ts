@@ -1,5 +1,5 @@
-import type { Command, CommandResult, CommandSpec } from 'atoma-types/devtools'
-import type { HistoryApply } from 'atoma-types/history'
+import type { Command, CommandResult, CommandSpec } from '@atoma-js/types/devtools'
+import type { HistoryApply } from '@atoma-js/types/history'
 import type { HistoryManager } from '../manager'
 
 type HistoryOperation = (args: {

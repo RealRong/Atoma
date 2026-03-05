@@ -11,10 +11,10 @@ export default defineConfig({
     clean: true,
     treeshake: true,
     external: [
-        'atoma-core',
-        'atoma-shared',
-        'atoma-observability',
-        'atoma-types',
-        'atoma-types/internal'
+        '@atoma-js/core',
+        '@atoma-js/shared',
+        '@atoma-js/observability',
+        '@atoma-js/types',
+        '@atoma-js/types/internal'
     ]
 })

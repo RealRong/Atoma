@@ -7,8 +7,8 @@ import type {
     StoreChange,
     StoreOperationOptions,
     StoreToken
-} from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
+} from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
 import type {
     Runtime,
     Schema,
@@ -17,7 +17,7 @@ import type {
     StoreCatalog,
     StoreSession,
     StoreSnapshot
-} from 'atoma-types/runtime'
+} from '@atoma-js/types/runtime'
 import { Factory } from './Factory'
 import { ChangeFlow } from '../runtime/flows/ChangeFlow'
 

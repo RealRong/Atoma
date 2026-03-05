@@ -1,6 +1,6 @@
-import { belongsTo, hasMany, hasOne } from 'atoma-core/relations'
-import { isRecord } from 'atoma-shared'
-import type { Entity, KeySelector, RelationMap } from 'atoma-types/core'
+import { belongsTo, hasMany, hasOne } from '@atoma-js/core/relations'
+import { isRecord } from '@atoma-js/shared'
+import type { Entity, KeySelector, RelationMap } from '@atoma-js/types/core'
 
 type RelationType = 'belongsTo' | 'hasMany' | 'hasOne'
 type SourceShape = Record<string, unknown>

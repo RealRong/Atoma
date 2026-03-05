@@ -1,7 +1,7 @@
 # Atoma 代码校验标准（架构 / 性能 / 命名 / 降噪）
 
 > 目标：作为 AI 与人工统一执行的“仓库校验与优化基线”。
-> 适用范围：`atoma-core`、`atoma-runtime`、`atoma-client`、`atoma-types`、`plugins/*`。
+> 适用范围：`@atoma-js/core`、`@atoma-js/runtime`、`@atoma-js/client`、`@atoma-js/types`、`plugins/*`。
 > 决策前提：当前阶段以**一步到位最优架构**为目标，**不以兼容旧接口为约束**（无外部用户包袱）。
 
 ---

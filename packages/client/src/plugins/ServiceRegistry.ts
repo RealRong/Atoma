@@ -1,4 +1,4 @@
-import type { ServiceRegistry as ServiceRegistryType, ServiceToken } from 'atoma-types/client/services'
+import type { ServiceRegistry as ServiceRegistryType, ServiceToken } from '@atoma-js/types/client/services'
 
 function assertToken(token: ServiceToken<unknown>): symbol {
     if (typeof token !== 'symbol') {

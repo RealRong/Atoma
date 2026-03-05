@@ -1,12 +1,12 @@
-import type { Entity } from 'atoma-types/core'
-import type { AtomaClient, AtomaSchema } from 'atoma-types/client'
+import type { Entity } from '@atoma-js/types/core'
+import type { AtomaClient, AtomaSchema } from '@atoma-js/types/client'
 import type {
     ClientPlugin,
     PluginContext,
     PluginInitResult,
-} from 'atoma-types/client/plugins'
-import type { ServiceToken } from 'atoma-types/client/services'
-import { disposeInReverse, isRecord } from 'atoma-shared'
+} from '@atoma-js/types/client/plugins'
+import type { ServiceToken } from '@atoma-js/types/client/services'
+import { disposeInReverse, isRecord } from '@atoma-js/shared'
 
 export type PluginsSetup = Readonly<{
     mount: <E extends Record<string, Entity>, S extends AtomaSchema<E>>(client: AtomaClient<E, S>) => void

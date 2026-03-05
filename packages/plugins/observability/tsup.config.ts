@@ -10,5 +10,5 @@ export default defineConfig({
     sourcemap: true,
     clean: true,
     treeshake: true,
-    external: ['atoma-types']
+    external: ['@atoma-js/types']
 })

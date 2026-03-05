@@ -1,4 +1,4 @@
-import type { StandardError as StandardErrorType } from 'atoma-types/protocol'
+import type { StandardError as StandardErrorType } from '@atoma-js/types/protocol'
 
 export type WriteConflict = {
     currentVersion?: number

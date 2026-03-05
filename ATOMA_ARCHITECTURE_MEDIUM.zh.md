@@ -14,11 +14,11 @@
 
 在真实项目里，Atoma 不是一个包，而是一组分层协作的包：
 
-- `atoma-client`：应用入口层（你最先接触的那层）
-- `atoma-runtime`：运行时内核层（真正执行读写流程）
-- `atoma-core`：纯算法层（不关心网络和框架）
-- `atoma-react`：视图绑定层（让 React 用起来舒服）
-- `atoma-types`：契约层（类型与协议定义）
+- `@atoma-js/client`：应用入口层（你最先接触的那层）
+- `@atoma-js/runtime`：运行时内核层（真正执行读写流程）
+- `@atoma-js/core`：纯算法层（不关心网络和框架）
+- `@atoma-js/react`：视图绑定层（让 React 用起来舒服）
+- `@atoma-js/types`：契约层（类型与协议定义）
 
 如果只看一句话：
 
@@ -30,7 +30,7 @@
 
 ## 2）每个组件是什么（先讲角色，再讲设计）
 
-## 2.1 `atoma-client`：应用真正调用的入口
+## 2.1 `@atoma-js/client`：应用真正调用的入口
 
 你在业务里通常只做这几件事：
 
@@ -38,7 +38,7 @@
 2. 提供 schema / plugins
 3. 通过 `client.stores.xxx` 调用 `query/get/update/...`
 
-从职责上讲，`atoma-client` 像一个“装配器 + 启动器”：
+从职责上讲，`@atoma-js/client` 像一个“装配器 + 启动器”：
 
 - 创建 runtime 实例
 - 注册默认执行路由（本地直连）
@@ -51,7 +51,7 @@
 
 ---
 
-## 2.2 `atoma-runtime`：系统的大脑和调度中枢
+## 2.2 `@atoma-js/runtime`：系统的大脑和调度中枢
 
 `runtime` 是 Atoma 的核心现场。
 
@@ -72,7 +72,7 @@
 
 ---
 
-## 2.3 `atoma-core`：纯逻辑引擎，不碰外部世界
+## 2.3 `@atoma-js/core`：纯逻辑引擎，不碰外部世界
 
 `core` 里放的不是“应用逻辑”，而是“与环境无关的算法与规则”：
 
@@ -99,9 +99,9 @@
 
 ---
 
-## 2.4 `atoma-react`：把内核能力变成 UI 可消费能力
+## 2.4 `@atoma-js/react`：把内核能力变成 UI 可消费能力
 
-`atoma-react` 的位置很明确：
+`@atoma-js/react` 的位置很明确：
 
 - 通过 `StoreBindings` 读取 snapshot / subscribe
 - 复用 runtime 的 relation 投影与预取能力
@@ -113,11 +113,11 @@
 
 ---
 
-## 2.5 `atoma-types`：系统的法律文本
+## 2.5 `@atoma-js/types`：系统的法律文本
 
 任何分层系统要长期稳定，都需要“契约先于实现”。
 
-`atoma-types` 做的就是这件事：
+`@atoma-js/types` 做的就是这件事：
 
 - 定义 Store/Runtime/Execution/Write/Query 的类型契约
 - 定义执行协议（query/write request/output）
@@ -143,7 +143,7 @@ const result = await stores.posts.query({
 
 系统内部大致会走：
 
-1. `atoma-client` 暴露的 store facade 接到调用
+1. `@atoma-js/client` 暴露的 store facade 接到调用
 2. 转发到 `runtime.read.query(...)`
 3. `ReadFlow` 调 `execution.query(...)`
 4. `ExecutionKernel` 根据 route 解析到具体 executor
@@ -274,18 +274,18 @@ Atoma 的做法是：把它抽象成 route + executor。
 
 ---
 
-## 7）`atoma-sync`：为什么它最能说明“复杂度留在插件层”
+## 7）`@atoma-js/sync`：为什么它最能说明“复杂度留在插件层”
 
-如果前面的内容还比较“原则化”，`atoma-sync` 是最具体、最有说服力的落地样本。
+如果前面的内容还比较“原则化”，`@atoma-js/sync` 是最具体、最有说服力的落地样本。
 
 因为同步是一个天然高复杂度问题：离线、重试、去重、冲突、回放、跨标签页竞争、通知风暴……
 但在 Atoma 里，这些复杂度基本都被限制在 sync 插件内部，没有扩散进 runtime/core 的公共语义。
 
 先讲它是什么，再讲它如何解耦。
 
-### 7.1 `atoma-sync` 的职责清单（它到底做了什么）
+### 7.1 `@atoma-js/sync` 的职责清单（它到底做了什么）
 
-`atoma-sync` 是一个可选插件包，核心是 `SyncEngine`，负责：
+`@atoma-js/sync` 是一个可选插件包，核心是 `SyncEngine`，负责：
 
 - 写入侧：把本地成功写操作放入 outbox，并异步 push 到服务端
 - 拉取侧：按 cursor 周期性/手动拉取远端变化（pull）
@@ -298,7 +298,7 @@ Atoma 的做法是：把它抽象成 route + executor。
 
 ### 7.2 它怎么接进系统（而不是侵入系统）
 
-`atoma-sync` 不是通过“改 Runtime 类”接入，而是通过插件契约接入：
+`@atoma-js/sync` 不是通过“改 Runtime 类”接入，而是通过插件契约接入：
 
 - 依赖 `PluginContext.runtime` 暴露的稳定能力：
   - `runtime.execution.subscribe(...)` 监听写成功事件
@@ -313,13 +313,13 @@ Atoma 的做法是：把它抽象成 route + executor。
 一个典型接入方式大概是这样：
 
 ```ts
-import { createClient } from 'atoma-client'
-import { httpBackendPlugin } from 'atoma-backend-http'
+import { createClient } from '@atoma-js/client'
+import { httpBackendPlugin } from '@atoma-js/backend-http'
 import {
     syncPlugin,
     syncOperationDriverPlugin,
     sseSubscribeDriverPlugin
-} from 'atoma-sync'
+} from '@atoma-js/sync'
 
 const client = createClient({
     plugins: [
@@ -382,7 +382,7 @@ Atoma 的做法是：
 
 ### 7.5 存储与传输都可替换：复杂，但边界清晰
 
-`atoma-sync` 里有两组关键抽象：
+`@atoma-js/sync` 里有两组关键抽象：
 
 - 存储抽象
   - `OutboxStore`：`enqueue/reserve/commit/recover/stats`
@@ -398,7 +398,7 @@ Atoma 的做法是：
 
 ### 7.6 冲突与恢复语义：在插件层闭环
 
-同步最难的是失败与恢复。`atoma-sync` 把它做到插件内闭环：
+同步最难的是失败与恢复。`@atoma-js/sync` 把它做到插件内闭环：
 
 - 网络失败：走 retry/backoff
 - in-flight 超时：`recover()` 释放回 pending
@@ -455,10 +455,10 @@ Atoma 的做法是：
 
 这是分层价值最直观的地方：
 
-- 需要新增/修改的主要是 `atoma-sync` 插件包本身
-- `atoma-client` 只负责装配（多挂几个插件）
-- `atoma-runtime` 不需要增加“同步专用 API”
-- `atoma-core` 不需要引入任何“同步分支逻辑”
+- 需要新增/修改的主要是 `@atoma-js/sync` 插件包本身
+- `@atoma-js/client` 只负责装配（多挂几个插件）
+- `@atoma-js/runtime` 不需要增加“同步专用 API”
+- `@atoma-js/core` 不需要引入任何“同步分支逻辑”
 
 换句话说，sync 的复杂性增长没有转化为内核语义复杂性增长。
 
@@ -542,9 +542,9 @@ Atoma 的做法是：
 
 那你迟早会走到类似 Atoma 的拆分：
 
-- `atoma-core`：规则与算法
-- `atoma-runtime`：流程与策略
-- `atoma-client`：装配与接入
+- `@atoma-js/core`：规则与算法
+- `@atoma-js/runtime`：流程与策略
+- `@atoma-js/client`：装配与接入
 
 再配上 `execution route`、`ReadFlow`、`WriteFlow` 这三根主骨架，
 系统就从“功能集合”变成了“可持续演进的内核”。

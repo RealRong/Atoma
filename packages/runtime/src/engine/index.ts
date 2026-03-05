@@ -1,8 +1,8 @@
-import type { Engine as EngineType, QueryState } from 'atoma-types/runtime'
-import type { ActionContext, ActionOrigin, Entity, Query } from 'atoma-types/core'
-import { merge, putMany, deleteMany, reuse, upsertMany, writeback } from 'atoma-core/store'
-import { createActionContext } from 'atoma-core/action'
-import { runQuery } from 'atoma-core/query'
+import type { Engine as EngineType, QueryState } from '@atoma-js/types/runtime'
+import type { ActionContext, ActionOrigin, Entity, Query } from '@atoma-js/types/core'
+import { merge, putMany, deleteMany, reuse, upsertMany, writeback } from '@atoma-js/core/store'
+import { createActionContext } from '@atoma-js/core/action'
+import { runQuery } from '@atoma-js/core/query'
 import { prefetchRelations } from '../relations/prefetch'
 import { projectRelationsBatch } from '../relations/project'
 

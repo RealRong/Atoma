@@ -1,4 +1,4 @@
-import type { FilterExpr } from 'atoma-types/protocol'
+import type { FilterExpr } from '@atoma-js/types/protocol'
 
 export function compileFilterToPrismaWhere(filter: FilterExpr | undefined): any | undefined {
     if (!filter) return undefined

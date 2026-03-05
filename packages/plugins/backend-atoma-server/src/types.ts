@@ -1,4 +1,4 @@
-import type { BackendPluginOptions } from 'atoma-backend-http'
+import type { BackendPluginOptions } from '@atoma-js/backend-http'
 
 export type AtomaServerSyncPaths = Readonly<{
     pull?: string

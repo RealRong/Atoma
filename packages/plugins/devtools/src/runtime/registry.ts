@@ -1,4 +1,4 @@
-import type { Hub } from 'atoma-types/devtools'
+import type { Hub } from '@atoma-js/types/devtools'
 
 export type ClientEntry = {
     id: string

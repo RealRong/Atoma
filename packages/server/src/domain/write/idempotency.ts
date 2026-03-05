@@ -1,4 +1,4 @@
-import type { ChangeKind, StandardError as StandardErrorType } from 'atoma-types/protocol'
+import type { ChangeKind, StandardError as StandardErrorType } from '@atoma-js/types/protocol'
 import type { ISyncAdapter } from '../../adapters/ports'
 import { throwError } from '../../error'
 import { normalizeId } from '../../shared/utils/id'

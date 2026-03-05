@@ -5,7 +5,7 @@ This package intentionally keeps the root API minimal and exposes `observability
 ## Root API (minimal)
 
 ```ts
-import { observabilityPlugin } from 'atoma-observability'
+import { observabilityPlugin } from '@atoma-js/observability'
 ```
 
 ## Plugin behavior
@@ -19,8 +19,8 @@ import { observabilityPlugin } from 'atoma-observability'
 ## Usage
 
 ```ts
-import { createClient } from 'atoma-client'
-import { observabilityPlugin } from 'atoma-observability'
+import { createClient } from '@atoma-js/client'
+import { observabilityPlugin } from '@atoma-js/observability'
 
 const client = createClient({
     plugins: [

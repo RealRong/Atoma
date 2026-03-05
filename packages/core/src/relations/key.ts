@@ -1,5 +1,5 @@
-import type { Entity, KeySelector } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { Entity, KeySelector } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/protocol'
 import { getValueByPath } from './path'
 
 export function extractKeyValue<T>(item: T, selector: KeySelector<T>): EntityId | EntityId[] | undefined {

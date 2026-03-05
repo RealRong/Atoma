@@ -1,5 +1,5 @@
-import { withErrorTrace } from 'atoma-types/protocol-tools'
-import type { QueryOp, QueryResultData, RemoteOpResult } from 'atoma-types/protocol'
+import { withErrorTrace } from '@atoma-js/types/protocol-tools'
+import type { QueryOp, QueryResultData, RemoteOpResult } from '@atoma-js/types/protocol'
 import type {
     AtomaOpMiddlewareContext,
     AtomaOpMiddlewareResult,

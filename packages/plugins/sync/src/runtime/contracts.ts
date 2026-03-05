@@ -1,5 +1,5 @@
-import type { SyncCheckpoint, SyncDocument } from 'atoma-types/sync'
-import type { SyncStream } from 'atoma-types/client/sync'
+import type { SyncCheckpoint, SyncDocument } from '@atoma-js/types/sync'
+import type { SyncStream } from '@atoma-js/types/client/sync'
 import type { RxCollection, RxDatabase, RxJsonSchema } from 'rxdb'
 import type { RxReplicationState } from 'rxdb/plugins/replication'
 

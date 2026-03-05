@@ -11,7 +11,7 @@ export default defineConfig({
     clean: true,
     treeshake: true,
     external: [
-        'atoma-core',
-        'atoma-types'
+        '@atoma-js/core',
+        '@atoma-js/types'
     ]
 })

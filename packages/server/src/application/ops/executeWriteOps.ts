@@ -1,6 +1,6 @@
 import pLimit from 'p-limit'
-import { withErrorTrace } from 'atoma-types/protocol-tools'
-import type { RemoteOpResult, WriteOp } from 'atoma-types/protocol'
+import { withErrorTrace } from '@atoma-js/types/protocol-tools'
+import type { RemoteOpResult, WriteOp } from '@atoma-js/types/protocol'
 import type {
     AtomaOpMiddlewareContext,
     AtomaOpMiddlewareResult,

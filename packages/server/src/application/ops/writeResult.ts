@@ -1,4 +1,4 @@
-import { withErrorTrace } from 'atoma-types/protocol-tools'
+import { withErrorTrace } from '@atoma-js/types/protocol-tools'
 import { normalizeId } from '../../shared/utils/id'
 import { toStandard } from '../../shared/errors/standardError'
 import { isObject } from './normalize'

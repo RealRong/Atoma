@@ -1,4 +1,4 @@
-import { isRecord as sharedIsRecord, toErrorWithFallback } from 'atoma-shared'
+import { isRecord as sharedIsRecord, toErrorWithFallback } from '@atoma-js/shared'
 
 export function normalizeName(value: string): string {
     const normalized = String(value ?? '')

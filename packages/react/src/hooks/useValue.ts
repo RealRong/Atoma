@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { Entity, Store, RelationIncludeInput, WithRelations } from 'atoma-types/core'
+import type { Entity, Store, RelationIncludeInput, WithRelations } from '@atoma-js/types/core'
 import { useStoreSelector } from './internal/useStoreSelector'
 import { useProjectedRelations } from './internal/useProjectedRelations'
 

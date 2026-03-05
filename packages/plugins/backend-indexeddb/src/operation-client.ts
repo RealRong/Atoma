@@ -1,6 +1,6 @@
 import type { Table } from 'dexie'
-import { StorageOperationClient } from 'atoma-backend-shared'
-import { isRecord } from 'atoma-shared'
+import { StorageOperationClient } from '@atoma-js/backend-shared'
+import { isRecord } from '@atoma-js/shared'
 
 function clonePlain(value: any) {
     return value ? JSON.parse(JSON.stringify(value)) : value

@@ -2,12 +2,12 @@ import type {
     Entity,
     StoreChange,
     WriteManyResult
-} from 'atoma-types/core'
+} from '@atoma-js/types/core'
 import type {
     Runtime,
     WriteEntry,
     WriteOutput
-} from 'atoma-types/runtime'
+} from '@atoma-js/types/runtime'
 import type {
     IntentCommand,
     WriteScope

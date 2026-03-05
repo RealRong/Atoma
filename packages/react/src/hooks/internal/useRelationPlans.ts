@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import { buildRelationPlan, collectPlanStoreTokens } from 'atoma-core/relations'
-import type { RelationPlanEntry } from 'atoma-core/relations'
-import type { Entity, RelationMap, StoreToken } from 'atoma-types/core'
-import type { RelationInclude } from 'atoma-types/runtime'
+import { buildRelationPlan, collectPlanStoreTokens } from '@atoma-js/core/relations'
+import type { RelationPlanEntry } from '@atoma-js/core/relations'
+import type { Entity, RelationMap, StoreToken } from '@atoma-js/types/core'
+import type { RelationInclude } from '@atoma-js/types/runtime'
 
 export type RelationPlans<T extends Entity> = Readonly<{
     effectiveEntries: RelationPlanEntry<T>[]

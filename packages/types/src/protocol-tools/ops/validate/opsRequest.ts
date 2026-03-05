@@ -1,4 +1,4 @@
-import type { Meta, RemoteOp } from 'atoma-types/protocol'
+import type { Meta, RemoteOp } from '@atoma-js/types/protocol'
 import { makeValidationDetails, requireArray, requireObject } from './common'
 import { assertMeta } from './meta'
 import { assertRemoteOp } from './operation'

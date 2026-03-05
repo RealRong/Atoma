@@ -1,5 +1,5 @@
-import { createId as createEntityId } from 'atoma-shared'
-import { Indexes } from 'atoma-core/indexes'
+import { createId as createEntityId } from '@atoma-js/shared'
+import { Indexes } from '@atoma-js/core/indexes'
 import type {
     Entity,
     Query,
@@ -8,11 +8,11 @@ import type {
     Store,
     StoreProcessor,
     StoreToken
-} from 'atoma-types/core'
-import { STORE_BINDINGS, type StoreBindings } from 'atoma-types/internal'
-import type { EntityId } from 'atoma-types/shared'
-import type { Runtime } from 'atoma-types/runtime'
-import type { Schema, StoreSchema, StoreHandle } from 'atoma-types/runtime'
+} from '@atoma-js/types/core'
+import { STORE_BINDINGS, type StoreBindings } from '@atoma-js/types/internal'
+import type { EntityId } from '@atoma-js/types/shared'
+import type { Runtime } from '@atoma-js/types/runtime'
+import type { Schema, StoreSchema, StoreHandle } from '@atoma-js/types/runtime'
 import { compile } from '../relations/compile'
 import { StoreState } from './State'
 

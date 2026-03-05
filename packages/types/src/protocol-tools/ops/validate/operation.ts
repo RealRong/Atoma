@@ -1,4 +1,4 @@
-import type { RemoteOp, RemoteOpKind, QueryOp, WriteOp, Meta } from 'atoma-types/protocol'
+import type { RemoteOp, RemoteOpKind, QueryOp, WriteOp, Meta } from '@atoma-js/types/protocol'
 import { invalid, isObject, makeValidationDetails, requireObject, requireString, readString } from './common'
 import { assertOpMeta } from './meta'
 import { assertQuery } from './query'

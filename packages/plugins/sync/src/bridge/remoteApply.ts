@@ -1,5 +1,5 @@
-import type { PluginContext } from 'atoma-types/client/plugins'
-import type { SyncEvent } from 'atoma-types/sync'
+import type { PluginContext } from '@atoma-js/types/client/plugins'
+import type { SyncEvent } from '@atoma-js/types/sync'
 import { documentCodec } from '../mapping/document'
 import type { ReadyRuntime, SyncDoc, SyncResourceRuntime } from '../runtime/contracts'
 import { readVersion } from '../utils/common'

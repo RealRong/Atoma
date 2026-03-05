@@ -1,4 +1,4 @@
-import type { Entity } from 'atoma-types/core'
+import type { Entity } from '@atoma-js/types/core'
 import type { WriteCtx } from '../context'
 
 export async function hydrate<T extends Entity>(ctx: WriteCtx<T>) {

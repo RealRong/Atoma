@@ -1,4 +1,4 @@
-import type { Snapshot, SourceSpec } from 'atoma-types/devtools'
+import type { Snapshot, SourceSpec } from '@atoma-js/types/devtools'
 import type { ClientInspector, ClientSnapshot, InspectorPanel, PanelSnapshot } from './types'
 import type { ClientEntry } from './registry'
 

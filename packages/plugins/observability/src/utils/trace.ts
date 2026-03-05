@@ -1,4 +1,4 @@
-import { createId as createSharedId } from 'atoma-shared'
+import { createId as createSharedId } from '@atoma-js/shared'
 
 export function createId(): string {
     return createSharedId({

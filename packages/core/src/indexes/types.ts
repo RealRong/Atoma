@@ -1,5 +1,5 @@
-import type { IndexDefinition, IndexStats } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { IndexDefinition, IndexStats } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/protocol'
 
 export type EqCondition = {
     op: 'eq'

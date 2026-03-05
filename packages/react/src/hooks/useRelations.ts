@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { stableStringify } from 'atoma-shared'
+import { stableStringify } from '@atoma-js/shared'
 import type {
     Entity,
     Store,
@@ -9,10 +9,10 @@ import type {
     StoreReadOptions,
     StoreToken,
     WithRelations
-} from 'atoma-types/core'
-import type { RelationEngine, RelationInclude, StoreMap } from 'atoma-types/runtime'
-import type { EntityId } from 'atoma-types/shared'
-import { getStoreBindings } from 'atoma-types/internal'
+} from '@atoma-js/types/core'
+import type { RelationEngine, RelationInclude, StoreMap } from '@atoma-js/types/runtime'
+import type { EntityId } from '@atoma-js/types/shared'
+import { getStoreBindings } from '@atoma-js/types/internal'
 import { useShallowStableArray } from './useShallowStableArray'
 import { createBatchedSubscribe } from './internal/batchedSubscribe'
 import { dedupeTask } from './internal/remoteQueryCache'

@@ -1,5 +1,5 @@
-import type { Entity, RelationIncludeInput, Store, WithRelations } from 'atoma-types/core'
-import { getStoreBindings } from 'atoma-types/internal'
+import type { Entity, RelationIncludeInput, Store, WithRelations } from '@atoma-js/types/core'
+import { getStoreBindings } from '@atoma-js/types/internal'
 import { useRelations, type UseRelationsResult } from '../useRelations'
 
 type UseProjectedRelationsArgs<T extends Entity, Relations, Include extends RelationIncludeInput<Relations>> = Readonly<{

@@ -1,10 +1,10 @@
-import { HTTP_PATH_OPS } from 'atoma-types/protocol-tools'
-import type { RemoteOpsResponseData } from 'atoma-types/protocol'
-import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-types/client/ops'
+import { HTTP_PATH_OPS } from '@atoma-js/types/protocol-tools'
+import type { RemoteOpsResponseData } from '@atoma-js/types/protocol'
+import type { ExecuteOperationsInput, ExecuteOperationsOutput } from '@atoma-js/types/client/ops'
 import { BatchEngine } from './batch'
 import { createTransport } from './transport'
 import type { HttpInterceptors } from './transport'
-import type { RetryOptions as SharedRetryOptions } from 'atoma-shared'
+import type { RetryOptions as SharedRetryOptions } from '@atoma-js/shared'
 
 export type RetryOptions = SharedRetryOptions
 

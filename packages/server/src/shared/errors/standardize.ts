@@ -1,4 +1,4 @@
-import type { ErrorKind, StandardError, StandardErrorDetails } from 'atoma-types/protocol'
+import type { ErrorKind, StandardError, StandardErrorDetails } from '@atoma-js/types/protocol'
 import { isAtomaError } from './core'
 import { sanitizeDetails } from './sanitizeDetails'
 

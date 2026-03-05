@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type SyncEvent } from 'atoma-types/sync'
+import { type SyncEvent } from '@atoma-js/types/sync'
 import { createHttpDemoClient } from '../support/createDemoClient'
 import { assertEventually } from '../support/assertEventually'
 import { useScenarioHarness } from '../support/harness'

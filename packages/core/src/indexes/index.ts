@@ -1,5 +1,5 @@
-import type { FilterExpr, Hits, IndexDefinition, IndexStats, StoreChange } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { FilterExpr, Hits, IndexDefinition, IndexStats, StoreChange } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/protocol'
 import { NumberDateIndex } from './impl/NumberDateIndex'
 import { StringIndex } from './impl/StringIndex'
 import { SubstringIndex } from './impl/SubstringIndex'

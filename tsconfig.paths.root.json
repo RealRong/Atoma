@@ -4,127 +4,130 @@
         "baseUrl": ".",
         "paths": {
             "#sync/*": [
-                "packages/plugins/atoma-sync/src/*"
+                "packages/plugins/sync/src/*"
             ],
-            "atoma": [
+            "@atoma-js/atoma": [
                 "packages/atoma/src/index.ts"
             ],
-            "atoma-backend-http": [
-                "packages/plugins/atoma-backend-http/src/index.ts"
+            "@atoma-js/backend-http": [
+                "packages/plugins/backend-http/src/index.ts"
             ],
-            "atoma-backend-indexeddb": [
-                "packages/plugins/atoma-backend-indexeddb/src/index.ts"
+            "@atoma-js/backend-indexeddb": [
+                "packages/plugins/backend-indexeddb/src/index.ts"
             ],
-            "atoma-backend-shared": [
-                "packages/plugins/atoma-backend-shared/src/index.ts"
+            "@atoma-js/backend-shared": [
+                "packages/plugins/backend-shared/src/index.ts"
             ],
-            "atoma-backend-atoma-server": [
-                "packages/plugins/atoma-backend-atoma-server/src/index.ts"
+            "@atoma-js/backend-atoma-server": [
+                "packages/plugins/backend-atoma-server/src/index.ts"
             ],
-            "atoma-client": [
-                "packages/atoma-client/src/index.ts"
+            "@atoma-js/client": [
+                "packages/client/src/index.ts"
             ],
-            "atoma-core/indexes": [
-                "packages/atoma-core/src/indexes/index.ts"
+            "@atoma-js/core/indexes": [
+                "packages/core/src/indexes/index.ts"
             ],
-            "atoma-core/operation": [
-                "packages/atoma-core/src/operation.ts"
+            "@atoma-js/core/action": [
+                "packages/core/src/action.ts"
             ],
-            "atoma-core/query": [
-                "packages/atoma-core/src/query/index.ts"
+            "@atoma-js/core/operation": [
+                "packages/core/src/operation.ts"
             ],
-            "atoma-core/relations": [
-                "packages/atoma-core/src/relations/index.ts"
+            "@atoma-js/core/query": [
+                "packages/core/src/query/index.ts"
             ],
-            "atoma-core/store": [
-                "packages/atoma-core/src/store/index.ts"
+            "@atoma-js/core/relations": [
+                "packages/core/src/relations/index.ts"
             ],
-            "atoma-devtools": [
-                "packages/plugins/atoma-devtools/src/index.ts"
+            "@atoma-js/core/store": [
+                "packages/core/src/store/index.ts"
             ],
-            "atoma-history": [
-                "packages/plugins/atoma-history/src/index.ts"
+            "@atoma-js/devtools": [
+                "packages/plugins/devtools/src/index.ts"
             ],
-            "atoma-observability": [
-                "packages/plugins/atoma-observability/src/index.ts"
+            "@atoma-js/history": [
+                "packages/plugins/history/src/index.ts"
             ],
-            "atoma-react": [
-                "packages/atoma-react/src/index.ts"
+            "@atoma-js/observability": [
+                "packages/plugins/observability/src/index.ts"
             ],
-            "atoma-runtime": [
-                "packages/atoma-runtime/src/index.ts"
+            "@atoma-js/react": [
+                "packages/react/src/index.ts"
             ],
-            "atoma-server": [
-                "packages/atoma-server/src/index.ts"
+            "@atoma-js/runtime": [
+                "packages/runtime/src/index.ts"
             ],
-            "atoma-server/adapters": [
-                "packages/atoma-server/src/adapters/index.ts"
+            "@atoma-js/server": [
+                "packages/server/src/index.ts"
             ],
-            "atoma-server/adapters/prisma": [
-                "packages/atoma-server/src/adapters/prisma/index.ts"
+            "@atoma-js/server/adapters": [
+                "packages/server/src/adapters/index.ts"
             ],
-            "atoma-shared": [
-                "packages/atoma-shared/src/index.ts"
+            "@atoma-js/server/adapters/prisma": [
+                "packages/server/src/adapters/prisma/index.ts"
             ],
-            "atoma-sync": [
-                "packages/plugins/atoma-sync/src/index.ts"
+            "@atoma-js/shared": [
+                "packages/shared/src/index.ts"
             ],
-            "atoma-types/shared": [
-                "packages/atoma-types/src/shared/index.ts"
+            "@atoma-js/sync": [
+                "packages/plugins/sync/src/index.ts"
             ],
-            "atoma-types/client": [
-                "packages/atoma-types/src/client/index.ts"
+            "@atoma-js/types/shared": [
+                "packages/types/src/shared/index.ts"
             ],
-            "atoma-types/client/client": [
-                "packages/atoma-types/src/client/client.ts"
+            "@atoma-js/types/client": [
+                "packages/types/src/client/index.ts"
             ],
-            "atoma-types/client/options": [
-                "packages/atoma-types/src/client/options.ts"
+            "@atoma-js/types/client/client": [
+                "packages/types/src/client/client.ts"
             ],
-            "atoma-types/client/plugins": [
-                "packages/atoma-types/src/client/plugins/index.ts"
+            "@atoma-js/types/client/options": [
+                "packages/types/src/client/options.ts"
             ],
-            "atoma-types/client/services": [
-                "packages/atoma-types/src/client/services.ts"
+            "@atoma-js/types/client/plugins": [
+                "packages/types/src/client/plugins/index.ts"
             ],
-            "atoma-types/client/ops": [
-                "packages/atoma-types/src/client/ops.ts"
+            "@atoma-js/types/client/services": [
+                "packages/types/src/client/services.ts"
             ],
-            "atoma-types/client/sync": [
-                "packages/atoma-types/src/client/sync.ts"
+            "@atoma-js/types/client/ops": [
+                "packages/types/src/client/ops.ts"
             ],
-            "atoma-types/client/relations": [
-                "packages/atoma-types/src/client/relations.ts"
+            "@atoma-js/types/client/sync": [
+                "packages/types/src/client/sync.ts"
             ],
-            "atoma-types/client/schema": [
-                "packages/atoma-types/src/client/schema.ts"
+            "@atoma-js/types/client/relations": [
+                "packages/types/src/client/relations.ts"
             ],
-            "atoma-types/history": [
-                "packages/atoma-types/src/history/index.ts"
+            "@atoma-js/types/client/schema": [
+                "packages/types/src/client/schema.ts"
             ],
-            "atoma-types/core": [
-                "packages/atoma-types/src/core/index.ts"
+            "@atoma-js/types/history": [
+                "packages/types/src/history/index.ts"
             ],
-            "atoma-types/devtools": [
-                "packages/atoma-types/src/devtools/index.ts"
+            "@atoma-js/types/core": [
+                "packages/types/src/core/index.ts"
             ],
-            "atoma-types/internal": [
-                "packages/atoma-types/src/internal/index.ts"
+            "@atoma-js/types/devtools": [
+                "packages/types/src/devtools/index.ts"
             ],
-            "atoma-types/observability": [
-                "packages/atoma-types/src/observability/index.ts"
+            "@atoma-js/types/internal": [
+                "packages/types/src/internal/index.ts"
             ],
-            "atoma-types/protocol": [
-                "packages/atoma-types/src/protocol/index.ts"
+            "@atoma-js/types/observability": [
+                "packages/types/src/observability/index.ts"
             ],
-            "atoma-types/protocol-tools": [
-                "packages/atoma-types/src/protocol-tools/index.ts"
+            "@atoma-js/types/protocol": [
+                "packages/types/src/protocol/index.ts"
             ],
-            "atoma-types/runtime": [
-                "packages/atoma-types/src/runtime/index.ts"
+            "@atoma-js/types/protocol-tools": [
+                "packages/types/src/protocol-tools/index.ts"
             ],
-            "atoma-types/sync": [
-                "packages/atoma-types/src/sync/index.ts"
+            "@atoma-js/types/runtime": [
+                "packages/types/src/runtime/index.ts"
+            ],
+            "@atoma-js/types/sync": [
+                "packages/types/src/sync/index.ts"
             ]
         }
     }

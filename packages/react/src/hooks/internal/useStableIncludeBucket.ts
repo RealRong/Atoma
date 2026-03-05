@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react'
-import type { RelationInclude } from 'atoma-types/runtime'
+import type { RelationInclude } from '@atoma-js/types/runtime'
 import { normalizeInclude, type IncludeBucket } from './relationInclude'
 
 export function useStableIncludeBucket(include: RelationInclude): IncludeBucket {

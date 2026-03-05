@@ -1,5 +1,5 @@
-import type { Hub, Snapshot, SnapshotQuery, Source, StreamEvent } from 'atoma-types/devtools'
-import type { DebugEvent } from 'atoma-types/observability'
+import type { Hub, Snapshot, SnapshotQuery, Source, StreamEvent } from '@atoma-js/types/devtools'
+import type { DebugEvent } from '@atoma-js/types/observability'
 
 type TraceRecord = {
     storeName: string

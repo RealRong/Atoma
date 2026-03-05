@@ -1,5 +1,5 @@
 {
-    "name": "atoma-backend-atoma-server",
+    "name": "@atoma-js/backend-atoma-server",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma server backend plugin (optional)",
@@ -17,9 +17,9 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-backend-http": "workspace:*",
-        "atoma-backend-shared": "workspace:*",
-        "atoma-shared": "workspace:*",
-        "atoma-types": "workspace:*"
+        "@atoma-js/backend-http": "workspace:*",
+        "@atoma-js/backend-shared": "workspace:*",
+        "@atoma-js/shared": "workspace:*",
+        "@atoma-js/types": "workspace:*"
     }
 }

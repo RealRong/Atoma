@@ -11,7 +11,7 @@
 ## 设计要点
 
 - 使用 Shadow DOM 隔离样式，避免 Tailwind/shadcn 影响宿主应用，也避免宿主样式污染 DevTools
-- 数据源来自 `atoma-devtools` 自己的 Inspector（不依赖 client 内置字段；通过插件注册）
+- 数据源来自 `@atoma-js/devtools` 自己的 Inspector（不依赖 client 内置字段；通过插件注册）
 - 支持多 client：面板内可切换选中 client
 
 ## 状态

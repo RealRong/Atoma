@@ -1,5 +1,5 @@
 {
-    "name": "atoma-client",
+    "name": "@atoma-js/client",
     "version": "0.0.0",
     "type": "module",
     "description": "Atoma client runtime and plugins",
@@ -18,8 +18,8 @@
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
-        "atoma-runtime": "workspace:*",
-        "atoma-shared": "workspace:*",
-        "atoma-types": "workspace:*"
+        "@atoma-js/runtime": "workspace:*",
+        "@atoma-js/shared": "workspace:*",
+        "@atoma-js/types": "workspace:*"
     }
 }

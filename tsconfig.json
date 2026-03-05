@@ -10,11 +10,11 @@
   },
   "include": [
     "packages/atoma/src/**/*",
-    "packages/atoma-client/src/**/*",
-    "packages/atoma-core/src/**/*",
-    "packages/atoma-runtime/src/**/*",
-    "packages/atoma-shared/src/**/*",
-    "packages/plugins/atoma-observability/src/**/*"
+    "packages/client/src/**/*",
+    "packages/core/src/**/*",
+    "packages/runtime/src/**/*",
+    "packages/shared/src/**/*",
+    "packages/plugins/observability/src/**/*"
   ],
   "exclude": [
     "node_modules",

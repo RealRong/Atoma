@@ -1,4 +1,4 @@
-import type { CommandSpec, Source, StreamEvent } from 'atoma-types/devtools'
+import type { CommandSpec, Source, StreamEvent } from '@atoma-js/types/devtools'
 import type { HistoryManager } from '../manager'
 
 type SourceRuntime = Readonly<{

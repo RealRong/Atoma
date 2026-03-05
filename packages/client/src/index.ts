@@ -1,11 +1,11 @@
-import type { Entity } from 'atoma-types/core'
+import type { Entity } from '@atoma-js/types/core'
 import type {
     AtomaClient,
     AtomaSchema,
     CreateClientOptions,
-} from 'atoma-types/client'
-import { createId, disposeInReverse, safeDispose } from 'atoma-shared'
-import { Runtime } from 'atoma-runtime'
+} from '@atoma-js/types/client'
+import { createId, disposeInReverse, safeDispose } from '@atoma-js/shared'
+import { Runtime } from '@atoma-js/runtime'
 import { PluginContext } from './plugins/PluginContext'
 import { setupPlugins } from './plugins/setupPlugins'
 

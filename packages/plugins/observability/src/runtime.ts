@@ -1,4 +1,4 @@
-import type { Context, DebugConfig, DebugEmitMeta, DebugEvent } from 'atoma-types/observability'
+import type { Context, DebugConfig, DebugEmitMeta, DebugEvent } from '@atoma-js/types/observability'
 import QuickLRU from 'quick-lru'
 import { isSampled } from './utils/sampling'
 import { createId, requestId } from './utils/trace'

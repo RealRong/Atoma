@@ -5,7 +5,7 @@
 ## 根导出（最小公开面）
 
 ```ts
-import { observabilityPlugin } from 'atoma-observability'
+import { observabilityPlugin } from '@atoma-js/observability'
 ```
 
 ## 插件行为
@@ -19,8 +19,8 @@ import { observabilityPlugin } from 'atoma-observability'
 ## 用法
 
 ```ts
-import { createClient } from 'atoma-client'
-import { observabilityPlugin } from 'atoma-observability'
+import { createClient } from '@atoma-js/client'
+import { observabilityPlugin } from '@atoma-js/observability'
 
 const client = createClient({
     plugins: [

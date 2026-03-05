@@ -1,4 +1,4 @@
-import type { ErrorKind } from 'atoma-types/protocol'
+import type { ErrorKind } from '@atoma-js/types/protocol'
 
 const ATOMA_ERROR_BRAND = Symbol.for('atoma.error')
 

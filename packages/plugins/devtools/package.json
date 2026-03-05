@@ -1,5 +1,5 @@
 {
-    "name": "atoma-devtools",
+    "name": "@atoma-js/devtools",
     "version": "0.0.0",
     "type": "module",
     "main": "dist/index.js",
@@ -34,10 +34,10 @@
         "vite": "^7.2.0"
     },
     "dependencies": {
-        "atoma": "workspace:*",
-        "atoma-client": "workspace:*",
-        "atoma-shared": "workspace:*",
-        "atoma-types": "workspace:*",
+        "@atoma-js/atoma": "workspace:*",
+        "@atoma-js/client": "workspace:*",
+        "@atoma-js/shared": "workspace:*",
+        "@atoma-js/types": "workspace:*",
         "tailwindcss": "^4.1.18",
         "postcss": "^8.4.0",
         "autoprefixer": "^10.4.0"

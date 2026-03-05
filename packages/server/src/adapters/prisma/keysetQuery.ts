@@ -1,4 +1,4 @@
-import type { SortRule } from 'atoma-types/protocol'
+import type { SortRule } from '@atoma-js/types/protocol'
 import {
     compareOpForAfter,
     decodeCursorToken,

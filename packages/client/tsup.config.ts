@@ -11,8 +11,8 @@ export default defineConfig({
     clean: true,
     treeshake: true,
     external: [
-        'atoma-runtime',
-        'atoma-shared',
-        'atoma-types'
+        '@atoma-js/runtime',
+        '@atoma-js/shared',
+        '@atoma-js/types'
     ]
 })

@@ -5,9 +5,9 @@ import type {
     StoreOperationOptions,
     StoreUpdater,
     UpsertWriteOptions
-} from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
-import type { StoreHandle } from 'atoma-types/runtime'
+} from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
+import type { StoreHandle } from '@atoma-js/types/runtime'
 
 export type WriteScope<T extends Entity> = Readonly<{
     handle: StoreHandle<T>

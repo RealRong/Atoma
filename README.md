@@ -16,7 +16,7 @@ Atomic state management with universal persistence.
 ## Installation
 
 ```bash
-npm i atoma
+npm i @atoma-js/atoma
 ```
 
 Peer deps:
@@ -26,9 +26,9 @@ Peer deps:
 ## Quick start (client + React)
 
 ```ts
-import { createClient } from 'atoma-client'
-import { useFindMany } from 'atoma-react'
-import { httpBackendPlugin } from 'atoma-backend-http'
+import { createClient } from '@atoma-js/client'
+import { useFindMany } from '@atoma-js/react'
+import { httpBackendPlugin } from '@atoma-js/backend-http'
 
 type User = { id: string; name: string; version?: number }
 
@@ -55,8 +55,8 @@ export function Users() {
 ### Atoma Server plugin setup
 
 ```ts
-import { createClient } from 'atoma-client'
-import { atomaServerBackendPlugin } from 'atoma-backend-atoma-server'
+import { createClient } from '@atoma-js/client'
+import { atomaServerBackendPlugin } from '@atoma-js/backend-atoma-server'
 
 const client = createClient({
     schema,
@@ -78,11 +78,11 @@ const client = createClient({
   - ops: `op.meta.traceId` / `op.meta.requestId` (op-scoped; supports mixed-trace batches)
   - subscribe (SSE): URL query `traceId` / `requestId` (for GET/SSE without JSON body)
 
-All of the above are defined by shared `atoma-types/protocol` types and `atoma-types/protocol-tools` utilities, used by both client and server.
+All of the above are defined by shared `@atoma-js/types/protocol` types and `@atoma-js/types/protocol-tools` utilities, used by both client and server.
 
 ## Server (protocol core)
 
-`atoma-server` is a **protocol core**:
+`@atoma-js/server` is a **protocol core**:
 
 - Accepts **Web standard** `Request`/`Response` only
 - Exposes two handlers: `ops(request)` and `subscribe(request)` (SSE)
@@ -92,8 +92,8 @@ All of the above are defined by shared `atoma-types/protocol` types and `atoma-t
 ### Example (Next.js route handlers)
 
 ```ts
-import { createAtomaHandlers } from 'atoma-server'
-import { createPrismaServerAdapter } from 'atoma-server/adapters/prisma'
+import { createAtomaHandlers } from '@atoma-js/server'
+import { createPrismaServerAdapter } from '@atoma-js/server/adapters/prisma'
 
 const handlers = createAtomaHandlers({
     adapter: createPrismaServerAdapter({ prisma: /* PrismaClient */ } as any)

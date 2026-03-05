@@ -1,9 +1,9 @@
-import { HttpOperationClient } from 'atoma-backend-http'
-import { buildOperationExecutor } from 'atoma-backend-shared'
-import { disposeInReverse } from 'atoma-shared'
-import { OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN } from 'atoma-types/client/ops'
-import { SYNC_TRANSPORT_TOKEN } from 'atoma-types/client/sync'
-import type { ClientPlugin } from 'atoma-types/client/plugins'
+import { HttpOperationClient } from '@atoma-js/backend-http'
+import { buildOperationExecutor } from '@atoma-js/backend-shared'
+import { disposeInReverse } from '@atoma-js/shared'
+import { OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN } from '@atoma-js/types/client/ops'
+import { SYNC_TRANSPORT_TOKEN } from '@atoma-js/types/client/sync'
+import type { ClientPlugin } from '@atoma-js/types/client/plugins'
 import { createSyncTransport } from './sync/transport'
 import type { AtomaServerBackendPluginOptions } from './types'
 import { createWriteCoordinator } from './write/coordinator'
@@ -21,7 +21,7 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
     }
 
     return {
-        id: `atoma-server:${normalizedOptions.baseURL}`,
+        id: `server:${normalizedOptions.baseURL}`,
         provides: [OPERATION_CLIENT_TOKEN, WRITE_COORDINATOR_TOKEN, SYNC_TRANSPORT_TOKEN],
         setup: (ctx) => {
             const operationClient = new HttpOperationClient({
@@ -67,7 +67,7 @@ export function atomaServerBackendPlugin(options: AtomaServerBackendPluginOption
 
             try {
                 disposers.push(ctx.runtime.execution.register({
-                    id: `backend.atoma-server:${normalizedOptions.baseURL}`,
+                    id: `backend.server:${normalizedOptions.baseURL}`,
                     ...buildOperationExecutor({
                         runtime: {
                             now: ctx.runtime.now

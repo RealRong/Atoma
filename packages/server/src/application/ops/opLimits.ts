@@ -1,4 +1,4 @@
-import type { QueryOp, WriteOp } from 'atoma-types/protocol'
+import type { QueryOp, WriteOp } from '@atoma-js/types/protocol'
 import type { AtomaServerConfig } from '../../config'
 import { byteLengthUtf8, throwError } from '../../error'
 import type { ServerRuntime } from '../../runtime/createRuntime'

@@ -1,5 +1,5 @@
-import type { Entity } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
+import type { Entity } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
 
 export function mergeSnapshotValues<T extends Entity>(args: {
     items: T[]

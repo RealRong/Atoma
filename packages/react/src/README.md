@@ -1,15 +1,15 @@
-# atoma-react
+# @atoma-js/react
 
 Atoma React Hooks extension package (optional).
 
 ## Install
 
 ```bash
-npm i atoma atoma-react
+npm i @atoma-js/atoma @atoma-js/react
 ```
 
 ## Usage
 
 ```ts
-import { useQuery } from 'atoma-react'
+import { useQuery } from '@atoma-js/react'
 ```

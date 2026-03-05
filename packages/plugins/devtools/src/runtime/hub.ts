@@ -12,7 +12,7 @@ import type {
     StreamEvent,
     StreamEventType,
     SubscribeArgs
-} from 'atoma-types/devtools'
+} from '@atoma-js/types/devtools'
 
 type Subscriber = {
     args: SubscribeArgs

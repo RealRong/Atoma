@@ -1,12 +1,12 @@
-import { stableStringify } from 'atoma-shared'
-import { pickIncludeOptions } from 'atoma-core/relations'
+import { stableStringify } from '@atoma-js/shared'
+import { pickIncludeOptions } from '@atoma-js/core/relations'
 import type {
     Entity,
     RelationConfig,
     RelationIncludeInput,
     RelationPrefetchMode
-} from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
+} from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
 
 type RelationInclude = RelationIncludeInput<Record<string, unknown>>
 

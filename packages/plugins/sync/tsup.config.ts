@@ -16,7 +16,7 @@ export default defineConfig({
         options.plugins = [
             ...(options.plugins ?? []),
             {
-                name: 'atoma-sync-hash-alias-subpaths',
+                name: 'sync-hash-alias-subpaths',
                 setup(build) {
                     const exact: Record<string, string> = {
                         '#sync': path.resolve(__dirname, 'src/index.ts'),
@@ -42,13 +42,13 @@ export default defineConfig({
         ]
     },
     external: [
-        'atoma',
-        'atoma-client',
-        'atoma-core',
-        'atoma-runtime',
-        'atoma-shared',
-        'atoma-observability',
-        'atoma-types',
+        '@atoma-js/atoma',
+        '@atoma-js/client',
+        '@atoma-js/core',
+        '@atoma-js/runtime',
+        '@atoma-js/shared',
+        '@atoma-js/observability',
+        '@atoma-js/types',
         'rxdb',
         'rxdb/plugins/replication',
         'rxdb/plugins/storage-memory',

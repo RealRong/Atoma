@@ -14,10 +14,10 @@ export default defineConfig({
         options.plugins = [...(options.plugins ?? [])]
     },
     external: [
-        'atoma-client',
-        'atoma-core',
-        'atoma-shared',
-        'atoma-observability',
+        '@atoma-js/client',
+        '@atoma-js/core',
+        '@atoma-js/shared',
+        '@atoma-js/observability',
         'react',
         'lodash'
     ]

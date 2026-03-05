@@ -1,6 +1,6 @@
-import type { IndexDefinition } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
-import type { IndexStats } from 'atoma-types/core'
+import type { IndexDefinition } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/protocol'
+import type { IndexStats } from '@atoma-js/types/core'
 import { validateString } from '../internal/value'
 import type { Condition, Index } from '../types'
 

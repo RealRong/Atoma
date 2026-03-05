@@ -1,5 +1,5 @@
-import { createActionId } from 'atoma-shared'
-import type { ActionContext, ActionOrigin } from 'atoma-types/core'
+import { createActionId } from '@atoma-js/shared'
+import type { ActionContext, ActionOrigin } from '@atoma-js/types/core'
 
 export function createActionContext(
     context?: Partial<ActionContext>,

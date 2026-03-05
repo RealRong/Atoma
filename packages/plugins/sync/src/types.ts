@@ -1,4 +1,4 @@
-import type { SyncEvent, SyncMode, SyncPhase, SyncStatus } from 'atoma-types/sync'
+import type { SyncEvent, SyncMode, SyncPhase, SyncStatus } from '@atoma-js/types/sync'
 
 export type SyncResourceConfig = Readonly<{
     resource: string

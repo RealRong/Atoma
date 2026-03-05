@@ -1,7 +1,7 @@
-import { runQuery } from 'atoma-core/query'
-import { isRecord } from 'atoma-shared'
-import type { Entity, Query as CoreQuery } from 'atoma-types/core'
-import type { ExecuteOperationsInput, ExecuteOperationsOutput, OperationClient } from 'atoma-types/client/ops'
+import { runQuery } from '@atoma-js/core/query'
+import { isRecord } from '@atoma-js/shared'
+import type { Entity, Query as CoreQuery } from '@atoma-js/types/core'
+import type { ExecuteOperationsInput, ExecuteOperationsOutput, OperationClient } from '@atoma-js/types/client/ops'
 import type {
     RemoteOp,
     RemoteOpResult,
@@ -11,7 +11,7 @@ import type {
     WriteEntry,
     WriteOptions,
     WriteResultData
-} from 'atoma-types/protocol'
+} from '@atoma-js/types/protocol'
 
 type PlainRecord = Record<string, any>
 

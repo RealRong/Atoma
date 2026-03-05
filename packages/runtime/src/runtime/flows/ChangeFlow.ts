@@ -1,10 +1,10 @@
-import { revertChanges } from 'atoma-core/store'
+import { revertChanges } from '@atoma-js/core/store'
 import type {
     Entity,
     StoreChange,
     StoreOperationOptions
-} from 'atoma-types/core'
-import type { Runtime, ChangeDirection, StoreHandle } from 'atoma-types/runtime'
+} from '@atoma-js/types/core'
+import type { Runtime, ChangeDirection, StoreHandle } from '@atoma-js/types/runtime'
 
 export class ChangeFlow {
     private readonly runtime: Runtime

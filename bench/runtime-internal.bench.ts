@@ -1,5 +1,5 @@
 import { bench, beforeAll, describe } from 'vitest'
-import { Runtime } from '../packages/atoma-runtime/src/runtime/Runtime'
+import { Runtime } from '../packages/runtime/src/runtime/Runtime'
 
 type BenchEntity = {
     id: string

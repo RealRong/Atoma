@@ -1,5 +1,5 @@
-import type { FilterExpr, Hits } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/protocol'
+import type { FilterExpr, Hits } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/protocol'
 import { intersectAll } from '../../shared/search'
 import { mergeRange } from './range'
 import type {

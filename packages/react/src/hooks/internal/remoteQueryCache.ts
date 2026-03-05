@@ -1,4 +1,4 @@
-import type { Entity, PageInfo } from 'atoma-types/core'
+import type { Entity, PageInfo } from '@atoma-js/types/core'
 
 export type RemoteState<T extends Entity> = Readonly<{
     isFetching: boolean

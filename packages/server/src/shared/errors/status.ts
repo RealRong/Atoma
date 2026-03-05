@@ -1,4 +1,4 @@
-import type { StandardError } from 'atoma-types/protocol'
+import type { StandardError } from '@atoma-js/types/protocol'
 
 export function errorStatus(error: Pick<StandardError, 'code'>) {
     if (error.code.startsWith('INVALID_') || error.code.startsWith('PROTOCOL_')) {

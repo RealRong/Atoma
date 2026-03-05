@@ -1,11 +1,11 @@
-import type { Entity, Indexes, StoreChange } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
-import type { StoreState as StoreStateType } from 'atoma-types/runtime'
+import type { Entity, Indexes, StoreChange } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
+import type { StoreState as StoreStateType } from '@atoma-js/types/runtime'
 import {
     apply,
     replace,
     upsert
-} from 'atoma-core/store'
+} from '@atoma-js/core/store'
 
 export class StoreState<T extends Entity = Entity> implements StoreStateType<T> {
     private current: ReadonlyMap<EntityId, T>

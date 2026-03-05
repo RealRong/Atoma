@@ -4,10 +4,10 @@ import type {
     QueryOneResult,
     QueryResult,
     StoreReadOptions
-} from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
-import { createId, toErrorWithFallback as toError } from 'atoma-shared'
-import type { ExecutionQueryOutput, Runtime, Read, StoreHandle } from 'atoma-types/runtime'
+} from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
+import { createId, toErrorWithFallback as toError } from '@atoma-js/shared'
+import type { ExecutionQueryOutput, Runtime, Read, StoreHandle } from '@atoma-js/types/runtime'
 
 export class ReadFlow implements Read {
     private readonly runtime: Runtime

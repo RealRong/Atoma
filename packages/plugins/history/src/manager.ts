@@ -1,4 +1,4 @@
-import type { ActionContext } from 'atoma-types/core'
+import type { ActionContext } from '@atoma-js/types/core'
 import type {
     ActionRecord,
     ChangeRecord,
@@ -6,7 +6,7 @@ import type {
     HistoryApplyArgs,
     HistoryRecordArgs,
     UndoStack
-} from 'atoma-types/history'
+} from '@atoma-js/types/history'
 
 type ContextBuilder = (context?: Partial<ActionContext>) => ActionContext
 type HistoryStack = 'undo' | 'redo'

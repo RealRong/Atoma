@@ -1,4 +1,4 @@
-import type { StandardError as StandardErrorType, WriteOptions } from 'atoma-types/protocol'
+import type { StandardError as StandardErrorType, WriteOptions } from '@atoma-js/types/protocol'
 import type { AtomaChange, IOrmAdapter, ISyncAdapter } from '../../adapters/ports'
 import type { AtomaServerLogger } from '../../logger'
 import type { ErrorWriteReplay, OkWriteReplay } from './idempotency'

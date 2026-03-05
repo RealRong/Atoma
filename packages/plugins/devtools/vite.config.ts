@@ -18,12 +18,13 @@ export default defineConfig({
         },
         sourcemap: true,
         rollupOptions: {
-            external: ['react', 'react-dom', 'atoma', 'atoma-client', /^atoma-types(\/.*)?$/],
+            external: ['react', 'react-dom', '@atoma-js/atoma', '@atoma-js/client', '@atoma-js/shared', /^@atoma-js\/types(\/.*)?$/],
             output: {
                 globals: {
                     react: 'React',
                     'react-dom': 'ReactDOM',
-                    atoma: 'Atoma'
+                    '@atoma-js/atoma': 'Atoma',
+                    '@atoma-js/shared': 'AtomaShared'
                 }
             }
         }

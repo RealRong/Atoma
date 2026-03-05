@@ -1,8 +1,8 @@
-import type { CursorToken, SortRule } from 'atoma-types/protocol'
+import type { CursorToken, SortRule } from '@atoma-js/types/protocol'
 import {
     decodeCursorToken as decodeSharedCursorToken,
     encodeCursorToken as encodeSharedCursorToken
-} from 'atoma-shared'
+} from '@atoma-js/shared'
 
 type CursorPayload = { v: number; sort: SortRule[]; values: any[] }
 

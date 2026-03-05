@@ -5,9 +5,9 @@ import type {
     StoreUpdater,
     UpsertWriteOptions,
     WriteManyResult
-} from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
-import type { Runtime, Write, StoreHandle } from 'atoma-types/runtime'
+} from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
+import type { Runtime, Write, StoreHandle } from '@atoma-js/types/runtime'
 import { orchestrateWrite } from './write/orchestrate'
 import type { IntentAction, IntentCommand, WriteScope } from './write/contracts'
 

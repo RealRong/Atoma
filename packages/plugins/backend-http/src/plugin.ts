@@ -1,8 +1,8 @@
 import { HttpOperationClient } from './client'
-import { buildOperationExecutor } from 'atoma-backend-shared'
-import { safeDispose } from 'atoma-shared'
-import { OPERATION_CLIENT_TOKEN } from 'atoma-types/client/ops'
-import type { ClientPlugin } from 'atoma-types/client/plugins'
+import { buildOperationExecutor } from '@atoma-js/backend-shared'
+import { safeDispose } from '@atoma-js/shared'
+import { OPERATION_CLIENT_TOKEN } from '@atoma-js/types/client/ops'
+import type { ClientPlugin } from '@atoma-js/types/client/plugins'
 import type { BackendPluginOptions } from './types'
 
 function normalizeBaseUrl(baseURL: string): string {

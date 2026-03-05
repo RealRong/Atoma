@@ -1,6 +1,6 @@
-import type { PluginContext } from 'atoma-types/client/plugins'
-import type { StoreChange } from 'atoma-types/core'
-import type { SyncEvent, SyncPhase } from 'atoma-types/sync'
+import type { PluginContext } from '@atoma-js/types/client/plugins'
+import type { StoreChange } from '@atoma-js/types/core'
+import type { SyncEvent, SyncPhase } from '@atoma-js/types/sync'
 import { documentCodec } from '../mapping/document'
 import type { ReadyRuntime } from '../runtime/contracts'
 

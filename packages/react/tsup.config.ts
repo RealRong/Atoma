@@ -12,11 +12,11 @@ export default defineConfig({
     treeshake: true,
     external: [
         'react',
-        'atoma',
-        'atoma-client',
-        'atoma-shared',
-        'atoma-observability',
-        'atoma-types',
-        'atoma-types/internal',
+        '@atoma-js/atoma',
+        '@atoma-js/client',
+        '@atoma-js/shared',
+        '@atoma-js/observability',
+        '@atoma-js/types',
+        '@atoma-js/types/internal',
     ]
 })

@@ -5,8 +5,8 @@ import type {
     Entity,
     ActionContext,
     StoreProcessor
-} from 'atoma-types/core'
-import type { Runtime, StoreHandle } from 'atoma-types/runtime'
+} from '@atoma-js/types/core'
+import type { Runtime, StoreHandle } from '@atoma-js/types/runtime'
 
 export class Processor {
     private readonly runtime: Runtime

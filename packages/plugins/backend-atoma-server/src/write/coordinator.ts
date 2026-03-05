@@ -1,9 +1,9 @@
-import type { WriteCoordinator } from 'atoma-types/client/ops'
-import type { PluginRuntime } from 'atoma-types/client/plugins'
-import type { StoreToken } from 'atoma-types/core'
-import type { Version, WriteEntry as ProtocolWriteEntry, WriteItemMeta } from 'atoma-types/protocol'
-import type { WriteEntry as RuntimeWriteEntry } from 'atoma-types/runtime'
-import { normalizePositiveInt } from 'atoma-shared'
+import type { WriteCoordinator } from '@atoma-js/types/client/ops'
+import type { PluginRuntime } from '@atoma-js/types/client/plugins'
+import type { StoreToken } from '@atoma-js/types/core'
+import type { Version, WriteEntry as ProtocolWriteEntry, WriteItemMeta } from '@atoma-js/types/protocol'
+import type { WriteEntry as RuntimeWriteEntry } from '@atoma-js/types/runtime'
+import { normalizePositiveInt } from '@atoma-js/shared'
 
 function readPositiveVersion(value: unknown): Version | undefined {
     return normalizePositiveInt(value)

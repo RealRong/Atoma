@@ -1,4 +1,4 @@
-import type { Hub } from 'atoma-types/devtools'
+import type { Hub } from '@atoma-js/types/devtools'
 import type { ClientInspector } from './types'
 import { inspectorForEntry } from './inspector'
 import { ensureEntry, removeEntryById } from './registry'

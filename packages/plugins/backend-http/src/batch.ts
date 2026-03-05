@@ -1,7 +1,7 @@
 import PQueue from 'p-queue'
-import { normalizeNonNegativeInt, normalizePositiveInt, toError } from 'atoma-shared'
-import type { Meta, RemoteOp, RemoteOpResult, WriteOp } from 'atoma-types/protocol'
-import type { ExecuteOperationsInput, ExecuteOperationsOutput } from 'atoma-types/client/ops'
+import { normalizeNonNegativeInt, normalizePositiveInt, toError } from '@atoma-js/shared'
+import type { Meta, RemoteOp, RemoteOpResult, WriteOp } from '@atoma-js/types/protocol'
+import type { ExecuteOperationsInput, ExecuteOperationsOutput } from '@atoma-js/types/client/ops'
 
 type Deferred<T> = {
     resolve: (value: T) => void

@@ -1,4 +1,4 @@
-import type { Envelope, Meta, StandardError } from 'atoma-types/protocol'
+import type { Envelope, Meta, StandardError } from '@atoma-js/types/protocol'
 import { ensureMeta } from '../meta'
 import { createError } from '../error/error'
 

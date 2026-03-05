@@ -1,4 +1,4 @@
-import type { QueryOp, WriteOp } from 'atoma-types/protocol'
+import type { QueryOp, WriteOp } from '@atoma-js/types/protocol'
 
 export type TraceMeta = {
     traceId?: string

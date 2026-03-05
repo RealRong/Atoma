@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
-import type { Entity, Store } from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
-import { getStoreBindings } from 'atoma-types/internal'
+import type { Entity, Store } from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
+import { getStoreBindings } from '@atoma-js/types/internal'
 import { createBatchedSubscribe } from './batchedSubscribe'
 
 type StoreSnapshot<T extends Entity> = ReadonlyMap<EntityId, T>

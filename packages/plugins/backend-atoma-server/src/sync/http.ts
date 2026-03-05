@@ -1,5 +1,5 @@
-import { isRecord, requestJson } from 'atoma-shared'
-import type { Envelope, RemoteOpsResponseData } from 'atoma-types/protocol'
+import { isRecord, requestJson } from '@atoma-js/shared'
+import type { Envelope, RemoteOpsResponseData } from '@atoma-js/types/protocol'
 import type { AtomaServerBackendPluginOptions } from '../types'
 
 export async function postJson<T>(args: {

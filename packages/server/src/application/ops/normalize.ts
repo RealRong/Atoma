@@ -1,5 +1,5 @@
-import { wrapProtocolError, assertRemoteOpsRequest } from 'atoma-types/protocol-tools'
-import type { Meta, Query, RemoteOpsRequest, StandardErrorDetails } from 'atoma-types/protocol'
+import { wrapProtocolError, assertRemoteOpsRequest } from '@atoma-js/types/protocol-tools'
+import type { Meta, Query, RemoteOpsRequest, StandardErrorDetails } from '@atoma-js/types/protocol'
 import { throwError } from '../../error'
 import { toObjectDetails } from '../../shared/utils/details'
 

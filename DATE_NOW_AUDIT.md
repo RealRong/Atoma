@@ -18,31 +18,31 @@
 
 以下位置已经是“`now` 可注入 + `Date.now()` 兜底”的正确模式，无需结构性改造：
 
-- `packages/atoma-client/src/plugins/PluginRuntimeIo.ts:21`
-- `packages/atoma-runtime/src/runtime/Runtime.ts:58`
-- `packages/atoma-server/src/ops/writeSemantics.ts:133`
-- `packages/atoma-types/src/protocol-tools/ops/build.ts:12`
-- `packages/atoma-types/src/protocol-tools/ops/meta.ts:21`
-- `packages/plugins/atoma-sync/src/plugin.ts:21`
-- `packages/plugins/atoma-sync/src/transport/ops-driver.ts:15`
-- `packages/plugins/atoma-sync/src/storage/index.ts:23`
-- `packages/plugins/atoma-sync/src/storage/outbox-store.ts:64`
-- `packages/plugins/atoma-sync/src/engine/sync-engine.ts:338`
-- `packages/plugins/atoma-sync/src/internal/replica-id.ts:22`
-- `packages/atoma-shared/src/id.ts:83`
+- `packages/client/src/plugins/PluginRuntimeIo.ts:21`
+- `packages/runtime/src/runtime/Runtime.ts:58`
+- `packages/server/src/ops/writeSemantics.ts:133`
+- `packages/types/src/protocol-tools/ops/build.ts:12`
+- `packages/types/src/protocol-tools/ops/meta.ts:21`
+- `packages/plugins/sync/src/plugin.ts:21`
+- `packages/plugins/sync/src/transport/ops-driver.ts:15`
+- `packages/plugins/sync/src/storage/index.ts:23`
+- `packages/plugins/sync/src/storage/outbox-store.ts:64`
+- `packages/plugins/sync/src/engine/sync-engine.ts:338`
+- `packages/plugins/sync/src/internal/replica-id.ts:22`
+- `packages/shared/src/id.ts:83`
 
 ---
 
 ## 3) 建议优先替换为 `now`（P0：核心链路）
 
-### 3.1 atoma-core
+### 3.1 @atoma-js/core
 
-1. `packages/atoma-core/src/store/mutation.ts:14`
-2. `packages/atoma-core/src/store/mutation.ts:34`
-3. `packages/atoma-core/src/store/mutation.ts:35`
-4. `packages/atoma-core/src/operation.ts:13`
-5. `packages/atoma-core/src/indexes/plan.ts:101`
-6. `packages/atoma-core/src/indexes/plan.ts:271`
+1. `packages/core/src/store/mutation.ts:14`
+2. `packages/core/src/store/mutation.ts:34`
+3. `packages/core/src/store/mutation.ts:35`
+4. `packages/core/src/operation.ts:13`
+5. `packages/core/src/indexes/plan.ts:101`
+6. `packages/core/src/indexes/plan.ts:271`
 
 建议：
 - `store/mutation` 的 `init/merge` 增加 `now?: () => number`（或 options.now）
@@ -53,14 +53,14 @@
 - core 完全纯化，时间源由 runtime 注入
 - 测试可控（稳定快照）
 
-### 3.2 atoma-server
+### 3.2 @atoma-js/server
 
-1. `packages/atoma-server/src/ops/opsExecutor/index.ts:242`
-2. `packages/atoma-server/src/ops/opsExecutor/write.ts:507`
-3. `packages/atoma-server/src/runtime/errors.ts:17`
-4. `packages/atoma-server/src/ops/subscribeExecutor.ts:46`
-5. `packages/atoma-server/src/ops/subscribeExecutor.ts:59`
-6. `packages/atoma-server/src/ops/subscribeExecutor.ts:93`
+1. `packages/server/src/ops/opsExecutor/index.ts:242`
+2. `packages/server/src/ops/opsExecutor/write.ts:507`
+3. `packages/server/src/runtime/errors.ts:17`
+4. `packages/server/src/ops/subscribeExecutor.ts:46`
+5. `packages/server/src/ops/subscribeExecutor.ts:59`
+6. `packages/server/src/ops/subscribeExecutor.ts:93`
 
 建议：
 - 在 server runtime/config 增加统一 `now?: () => number`
@@ -70,16 +70,16 @@
 - server 端 trace/meta/time 语义一致
 - e2e 测试可冻结时钟
 
-### 3.3 atoma-server 适配器（Prisma/Typeorm）
+### 3.3 @atoma-js/server 适配器（Prisma/Typeorm）
 
-- `packages/atoma-server/src/adapters/prisma/PrismaSyncAdapter.ts:56`
-- `packages/atoma-server/src/adapters/prisma/PrismaSyncAdapter.ts:79`
-- `packages/atoma-server/src/adapters/prisma/PrismaSyncAdapter.ts:174`
-- `packages/atoma-server/src/adapters/prisma/PrismaSyncAdapter.ts:175`
-- `packages/atoma-server/src/adapters/typeorm/TypeormSyncAdapter.ts:59`
-- `packages/atoma-server/src/adapters/typeorm/TypeormSyncAdapter.ts:79`
-- `packages/atoma-server/src/adapters/typeorm/TypeormSyncAdapter.ts:200`
-- `packages/atoma-server/src/adapters/typeorm/TypeormSyncAdapter.ts:201`
+- `packages/server/src/adapters/prisma/PrismaSyncAdapter.ts:56`
+- `packages/server/src/adapters/prisma/PrismaSyncAdapter.ts:79`
+- `packages/server/src/adapters/prisma/PrismaSyncAdapter.ts:174`
+- `packages/server/src/adapters/prisma/PrismaSyncAdapter.ts:175`
+- `packages/server/src/adapters/typeorm/TypeormSyncAdapter.ts:59`
+- `packages/server/src/adapters/typeorm/TypeormSyncAdapter.ts:79`
+- `packages/server/src/adapters/typeorm/TypeormSyncAdapter.ts:200`
+- `packages/server/src/adapters/typeorm/TypeormSyncAdapter.ts:201`
 
 建议：
 - 构造参数增加 `now?: () => number`
@@ -92,25 +92,25 @@
 
 ## 4) 建议替换为 `now`（P1：外围模块）
 
-### 4.1 atoma-backend-http
+### 4.1 @atoma-js/backend-http
 
-- `packages/plugins/atoma-backend-http/src/internal/batch/batch-engine.ts:191`
-- `packages/plugins/atoma-backend-http/src/ops-client.ts:93`
-- `packages/plugins/atoma-backend-http/src/ops-client.ts:160`
-- `packages/plugins/atoma-backend-http/src/ops-client.ts:182`
+- `packages/plugins/backend-http/src/internal/batch/batch-engine.ts:191`
+- `packages/plugins/backend-http/src/ops-client.ts:93`
+- `packages/plugins/backend-http/src/ops-client.ts:160`
+- `packages/plugins/backend-http/src/ops-client.ts:182`
 
 建议：
 - `HttpOpsClientConfig` 增加 `now?: () => number`
 - `BatchEngine` 构造参数加 `now`，组包 `clientTimeMs` 使用注入时钟
 - `fetchWithRetry` 透传 `now`，用于 `startedAt/elapsed`
 
-### 4.2 atoma-react / devtools
+### 4.2 @atoma-js/react / @atoma-js/devtools
 
-- `packages/atoma-react/src/hooks/useRelations.ts:95`
-- `packages/atoma-react/src/hooks/useRelations.ts:108`
-- `packages/plugins/atoma-devtools/src/runtime/registry.ts:62`
-- `packages/plugins/atoma-devtools/src/runtime/inspector.ts:6`
-- `packages/plugins/atoma-devtools/src/runtime/runtime-adapter.ts:52`
+- `packages/react/src/hooks/useRelations.ts:95`
+- `packages/react/src/hooks/useRelations.ts:108`
+- `packages/plugins/devtools/src/runtime/registry.ts:62`
+- `packages/plugins/devtools/src/runtime/inspector.ts:6`
+- `packages/plugins/devtools/src/runtime/runtime-adapter.ts:52`
 
 建议：
 - hook/devtools 接收可选 `now`（默认 `Date.now`）
@@ -120,7 +120,7 @@
 
 ## 5) 可保留 `Date.now()` 的场景（P2）
 
-- `packages/atoma-shared/src/id.ts:23`
+- `packages/shared/src/id.ts:23`
 
 说明：
 - 该处是随机 ID 的“熵兜底”路径（与 `Math.random()` 组合），在无 `crypto.randomUUID` 环境才使用
@@ -140,7 +140,6 @@
 
 ## 7) 最小落地顺序
 
-1. **P0**：`atoma-core` + `atoma-server`（含 Prisma/Typeorm adapters）
-2. **P1**：`atoma-backend-http` + `atoma-react` + `atoma-devtools`
-3. **P2**：`atoma-shared/id` fallback 是否注入（可选）
-
+1. **P0**：`@atoma-js/core` + `@atoma-js/server`（含 Prisma/Typeorm adapters）
+2. **P1**：`@atoma-js/backend-http` + `@atoma-js/react` + `@atoma-js/devtools`
+3. **P2**：`@atoma-js/shared/id` fallback 是否注入（可选）

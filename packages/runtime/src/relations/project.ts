@@ -7,18 +7,18 @@ import type {
     RelationMap,
     SortRule,
     StoreToken
-} from 'atoma-types/core'
-import type { EntityId } from 'atoma-types/shared'
-import type { StoreMap } from 'atoma-types/runtime'
-import { read } from 'atoma-shared'
-import { runQuery } from 'atoma-core/query'
+} from '@atoma-js/types/core'
+import type { EntityId } from '@atoma-js/types/shared'
+import type { StoreMap } from '@atoma-js/types/runtime'
+import { read } from '@atoma-js/shared'
+import { runQuery } from '@atoma-js/core/query'
 import {
     buildRelationPlan,
     extractKeyValue,
     pickFirstKey,
     type IncludeInput,
     type RelationPlanEntry
-} from 'atoma-core/relations'
+} from '@atoma-js/core/relations'
 
 type RelationStoreStates = ReadonlyMap<StoreToken, StoreMap>
 type RelationType = RelationPlanEntry<Entity>['relation']['type']

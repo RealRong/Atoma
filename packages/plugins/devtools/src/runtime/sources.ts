@@ -1,6 +1,6 @@
-import type { PluginContext } from 'atoma-types/client/plugins'
-import type { Hub, SnapshotQuery, Source, StreamEvent } from 'atoma-types/devtools'
-import { safeDispose } from 'atoma-shared'
+import type { PluginContext } from '@atoma-js/types/client/plugins'
+import type { Hub, SnapshotQuery, Source, StreamEvent } from '@atoma-js/types/devtools'
+import { safeDispose } from '@atoma-js/shared'
 
 type SourceRuntime = {
     source: Source

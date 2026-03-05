@@ -9,7 +9,7 @@ import type {
     RelationMap,
     VariantBranch,
     VariantsConfig
-} from 'atoma-types/core'
+} from '@atoma-js/types/core'
 
 type IncludeForRelations<Relations extends Record<string, unknown>> =
     Partial<{ [K in keyof Relations]: InferIncludeType<Relations[K]> }>

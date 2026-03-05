@@ -1,4 +1,4 @@
-import type { Query, SortRule, WriteOptions } from 'atoma-types/protocol'
+import type { Query, SortRule, WriteOptions } from '@atoma-js/types/protocol'
 import type {
     IOrmAdapter,
     OrmAdapterOptions,

@@ -80,10 +80,10 @@ importers:
     dependencies:
       atoma-server:
         specifier: workspace:*
-        version: link:../../packages/atoma-server
+        version: link:../../packages/server
       atoma-types:
         specifier: workspace:*
-        version: link:../../packages/atoma-types
+        version: link:../../packages/types
       reflect-metadata:
         specifier: ^0.1.13
         version: 0.1.14
@@ -110,7 +110,7 @@ importers:
         specifier: workspace:*
         version: link:../atoma-types
 
-  packages/atoma-client:
+  packages/client:
     dependencies:
       atoma-runtime:
         specifier: workspace:*
@@ -122,7 +122,7 @@ importers:
         specifier: workspace:*
         version: link:../atoma-types
 
-  packages/atoma-core:
+  packages/core:
     dependencies:
       atoma-shared:
         specifier: workspace:*
@@ -131,7 +131,7 @@ importers:
         specifier: workspace:*
         version: link:../atoma-types
 
-  packages/atoma-react:
+  packages/react:
     dependencies:
       atoma-core:
         specifier: workspace:*
@@ -150,7 +150,7 @@ importers:
         specifier: workspace:*
         version: link:../atoma
 
-  packages/atoma-runtime:
+  packages/runtime:
     dependencies:
       atoma-core:
         specifier: workspace:*
@@ -162,7 +162,7 @@ importers:
         specifier: workspace:*
         version: link:../atoma-types
 
-  packages/atoma-server:
+  packages/server:
     dependencies:
       '@prisma/client':
         specifier: ^5.0.0
@@ -177,15 +177,15 @@ importers:
         specifier: ^0.3.20
         version: 0.3.28(babel-plugin-macros@3.1.0)(mongodb@6.21.0(socks@2.8.7))(sqlite3@5.1.7)
 
-  packages/atoma-shared: {}
+  packages/shared: {}
 
-  packages/atoma-types:
+  packages/types:
     dependencies:
       atoma-shared:
         specifier: workspace:*
         version: link:../atoma-shared
 
-  packages/plugins/atoma-backend-atoma-server:
+  packages/plugins/backend-atoma-server:
     dependencies:
       atoma-backend-http:
         specifier: workspace:*
@@ -200,7 +200,7 @@ importers:
         specifier: workspace:*
         version: link:../../atoma-types
 
-  packages/plugins/atoma-backend-http:
+  packages/plugins/backend-http:
     dependencies:
       atoma-backend-shared:
         specifier: workspace:*
@@ -215,7 +215,7 @@ importers:
         specifier: ^6.6.2
         version: 6.6.2
 
-  packages/plugins/atoma-backend-indexeddb:
+  packages/plugins/backend-indexeddb:
     dependencies:
       atoma-backend-shared:
         specifier: workspace:*
@@ -233,7 +233,7 @@ importers:
         specifier: ^3.2.0 || ^4.0.0
         version: 4.2.1
 
-  packages/plugins/atoma-backend-shared:
+  packages/plugins/backend-shared:
     dependencies:
       atoma-core:
         specifier: workspace:*
@@ -245,7 +245,7 @@ importers:
         specifier: workspace:*
         version: link:../../atoma-types
 
-  packages/plugins/atoma-devtools:
+  packages/plugins/devtools:
     dependencies:
       atoma:
         specifier: workspace:*
@@ -297,7 +297,7 @@ importers:
         specifier: ^7.2.0
         version: 7.3.1(@types/node@24.10.9)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
 
-  packages/plugins/atoma-history:
+  packages/plugins/history:
     dependencies:
       atoma:
         specifier: workspace:*
@@ -312,7 +312,7 @@ importers:
         specifier: workspace:*
         version: link:../../atoma-runtime
 
-  packages/plugins/atoma-observability:
+  packages/plugins/observability:
     dependencies:
       atoma-shared:
         specifier: workspace:*
@@ -324,7 +324,7 @@ importers:
         specifier: ^7.3.0
         version: 7.3.0
 
-  packages/plugins/atoma-sync:
+  packages/plugins/sync:
     dependencies:
       atoma:
         specifier: workspace:*
