@@ -1,7 +1,3 @@
-# Atoma SDK API
-
-本文档面向 SDK 使用者，覆盖 `@atoma-js/atoma`、`@atoma-js/client`、`@atoma-js/react` 的主要使用方式与类型约定。
-
 ## 1. 包关系与入口
 
 - `@atoma-js/atoma` 是推荐入口，导出 `createClient` 与常用类型。

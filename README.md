@@ -1,5 +1,3 @@
-# Atoma SDK API
-
 ## 1. Packages and Entry Points
 
 - `@atoma-js/atoma` is the recommended entry. It exports `createClient` and common types.
