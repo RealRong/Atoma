@@ -253,7 +253,18 @@ useAll(postsStore, { include: { author: true, comments: true } })
 
 ## 9. Plugins (@atoma-js/client)
 
-### 9.1 ClientPlugin
+### 9.1 Using plugins in `createClient`
+
+```ts
+const client = createClient<Entities, Schema>({
+    stores: { schema },
+    plugins: [
+        /* ClientPlugin[] */
+    ]
+})
+```
+
+### 9.2 ClientPlugin API
 
 ```ts
 type ClientPlugin = {
@@ -264,32 +275,119 @@ type ClientPlugin = {
 }
 ```
 
-### 9.2 ServiceToken
+### 9.3 PluginContext API
+
+`PluginContext` fields:
+
+- `clientId`
+- `services`: `register(token, value, opts?)` and `resolve(token)`
+- `runtime`:
+- `id` / `now`
+- `stores.list()` / `stores.use(storeName)` / `stores.peek(storeName, id)` / `stores.snapshot(...)`
+- `action.createContext(...)`
+- `execution.register(...)` / `execution.hasExecutor(...)`
+- `events`: `on` / `off` / `once` for Store events
+
+Common `StoreEventName` values:
+
+- `readStart` / `readFinish`
+- `writeStart` / `writeCommitted` / `writeFailed`
+- `changeStart` / `changeCommitted` / `changeFailed`
+- `storeCreated`
+
+### 9.4 Services and tokens
 
 ```ts
 import { createServiceToken } from '@atoma-js/types/client'
+
 const TOKEN = createServiceToken<MyService>('my.service')
 ```
 
-### 9.3 Minimal plugin example
+Service registry API:
+
+- `register(token, value, { override?: boolean })` returns an unregister function
+- `resolve(token)` returns the current value or `undefined`
+
+Notes:
+
+- `provides` is declarative. You must call `services.register` during `setup`.
+- If a declared `provides` token is not registered after `setup`, `createClient` throws.
+
+### 9.5 Ordering and lifecycle
+
+- Plugins are validated (non-empty `id`, correct `provides/requires` types).
+- Ordering is derived from `provides` / `requires`.
+- Missing dependency or cycles throw at initialization.
+- `setup` runs in order, then `extension` objects are merged into `client`.
+- `dispose` runs in reverse order on `client.dispose()`.
+- `ctx.events.on/once` and `ctx.services.register` are auto-cleaned on dispose.
+
+### 9.6 Custom plugin example (provider + consumer)
 
 ```ts
-const myPlugin: ClientPlugin = {
-    id: 'my-plugin',
-    setup: () => {
-        return {
-            extension: {
-                hello: () => 'world'
-            },
-            dispose: () => {
-                // cleanup
-            }
-        }
+import type { ClientPlugin } from '@atoma-js/types/client/plugins'
+import { createServiceToken } from '@atoma-js/types/client'
+
+const CLOCK = createServiceToken<{ now: () => number }>('clock')
+
+const clockPlugin: ClientPlugin = {
+    id: 'clock',
+    provides: [CLOCK],
+    setup: (ctx) => {
+        ctx.services.register(CLOCK, { now: () => ctx.runtime.now() })
+    }
+}
+
+const logPlugin: ClientPlugin = {
+    id: 'log',
+    requires: [CLOCK],
+    setup: (ctx) => {
+        const clock = ctx.services.resolve(CLOCK)
+        if (!clock) return
+        const stop = ctx.events.on('writeCommitted', (event) => {
+            console.log(clock.now(), event.storeName)
+        })
+        return { dispose: stop }
     }
 }
 ```
 
-`extension` is merged into `client`, and `dispose()` runs when `client.dispose()` is called.
+### 9.7 Official plugins (quick usage)
+
+HTTP backend:
+
+```ts
+import { backendPlugin } from '@atoma-js/backend-http'
+
+createClient({
+    stores: { schema },
+    plugins: [backendPlugin({ baseURL: 'https://api.example.com' })]
+})
+```
+
+Atoma server backend + sync:
+
+```ts
+import { atomaServerBackendPlugin } from '@atoma-js/backend-atoma-server'
+import { syncPlugin, type SyncExtension } from '@atoma-js/sync'
+
+const client = createClient<Entities, Schema>({
+    stores: { schema },
+    plugins: [
+        atomaServerBackendPlugin({ baseURL: 'https://api.example.com' }),
+        syncPlugin({ resources: ['users', 'posts'], mode: 'full' })
+    ]
+})
+
+const sync = (client as AtomaClient<Entities, Schema> & SyncExtension).sync
+sync.start()
+```
+
+History / observability / devtools are also delivered as plugins:
+
+- `historyPlugin()` from `@atoma-js/history`
+- `observabilityPlugin()` from `@atoma-js/observability`
+- `devtoolsPlugin()` from `@atoma-js/devtools`
 
 ## 10. React Hooks (@atoma-js/react)
 
@@ -356,4 +454,3 @@ A: `stores` is a function. Use `client.stores('users')`.
 Q: Does `useQuery` always hit the network?
 
 A: `useQuery` calls `store.query`. Whether it triggers remote IO depends on installed plugins.
-

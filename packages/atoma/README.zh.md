@@ -253,7 +253,18 @@ useAll(postsStore, { include: { author: true, comments: true } })
 
 ## 9. 插件系统（@atoma-js/client）
 
-### 9.1 ClientPlugin
+### 9.1 在 `createClient` 中使用插件
+
+```ts
+const client = createClient<Entities, Schema>({
+    stores: { schema },
+    plugins: [
+        /* ClientPlugin[] */
+    ]
+})
+```
+
+### 9.2 ClientPlugin API
 
 ```ts
 type ClientPlugin = {
@@ -264,32 +275,119 @@ type ClientPlugin = {
 }
 ```
 
-### 9.2 ServiceToken
+### 9.3 PluginContext API
+
+`PluginContext` 字段：
+
+- `clientId`
+- `services`：`register(token, value, opts?)` 与 `resolve(token)`
+- `runtime`：
+- `id` / `now`
+- `stores.list()` / `stores.use(storeName)` / `stores.peek(storeName, id)` / `stores.snapshot(...)`
+- `action.createContext(...)`
+- `execution.register(...)` / `execution.hasExecutor(...)`
+- `events`：`on` / `off` / `once`（Store 事件）
+
+常见 `StoreEventName`：
+
+- `readStart` / `readFinish`
+- `writeStart` / `writeCommitted` / `writeFailed`
+- `changeStart` / `changeCommitted` / `changeFailed`
+- `storeCreated`
+
+### 9.4 ServiceToken 与服务注册
 
 ```ts
 import { createServiceToken } from '@atoma-js/types/client'
+
 const TOKEN = createServiceToken<MyService>('my.service')
 ```
 
-### 9.3 插件示例（简化）
+服务注册 API：
+
+- `register(token, value, { override?: boolean })` 返回注销函数
+- `resolve(token)` 返回当前值或 `undefined`
+
+注意：
+
+- `provides` 只是声明。实际必须在 `setup` 里调用 `services.register`。
+- `setup` 后若发现声明的 `provides` 未注册，会直接抛错。
+
+### 9.5 排序与生命周期
+
+- 会校验插件定义（`id` 非空、`provides/requires` 类型正确）。
+- 顺序由 `provides` / `requires` 推导。
+- 依赖缺失或存在环会在初始化阶段抛错。
+- `setup` 按顺序执行，返回的 `extension` 会合并到 `client`。
+- `dispose` 在 `client.dispose()` 时按逆序执行。
+- `ctx.events.on/once` 与 `ctx.services.register` 会在销毁时自动清理。
+
+### 9.6 自定义插件示例（提供者 + 使用者）
 
 ```ts
-const myPlugin: ClientPlugin = {
-    id: 'my-plugin',
+import type { ClientPlugin } from '@atoma-js/types/client/plugins'
+import { createServiceToken } from '@atoma-js/types/client'
+
+const CLOCK = createServiceToken<{ now: () => number }>('clock')
+
+const clockPlugin: ClientPlugin = {
+    id: 'clock',
+    provides: [CLOCK],
     setup: (ctx) => {
-        return {
-            extension: {
-                hello: () => 'world'
-            },
-            dispose: () => {
-                // cleanup
-            }
-        }
+        ctx.services.register(CLOCK, { now: () => ctx.runtime.now() })
+    }
+}
+
+const logPlugin: ClientPlugin = {
+    id: 'log',
+    requires: [CLOCK],
+    setup: (ctx) => {
+        const clock = ctx.services.resolve(CLOCK)
+        if (!clock) return
+        const stop = ctx.events.on('writeCommitted', (event) => {
+            console.log(clock.now(), event.storeName)
+        })
+        return { dispose: stop }
     }
 }
 ```
 
-插件 `extension` 会被合并到 `client` 上，`dispose()` 在 `client.dispose()` 时调用。
+### 9.7 官方插件（快速使用）
+
+HTTP 后端：
+
+```ts
+import { backendPlugin } from '@atoma-js/backend-http'
+
+createClient({
+    stores: { schema },
+    plugins: [backendPlugin({ baseURL: 'https://api.example.com' })]
+})
+```
+
+Atoma Server 后端 + 同步：
+
+```ts
+import { atomaServerBackendPlugin } from '@atoma-js/backend-atoma-server'
+import { syncPlugin, type SyncExtension } from '@atoma-js/sync'
+
+const client = createClient<Entities, Schema>({
+    stores: { schema },
+    plugins: [
+        atomaServerBackendPlugin({ baseURL: 'https://api.example.com' }),
+        syncPlugin({ resources: ['users', 'posts'], mode: 'full' })
+    ]
+})
+
+const sync = (client as AtomaClient<Entities, Schema> & SyncExtension).sync
+sync.start()
+```
+
+History / Observability / Devtools 同样以插件形式提供：
+
+- `historyPlugin()` 来自 `@atoma-js/history`
+- `observabilityPlugin()` 来自 `@atoma-js/observability`
+- `devtoolsPlugin()` 来自 `@atoma-js/devtools`
 
 ## 10. React Hooks（@atoma-js/react）
 
@@ -356,4 +454,3 @@ A: `stores` 是函数，正确写法是 `client.stores('users')`。
 Q: `useQuery` 会不会访问远端？
 
 A: `useQuery` 调用 `store.query`，是否触发远端取决于你是否安装了对应插件。
-

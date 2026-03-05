@@ -36,49 +36,19 @@
         "sync",
         "hybrid-cache"
     ],
-    "author": "Rendevoz Team",
+    "author": "Rowan Rong",
     "license": "MIT",
-    "peerDependencies": {
-        "@prisma/client": "^5.0.0",
-        "typeorm": "^0.3.20"
-    },
-    "peerDependenciesMeta": {
-        "typeorm": {
-            "optional": true
-        },
-        "@prisma/client": {
-            "optional": true
-        }
-    },
     "devDependencies": {
-        "@testing-library/react": "^16.3.1",
-        "@types/lodash": "^4.14.0",
         "@types/node": "^24.10.0",
         "@types/react": "^19.2.2",
         "@types/react-dom": "^19.2.2",
         "@vitejs/plugin-react": "^5.1.2",
         "concurrently": "^9.1.2",
-        "dexie": "^4.0.0",
-        "jsdom": "^25.0.0",
-        "mitt": "^3.0.1",
-        "p-retry": "^7.1.1",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
-        "reflect-metadata": "^0.1.13",
-        "sqlite3": "^5.1.7",
         "tsup": "^8.0.0",
-        "typeorm": "^0.3.20",
         "typescript": "^5.9.3",
         "vite": "^7.2.0",
         "vitest": "^4.0.16"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/rendevoz/rendevoz",
-        "directory": "packages/atoma"
-    },
-    "bugs": {
-        "url": "https://github.com/rendevoz/rendevoz/issues"
-    },
-    "homepage": "https://github.com/rendevoz/rendevoz/tree/main/packages/atoma#readme"
+    }
 }

@@ -14,7 +14,6 @@
     "bugs": {
         "url": "https://github.com/RealRong/Atoma/issues"
     },
-    "homepage": "https://github.com/RealRong/Atoma/tree/main/packages/atoma#readme",
     "main": "dist/index.js",
     "module": "dist/index.js",
     "types": "dist/index.d.ts",
