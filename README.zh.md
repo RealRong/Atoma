@@ -1,121 +1,363 @@
-# Atoma
+# Atoma SDK API
 
-原子化状态管理与通用持久化方案。
+本文档面向 SDK 使用者，覆盖 `@atoma-js/atoma`、`@atoma-js/client`、`@atoma-js/react` 的主要使用方式与类型约定。
 
-[English README](./README.md) · [分层架构重设计](./ARCHITECTURE_LAYERED_REDESIGN.zh.md) 
+## 1. 包关系与入口
 
-## 解决什么问题
+- `@atoma-js/atoma` 是推荐入口，导出 `createClient` 与常用类型。
+- `@atoma-js/client` 是核心运行时客户端实现（`createClient` 在此实现）。
+- `@atoma-js/react` 提供基于 Store 的 React Hooks。
+- `@atoma-js/types/*` 提供更细的类型定义。
+- 不要从 `@atoma-js/types` 根路径导入，只使用子路径（例如 `@atoma-js/types/client`）。
 
-- **原子化 + 类型安全的 Store**（可插拔 runtime）
-- **统一的持久化抽象**：HTTP / IndexedDB / local(runtime) / hybrid 等 datasource
-- **统一的 ops 协议**（`/ops`）：读写都走同一套请求/响应结构，天然适配 batch/sync
-- **Offline-first 同步**：outbox + pull + subscribe（SSE）
-- **Relations**：belongsTo/hasMany/hasOne/variants，客户端 prefetch + 投影（include）
-- **Observability**：从 store → 网络 → server 的 trace/debug/telemetry 链路一致
-
-## 安装
+## 2. 安装
 
 ```bash
 npm i @atoma-js/atoma
 ```
 
-Peer 依赖：
-- `immer`
-- 服务端 adapter：`@prisma/client`（按需）
+如需 React Hooks：
 
-## 快速开始（client + React）
+```bash
+npm i @atoma-js/react
+```
+
+## 3. 快速开始
+
+### 3.1 定义实体与 Schema
 
 ```ts
-import { createClient } from '@atoma-js/client'
-import { useFindMany } from '@atoma-js/react'
-import { httpBackendPlugin } from '@atoma-js/backend-http'
+import type { Entity } from '@atoma-js/atoma'
+import type { AtomaSchema } from '@atoma-js/atoma'
 
-type User = { id: string; name: string; version?: number }
+export type User = Entity & {
+    id: string
+    name: string
+    age: number
+}
 
-const client = createClient<{ users: User }>({
-    plugins: [
-        httpBackendPlugin({ baseURL: 'http://localhost:3000/api' })
-    ]
+export type Post = Entity & {
+    id: string
+    authorId: string
+    title: string
+}
+
+export type Entities = {
+    users: User
+    posts: Post
+}
+
+export type Schema = AtomaSchema<Entities>
+
+export const schema: Schema = {
+    users: {
+        indexes: [{ field: 'age', type: 'number' }],
+        relations: {
+            posts: { type: 'hasMany', to: 'posts', foreignKey: 'authorId' }
+        }
+    },
+    posts: {
+        indexes: [{ field: 'authorId', type: 'string' }],
+        relations: {
+            author: { type: 'belongsTo', to: 'users', foreignKey: 'authorId' }
+        }
+    }
+}
+```
+
+### 3.2 创建客户端并读写
+
+```ts
+import { createClient } from '@atoma-js/atoma'
+
+const client = createClient<Entities, Schema>({
+    stores: { schema }
 })
 
-export function Users() {
-    const usersStore = client.stores.users
-    const { data, loading, error } = useFindMany(usersStore)
+const users = client.stores('users')
+await users.create({ id: 'u1', name: 'Ada', age: 27 })
+const result = await users.query({
+    filter: { op: 'gte', field: 'age', value: 18 },
+    sort: [{ field: 'age', dir: 'desc' }]
+})
+```
+
+### 3.3 React Hooks（简短片段）
+
+```tsx
+import { useQuery } from '@atoma-js/react'
+
+function UsersView({ store }: { store: ReturnType<typeof client.stores> }) {
+    const { data, loading, error } = useQuery(store, {
+        filter: { op: 'gte', field: 'age', value: 18 }
+    })
     if (loading) return null
     if (error) throw error
     return <pre>{JSON.stringify(data, null, 2)}</pre>
 }
 ```
 
-## 客户端配置（新版）
+## 4. @atoma-js/atoma 导出
 
-- `plugins: ClientPlugin[]` 是主要扩展面（io/persist/read/observe 处理器链）。
-- 插件仅在初始化时装配，**不再提供 `client.use`**。
+### 4.1 函数
 
-### Atoma Server 插件接入
+- `createClient(options)`
+
+### 4.2 类型
+
+- `AtomaClient`
+- `AtomaSchema`
+- `CreateClientOptions`
+- `Entity`
+- `Store`
+- `Query`
+- `RelationIncludeInput`
+- `WithRelations`
+
+## 5. createClient
 
 ```ts
-import { createClient } from '@atoma-js/client'
-import { atomaServerBackendPlugin } from '@atoma-js/backend-atoma-server'
-
-const client = createClient({
-    schema,
-    plugins: [
-        atomaServerBackendPlugin({
-            baseURL: 'http://localhost:3000/api',
-            operationsPath: '/ops'
-        })
-    ]
-})
+function createClient<
+    Entities extends Record<string, Entity>,
+    Schema extends AtomaSchema<Entities> = AtomaSchema<Entities>
+>(options: CreateClientOptions<Entities, Schema>): AtomaClient<Entities, Schema>
 ```
 
-## 协议（ops + sync）
+### 5.1 CreateClientOptions
 
-- Ops：`POST /ops`
-- Subscribe（SSE 通知）：`GET /sync/subscribe`（`event: sync.notify`，payload: `{"resources":["todos"]}`；可选 `resources=...`）
-- cursor 只由 `changes.pull` 推进（SSE 不写 cursor）
-- Trace 传递（禁止 header）：
-  - ops：`op.meta.traceId` / `op.meta.requestId`（op-scoped，支持 batch mixed trace）
-  - subscribe（SSE）：URL query `traceId` / `requestId`（用于无 body 的 GET/SSE）
+- `stores?: CreateClientStoresOptions`
+- `plugins?: ReadonlyArray<ClientPlugin>`
 
-以上由 `@atoma-js/types/protocol`（类型）与 `@atoma-js/types/protocol-tools`（运行时工具）统一定义，client 与 server 共享同一份协议语义。
+`CreateClientStoresOptions` 结构：
 
-## Server
+- `schema?: StoresSchema`
+- `createId?: () => EntityId`
+- `processor?: StoreProcessor<Entity>`
 
-`@atoma-js/server` 的定位是**协议内核**：
+提示：如果需要关系投影类型推导，建议传入 `AtomaSchema` 并在泛型中显式指定。
 
-- **只认 Web 标准 `Request`/`Response`**
-- 默认只暴露两个 handler：`ops(request)` / `subscribe(request)`（SSE）
-- **不提供** Express/Node http 等宿主适配（宿主自行适配）
-- **不内置** authz/policies（安全边界由宿主/DB/RLS/adapter/插件承担）
+### 5.2 AtomaClient
 
-### 示例（Next.js route handlers）
+- `stores(name)`：获取指定 Store
+- `dispose()`：释放插件资源与运行时
+
+示例：
 
 ```ts
-import { createAtomaHandlers } from '@atoma-js/server'
-import { createPrismaServerAdapter } from '@atoma-js/server/adapters/prisma'
+const userStore = client.stores('users')
+```
 
-const handlers = createAtomaHandlers({
-    adapter: createPrismaServerAdapter({ prisma: /* PrismaClient */ } as any)
-})
+## 6. Store API
 
-export async function POST(req: Request) {
-    return handlers.ops(req)
+`Store<T, Relations>` 提供以下方法：
+
+- `create(item, options?)`
+- `createMany(items, options?)`
+- `update(id, updater, options?)`
+- `updateMany(items, options?)`
+- `delete(id, options?)`
+- `deleteMany(ids, options?)`
+- `upsert(item, options?)`
+- `upsertMany(items, options?)`
+- `get(id, options?)`
+- `getMany(ids, options?)`
+- `list(options?)`
+- `query(query, options?)`
+- `queryOne(query, options?)`
+
+### 6.1 StoreOperationOptions
+
+- `force?: boolean`
+- `signal?: AbortSignal`
+- `context?: Partial<ActionContext>`
+
+### 6.2 UpsertWriteOptions
+
+- `conflict?: 'cas' | 'lww'`
+- `apply?: 'merge' | 'replace'`
+
+### 6.3 WriteManyResult
+
+`createMany / updateMany / deleteMany / upsertMany` 返回：
+
+```ts
+type WriteManyResult<T> = Array<
+    | { index: number; ok: true; value: T }
+    | { index: number; ok: false; error: unknown; current?: { value?: unknown } }
+>
+```
+
+## 7. Query
+
+### 7.1 Query 结构
+
+```ts
+type Query<T> = {
+    filter?: FilterExpr<T>
+    sort?: Array<{ field: keyof T & string | string; dir: 'asc' | 'desc' }>
+    page?:
+        | { mode: 'offset'; limit?: number; offset?: number; includeTotal?: boolean }
+        | { mode: 'cursor'; limit?: number; after?: CursorToken; before?: CursorToken }
 }
 ```
 
-Express/Koa 的“宿主侧适配”参考：`demo/zero-config/src/server/index.ts`。
+### 7.2 FilterExpr 常用操作
 
-## 文档
+- `and` / `or` / `not`
+- `eq` / `in`
+- `gt` / `gte` / `lt` / `lte`
+- `startsWith` / `endsWith` / `contains`
+- `isNull` / `exists`
+- `text`（支持 `match`/`fuzzy` 与 `distance`）
 
-- 架构：`ARCHITECTURE_LAYERED_REDESIGN.zh.md`
+### 7.3 示例
 
-## 开发与测试
+```ts
+const query: Query<User> = {
+    filter: {
+        op: 'and',
+        args: [
+            { op: 'eq', field: 'region', value: 'APAC' },
+            { op: 'gte', field: 'age', value: 18 }
+        ]
+    },
+    sort: [{ field: 'age', dir: 'desc' }],
+    page: { mode: 'offset', limit: 20, includeTotal: true }
+}
+```
 
-- `npm run typecheck`
-- `npm test`
-- `npm run dev`（启动 demo）
+## 8. Schema 与关系
 
-## License
+### 8.1 AtomaSchema
 
-MIT
+`AtomaSchema` 是面向 Store 的配置集合：
+
+- `indexes`：索引定义
+- `relations`：关系定义
+- `createId` / `processor`：覆盖 Store 级配置
+
+### 8.2 关系定义
+
+支持：`belongsTo` / `hasMany` / `hasOne`。
+
+```ts
+relations: {
+    author: { type: 'belongsTo', to: 'users', foreignKey: 'authorId' },
+    comments: { type: 'hasMany', to: 'comments', foreignKey: 'postId' }
+}
+```
+
+### 8.3 关系投影
+
+React Hooks 支持 `include`：
+
+```ts
+useAll(postsStore, { include: { author: true, comments: true } })
+```
+
+## 9. 插件系统（@atoma-js/client）
+
+### 9.1 ClientPlugin
+
+```ts
+type ClientPlugin = {
+    id: string
+    provides?: ReadonlyArray<ServiceToken<unknown>>
+    requires?: ReadonlyArray<ServiceToken<unknown>>
+    setup?: (ctx: PluginContext) => void | { extension?: Record<string, unknown>; dispose?: () => void }
+}
+```
+
+### 9.2 ServiceToken
+
+```ts
+import { createServiceToken } from '@atoma-js/types/client'
+const TOKEN = createServiceToken<MyService>('my.service')
+```
+
+### 9.3 插件示例（简化）
+
+```ts
+const myPlugin: ClientPlugin = {
+    id: 'my-plugin',
+    setup: (ctx) => {
+        return {
+            extension: {
+                hello: () => 'world'
+            },
+            dispose: () => {
+                // cleanup
+            }
+        }
+    }
+}
+```
+
+插件 `extension` 会被合并到 `client` 上，`dispose()` 在 `client.dispose()` 时调用。
+
+## 10. React Hooks（@atoma-js/react）
+
+### 10.1 useOne
+
+```ts
+useOne(store, id?, { include? })
+```
+
+- 订阅单个实体
+- 当本地没有时会触发 `store.get(id)`
+
+### 10.2 useAll
+
+```ts
+useAll(store, { include? })
+```
+
+- 订阅完整集合（全量快照）
+
+### 10.3 useMany
+
+```ts
+useMany(store, ids, { limit?, unique?, include? })
+```
+
+- 按 id 列表挑选
+- `unique` 默认为 `true`
+
+### 10.4 useQuery
+
+```ts
+useQuery(store, query?, { include?, fetchPolicy? })
+```
+
+`fetchPolicy`：
+
+- `cache-only`
+- `network-only`
+- `cache-and-network`（默认）
+
+返回值包含：
+
+- `data`
+- `loading` / `isFetching` / `isStale`
+- `error`
+- `pageInfo`
+- `refetch()` / `fetchMore()`
+
+## 11. 最佳实践
+
+- `client` 建议单例化，页面卸载时调用 `dispose()`。
+- `client.stores('name')` 是函数形式，不是对象属性。
+- Query/Filter 请复用对象或用稳定化手段，减少重复计算。
+- 关系投影只在需要时打开，避免不必要的联查成本。
+- 复杂读写建议提前建立索引（`indexes`）。
+
+## 12. FAQ
+
+Q: 为什么 `client.stores.users` 不可用？
+
+A: `stores` 是函数，正确写法是 `client.stores('users')`。
+
+Q: `useQuery` 会不会访问远端？
+
+A: `useQuery` 调用 `store.query`，是否触发远端取决于你是否安装了对应插件。
+
