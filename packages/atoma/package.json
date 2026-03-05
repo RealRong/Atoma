@@ -6,6 +6,15 @@
     "publishConfig": {
         "access": "public"
     },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/RealRong/Atoma.git",
+        "directory": "packages/atoma"
+    },
+    "bugs": {
+        "url": "https://github.com/RealRong/Atoma/issues"
+    },
+    "homepage": "https://github.com/RealRong/Atoma/tree/main/packages/atoma#readme",
     "main": "dist/index.js",
     "module": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -17,7 +26,8 @@
     },
     "files": [
         "dist",
-        "src"
+        "src",
+        "README.md"
     ],
     "scripts": {
         "build": "tsup",
