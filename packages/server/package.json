@@ -27,7 +27,8 @@
     },
     "dependencies": {
         "@atoma-js/atoma": "workspace:*",
-        "@atoma-js/shared": "workspace:*"
+        "@atoma-js/shared": "workspace:*",
+        "p-limit": "^4.0.0"
     },
     "peerDependencies": {
         "@prisma/client": "^5.0.0"
