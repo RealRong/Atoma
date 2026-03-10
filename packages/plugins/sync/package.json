@@ -1,6 +1,6 @@
 {
     "name": "@atoma-js/sync",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "type": "module",
     "description": "Atoma Sync Engine (optional extension package)",
     "main": "dist/index.js",

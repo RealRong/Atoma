@@ -1,6 +1,6 @@
 {
     "name": "@atoma-js/history",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "type": "module",
     "description": "Atoma History Plugin (optional extension package)",
     "main": "dist/index.js",

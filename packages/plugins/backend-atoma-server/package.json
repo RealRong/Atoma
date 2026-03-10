@@ -1,6 +1,6 @@
 {
     "name": "@atoma-js/backend-atoma-server",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "type": "module",
     "description": "Atoma server backend plugin (optional)",
     "main": "dist/index.js",

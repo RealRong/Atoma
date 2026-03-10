@@ -1,6 +1,6 @@
 {
     "name": "@atoma-js/observability",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "type": "module",
     "description": "Atoma observability runtime and types",
     "main": "dist/index.js",

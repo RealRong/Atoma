@@ -1,6 +1,6 @@
 {
     "name": "@atoma-js/backend-indexeddb",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "type": "module",
     "description": "Atoma IndexedDB backend (optional)",
     "main": "dist/index.js",

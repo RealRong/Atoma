@@ -1,6 +1,6 @@
 {
     "name": "@atoma-js/react",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "type": "module",
     "description": "Atoma React Hooks (optional extension package)",
     "main": "dist/index.js",
