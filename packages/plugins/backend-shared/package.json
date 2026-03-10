@@ -1,6 +1,6 @@
 {
     "name": "@atoma-js/backend-shared",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "type": "module",
     "description": "Shared backend helpers for Atoma optional backend plugins",
     "main": "dist/index.js",
