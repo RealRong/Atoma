@@ -5,7 +5,7 @@ import {
     HTTP_PATH_SYNC_RXDB_STREAM,
     parseSyncPullResponse,
     parseSyncPushResponse
-} from '@atoma-js/types/protocol-tools'
+} from '@atoma-js/types/tools'
 import type { AtomaServerBackendPluginOptions } from '../types'
 import { postJson, resolveFetch } from './http'
 import { createStream } from './stream'

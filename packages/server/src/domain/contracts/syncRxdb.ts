@@ -5,7 +5,7 @@ import {
     parseSyncPushRequest,
     parseSyncStreamQuery,
     wrapProtocolError
-} from '@atoma-js/types/protocol-tools'
+} from '@atoma-js/types/tools'
 import { throwError } from '../../error'
 import { toObjectDetails } from '../../shared/utils/details'
 

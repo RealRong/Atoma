@@ -120,8 +120,8 @@
             "@atoma-js/types/protocol": [
                 "packages/types/src/protocol/index.ts"
             ],
-            "@atoma-js/types/protocol-tools": [
-                "packages/types/src/protocol-tools/index.ts"
+            "@atoma-js/types/tools": [
+                "packages/types/src/tools/index.ts"
             ],
             "@atoma-js/types/runtime": [
                 "packages/types/src/runtime/index.ts"

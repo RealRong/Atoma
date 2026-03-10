@@ -21,22 +21,22 @@
 - `atoma-protocol` has been merged and must no longer be used as a standalone package.
 - Protocol capabilities are unified in:
   - `@atoma-js/types/protocol` (types)
-  - `@atoma-js/types/protocol-tools` (runtime tools)
+  - `@atoma-js/types/tools` (runtime tools)
 - Root import from `@atoma-js/types` is **forbidden** (`from '@atoma-js/types'`).
-  - Only subpath imports are allowed: `@atoma-js/types/{shared|core|runtime|client|protocol|protocol-tools|sync|observability|devtools|internal}`.
+  - Only subpath imports are allowed: `@atoma-js/types/{shared|core|runtime|client|protocol|tools|sync|observability|devtools|internal}`.
 
 ### 1.2 Dependency Direction (One-way)
 
-- Required direction: `shared -> core -> protocol -> protocol-tools`
+- Required direction: `shared -> core -> protocol -> tools`
 - `runtime/client/sync/...` may depend only downward; reverse dependencies are forbidden.
 - **`core -> protocol` reverse dependency is forbidden.**
 
-### 1.3 Protocol Tool Export Style
+### 1.3 Tools Export Style
 
 - Named exports only.
 - `Protocol.xxx` facade style is forbidden.
 - Recommended:
-  - `import { buildQueryOp, assertOperationResults } from '@atoma-js/types/protocol-tools'`
+  - `import { buildQueryOp, assertOperationResults } from '@atoma-js/types/tools'`
 
 ### 1.4 Responsibility Separation (Hard Constraint)
 

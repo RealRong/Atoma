@@ -1,6 +1,6 @@
 {
     "name": "@atoma-js/types",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "type": "module",
     "description": "Atoma shared type exports",
     "exports": {
@@ -74,10 +74,10 @@
             "import": "./dist/protocol.js",
             "source": "./src/protocol/index.ts"
         },
-        "./protocol-tools": {
-            "types": "./dist/protocol-tools/index.d.ts",
-            "import": "./dist/protocol-tools.js",
-            "source": "./src/protocol-tools/index.ts"
+        "./tools": {
+            "types": "./dist/tools/index.d.ts",
+            "import": "./dist/tools.js",
+            "source": "./src/tools/index.ts"
         },
         "./observability": {
             "types": "./dist/observability/index.d.ts",

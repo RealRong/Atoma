@@ -1,5 +1,5 @@
 import type { Envelope, Meta, RemoteOp, RemoteOpsResponseData } from '@atoma-js/types/protocol'
-import { parseEnvelope } from '@atoma-js/types/protocol-tools'
+import { parseEnvelope } from '@atoma-js/types/tools'
 import { requestJson } from '@atoma-js/shared'
 import type { RetryOptions } from '@atoma-js/shared'
 

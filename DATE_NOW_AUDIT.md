@@ -21,8 +21,8 @@
 - `packages/client/src/plugins/PluginRuntimeIo.ts:21`
 - `packages/runtime/src/runtime/Runtime.ts:58`
 - `packages/server/src/ops/writeSemantics.ts:133`
-- `packages/types/src/protocol-tools/ops/build.ts:12`
-- `packages/types/src/protocol-tools/ops/meta.ts:21`
+- `packages/types/src/tools/ops/build.ts:12`
+- `packages/types/src/tools/ops/meta.ts:21`
 - `packages/plugins/sync/src/plugin.ts:21`
 - `packages/plugins/sync/src/transport/ops-driver.ts:15`
 - `packages/plugins/sync/src/storage/index.ts:23`

@@ -1,5 +1,5 @@
 import type { SyncDocument, SyncPushResponse } from '@atoma-js/types/sync'
-import { readPushIdempotencyKey } from '@atoma-js/types/protocol-tools'
+import { readPushIdempotencyKey } from '@atoma-js/types/tools'
 import type { AtomaServerConfig } from '../../config'
 import type { HandleResult } from '../../runtime/http'
 import { throwError } from '../../error'

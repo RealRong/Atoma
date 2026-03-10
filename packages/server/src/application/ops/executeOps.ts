@@ -7,7 +7,7 @@ import type {
 import type { ServerRuntime } from '../../runtime/createRuntime'
 import type { IOrmAdapter, ISyncAdapter } from '../../adapters/ports'
 import type { QueryOp, RemoteOpResult, WriteOp } from '@atoma-js/types/protocol'
-import { composeEnvelopeOk, createErrorFromCode, withErrorTrace } from '@atoma-js/types/protocol-tools'
+import { composeEnvelopeOk, createErrorFromCode, withErrorTrace } from '@atoma-js/types/tools'
 import { ensureProtocolVersion, normalizeRemoteOpsRequest } from './normalize'
 import { executeApplicationQueryOps } from './executeQueryOps'
 import { executeApplicationWriteOps } from './executeWriteOps'

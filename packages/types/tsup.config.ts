@@ -16,7 +16,7 @@ export default defineConfig({
         'client/schema': 'src/client/schema.ts',
         history: 'src/history/index.ts',
         protocol: 'src/protocol/index.ts',
-        'protocol-tools': 'src/protocol-tools/index.ts',
+        tools: 'src/tools/index.ts',
         observability: 'src/observability/index.ts',
         sync: 'src/sync/index.ts',
         devtools: 'src/devtools/index.ts',

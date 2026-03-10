@@ -1,4 +1,4 @@
-import { HTTP_PATH_OPS } from '@atoma-js/types/protocol-tools'
+import { HTTP_PATH_OPS } from '@atoma-js/types/tools'
 import type { RemoteOpsResponseData } from '@atoma-js/types/protocol'
 import type { ExecuteOperationsInput, ExecuteOperationsOutput } from '@atoma-js/types/client/ops'
 import { BatchEngine } from './batch'

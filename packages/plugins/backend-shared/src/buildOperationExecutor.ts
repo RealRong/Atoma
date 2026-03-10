@@ -6,7 +6,7 @@ import {
     buildQueryOp,
     buildWriteOp,
     createOpId
-} from '@atoma-js/types/protocol-tools'
+} from '@atoma-js/types/tools'
 import type {
     WriteEntry as ProtocolWriteEntry
 } from '@atoma-js/types/protocol'

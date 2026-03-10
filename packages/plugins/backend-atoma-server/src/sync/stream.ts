@@ -1,5 +1,5 @@
 import { joinUrl, normalizePositiveInt, toError } from '@atoma-js/shared'
-import { parseSyncStreamNotify, SSE_EVENT_NOTIFY } from '@atoma-js/types/protocol-tools'
+import { parseSyncStreamNotify, SSE_EVENT_NOTIFY } from '@atoma-js/types/tools'
 import type { SyncStream } from '@atoma-js/types/client/sync'
 import type { SyncStreamNotify } from '@atoma-js/types/sync'
 

@@ -33,8 +33,8 @@
             "@atoma-js/types/protocol": [
                 "src/protocol/index.ts"
             ],
-            "@atoma-js/types/protocol-tools": [
-                "src/protocol-tools/index.ts"
+            "@atoma-js/types/tools": [
+                "src/tools/index.ts"
             ],
             "@atoma-js/types/observability": [
                 "src/observability/index.ts"

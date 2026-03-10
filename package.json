@@ -24,7 +24,7 @@
         "publish:all": "pnpm run publish:sdk && pnpm run publish:plugins",
         "typecheck": "pnpm run check:runtime-protocol-boundary && pnpm build && pnpm --filter @atoma-js/shared run typecheck && pnpm --filter @atoma-js/observability run typecheck && pnpm --filter @atoma-js/core run typecheck && pnpm --filter @atoma-js/client run typecheck && pnpm --filter @atoma-js/types run typecheck && pnpm --filter @atoma-js/atoma run typecheck && pnpm --filter @atoma-js/react run typecheck && pnpm --filter @atoma-js/sync run typecheck && pnpm --filter @atoma-js/backend-shared run typecheck && pnpm --filter @atoma-js/backend-indexeddb run typecheck && pnpm --filter @atoma-js/backend-http run typecheck && pnpm --filter @atoma-js/backend-atoma-server run typecheck && pnpm --filter @atoma-js/server run typecheck && pnpm --filter @atoma-js/devtools run typecheck",
         "check:sync-alias": "bash -lc \"if rg -n \\\"from '#sync/\\\" packages demo docs tests -g'!packages/plugins/sync/**'; then echo 'ERROR: #sync alias must only be used inside packages/plugins/sync.'; exit 1; fi\"",
-        "check:runtime-protocol-boundary": "bash -lc \"if rg -n \\\"@atoma-js/types/protocol(-tools)?\\\" packages/runtime/src; then echo 'ERROR: @atoma-js/runtime must not import @atoma-js/types/protocol or @atoma-js/types/protocol-tools.'; exit 1; fi\"",
+        "check:runtime-protocol-boundary": "bash -lc \"if rg -n \\\"@atoma-js/types/(protocol|tools)\\\" packages/runtime/src; then echo 'ERROR: @atoma-js/runtime must not import @atoma-js/types/protocol or @atoma-js/types/tools.'; exit 1; fi\"",
         "test": "vitest run",
         "test:ui": "vitest --ui",
         "start:docs": "npm run dev --prefix docs"

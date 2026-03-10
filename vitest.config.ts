@@ -12,7 +12,7 @@ export default defineConfig({
             { find: /^@atoma-js\/core\/operation$/, replacement: path.resolve(__dirname, 'packages/core/src/operation.ts') },
             { find: /^@atoma-js\/shared$/, replacement: path.resolve(__dirname, 'packages/shared/src/index.ts') },
             { find: /^@atoma-js\/observability$/, replacement: path.resolve(__dirname, 'packages/plugins/observability/src/index.ts') },
-            { find: /^@atoma-js\/types\/protocol-tools$/, replacement: path.resolve(__dirname, 'packages/types/src/protocol-tools/index.ts') },
+            { find: /^@atoma-js\/types\/tools$/, replacement: path.resolve(__dirname, 'packages/types/src/tools/index.ts') },
 
             { find: /^@atoma-js\/sync$/, replacement: path.resolve(__dirname, 'packages/plugins/sync/src/index.ts') },
             { find: /^@atoma-js\/sync\/(.*)$/, replacement: path.resolve(__dirname, 'packages/plugins/sync/src/$1') },
